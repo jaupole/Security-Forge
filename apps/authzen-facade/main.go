@@ -13,8 +13,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,13 +22,10 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
-	authzed "github.com/authzed/authzed-go/v1"
-	"github.com/authzed/grpcutil"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+
+	libAuthZN "github.com/secforge/lib/authzn"
 )
 
 // AuthZEN 1.0 request and response types. We implement only what's
@@ -69,9 +64,12 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// server holds the SpiceDB client and the structured logger.
+// server holds the authorization engine + structured logger. The
+// engine is consumed via the vendor-neutral AuthZN interface from
+// apps/lib/authzn; concrete adapter selection happens at construction
+// (Fix-after-07 §A.6).
 type server struct {
-	client *authzed.Client
+	authzn libAuthZN.AuthZN
 	logger *slog.Logger
 }
 
@@ -105,23 +103,16 @@ func main() {
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 
-	tlsCfg, err := tlsConfigFromCA(caFile)
+	// Construct the authorization engine via the vendor-neutral lib.
+	// SpiceDB-specific dial + TLS + bearer-token plumbing lives in
+	// apps/lib/authzn/spicedb.go.
+	authzn, err := libAuthZN.NewSpiceDBAuthZN(endpoint, token, caFile)
 	if err != nil {
-		logger.Error("failed to build TLS config", "ca", caFile, "err", err)
+		logger.Error("failed to construct authzn engine", "endpoint", endpoint, "err", err)
 		os.Exit(1)
 	}
 
-	client, err := authzed.NewClient(
-		endpoint,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
-		grpcutil.WithBearerToken(token),
-	)
-	if err != nil {
-		logger.Error("failed to dial SpiceDB", "endpoint", endpoint, "err", err)
-		os.Exit(1)
-	}
-
-	srv := &server{client: client, logger: logger}
+	srv := &server{authzn: authzn, logger: logger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", srv.healthz)
@@ -157,13 +148,13 @@ func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// readyz performs a SpiceDB ReadSchema as a smoke test that the
-// downstream is reachable. Cheap (sub-ms cached) and a real
-// integration probe rather than just "the process is up".
+// readyz exercises the authzn engine via a vendor-neutral Health probe.
+// SpiceDB adapter implements this with ReadSchema; other adapters use
+// whatever cheap call proves connectivity + auth + policy load.
 func (s *server) readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if _, err := s.client.ReadSchema(ctx, &v1.ReadSchemaRequest{}); err != nil {
+	if err := s.authzn.Health(ctx); err != nil {
 		s.logger.Warn("readyz failed", "err", err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -196,35 +187,24 @@ func (s *server) evaluation(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	resp, err := s.client.CheckPermission(ctx, &v1.CheckPermissionRequest{
-		Resource: &v1.ObjectReference{
-			ObjectType: req.Resource.Type,
-			ObjectId:   req.Resource.ID,
-		},
-		Permission: req.Action.Name,
-		Subject: &v1.SubjectReference{
-			Object: &v1.ObjectReference{
-				ObjectType: req.Subject.Type,
-				ObjectId:   req.Subject.ID,
-			},
-		},
-		Consistency: &v1.Consistency{
-			// minimize_latency is correct for the steady-state fast path.
-			// Read-your-writes flows pass an explicit ZedToken via the
-			// context object (not yet wired — Caveats and ZedToken
-			// chaining come with the first app that needs them).
-			Requirement: &v1.Consistency_MinimizeLatency{MinimizeLatency: true},
-		},
-	})
+	decision, err := s.authzn.Evaluate(ctx,
+		libAuthZN.Subject{Type: req.Subject.Type, ID: req.Subject.ID},
+		req.Action.Name,
+		libAuthZN.Resource{Type: req.Resource.Type, ID: req.Resource.ID},
+	)
 
-	// Audit log every CheckPermission decision. This is the durable
-	// record consumed by Phase 7 Loki/Wazuh; lower verbosity drops it.
+	// Audit log every evaluation. This is the durable record consumed
+	// by Phase 7 Loki/Wazuh; lower verbosity drops it.
+	allowed := false
+	if decision != nil {
+		allowed = decision.Allowed
+	}
 	s.logger.Info("evaluate",
 		"subject", req.Subject.Type+":"+req.Subject.ID,
 		"resource", req.Resource.Type+":"+req.Resource.ID,
 		"action", req.Action.Name,
 		"err", err,
-		"decision", resp.GetPermissionship() == v1.CheckPermissionResponse_PERMISSIONSHIP_HAS_PERMISSION,
+		"decision", allowed,
 	)
 
 	if err != nil {
@@ -232,9 +212,7 @@ func (s *server) evaluation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, evaluationResponse{
-		Decision: resp.Permissionship == v1.CheckPermissionResponse_PERMISSIONSHIP_HAS_PERMISSION,
-	})
+	writeJSON(w, http.StatusOK, evaluationResponse{Decision: allowed})
 }
 
 // validIDPart enforces a conservative allow-list — letters, digits,
@@ -274,21 +252,7 @@ func envOr(k, def string) string {
 	return def
 }
 
-// tlsConfigFromCA builds a TLS client config that trusts the supplied
-// CA bundle. We do NOT skip verification; the cert mounted into the
-// SpiceDB pod was issued by the mkcert ClusterIssuer for the in-cluster
-// service name, and we mount the same CA here.
-func tlsConfigFromCA(caFile string) (*tls.Config, error) {
-	caPEM, err := os.ReadFile(caFile)
-	if err != nil {
-		return nil, fmt.Errorf("read ca: %w", err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("ca pem contained no certs")
-	}
-	return &tls.Config{
-		RootCAs:    pool,
-		MinVersion: tls.VersionTLS13,
-	}, nil
-}
+// tlsConfigFromCA used to build the gRPC TLS config locally. After
+// Fix-after-07 §A.6, dialing SpiceDB lives behind apps/lib/authzn —
+// which reads the CA path itself. The function below is gone; the
+// CA file path passes through to the lib via NewSpiceDBAuthZN.

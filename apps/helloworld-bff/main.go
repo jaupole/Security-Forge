@@ -24,6 +24,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	libSecrets "github.com/secforge/lib/secrets"
 )
 
 // cfg captures every BFF configuration knob, all sourced from env vars.
@@ -90,10 +92,16 @@ func main() {
 		_ = shutdownTracer(fctx)
 	}()
 
-	// Bootstrap secrets from OpenBao via the SPIFFE-bound JWT-SVID. The
-	// init container (spiffe-helper) has written the JWT to disk before
-	// we're scheduled; we trade it for a short-lived OpenBao token here.
-	clientPriv, err := bootstrapClientKey(ctx, c)
+	// Bootstrap the BFF's private_key_jwt PEM from OpenBao via the
+	// SPIFFE-bound JWT-SVID. The init container (spiffe-helper) wrote
+	// the JWT to disk before we're scheduled; the lib does the
+	// auth/jwt/login + KV read.
+	bootstrap, err := libSecrets.NewOpenBaoBootstrapper(c.OpenBaoAddr, c.OpenBaoSVIDIn, c.OpenBaoRole, c.OpenBaoKVPath)
+	if err != nil {
+		log.Error("openbao bootstrapper config", "err", err)
+		os.Exit(1)
+	}
+	clientPriv, err := bootstrap.GetClientKey(ctx)
 	if err != nil {
 		log.Error("openbao bootstrap failed", "err", err)
 		os.Exit(1)

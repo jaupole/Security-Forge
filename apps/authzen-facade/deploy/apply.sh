@@ -25,6 +25,7 @@ NS=app
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 BUILD_DIR="$ROOT/authzen-facade"
+APPS_DIR="$ROOT"   # apps/ — wider context after Fix-after-07 §A.6 (lib sibling needed)
 IMAGE_TAG="local/authzen-facade:0.1.0"
 
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -32,7 +33,9 @@ yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
 # 1. Build.
 green "==> docker build $IMAGE_TAG"
-docker build -t "$IMAGE_TAG" "$BUILD_DIR" >/dev/null
+# Build context is apps/ so the Dockerfile can COPY both authzen-facade/
+# and the sibling lib/ via the local go.mod replace.
+docker build -f "$BUILD_DIR/Dockerfile" -t "$IMAGE_TAG" "$APPS_DIR" >/dev/null
 
 # 2. Mirror SpiceDB creds into the app namespace.
 green "==> mirroring SpiceDB pre-shared key + CA into app/authzen-facade-spicedb-creds"
