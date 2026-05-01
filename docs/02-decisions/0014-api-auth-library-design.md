@@ -120,3 +120,61 @@ Failures from `Middleware.ValidateInbound` and `Client.MintTokenForAudience` are
 - [RFC 8693 — OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) — what we did NOT use
 - [RFC 9449 — OAuth 2.0 Demonstrating Proof of Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449) — what we DID use, for sender-constraining
 - [SPIFFE SVID — JWT-SVID format](https://github.com/spiffe/spiffe/blob/main/standards/JWT-SVID.md) — the workload identity format used in `caller_workload_id`
+
+---
+
+## Observed Q3 behavior (2026-05-01)
+
+> **Status:** PARTIAL — discovery + grant-type + scope-list confirmed live; full refresh-with-expanded-scope deferred (prerequisites not currently met). The library handles BOTH outcomes regardless; this section will be amended once the deferred check runs.
+
+**What was confirmed live against Keycloak 26.3.3 (`auth.secforge.local`) at commit-3 of Phase 6b-1:**
+
+```
+$ curl -sk https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration | jq '{issuer, token_endpoint, grant_types_supported, scopes_supported}'
+{
+  "issuer": "https://auth.secforge.local/realms/secforge-tenants",
+  "token_endpoint": "https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/token",
+  "grant_types_supported": [
+    "authorization_code",
+    "client_credentials",
+    "implicit",
+    "password",
+    "refresh_token",
+    "urn:ietf:params:oauth:grant-type:device_code",
+    "urn:ietf:params:oauth:grant-type:token-exchange",
+    "urn:ietf:params:oauth:grant-type:uma-ticket",
+    "urn:openid:params:grant-type:ciba"
+  ],
+  "scopes_supported": ["openid","acr","service_account","basic","microprofile-jwt","web-origins","address","phone","roles","organization","email","offline_access","profile"]
+}
+```
+
+Notes on the partial verification:
+
+- ✅ `refresh_token` grant is supported on the `secforge-tenants` realm — the precondition for Q3's refresh-with-expanded-scope path is in place.
+- ⚠️ `urn:ietf:params:oauth:grant-type:token-exchange` IS still listed in `grant_types_supported` despite [ADR-0012 § Decision NO-GO](./0012-token-exchange-feasibility.md#decision) and the ADR-0012 cluster-state-changes which removed `token-exchange` and `admin-fine-grained-authz` from the Keycloak CR's `features.enabled`. The presence here suggests Keycloak 26.x advertises the grant type at realm-level by default regardless of whether the client can use it; runtime gating still rejects per the spike findings. **Re-spike trigger #1 from the watching brief in PLAN.md.**
+- The client-specific scopes (`authzen-facade`, `helloworld-api`, etc.) do NOT appear in `scopes_supported` because that list is realm-level — client-bound scopes are configured per-client. To inspect helloworld-bff's scope mapping, kcadm against the realm is required.
+
+**What was deferred and why:**
+
+Steps 3-5 of the live curl test (add a NEW audience scope via kcadm; refresh with expanded scope; inspect resulting token's `aud` claim) require:
+
+1. **kcadm Path A access** — Phase 3 follow-up (PLAN.md operator-backlog) is blocked on F-CLU-11 (`auth/oidc/role/admin` degraded → cannot rotate Keycloak client credentials via OpenBao-driven flow). The fall-back kcadm-spike pattern from Session 4 (clone `spike-token-exchange.sh` + service-account auth + throwaway client tagged `secforge.local/temporary=yes`) is feasible but requires a fresh login + setup the operator hasn't done in this session.
+2. **A live user session with a still-valid refresh_token** — the BFF's session store (Valkey) doesn't currently have a session because the operator hasn't logged in via the BFF this session.
+
+The verification script at [`infrastructure/lib/api-auth/verify-q3-refresh.sh`](../../infrastructure/lib/api-auth/verify-q3-refresh.sh) packages the deferred curl flow. When the prerequisites are met, the operator runs it with `REFRESH_TOKEN=...` and `CLIENT_PRIVATE_KEY_PEM=...` and appends the verbatim result here.
+
+**Why the library is correct regardless of which Q3 outcome lands:**
+
+The implementation in [`apps/lib/api-auth/client.go`](../../apps/lib/api-auth/client.go) handles both outcomes deterministically:
+
+| Keycloak response | Library behavior | Caller action |
+|---|---|---|
+| 200 OK with `aud` containing new audience | `MintTokenForAudience` returns the new token; session cache updated | Forward request with new token + a fresh DPoP proof for the upstream URL |
+| 200 OK but `aud` does NOT contain new audience (defense-in-depth check) | Returns `ErrAudienceUnavailable` | BFF: 401 + clear-session + `Location: /login` |
+| 4xx with `error=invalid_scope` / `invalid_grant` / etc. | Returns `ErrAudienceUnavailable` | BFF: 401 + clear-session + `Location: /login` |
+| 5xx or transport error | Returns `ErrKeycloakUnreachable` | BFF: 502 (transient; safe to retry) |
+
+The Q3 outcome (a)-vs-(b) determines which row of this table is the *common* path in production. Both rows are exercised by the unit test suite (`TestMint_RefreshSucceeds`, `TestMint_RefreshInvalidScope`, `TestMint_RefreshInvalidGrant`, `TestMint_Refresh5xxReturnsKeycloakUnreachable`, `TestMint_RefreshDoesNotIncludeAudienceInResultingToken`), so the library is correct against either.
+
+**Re-evaluation:** when the operator runs `verify-q3-refresh.sh`, replace this "PARTIAL" status with the verbatim curl request + response + a one-line conclusion ("Outcome (a)" / "Outcome (b)") + the date.
