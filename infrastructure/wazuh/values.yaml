@@ -1,0 +1,176 @@
+# Phase 7.2 — SecForge Wazuh values overlay.
+#
+# Chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.4) — vendored in ./vendor/wazuh/
+# Path decision:  PLAN.md → "Path decision (2026-05-01)"
+#
+# This is an OVERLAY — only fields that diverge from chart defaults appear here.
+# Read in tandem with vendor/wazuh/values.yaml for full effective config.
+#
+# Mitigations (per operator GREEN call, 2026-05-01):
+#   1. Chart vendored (handled outside this file — see vendor/.provenance).
+#   2. Indexer heap capped at 1.5 GiB — chart default already (-Xms1536m -Xmx1536m);
+#      kept explicit here so any chart upgrade that changes the default surfaces
+#      in our diff.
+#   3. EKS-specific features disabled: vault, indexer.watchdog, indexer.driftDetection,
+#      s3, agent.externalManagerAddress, manager placeholder agentGroups, chart's
+#      AWS gp3 StorageClass.
+
+# ─── Storage ──────────────────────────────────────────────────────────
+# Use the in-cluster Local-Path Provisioner (alias `hostpath`) — same class
+# Prometheus / Loki / Tempo / OpenBao use. Don't let the chart create the
+# EKS gp3 StorageClass.
+storageClass:
+  create: false
+
+# ─── Security ─────────────────────────────────────────────────────────
+# adminPassword is NOT set here (CLAUDE.md: "No secrets in code, ever").
+# Instead the apply script generates a random password into a Secret named
+# `wazuh-dashboard-creds` BEFORE helm install, and we point existingSecrets
+# at it so the chart's secret-creation logic is bypassed.
+security:
+  existingSecrets:
+    indexer:  wazuh-indexer-creds
+    api:      wazuh-api-creds
+    dashboard: wazuh-dashboard-creds
+    filebeat:  wazuh-filebeat-creds
+
+# ─── Vault / ESO ─────────────────────────────────────────────────────
+# Mitigation #3: we have OpenBao but no External Secrets Operator. The
+# chart's bootstrap job assumes ESO + a Vault address. Disable entirely.
+vault:
+  enabled: false
+  bootstrap:
+    enabled: false
+
+# ─── Credential rotation CronJob ─────────────────────────────────────
+# Mitigation #3: chart default is `enabled: false` — keep it. Annual
+# rotation is too long anyway; we revisit when OIDC federation is wired
+# (Phase 7.2 follow-up) so dashboard logins go through Keycloak instead.
+credentialRotation:
+  enabled: false
+
+# ─── S3 archive sync ─────────────────────────────────────────────────
+# Mitigation #3: not deploying to AWS. MinIO archive sync can be a
+# follow-up if we want long-term Wazuh alert retention beyond the
+# indexer's 7-day default; not session-blocking.
+s3:
+  enabled: false
+
+# ─── Indexer ─────────────────────────────────────────────────────────
+indexer:
+  replicas: 1                       # local single-node; chart default is 3
+  javaOpts: "-Xms1536m -Xmx1536m"   # mitigation #2 explicit
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1536Mi
+    limits:
+      cpu: 1
+      memory: 2Gi                   # tight to heap; -Xmx + container overhead
+  storage:
+    storageClass: hostpath          # override chart's gp3
+    size: 10Gi
+  driftDetection:
+    enabled: false                  # mitigation #3 — gated by replicas>1 anyway
+  watchdog:
+    enabled: false                  # mitigation #3 — EKS-Auto-Mode-specific
+  metrics:
+    enabled: true                   # Prometheus Operator can scrape via /_prometheus/metrics
+
+# ─── Manager ─────────────────────────────────────────────────────────
+manager:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: 1
+      memory: 1500Mi
+  storage:
+    storageClass: hostpath
+    size: 10Gi
+  cluster:
+    enabled: false                  # single-replica; explicit
+  # Mitigation #3: drop placeholder AWS agentGroups. Real agentGroups
+  # land in a follow-up after we know which clusters/labels we actually
+  # want to track.
+  agentGroups: {}
+  metrics:
+    enabled: true
+
+# ─── Dashboard ───────────────────────────────────────────────────────
+dashboard:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    host: wazuh.secforge.local
+    # Same pattern as Grafana ingress (02-grafana-ingress.yaml): cert-manager
+    # issues the public cert for `wazuh.secforge.local`, ingress-nginx
+    # terminates TLS at the edge, dashboard speaks plain HTTP internally.
+    # Why not SSL-passthrough? The chart's cert generator hardcodes the
+    # dashboard SAN list to `wazuh-dashboard.wazuh.svc.cluster.local` +
+    # localhost — does NOT include `wazuh.secforge.local`. Browser would
+    # see SAN-mismatch errors with passthrough. Terminate-and-reverse-proxy
+    # is the right call. Cluster-internal hop (ingress → dashboard pod)
+    # is plain HTTP — same blast radius as Grafana, Wazuh ns is not in
+    # the mesh today (Phase 7c brings it in).
+    annotations:
+      # Issuer name is `mkcert-issuer` (matches the existing ClusterIssuer;
+      # see Grafana Certificate resource for reference).
+      cert-manager.io/cluster-issuer: mkcert-issuer
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    tls:
+      - secretName: wazuh-dashboard-tls
+        hosts:
+          - wazuh.secforge.local
+  ssl:
+    enabled: false                  # dashboard speaks plain HTTP internally
+  metrics:
+    enabled: true
+
+# ─── Agent (DaemonSet) ───────────────────────────────────────────────
+# Deferred to Phase 7d — will be reintroduced with capabilities-based hardening
+# (SYS_PTRACE, AUDIT_READ, AUDIT_CONTROL) instead of privileged: true, and
+# image pinned by digest. See PLAN.md Phase 7d.
+#
+# Without the agent we still get SIEM coverage for our two highest-value
+# event sources (Keycloak auth events, OpenBao audit) via syslog forwarding
+# from those services directly to wazuh-manager.wazuh.svc:1514. Host-level
+# file-integrity monitoring (`/etc`, `/var/log`, `/usr/bin`) is what we lose
+# without the agent — acceptable tradeoff for local edition; the host VM is
+# already a single-tenant dev environment, not a production node.
+agent:
+  enabled: false
+
+# ─── NetworkPolicy ───────────────────────────────────────────────────
+# Disabled here — the chart's NetworkPolicy is opt-in cluster-aware. We
+# manage NetworkPolicies separately via infrastructure/wazuh/02-networkpolicies.yaml
+# to match the rest of the project's pattern (default-deny + explicit
+# allow-from for ingress-nginx + observability scrape).
+networkPolicy:
+  enabled: false
+
+# ─── Index/log cleanup CronJob ───────────────────────────────────────
+# Keep enabled — runs every 2h to clean orphaned monitoring/statistics
+# indices. Cheap, helps the indexer stay fast.
+cleanup:
+  enabled: true
+
+# ─── Cert chain ──────────────────────────────────────────────────────
+# Chart bootstraps internal mTLS certs at install time. Defaults are
+# 5-year leaf / 10-year root — flagged in audit; acceptable for local-
+# edition since these are component-internal certs (not user creds);
+# cloud migration replaces with cert-manager-issued 90-day rotation.
+# Tracked: Phase 7d.
+certs:
+  rotation:
+    enabled: false                  # explicit; defer to cert-manager flip

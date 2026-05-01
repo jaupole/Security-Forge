@@ -1,0 +1,31 @@
+# CloudNativePG operator — Helm values for SecForge Local Edition
+#
+# Chart:    https://cloudnative-pg.github.io/charts
+# Pinned:   0.22.1 (operator image v1.24.1)
+#
+# Apply with:
+#   helm install cnpg cnpg/cloudnative-pg \
+#     --namespace postgres-operator --version 0.22.1 \
+#     --values infrastructure/cloudnativepg/values.yaml
+#
+# Operator runs in `postgres-operator`. Cluster CRs live in the consuming
+# namespace (keycloak, spicedb, openbao, app, optionally teleport) — see
+# infrastructure/cloudnativepg/clusters/*.yaml.
+
+replicaCount: 1
+
+resources:
+  requests: { cpu: 100m, memory: 200Mi }
+  limits:   { cpu: 500m, memory: 512Mi }
+
+# Webhook is part of the operator pod by default.
+monitoring:
+  podMonitorEnabled: false   # Phase 7
+  grafanaDashboard:
+    create: false
+
+config:
+  # Defaults applied to every Cluster unless overridden in the CR.
+  data:
+    INHERITED_ANNOTATIONS: "secforge.platform/*"
+    INHERITED_LABELS: "secforge.platform/*"

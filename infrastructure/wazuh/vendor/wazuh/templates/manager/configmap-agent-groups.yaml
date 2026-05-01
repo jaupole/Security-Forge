@@ -1,0 +1,84 @@
+{{- if .Values.manager.enabled }}
+{{- if .Values.manager.agentGroups }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wazuh.fullname" . }}-agent-groups
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.manager.selectorLabels" . | nindent 4 }}
+data:
+  {{- range $groupName, $groupConfig := .Values.manager.agentGroups }}
+  {{ $groupName }}-agent.conf: |
+    <agent_config>
+
+      {{- if $groupConfig.labels }}
+      <!-- Agent labels: {{ $groupName }} -->
+      <labels>
+        {{- range $key, $value := $groupConfig.labels }}
+        <label key="{{ $key }}">{{ $value }}</label>
+        {{- end }}
+      </labels>
+      {{- end }}
+
+      <!-- Container log collection -->
+      {{- if $groupConfig.monitoredNamespaces }}
+      {{- range $groupConfig.monitoredNamespaces }}
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/var/log/containers/*_{{ . }}_*.log</location>
+      </localfile>
+      {{- end }}
+      {{- else }}
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/var/log/containers/*.log</location>
+      </localfile>
+      {{- end }}
+
+      <!-- Rootcheck -->
+      <rootcheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+        <check_files>yes</check_files>
+        <check_trojans>yes</check_trojans>
+        <check_dev>yes</check_dev>
+        <check_sys>yes</check_sys>
+        <check_pids>no</check_pids>
+        <check_ports>no</check_ports>
+        <check_if>no</check_if>
+        <skip_nfs>yes</skip_nfs>
+      </rootcheck>
+
+      <!-- Syscollector -->
+      <wodle name="syscollector">
+        <disabled>no</disabled>
+        <interval>1h</interval>
+        <scan_on_start>yes</scan_on_start>
+        <packages>yes</packages>
+        <os>yes</os>
+        <hardware>no</hardware>
+        <network>no</network>
+        <ports>no</ports>
+        <processes>no</processes>
+        <users>no</users>
+        <groups>no</groups>
+        <services>no</services>
+        <browser_extensions>no</browser_extensions>
+        <synchronization>
+          <max_eps>10</max_eps>
+        </synchronization>
+      </wodle>
+
+      <!-- SCA - CIS Benchmarks -->
+      <sca>
+        <enabled>yes</enabled>
+        <scan_on_start>yes</scan_on_start>
+        <interval>12h</interval>
+        <skip_nfs>yes</skip_nfs>
+      </sca>
+
+    </agent_config>
+  {{- end }}
+{{- end }}
+{{- end }}

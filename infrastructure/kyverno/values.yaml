@@ -1,0 +1,54 @@
+# Kyverno — Helm values for SecForge Local Edition
+#
+# Chart:    kyverno/kyverno  (https://kyverno.github.io/kyverno/)
+# Pinned:   3.3.4 (Kyverno v1.13.x)
+#
+# Apply with:
+#   helm install kyverno kyverno/kyverno \
+#     --namespace kyverno --version 3.3.4 \
+#     --values infrastructure/kyverno/values.yaml
+#
+# Then apply the ClusterPolicies in infrastructure/kyverno/policies/.
+
+admissionController:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  serviceMonitor:
+    enabled: false   # Phase 7
+  # Don't fail the cluster if Kyverno is down — local-only relaxation.
+  # In production this stays at Fail.
+  failurePolicy: Ignore
+
+backgroundController:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 300m, memory: 256Mi }
+
+cleanupController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+reportsController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 200m, memory: 256Mi }
+
+# Global exclusions — system + bootstrap namespaces never see Kyverno.
+# The per-policy `exclude` blocks in policies/*.yaml provide the fine-grained
+# control; this list short-circuits at the resource-filter level (Kyverno
+# never even processes events from these namespaces).
+config:
+  resourceFiltersExcludeNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - cert-manager
+    - kyverno
+    - ingress-nginx
+    - local-path-storage

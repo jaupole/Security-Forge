@@ -1,0 +1,111 @@
+# OpenBao Seal-Unseal Runbook (Local Edition)
+
+> Architecture: [docs/01-architecture/05-secrets-management.md](../01-architecture/05-secrets-management.md)
+> ADR: [docs/02-decisions/0009-openbao-seal-strategy.md](../02-decisions/0009-openbao-seal-strategy.md)
+
+This is the **routine, post-restart procedure** for unsealing the seal-OpenBao after Docker Desktop restarts. The seal-OpenBao is Shamir-sealed (5/3); on every cluster restart it comes up sealed and the operator must unseal it manually with 3 of 5 unseal keys held offline.
+
+The main OpenBao auto-unseals via the seal-OpenBao's Transit endpoint as soon as the seal-OpenBao is unsealed.
+
+---
+
+## When to run this
+
+- After a Docker Desktop restart.
+- After a seal-OpenBao pod restart for any other reason.
+- Symptom: `kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 bao status` shows `Sealed: true` on the main OpenBao **and** the seal-OpenBao.
+
+---
+
+## Procedure
+
+```bash
+bash infrastructure/openbao/unseal-seal.sh
+```
+
+The script reads 3 unseal keys from stdin (one per line, no echo). It validates that the seal-OpenBao is initialized + currently sealed before accepting input, and exits 0 if it's already unsealed.
+
+After the seal-OpenBao reports `Sealed: false`, the main OpenBao auto-unseals within ~10 seconds. Verify:
+
+```bash
+for i in 0 1 2; do
+    kubectl exec -n openbao openbao-$i -c openbao -- \
+        env BAO_SKIP_VERIFY=1 bao status -format=json \
+        | jq -r '"openbao-\(input_filename // "?"): sealed=\(.sealed)"'
+done
+```
+
+(Or simpler — `kubectl get pods -n openbao` should show all 3 main pods 1/1 Ready.)
+
+---
+
+## What the unseal keys are
+
+The 5 keys + initial root token + Transit unseal token were printed once during Phase 5.2's `init-seal.sh`. They live in the operator's offline password manager — never in any K8s Secret, ConfigMap, or committed file.
+
+If you've lost the keys: there is no recovery for the seal-OpenBao. Its data (the Transit `unseal` key wrap) is encrypted at rest with a key derived from the unseal-key shares. Without 3 of 5 you can't decrypt the data store.
+
+The recovery path then is **destroy and rebuild**:
+
+1. `helm uninstall openbao-seal -n openbao`
+2. `kubectl delete pvc -n openbao data-openbao-seal-0`
+3. `bash infrastructure/openbao/apply-seal.sh && bash infrastructure/openbao/init-seal.sh`
+4. The new Transit token is different from the old; update the main OpenBao's seal block:
+   - Delete the `openbao-seal-block` Secret.
+   - Re-run `bash infrastructure/openbao/apply-main.sh` (which renders a new seal Secret with the new token).
+   - Roll the main OpenBao pods to pick it up.
+5. The main OpenBao's existing data is encrypted with a wrap-key based on the OLD Transit endpoint, which is now gone — so the main OpenBao **also** has to be rebuilt:
+   - `helm uninstall openbao -n openbao`
+   - `kubectl delete pvc -n openbao -l app.kubernetes.io/name=openbao`
+   - `bash infrastructure/openbao/apply-main.sh && bash infrastructure/openbao/init-main.sh`
+   - Re-load policies, auth methods, secrets engines (the Phase 5.4–5.10 scripts).
+
+This is a "start over" — all OpenBao state is lost. **The recovery keys for the main OpenBao do NOT help with seal-OpenBao loss**; they are orthogonal (one mints a fresh root token on an unsealed OpenBao).
+
+Don't lose the unseal keys.
+
+---
+
+## What the script does (so you have the record)
+
+```bash
+# Read 3 keys from stdin (no echo; -s flag) and feed each one to:
+kubectl exec -n openbao openbao-seal-0 -c openbao -- \
+    env BAO_SKIP_VERIFY=1 bao operator unseal "<key>"
+
+# After 3 keys, status check:
+kubectl exec -n openbao openbao-seal-0 -c openbao -- \
+    env BAO_SKIP_VERIFY=1 bao status -format=json | jq '.sealed'
+# → false
+```
+
+The keys are wiped from the script's variables immediately after use (`unset`).
+
+---
+
+## Troubleshooting
+
+### "openbao-seal-0 not found"
+
+The seal-OpenBao isn't deployed. Run `bash infrastructure/openbao/apply-seal.sh`.
+
+### "Unseal didn't take" / `bao status` still shows sealed
+
+You probably entered fewer than 3 distinct keys, or one was wrong. Re-run the script. Each `bao operator unseal` increments a counter; after 3 distinct correct keys the seal opens. Wrong keys are tracked separately and (after some failures) the operation resets.
+
+### Main openbao stuck `sealed=true` even after seal-OpenBao is unsealed
+
+The main OpenBao retries the Transit unseal on a backoff. Wait up to a minute. If still sealed:
+
+- Check the seal-OpenBao log: `kubectl logs -n openbao openbao-seal-0 -c openbao --tail=20`
+- Check the main openbao log: `kubectl logs -n openbao openbao-0 -c openbao --tail=20`
+- **Telltale: distinguish 503 vs 403 in the main pod's log.**
+  - `503 Vault is sealed` → seal-OpenBao itself is still sealed; finish the Shamir unseal.
+  - `403 permission denied` → Transit token expired. The 24h TTL auto-renews while main is up, but if main was down >24h the renewal didn't fire. Recovery requires a fresh token *plus* a manual pod roll — see [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token).
+- **Hit on 2026-05-01:** full sequence after a multi-day cold cluster was `unseal-seal.sh` (Shamir) → `Rotate the Transit unseal token` (mint fresh, patch `openbao-transit-token`, re-render `openbao-seal-block`, helm upgrade) → manual `kubectl delete pod openbao-{0,1,2}` to pick up the new seal block. The `apply-main.sh` watchdog may "bail" reporting too many restarts on openbao-0 — that's just a timeout; the seal block has already been re-rendered and the manual delete completes recovery.
+
+### "I want to STOP the manual-unseal cadence"
+
+Two options:
+1. Move the seal-OpenBao to a **proper KMS** (cloud migration). Auto-unseal becomes invisible.
+2. Switch to **dev mode** locally. Don't.

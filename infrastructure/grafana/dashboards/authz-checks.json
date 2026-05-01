@@ -1,0 +1,81 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "AuthZ checks via SpiceDB. CheckPermission rate, latency, allow/deny ratio (from logs), cache hit rate. Phase 7.6 dashboard.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "CheckPermission rate (by gRPC method)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{namespace=\"spicedb\",grpc_service=~\"authzed.api.v1.PermissionsService\"}[5m]))", "legendFormat": "{{grpc_method}}", "refId": "A"}
+      ]
+    },
+    {
+      "title": "CheckPermission latency p50/p95/p99",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 0}}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.50, sum by (le) (rate(grpc_server_handling_seconds_bucket{namespace=\"spicedb\",grpc_method=\"CheckPermission\"}[5m])))", "legendFormat": "p50", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.95, sum by (le) (rate(grpc_server_handling_seconds_bucket{namespace=\"spicedb\",grpc_method=\"CheckPermission\"}[5m])))", "legendFormat": "p95", "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.99, sum by (le) (rate(grpc_server_handling_seconds_bucket{namespace=\"spicedb\",grpc_method=\"CheckPermission\"}[5m])))", "legendFormat": "p99", "refId": "C"}
+      ]
+    },
+    {
+      "title": "gRPC error rate (by code)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "fieldConfig": {"defaults": {"unit": "reqps"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{namespace=\"spicedb\",grpc_code!=\"OK\"}[5m]))", "legendFormat": "{{grpc_code}}", "refId": "A"}
+      ]
+    },
+    {
+      "title": "Cache hit ratio",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "id": 4,
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "yellow", "value": 0.6}, {"color": "green", "value": 0.85}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(spicedb_cache_hits_total{namespace=\"spicedb\"}[5m])) / clamp_min(sum(rate(spicedb_cache_hits_total{namespace=\"spicedb\"}[5m])) + sum(rate(spicedb_cache_misses_total{namespace=\"spicedb\"}[5m])), 1)", "refId": "A"}
+      ]
+    },
+    {
+      "title": "AuthZEN evaluations (decision distribution from logs)",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+      "id": 5,
+      "options": {"showLabels": false, "showTime": true, "wrapLogMessage": false, "sortOrder": "Descending"},
+      "targets": [
+        {"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=\"app\",app_kubernetes_io_name=\"authzen-facade\"} |~ \"evaluate\"", "refId": "A"}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["secforge", "authz", "spicedb"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "AuthZ checks — SpiceDB",
+  "uid": "secforge-authz-checks",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,4 @@
+# Empty at init time — gitleaks pre-flight scan returned zero findings on 2026-05-01.
+# Add entries here only for legitimate false positives (test fixtures, placeholders in docs, etc.).
+# Format: <commit-or-path>:<rule-id>:<line>
+# Example: docs/02-decisions/0001-local-first.md:generic-api-key:42

@@ -1,0 +1,82 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Istio Ambient mesh — ztunnel TCP throughput, istiod xDS push rate, DNS resolution, ztunnel resource usage. Phase 7.6 dashboard.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "ztunnel TCP connections opened/closed/failed (/sec)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "fieldConfig": {"defaults": {"unit": "ops", "custom": {"fillOpacity": 5}}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_tcp_connections_opened_total[5m]))", "legendFormat": "opened", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_tcp_connections_closed_total[5m]))", "legendFormat": "closed", "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_tcp_connections_failed_total[5m]))", "legendFormat": "failed", "refId": "C"}
+      ]
+    },
+    {
+      "title": "ztunnel throughput (bytes/sec)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "fieldConfig": {"defaults": {"unit": "Bps"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_tcp_received_bytes_total[5m]))", "legendFormat": "received", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_tcp_sent_bytes_total[5m]))", "legendFormat": "sent", "refId": "B"}
+      ]
+    },
+    {
+      "title": "ztunnel open sockets",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 8},
+      "id": 3,
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 5000}, {"color": "red", "value": 50000}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(istio_tcp_sockets_open)", "refId": "A"}
+      ]
+    },
+    {
+      "title": "istiod xDS push (bytes/sec)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 8},
+      "id": 4,
+      "fieldConfig": {"defaults": {"unit": "Bps"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(istio_xds_message_bytes_total[5m]))", "legendFormat": "xDS bytes", "refId": "A"}
+      ]
+    },
+    {
+      "title": "istio DNS upstream req duration p99",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 8},
+      "id": 5,
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_dns_upstream_request_duration_seconds_bucket[5m])))", "legendFormat": "p99", "refId": "A"}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["secforge", "mesh", "istio"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Service mesh — Istio Ambient",
+  "uid": "secforge-service-mesh",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,70 @@
+# Kyverno ClusterPolicy: require all images to be Cosign-signed.
+#
+# Mode: Audit (logs violations to PolicyReports but does NOT block).
+# Switch to Enforce only after the human gives the green light — see
+# docs/02-decisions/0004-kyverno-audit-mode.md.
+#
+# Public key lives at infrastructure/cosign/cosign.pub (committed to repo).
+# It is also rendered into a ConfigMap (infrastructure/kyverno/policies/
+# cosign-pubkey-configmap.yaml) so the policy can reference it without
+# embedding the key inline.
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/edition: local
+    secforge.platform/policy-tier: supply-chain
+  annotations:
+    policies.kyverno.io/title: "Verify image signatures (Cosign)"
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Every container image must be signed with the SecForge Cosign key.
+      Locally we run in Audit so unsigned upstream images don't break
+      bootstrapping; the human flips to Enforce once all platform images
+      carry a signature.
+spec:
+  validationFailureAction: Audit
+  background: false        # verifyImages requires online registry calls; bg=false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Ignore
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - cert-manager
+                - kyverno
+                - ingress-nginx
+                - local-path-storage
+      verifyImages:
+        - imageReferences:
+            - "*"
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyRzDB8E8OKaH8J0OxRS3ex5SJtwB
+                      4hDErpMGwODIqXs8ClsCbunKpoEmgOJLyJljfZOHgRM7ET+L6zLEoSbvRg==
+                      -----END PUBLIC KEY-----
+                    rekor:
+                      url: ""           # local Cosign keys: no Rekor transparency log
+                      ignoreTlog: true
+          # mutateDigest must be false while validationFailureAction=Audit;
+          # flip both when promoting to Enforce per ADR 0004.
+          mutateDigest: false
+          verifyDigest: true
+          required: true

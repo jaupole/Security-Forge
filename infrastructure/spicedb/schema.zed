@@ -1,0 +1,70 @@
+// SecForge platform authorization schema.
+//
+// Source of truth: this file. Changes require a PR + the validator
+// tests in infrastructure/spicedb/tests/ to pass.
+//
+// Tier 1 — tenant   : organizational boundary (one per customer)
+// Tier 2 — app      : product instance bound to a tenant
+// Tier 3 — resource : per-app domain types (document, proposal, project, …)
+//
+// Inheritance rules:
+//   tenant->admin → administer on every app in the tenant
+//                   → edit/view/delete on every resource in the app
+//   tenant->member → use on every app in the tenant
+//                   → view on every resource in the app
+//   app->admin    → administer on the app → edit/view/delete on resources
+//   app->user     → use on the app → view on resources
+//
+// Each tier composes (inherits power from the tier above) but is
+// orthogonal (its own roles add to, never replace, what cascades down).
+//
+// Architecture: docs/01-architecture/02-authorization.md
+// ADR:          docs/02-decisions/0008-authz-schema.md
+
+definition user {}
+
+// ─── Tier 1 ────────────────────────────────────────────────────────────
+// The organizational boundary. Customers ARE tenants. There is no
+// global admin in this model — everything is scoped to a tenant.
+
+definition tenant {
+    relation admin: user
+    relation member: user
+
+    permission administer = admin
+    permission view       = admin + member
+}
+
+// ─── Tier 2 ────────────────────────────────────────────────────────────
+// A product instance bound to one tenant. The same product type (e.g.
+// Proposal Forge) gets one app:* per tenant.
+//
+// `tenant` relation is the back-pointer to the owning tenant; tenant
+// admins inherit administer here.
+
+definition app {
+    relation tenant: tenant
+    relation admin:  user
+    relation user:   user
+
+    permission administer = admin + tenant->admin
+    permission use        = admin + user + tenant->member
+}
+
+// ─── Tier 3 ────────────────────────────────────────────────────────────
+// `document` is the only resource type in the Phase 4 baseline schema.
+// Phase 9 (Hello World) uses it as-is. Phase 10 apps add their own
+// resource definitions (proposal, project, task, …) following the same
+// pattern: `app:` back-pointer, per-resource roles, permissions that
+// combine local roles + cascade from app/tenant.
+
+definition document {
+    relation app:    app
+    relation owner:  user
+    relation editor: user
+    relation viewer: user
+
+    permission edit   = owner + editor + app->administer
+    permission view   = owner + editor + viewer + app->administer + app->use
+    permission delete = owner + app->administer
+}

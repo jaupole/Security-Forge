@@ -1,0 +1,34 @@
+# Postgres cluster for OpenBao. See keycloak-db.yaml for the pattern.
+# App-user secret: secforge-openbao-db-app
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secforge-openbao-db
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+    secforge.platform/edition: local
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: false
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: openbao
+      owner: openbao
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  monitoring:
+    enablePodMonitor: false

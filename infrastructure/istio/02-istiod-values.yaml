@@ -1,0 +1,39 @@
+# istio/istiod (Ambient profile, local edition).
+# Built-in Citadel CA for now (Phase 6.2 interim); SPIRE-as-CA deferred to 6.2b.
+profile: ambient
+
+# Trust domain note: ztunnel and waypoints will mint SVIDs as
+# spiffe://cluster.local/... until 6.2b. Cutover to "secforge.local"
+# happens in 6.2b concurrently with the SPIRE-CA wiring.
+meshConfig:
+  accessLogFile: /dev/stdout
+  accessLogEncoding: JSON
+  enableTracing: true
+  defaultProviders:
+    tracing:
+      - opentelemetry
+  extensionProviders:
+    - name: opentelemetry
+      opentelemetry:
+        # Phase 7.6: corrected from `opentelemetry-collector` to match the actual
+        # Service name (set via `fullnameOverride: otel-collector` in
+        # 08-otel-collector-values.yaml).
+        service: otel-collector.observability.svc.cluster.local
+        port: 4317
+
+pilot:
+  replicaCount: 1
+  autoscaleEnabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    PILOT_ENABLE_AMBIENT: "true"
+
+global:
+  proxy:
+    autoInject: disabled

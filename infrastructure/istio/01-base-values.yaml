@@ -1,0 +1,3 @@
+# istio/base — CRDs + cluster-wide resources only.
+# No pod-level config here.
+defaultRevision: ""

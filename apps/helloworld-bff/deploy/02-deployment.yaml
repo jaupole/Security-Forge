@@ -1,0 +1,188 @@
+# Phase 6.8 — helloworld-bff Deployment.
+#
+# Replicas: 1 (load-bearing — see ADR-0011 and 04-bff-pattern.md).
+# DPoP keypair is per-pod, in-memory only; multi-replica would require
+# per-session keys persisted in Valkey, which is a pre-migration task.
+#
+# Init container:
+#   spiffe-helper writes a JWT-SVID (aud=openbao) to a shared emptyDir.
+#   Main container reads it on startup and exchanges for an OpenBao
+#   token via auth/jwt/login (role=helloworld-bff), then fetches the
+#   private_key_jwt PEM from secret/data/keycloak/clients/helloworld-bff.
+#
+# Identity:
+#   ServiceAccount `helloworld-bff` (already exists, created in Phase 5.9).
+#   SPIFFE ID `spiffe://secforge.local/ns/app/sa/helloworld-bff` is
+#   issued by the namespace-scoped ClusterSPIFFEID covering `app`
+#   (Phase 2). The label `spiffe.io/spire-managed-identity: "true"`
+#   is set explicitly for documentary clarity.
+#
+# Mesh authz:
+#   The BFF is intentionally NOT opted into the `mesh-authz: enforce`
+#   default-deny — its primary inbound caller (ingress-nginx) is
+#   non-mesh until Phase 6.2b. Inbound is gated by NetworkPolicy
+#   (05-networkpolicies.yaml). Outbound to AuthZEN/backend is in-mesh
+#   and gated by AuthZEN's existing allow-app-to-authzen-facade policy.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helloworld-bff
+  namespace: app
+  labels:
+    app.kubernetes.io/name: helloworld-bff
+    secforge.platform/component: helloworld-bff
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate    # Per-pod DPoP key + replicas:1 → no rolling overlap.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helloworld-bff
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helloworld-bff
+        app.kubernetes.io/component: bff
+        secforge.platform/component: helloworld-bff
+        spiffe.io/spire-managed-identity: "true"
+        # Required by valkey ns NetworkPolicy to allow ingress from this pod.
+        valkey-client: "true"
+    spec:
+      serviceAccountName: helloworld-bff
+      automountServiceAccountToken: true
+      # Docker Desktop DNS gotcha (same as Phase 5 OpenBao):
+      # pods inherit host /etc/hosts, so `auth.secforge.local` resolves
+      # to 127.0.0.1 inside the pod. Override to ingress-nginx ClusterIP
+      # so the BFF's OIDC discovery + Keycloak token calls succeed.
+      hostAliases:
+        - ip: "10.96.97.16"
+          hostnames:
+            - "auth.secforge.local"
+            - "app.secforge.local"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: spiffe-helper
+          image: ghcr.io/spiffe/spiffe-helper:0.11.0
+          args: ["-config", "/etc/spiffe/helper.conf"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+            - name: helper-conf
+              mountPath: /etc/spiffe
+              readOnly: true
+            - name: shared
+              mountPath: /shared
+
+      containers:
+        - name: bff
+          image: local/helloworld-bff:0.1.0
+          imagePullPolicy: Never    # Image lives in Docker Desktop's containerd store.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: BFF_PUBLIC_ORIGIN
+              value: "https://app.secforge.local"
+            - name: BFF_KEYCLOAK_ISSUER
+              value: "https://auth.secforge.local/realms/secforge-tenants"
+            - name: BFF_KEYCLOAK_CLIENT_ID
+              value: "helloworld-bff"
+            - name: BFF_VALKEY_ADDR
+              value: "valkey-primary.valkey.svc.cluster.local:6379"
+            # Valkey AUTH password — copied from valkey/valkey Secret to
+            # this ns at deploy time. Tracked: migrate to OpenBao
+            # SPIFFE-bound fetch alongside Phase 6.10b.
+            - name: BFF_VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helloworld-bff-valkey
+                  key: password
+            - name: BFF_OPENBAO_ADDR
+              value: "https://openbao.openbao.svc.cluster.local:8200"
+            - name: BFF_OPENBAO_ROLE
+              value: "helloworld-bff"
+            - name: BFF_OPENBAO_SVID_PATH
+              value: "/shared/openbao.jwt"
+            - name: BFF_OPENBAO_KV_PATH
+              value: "secret/data/keycloak/clients/helloworld-bff"
+            # Phase 7.6 — OpenTelemetry tracing. Empty/unset = no-op
+            # exporter; this points at the in-cluster collector which
+            # forwards to Tempo.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "helloworld-bff"
+            - name: BFF_LISTEN_ADDR
+              value: ":3000"
+            # Backend/frontend are wired in Phase 9. Until then /api/* and
+            # /* return 502 with `{"error":"no_(backend|frontend)_configured"}`.
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # Phase 7.0.a — SPIFFE-CSI cold-boot race grace. 30×10s = 5min
+          # window during which liveness is suppressed; lets the app
+          # re-fetch a fresh SVID after the spiffe-helper init's TTL
+          # has burned through the kubelet mount-retry backoff. See
+          # PLAN.md Phase 5 follow-up #6 + spire-rotation.md.
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+              readOnly: true
+
+      volumes:
+        - name: spiffe-workload-api
+          csi: { driver: csi.spiffe.io, readOnly: true }
+        - name: helper-conf
+          configMap:
+            name: helloworld-bff-spiffe-helper
+        - name: shared
+          emptyDir: {}

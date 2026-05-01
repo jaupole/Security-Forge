@@ -1,0 +1,267 @@
+# NetworkPolicies for the spicedb namespace.
+#
+# Same lessons as Phase 3.6:
+#   - Default-deny ingress applies to the Postgres pod too (same ns);
+#     we MUST explicitly allow Postgres ingress for SpiceDB to connect.
+#   - Egress for SpiceDB must allow DNS + Postgres + (Phase 7) OTel.
+#
+# Allowed flows:
+#   AuthZEN façade (`app` ns)        → SpiceDB:50051 (gRPC)
+#   spicedb-operator                 → SpiceDB:8080  (health/metrics)
+#   observability ns (Phase 7)       → SpiceDB:9090  (Prometheus)
+#   SpiceDB                          → Postgres:5432
+#   SpiceDB                          → DNS
+
+# ──────────────────────────────────────────────────────────────────────
+# Default-deny ingress for the namespace.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow `app` ns (AuthZEN façade etc.) → SpiceDB gRPC on 50051.
+# Direct app → SpiceDB calls are not the recommended pattern; apps go
+# through the AuthZEN façade. The label-based source restriction here
+# only allows pods carrying `app.kubernetes.io/name: authzen-facade`.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-authzen-facade-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: authzen-facade
+      ports:
+        - protocol: TCP
+          port: 50051
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow SpiceDB → SpiceDB self-dispatch on port 50053.
+#
+# Even with `dispatchClusterEnabled: false`, the SpiceDB operator wires
+# `SPICEDB_DISPATCH_UPSTREAM_ADDR=kubernetes:///spicedb.spicedb:dispatch`
+# (the dispatch port on its own Service) for the pod's permission-
+# check path. Without an explicit ingress allow, the self-loop traffic
+# fails the default-deny-ingress rule and CheckPermission times out
+# with "context deadline exceeded while waiting for connections to
+# become ready" after 60s.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spicedb-self-dispatch
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              authzed.com/cluster: spicedb
+      ports:
+        - protocol: TCP
+          port: 50053
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow spicedb-operator (separate ns) → SpiceDB pod (health checks,
+# generic management traffic).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-operator-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb-operator
+      ports:
+        - protocol: TCP
+          port: 50051
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow in-namespace `zed` admin one-shot pods to reach SpiceDB:50051.
+# These are short-lived administrative pods spawned by the runbook
+# scripts (apply-schema.sh, zed.sh, seed-test-data.sh). They don't
+# match `authzed.com/cluster=spicedb` (intentionally, so the egress
+# policy doesn't restrict them); they carry `role=zed-cli-oneshot`.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-zed-admin-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: zed-cli-oneshot
+      ports:
+        - protocol: TCP
+          port: 50051
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow Phase 7 Prometheus → SpiceDB metrics.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-spicedb-metrics
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 9090
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow Postgres ingress from SpiceDB and from the postgres-operator
+# namespace (CNPG manages the cluster). Without this, default-deny-
+# ingress blocks SpiceDB's connections — same lesson as Phase 3.6.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-ingress
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: secforge-spicedb-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              authzed.com/cluster: spicedb
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: secforge-spicedb-db
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres-operator
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+
+# ──────────────────────────────────────────────────────────────────────
+# Egress for SpiceDB pods.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spicedb-egress
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres (same ns)
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: secforge-spicedb-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Self-dispatch (SpiceDB → its own Service:dispatch on 50053).
+    - to:
+        - podSelector:
+            matchLabels:
+              authzed.com/cluster: spicedb
+      ports:
+        - protocol: TCP
+          port: 50053
+    # Phase 7 OTel collector (in observability ns) — pre-allowed even
+    # though the collector doesn't exist yet, so adding tracing is a
+    # config change rather than a NetworkPolicy change.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317   # OTLP gRPC
+        - protocol: TCP
+          port: 4318   # OTLP HTTP

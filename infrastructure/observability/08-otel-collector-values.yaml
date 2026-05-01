@@ -1,0 +1,105 @@
+# OpenTelemetry Collector — Phase 7.5.
+#
+# Mode: DaemonSet (one collector per node, apps within the node send
+# OTLP to the local node's collector via Service+IP-list-of-headless).
+# Forwards traces to Tempo.
+
+mode: daemonset
+fullnameOverride: otel-collector
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Standard OTel pipeline: receive OTLP, batch, forward to Tempo.
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch:
+      send_batch_size: 1024
+      timeout: 5s
+    # Drop trivial healthcheck spans so Tempo retention isn't bloated.
+    filter/healthchecks:
+      error_mode: ignore
+      traces:
+        span:
+          - 'attributes["http.target"] == "/healthz"'
+          - 'attributes["http.target"] == "/ready"'
+          - 'attributes["http.target"] == "/readyz"'
+          - 'attributes["http.target"] == "/metrics"'
+    memory_limiter:
+      check_interval: 5s
+      limit_percentage: 80
+      spike_limit_percentage: 20
+
+  exporters:
+    otlp/tempo:
+      endpoint: tempo.observability.svc.cluster.local:4317
+      tls:
+        insecure: true   # in-cluster Tempo speaks plaintext OTLP
+      sending_queue:
+        enabled: true
+        num_consumers: 4
+        queue_size: 1000
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, filter/healthchecks, batch]
+        exporters: [otlp/tempo]
+    telemetry:
+      logs:
+        level: info
+      metrics:
+        address: 0.0.0.0:8888
+
+ports:
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+
+# DaemonSet mode: chart skips the Service by default (assuming hostNetwork).
+# We don't use hostNetwork, so we need a ClusterIP Service. internalTrafficPolicy=Local
+# routes OTLP traffic only to the agent on the local node — keeping locality
+# and avoiding cross-node OTLP hops.
+service:
+  enabled: true
+  type: ClusterIP
+  internalTrafficPolicy: Local
+
+serviceMonitor:
+  enabled: true
+  additionalLabels:
+    release: kps
+
+# DaemonSet tolerations to ride the control-plane node (single-node cluster).
+tolerations:
+  - effect: NoSchedule
+    operator: Exists

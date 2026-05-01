@@ -1,0 +1,20 @@
+# istio/cni (Ambient profile)
+# Installs the CNI plugin chain entry that redirects ambient-labeled
+# pod traffic into ztunnel. Required for Ambient mode.
+profile: ambient
+
+cni:
+  ambient:
+    enabled: true
+  cniBinDir: /opt/cni/bin
+  cniConfDir: /etc/cni/net.d
+  chained: true
+  repair:
+    enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

@@ -1,0 +1,289 @@
+# Helm values for the main OpenBao release.
+#
+# Architecture: docs/01-architecture/05-secrets-management.md
+# ADR-0009:    docs/02-decisions/0009-openbao-seal-strategy.md
+#
+# 3-replica Raft, Transit auto-unseal via openbao-seal. The Transit
+# token comes from the Secret `openbao-transit-token` (created from
+# the Phase 5.2 init output) and is mounted as the env var
+# BAO_SEAL_TOKEN, which the seal config references via
+# `token_env_var = "BAO_SEAL_TOKEN"`. The token never lands in any
+# ConfigMap or rendered manifest.
+
+global:
+  enabled: true
+  namespace: openbao
+  tlsDisable: false
+
+server:
+  image:
+    registry: docker.io
+    repository: openbao/openbao
+    tag: 2.5.3
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: false
+    name: openbao
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Chart's Ingress is DISABLED. The chart hardcodes the backend Service
+  # to `<release>-active`, which expects active/standby pod labels that
+  # the chart doesn't actually maintain — the Service has no endpoints
+  # and Helm upgrades regress the Ingress backend each time. We ship our
+  # own Ingress in 08-ingress.yaml that points at the regular `openbao`
+  # Service (StatefulSet's headless aggregate; OpenBao internally
+  # forwards to the leader).
+  ingress:
+    enabled: false
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    mountPath: /openbao/data
+    storageClass: hostpath
+    accessMode: ReadWriteOnce
+
+  ha:
+    enabled: true
+    replicas: 3
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_cert_file   = "/openbao/tls/openbao-tls/tls.crt"
+          tls_key_file    = "/openbao/tls/openbao-tls/tls.key"
+          # Trusted CA path — same Secret that holds tls.crt/tls.key.
+          tls_client_ca_file = "/openbao/tls/openbao-tls/ca.crt"
+
+          # Local-edition: allow Prometheus to scrape /v1/sys/metrics
+          # without a token. The security boundary is the
+          # `allow-prometheus-to-openbao-metrics` NetworkPolicy in
+          # 06-networkpolicies-main.yaml, which only allows ingress on
+          # 8200 from observability ns Prometheus pods. Cloud migration
+          # MUST switch to token-based auth (a `metrics-policy` token
+          # issued by OpenBao, mounted into the ServiceMonitor's
+          # bearerTokenSecret) — file ADR before promoting to a public
+          # network. Tracked in Phase 7d.
+          telemetry {
+            unauthenticated_metrics_access = true
+          }
+        }
+
+        # Top-level telemetry: emit Prometheus-format metrics. The
+        # listener block above gates auth; this block configures
+        # retention and labels.
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname          = true
+        }
+
+        storage "raft" {
+          path    = "/openbao/data"
+
+          retry_join {
+            leader_api_addr      = "https://openbao-0.openbao-internal:8200"
+            leader_ca_cert_file  = "/openbao/tls/openbao-tls/ca.crt"
+          }
+          retry_join {
+            leader_api_addr      = "https://openbao-1.openbao-internal:8200"
+            leader_ca_cert_file  = "/openbao/tls/openbao-tls/ca.crt"
+          }
+          retry_join {
+            leader_api_addr      = "https://openbao-2.openbao-internal:8200"
+            leader_ca_cert_file  = "/openbao/tls/openbao-tls/ca.crt"
+          }
+        }
+
+        # NOTE: the `seal "transit" {}` block is NOT here.
+        # OpenBao OSS (unlike Vault Enterprise) does not support
+        # `token_env_var` for transit seal, so we cannot inject the
+        # token via env. Instead, the seal block is rendered by
+        # apply-main.sh into a Secret `openbao-seal-block` at apply
+        # time (token substituted from openbao-transit-token Secret),
+        # mounted into the pod, and loaded via `extraArgs: -config=`
+        # below. Keeps the token out of any ConfigMap.
+
+        # Audit. OpenBao 2.x removed the API path for audit-device
+        # management; audit MUST be configured in HCL. The first
+        # label after `audit` is the mount path inside OpenBao.
+        # STDOUT is collected by the cluster log stack in Phase 7
+        # (Loki/Wazuh). No sensitive values in this block.
+        audit {
+          type        = "file"
+          path        = "stdout/"
+          description = "audit log to STDOUT (collected by Phase 7 log stack)"
+          options = {
+            file_path     = "/dev/stdout"
+            log_raw       = "false"
+            hmac_accessor = "true"
+            mode          = "0600"
+            format        = "json"
+          }
+        }
+
+        # api_addr / cluster_addr templated per-pod by the chart.
+
+  extraEnvironmentVars:
+    BAO_ADDR: https://127.0.0.1:8200
+    BAO_API_ADDR: https://127.0.0.1:8200
+    BAO_CACERT: /openbao/tls/openbao-tls/ca.crt
+    SKIP_CHOWN: "true"
+    SKIP_SETCAP: "true"
+
+  # auth.secforge.local resolves to 127.0.0.1 in the host's /etc/hosts
+  # (Docker Desktop forwards DNS to host, which leaks the loopback
+  # entry into pod resolution). For the OIDC discovery call, OpenBao
+  # needs to actually reach Keycloak — so we override with a hostAlias
+  # pointing at the ingress-nginx-controller Service ClusterIP. The
+  # cert presented by ingress-nginx for the openbao client is for
+  # auth.secforge.local, so SNI works with the override.
+  hostAliases:
+    - ip: "10.96.97.16"   # ingress-nginx-controller cluster IP
+      hostnames:
+        - auth.secforge.local
+        - auth-admin.secforge.local
+        - bao.secforge.local
+
+  extraVolumes:
+    - type: secret
+      name: openbao-tls
+      path: /openbao/tls
+    # Seal block — Secret rendered by apply-main.sh with the literal
+    # Transit token substituted in. Mounted at
+    # /openbao/userconfig/seal-block/openbao-seal-block/seal.hcl
+    # (extraVolumes appends `<path>/<name>/`).
+    - type: secret
+      name: openbao-seal-block
+      path: /openbao/userconfig/seal-block
+
+  # Append the seal-block file to bao's -config arguments. OpenBao
+  # accepts multiple -config flags and merges them.
+  extraArgs: "-config=/openbao/userconfig/seal-block/openbao-seal-block/seal.hcl"
+
+  # Phase 7.0.a — SPIFFE-CSI cold-boot race mitigation. Substitutes
+  # for a startupProbe (chart 0.27.2 does not expose
+  # server.startupProbe). Init container blocks main-container start
+  # until the SPIFFE-CSI socket is registered with kubelet, which
+  # closes the 60–90s post-Docker-Desktop-restart window where mount
+  # retries burn through the helper-minted JWT-SVID's TTL. 30×10s =
+  # 5 min grace, matching the failureThreshold:30/periodSeconds:10
+  # the prompt prescribes for native startupProbes. See PLAN.md
+  # Phase 5 follow-up #6 (defense-in-depth alternative) and the
+  # cold-boot race section in docs/03-runbooks/spire-rotation.md.
+  extraInitContainers:
+    - name: wait-for-spiffe-csi
+      image: docker.io/openbao/openbao:2.5.3
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 30); do
+            if [ -S /spiffe-workload-api/spire-agent.sock ]; then
+              echo "spire-agent.sock present; proceeding"
+              exit 0
+            fi
+            echo "waiting for spire-agent.sock (attempt $i/30)"
+            sleep 10
+          done
+          echo "ERROR: spire-agent.sock did not appear within 5 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: tmp
+      emptyDir: {}
+  volumeMounts:
+    - name: spiffe-workload-api
+      mountPath: /spiffe-workload-api
+      readOnly: true
+    - name: tmp
+      mountPath: /tmp
+
+  statefulSet:
+    securityContext:
+      pod:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+
+    extraLabels:
+      spiffe.io/spire-managed-identity: "true"
+      secforge.platform/component: openbao
+
+  # Affinity OFF — single-node cluster locally, all 3 replicas land on
+  # the same node. Cloud edition restores the chart's default antiAffinity.
+  affinity: ""
+
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204&perfstandbyok=true
+    port: 8200
+    scheme: HTTPS
+  livenessProbe:
+    enabled: false
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+
+injector:
+  enabled: false
+
+csi:
+  enabled: false

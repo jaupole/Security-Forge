@@ -1,0 +1,156 @@
+# SpiceDBCluster — managed by the SpiceDB Operator.
+#
+# Architecture: docs/01-architecture/02-authorization.md
+# ADR-0008:    docs/02-decisions/0008-authz-schema.md
+#
+# The Operator generates a Deployment, Service, and ConfigMap from this
+# CR. We use spec.patches (free-form pod-template overrides) to:
+#   - bind to a custom `spicedb` ServiceAccount (so SPIFFE ID has /sa/spicedb)
+#   - mount the SPIFFE-CSI Workload API socket (used in Phase 5 to fetch
+#     OpenBao-issued Postgres + PSK credentials)
+#   - mount the gRPC TLS cert from cert-manager
+#   - tighten the pod's security context to PSS=restricted
+
+apiVersion: authzed.com/v1alpha1
+kind: SpiceDBCluster
+metadata:
+  name: spicedb
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb
+    app.kubernetes.io/component: authorization
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: spicedb
+    secforge.platform/edition: local
+spec:
+  # SpiceDB version. Pin to a specific release; the Operator's update
+  # graph will refuse to roll forward through breaking schema changes.
+  version: v1.51.1
+  channel: stable
+
+  # VSO-rendered Secret (Phase 6.10b Step 3 cutover, see ADR-0015).
+  # Sourced from OpenBao path `secret/data/spicedb/config` by the
+  # VaultStaticSecret in 06-vso-binding.yaml. Carries `datastore_uri`
+  # and `preshared_key` keys, identical shape to the legacy
+  # `spicedb-config` Secret. Pre-cutover history: original Secret was
+  # created by apply.sh (random PSK + DSN built from CNPG app Secret);
+  # Phase 5.10 replicated PSK to OpenBao; Step 3 added datastore_uri
+  # and pivoted to VSO rendering.
+  secretName: spicedb-config-vso
+
+  config:
+    datastoreEngine: postgres
+    replicas: 1
+    logLevel: info
+    # Structured JSON to STDOUT — picked up by the cluster log stack
+    # in Phase 7 (Loki/Wazuh).
+    logFormat: console-json
+    # Telemetry phone-home: disabled for the local edition.
+    telemetryEndpoint: ""
+    # Phase 7.6 — OpenTelemetry traces to the in-cluster collector. The
+    # collector forwards to Tempo. `otelInsecure: true` is fine because
+    # the OTel Service is in-cluster and ztunnel handles transport
+    # security at L4; cloud migration revisits with a dedicated cert.
+    otelProvider: "otlpgrpc"
+    otelEndpoint: "otel-collector.observability.svc.cluster.local:4317"
+    otelInsecure: "true"
+    otelSampleRatio: "1.0"
+    # gRPC TLS — mTLS within the cluster. The cert is mounted at /tls
+    # via spec.patches below. Caller verification is by pre-shared
+    # key (datastore_uri carries it); client cert verification is
+    # added in Phase 6 when Istio Ambient takes over the in-cluster
+    # mTLS plane.
+    tlsSecretName: spicedb-grpc-tls
+    # Dispatch cluster enabled. SpiceDB always wires
+    # `DispatchUpstreamAddr=kubernetes:///spicedb.spicedb:dispatch`
+    # regardless of this flag; setting `false` leaves the upstream
+    # configured but the dispatch SERVER off, so every CheckPermission
+    # times out trying to reach the (off) upstream. Setting `true`
+    # turns the server on so the pod dispatches to itself successfully.
+    # NetworkPolicy `allow-spicedb-self-dispatch` permits the loop.
+    dispatchClusterEnabled: "true"
+    # The dispatch port uses the same TLS cert as the public gRPC port
+    # (mounted from spicedb-grpc-tls). The dispatch CLIENT needs to
+    # know which CA to trust when verifying the server cert. The CA
+    # cert is in the same Secret as `ca.crt` (cert-manager + mkcert
+    # CA issuer). Without this, the dispatch dial fails the TLS
+    # handshake with "error reading server preface: EOF".
+    dispatchUpstreamCaPath: /tls/ca.crt
+    # Metrics endpoint — scraped by Phase 7 Prometheus.
+    metricsEnabled: "true"
+    # gRPC reflection on the management/internal port (helps zed CLI).
+    grpcReflectionEnabled: "true"
+
+  patches:
+    # Patch 1 — Deployment (the runtime SpiceDB pod): add SPIFFE-CSI,
+    # bind to the `spicedb` ServiceAccount (so SPIFFE ID = …/sa/spicedb),
+    # tighten container security context to PSS=restricted.
+    - kind: Deployment
+      patch:
+        spec:
+          template:
+            metadata:
+              labels:
+                spiffe.io/spire-managed-identity: "true"
+                secforge.platform/component: spicedb
+            spec:
+              serviceAccountName: spicedb
+              automountServiceAccountToken: true
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                fsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+                - name: spicedb
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    runAsNonRoot: true
+                    runAsUser: 65532
+                    capabilities:
+                      drop:
+                        - ALL
+                    seccompProfile:
+                      type: RuntimeDefault
+                  volumeMounts:
+                    - name: spiffe-workload-api
+                      mountPath: /spiffe-workload-api
+                      readOnly: true
+              volumes:
+                - name: spiffe-workload-api
+                  csi:
+                    driver: csi.spiffe.io
+                    readOnly: true
+    # Patch 2 — Job (the schema migration job, run once per SpiceDB
+    # version on first deploy and on version bumps). Without this
+    # patch, Kyverno's enforce-pod-security-restricted policy blocks
+    # the Job and the SpiceDB CR stays in `Migrating=True` forever.
+    # The migration container is named `migrate`. We don't add the
+    # SPIFFE volume here — the job uses the static datastore_uri from
+    # the secret, no Workload-API auth path.
+    - kind: Job
+      patch:
+        spec:
+          template:
+            spec:
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+                - name: migrate
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    runAsNonRoot: true
+                    runAsUser: 65532
+                    capabilities:
+                      drop:
+                        - ALL
+                    seccompProfile:
+                      type: RuntimeDefault

@@ -1,0 +1,23 @@
+# REFERENCE ONLY — do NOT apply this file as-is.
+#
+# The real `spicedb-config` Secret is built by apply.sh, which:
+#   - generates a random 32-byte preshared_key (base64) on first run
+#   - reads the Postgres credentials from secforge-spicedb-db-app (CNPG)
+#   - assembles the datastore_uri DSN
+#   - creates `spicedb-config` with both fields
+#
+# Phase 5 replaces this Secret with an OpenBao-issued, SPIFFE-bound,
+# short-lived credential (SpiceDB pulls its DSN + PSK at startup via
+# JWT-SVID auth). Until then, this Secret is the source of truth.
+#
+# Stored shape:
+#
+#   apiVersion: v1
+#   kind: Secret
+#   metadata:
+#     name: spicedb-config
+#     namespace: spicedb
+#   type: Opaque
+#   stringData:
+#     preshared_key: <random base64-encoded 32 bytes>
+#     datastore_uri: postgres://spicedb:<password>@secforge-spicedb-db-rw.spicedb.svc:5432/spicedb?sslmode=require

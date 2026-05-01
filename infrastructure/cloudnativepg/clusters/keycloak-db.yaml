@@ -1,0 +1,48 @@
+# Postgres cluster for Keycloak — managed by CloudNativePG.
+#
+# - 1 instance (no HA on a single-node cluster)
+# - Postgres 16
+# - 5 Gi PVC on the default StorageClass
+# - SCRAM-SHA-256 password storage (encrypted at rest by Postgres)
+# - Self-signed in-cluster TLS (CNPG generates `<cluster>-server` cert)
+# - App-user password auto-generated into Secret: secforge-keycloak-db-app
+#   (keys: username, password, jdbc-uri, uri, host, port, dbname, pgpass)
+# - No superuser access exposed
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secforge-keycloak-db
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+    secforge.platform/edition: local
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 5Gi
+
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+  monitoring:
+    enablePodMonitor: false   # Phase 7

@@ -1,0 +1,234 @@
+# Keycloak custom resource — managed by the Keycloak Operator.
+#
+# Architecture: docs/01-architecture/01-iam-platform.md
+# ADR-0006:    docs/02-decisions/0006-keycloak-keys-local.md
+# ADR-0007:    docs/02-decisions/0007-totp-instead-of-passkeys-locally.md
+#
+# This CR uses spec.unsupported.podTemplate for the security context,
+# SPIFFE-CSI volume, and /tmp emptyDir. The Keycloak Operator merges this
+# into its generated StatefulSet pod template by container name. The
+# `unsupported` prefix is the upstream's hedge against pod-template-format
+# changes — we accept that risk; the alternative (no security context, no
+# SPIFFE) is worse.
+
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: identity-provider
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: keycloak
+    secforge.platform/edition: local
+spec:
+  instances: 1
+  image: quay.io/keycloak/keycloak:26.3.3
+  # Build-time features (recovery-codes, below) require Keycloak to
+  # run `kc.sh build` before `kc.sh start`. The operator's default is
+  # `startOptimized: true`, which assumes a pre-augmented image. We
+  # opt out so the stock quay.io image augments itself on first start.
+  # The build runs once per pod-startup; on subsequent starts the
+  # augmentation is cached (~30s) but the pod still re-checks.
+  # Trade-off: ~10s slower startup. Worth it to avoid maintaining a
+  # custom Keycloak image just to bake in one feature flag.
+  startOptimized: false
+
+  # Database — CloudNativePG cluster from Phase 1.
+  # Connection is over TLS (sslmode=require, see additionalOptions).
+  # Tightening to sslmode=verify-full requires mounting the CA cert as
+  # `sslrootcert` in the JDBC URL — tracked as a follow-up; documented
+  # in iam-platform.md "Network and TLS posture".
+  db:
+    vendor: postgres
+    host: secforge-keycloak-db-rw.keycloak.svc
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: secforge-keycloak-db-app
+      key: username
+    passwordSecret:
+      name: secforge-keycloak-db-app
+      key: password
+
+  # Hostname split — public OIDC vs. admin console.
+  # `strict: true` makes Keycloak refuse to render absolute URLs that
+  # don't match these hostnames, which catches misconfigured proxies.
+  # Both fields must be full URLs (scheme required) — Keycloak 26's
+  # hostname-v2 provider rejects bare hostnames for the admin field.
+  hostname:
+    hostname: https://auth.secforge.local
+    admin: https://auth-admin.secforge.local
+    strict: true
+
+  # TLS terminated at ingress-nginx; pod listens on plain HTTP.
+  # Proxy headers from ingress-nginx are honored to recover the real
+  # client IP/scheme (X-Forwarded-For / X-Forwarded-Proto).
+  http:
+    httpEnabled: true
+  proxy:
+    headers: xforwarded
+
+  # We manage our own Ingress resources (public + admin split).
+  ingress:
+    enabled: false
+
+  # Bootstrap admin removed 2026-04-29 — once a TOTP-enrolled admin
+  # exists in the master realm, the bootstrap path is closed. The
+  # `bootstrapAdmin` field is only consulted on first realm creation;
+  # the operator does not re-create the user on subsequent runs. To
+  # restore a bootstrap path (e.g., total lockout), recreate the
+  # Secret with apply.sh and re-add this block.
+
+  # Build-time feature flags. Each addition forces a re-augmentation
+  # of the Keycloak JAR on next pod start (~30s).
+  #
+  #   recovery-codes — preview in 26.x; required for the lockout-
+  #     recovery factor (10 single-use codes generated at TOTP enrollment,
+  #     displayed once). Documented in ADR-0007.
+  #   dpop           — preview in 26.x; required so confidential clients
+  #     can enforce DPoP-bound access tokens (cnf.jkt claim). Per the
+  #     architecture, every BFF client must use DPoP. Without this flag
+  #     the discovery doc's `dpop_signing_alg_values_supported` is null.
+  #
+  # Phase 6b-0 (2026-04-30) attempted to add `token-exchange` and
+  # `admin-fine-grained-authz` for RFC 8693 per-pair exchange
+  # authorization. Both were removed per ADR-0012 (NO-GO):
+  #   - token-exchange: feature accepted, but RFC 8693 is unused by the
+  #     audience-at-login fallback that Phase 6b-1 will implement.
+  #   - admin-fine-grained-authz: feature accepted in env (v1 and v2)
+  #     but never satisfied runtime gating on the management/permissions
+  #     endpoint in 26.3.3. Removed to avoid maintaining preview-feature
+  #     blast radius for code paths we don't use.
+  # Re-evaluation triggers for re-enabling both: see ADR-0012 §
+  # "Re-evaluation criteria" — Keycloak 26.4+ stabilization, cloud
+  # migration, or compliance-driven actor-chain audit requirements.
+  features:
+    enabled:
+      - recovery-codes
+      - dpop
+
+  # CloudNativePG-issued CA, mounted into Keycloak's Java truststore so
+  # JDBC's TLS verification (when we tighten to verify-full) trusts the
+  # Postgres server cert without us baking the CA into the image.
+  truststores:
+    pg-ca:
+      secret:
+        name: secforge-keycloak-db-ca
+
+  additionalOptions:
+    # Structured logs to STDOUT — picked up by the cluster log stack
+    # in Phase 7 (Loki/Wazuh).
+    - name: log-console-output
+      value: json
+    - name: log-level
+      value: INFO
+
+    # Management-port endpoints. Default port is 9000; we keep that.
+    # Health is consumed by liveness/readiness/startup probes (the
+    # Operator wires these to /health/{live,ready,started} on 9000
+    # automatically). Metrics is scraped by Prometheus in Phase 7.
+    - name: health-enabled
+      value: "true"
+    - name: metrics-enabled
+      value: "true"
+
+    # Phase 7.6 — OpenTelemetry tracing via Quarkus OTel.
+    - name: tracing-enabled
+      value: "true"
+    - name: tracing-endpoint
+      value: "http://otel-collector.observability.svc.cluster.local:4317"
+    - name: tracing-protocol
+      value: "grpc"
+    - name: tracing-sampler-type
+      value: "always_on"
+    - name: tracing-service-name
+      value: "keycloak"
+
+    # Postgres JDBC TLS. `require` encrypts in transit but does not
+    # verify the server cert; sufficient for local. Tighten to
+    # `verify-full` at production hardening time (also requires
+    # sslrootcert path; the truststore alone is not enough for JDBC).
+    - name: db-url-properties
+      value: "?sslmode=require"
+
+    # Default access-token lifetime is 5 min — we set it explicitly so
+    # it shows up in `kc.sh export` and audit, not as an unstated
+    # default. Per-realm overrides are configured in Phase 3.4.
+    - name: spi-events-listener-jboss-logging-success-level
+      value: info
+    - name: spi-events-listener-jboss-logging-error-level
+      value: warn
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  # Pod-template overrides:
+  # 1. ServiceAccount = `keycloak` so SPIFFE ID = .../sa/keycloak.
+  # 2. Pod security context to satisfy PSS `restricted`.
+  # 3. SPIFFE-CSI volume so the workload can fetch its SVID via the
+  #    Workload API (used in Phase 5 for OpenBao auth, not yet wired).
+  # 4. emptyDir on /tmp because readOnlyRootFilesystem is true and
+  #    Keycloak / Quarkus write transient files under /tmp.
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/name: keycloak
+          app.kubernetes.io/component: identity-provider
+          app.kubernetes.io/part-of: secforge-platform
+          secforge.platform/component: keycloak
+          spiffe.io/spire-managed-identity: "true"
+      spec:
+        serviceAccountName: keycloak
+        automountServiceAccountToken: true
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: keycloak
+            securityContext:
+              allowPrivilegeEscalation: false
+              # NOTE on readOnlyRootFilesystem:
+              # Keycloak with `startOptimized: false` re-augments its
+              # Quarkus build on every pod start, writing JARs into
+              # /opt/keycloak/lib/quarkus/. That requires a writable
+              # root FS. PSS `restricted` does not require RO root,
+              # so we keep the rest of the container's hardening (no
+              # privilege escalation, drop ALL caps, non-root, seccomp)
+              # and accept this as a local-edition gap.
+              # Long-term fix: build a custom Keycloak image with
+              # `kc.sh build --features=recovery-codes` baked in, then
+              # set `startOptimized: true` and re-enable RO root.
+              # Tracked in iam-platform.md "Pod security".
+              readOnlyRootFilesystem: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+              - name: spiffe-workload-api
+                mountPath: /spiffe-workload-api
+                readOnly: true
+              - name: tmp
+                mountPath: /tmp
+        volumes:
+          - name: spiffe-workload-api
+            csi:
+              driver: csi.spiffe.io
+              readOnly: true
+          - name: tmp
+            emptyDir: {}

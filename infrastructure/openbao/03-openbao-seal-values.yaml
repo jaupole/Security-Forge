@@ -1,0 +1,204 @@
+# Helm values for the openbao-seal release.
+#
+# Architecture: docs/01-architecture/05-secrets-management.md
+# ADR-0009:    docs/02-decisions/0009-openbao-seal-strategy.md
+#
+# This is the "trusted root" — a tiny OpenBao that runs only the
+# Transit secrets engine. It is unsealed manually by the operator
+# (Shamir 5-of-3) after every Docker Desktop restart.
+#
+# We use `standalone` mode (single replica, file storage on a PVC).
+# `ha` mode would require Raft + 3 replicas, which is unnecessary for
+# the seal-OpenBao's role.
+
+global:
+  enabled: true
+  namespace: openbao
+  tlsDisable: false   # we serve TLS
+
+server:
+  image:
+    # The chart prepends `registry/`. Setting registry to docker.io
+    # (or empty) results in the canonical `docker.io/openbao/openbao`
+    # ref, which Docker Desktop's containerd resolves to its hub
+    # mirror. The chart default `quay.io` doesn't host this image,
+    # so the default fails ErrImagePull.
+    registry: docker.io
+    repository: openbao/openbao
+    tag: 2.5.3
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: false
+    name: openbao-seal
+
+  # Resources sized small — the seal-OpenBao only handles two RPCs:
+  # transit/encrypt and transit/decrypt, and only one client.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  ingress:
+    enabled: false
+
+  # No public service. ClusterIP only, in-cluster only.
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+    publishNotReadyAddresses: false
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    mountPath: /openbao/data
+    storageClass: hostpath
+    accessMode: ReadWriteOnce
+
+  # Don't enable HA — we explicitly want standalone for the seal-OpenBao.
+  ha:
+    enabled: false
+
+  standalone:
+    enabled: true
+    config: |
+      ui = false
+
+      listener "tcp" {
+        address       = "[::]:8200"
+        # The chart mounts secret extraVolumes at <path>/<name>/...
+        # so the full path is /openbao/tls/openbao-seal-tls/tls.{crt,key}
+        tls_cert_file = "/openbao/tls/openbao-seal-tls/tls.crt"
+        tls_key_file  = "/openbao/tls/openbao-seal-tls/tls.key"
+      }
+
+      storage "file" {
+        path = "/openbao/data"
+      }
+
+      api_addr = "https://openbao-seal.openbao.svc.cluster.local:8200"
+
+  # Tell the chart how to reach this pod (TLS = HTTPS scheme everywhere).
+  extraEnvironmentVars:
+    BAO_ADDR: https://127.0.0.1:8200
+    BAO_API_ADDR: https://openbao-seal.openbao.svc.cluster.local:8200
+    BAO_CACERT: /openbao/tls/openbao-seal-tls/ca.crt
+    SKIP_CHOWN: "true"
+    SKIP_SETCAP: "true"
+
+  extraVolumes:
+    - type: secret
+      name: openbao-seal-tls
+      path: /openbao/tls
+
+  # Phase 7.0.a — SPIFFE-CSI cold-boot race mitigation. Init container
+  # blocks main-container start until the SPIFFE-CSI socket appears.
+  # Chart 0.27.2 does not expose server.startupProbe; this is the
+  # chart-supported equivalent. 30×10s = 5 min grace. See PLAN.md
+  # Phase 5 follow-up #6 + docs/03-runbooks/spire-rotation.md.
+  extraInitContainers:
+    - name: wait-for-spiffe-csi
+      image: docker.io/openbao/openbao:2.5.3
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 30); do
+            if [ -S /spiffe-workload-api/spire-agent.sock ]; then
+              echo "spire-agent.sock present; proceeding"
+              exit 0
+            fi
+            echo "waiting for spire-agent.sock (attempt $i/30)"
+            sleep 10
+          done
+          echo "ERROR: spire-agent.sock did not appear within 5 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+
+  # Mount the SPIFFE Workload API socket + a writable /tmp.
+  # readOnlyRootFilesystem=true means the chart's `cp` of the config
+  # to /tmp/storageconfig.hcl in its init script fails without an
+  # emptyDir at /tmp.
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: tmp
+      emptyDir: {}
+  volumeMounts:
+    - name: spiffe-workload-api
+      mountPath: /spiffe-workload-api
+      readOnly: true
+    - name: tmp
+      mountPath: /tmp
+
+  statefulSet:
+    securityContext:
+      pod:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+
+    extraLabels:
+      spiffe.io/spire-managed-identity: "true"
+      secforge.platform/component: openbao-seal
+
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+    port: 8200
+    scheme: HTTPS
+  livenessProbe:
+    enabled: false   # liveness on a sealed bao would kill it endlessly
+
+# Inject Vault-Agent injector — disabled. Workloads use SPIFFE-bound JWT
+# auth + the OpenBao SDK directly.
+injector:
+  enabled: false
+
+# CSI provider — disabled for now (we use the Workload API + JWT path).
+csi:
+  enabled: false
+
+# UI is off (set in standalone.config too).
+ui:
+  enabled: false

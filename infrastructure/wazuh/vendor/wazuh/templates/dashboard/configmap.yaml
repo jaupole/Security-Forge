@@ -1,0 +1,26 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wazuh.fullname" . }}-dashboard-config
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.dashboard.selectorLabels" . | nindent 4 }}
+data:
+  opensearch_dashboards.yml: |
+    server.host: "0.0.0.0"
+    server.port: 5601
+    server.ssl.enabled: {{ (.Values.dashboard.ssl).enabled | default false }}
+    {{- if (.Values.dashboard.ssl).enabled }}
+    server.ssl.certificate: "/usr/share/wazuh-dashboard/certs/dashboard.pem"
+    server.ssl.key: "/usr/share/wazuh-dashboard/certs/dashboard-key.pem"
+    {{- end }}
+    opensearch.hosts: ["https://{{ include "wazuh.indexer.host" . }}:9200"]
+    opensearch.ssl.verificationMode: certificate
+    opensearch.ssl.certificateAuthorities: ["/usr/share/wazuh-dashboard/certs/root-ca.pem"]
+    opensearch.username: "kibanaserver"
+    opensearch.password: "__KIBANA_PASSWORD__"
+    opensearch.requestHeadersAllowlist: ["securitytenant", "Authorization"]
+    opensearch_security.multitenancy.enabled: false
+    opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+{{- end }}

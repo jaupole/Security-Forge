@@ -1,0 +1,547 @@
+{{- if .Values.indexer.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "wazuh.fullname" . }}-indexer
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.indexer.selectorLabels" . | nindent 4 }}
+  {{- if .Values.reloader.enabled }}
+  annotations:
+    reloader.stakater.com/auto: "true"
+  {{- end }}
+spec:
+  serviceName: {{ include "wazuh.fullname" . }}-indexer
+  replicas: {{ .Values.indexer.replicas }}
+  {{- if gt (int .Values.indexer.replicas) 1 }}
+  podManagementPolicy: Parallel
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "wazuh.indexer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "wazuh.labels" . | nindent 8 }}
+        {{- include "wazuh.indexer.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/indexer/configmap.yaml") . | sha256sum }}
+        checksum/passwords: {{ printf "%s-%s-%s" .Values.security.adminPassword (include "wazuh.kibanaserverPassword" .) (include "wazuh.filebeatPassword" .) | sha256sum }}
+        {{- if .Values.indexer.exporter.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.indexer.exporter.port | quote }}
+        prometheus.io/path: "/metrics"
+        prometheus.io/scheme: "http"
+        {{- else if .Values.indexer.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.indexer.metrics.port | quote }}
+        prometheus.io/path: {{ .Values.indexer.metrics.path | quote }}
+        prometheus.io/scheme: "https"
+        {{- end }}
+    spec:
+      {{- include "wazuh.dnsConfig" . | nindent 6 }}
+      priorityClassName: {{ include "wazuh.fullname" . }}-critical
+      terminationGracePeriodSeconds: {{ .Values.indexer.terminationGracePeriodSeconds }}
+      serviceAccountName: default
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.indexer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.indexer.affinity }}
+      affinity:
+        {{- toYaml .Values.indexer.affinity | nindent 8 }}
+      {{- else if .Values.indexer.antiAffinityPreset }}
+      affinity:
+        {{- include "wazuh.podAntiAffinity" (list "indexer" .Values.indexer.antiAffinityPreset) | nindent 8 }}
+      {{- end }}
+      {{- with .Values.indexer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: volume-permissions
+          image: "{{ .Values.global.initImages.busybox.repository }}:{{ .Values.global.initImages.busybox.tag }}"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["CHOWN"]
+              drop: ["ALL"]
+          command: ["sh", "-c", "chown -R 1000:1000 /var/lib/wazuh-indexer"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: wazuh-indexer-data
+              mountPath: /var/lib/wazuh-indexer
+        - name: security-config
+          image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.indexerSecretName" . }}
+                  key: password
+            - name: KIBANA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.dashboardSecretName" . }}
+                  key: password
+            - name: FILEBEAT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.filebeatSecretName" . }}
+                  key: password
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "=== Preparing security config ==="
+              # Passwords always come from K8s Secret env vars
+              # (populated by ESO, vault-bridge, or Helm-created secrets)
+              if [ -z "$ADMIN_PASSWORD" ] || [ -z "$KIBANA_PASSWORD" ] || [ -z "$FILEBEAT_PASSWORD" ]; then
+                echo "ERROR: Password env vars not set — check K8s Secrets exist"
+                exit 1
+              fi
+              export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+              export PATH=$JAVA_HOME/bin:$PATH
+              HASH_TOOL="/usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh"
+
+              # Copy default security config
+              cp /usr/share/wazuh-indexer/config/opensearch-security/* /security-config/ 2>/dev/null || \
+                cp /usr/share/wazuh-indexer/plugins/opensearch-security/securityconfig/* /security-config/ 2>/dev/null || true
+
+              # Generate bcrypt hashes
+              echo "Generating password hashes..."
+              ADMIN_HASH=$(bash $HASH_TOOL -p "$ADMIN_PASSWORD" 2>/dev/null | tail -1)
+              KIBANA_HASH=$(bash $HASH_TOOL -p "$KIBANA_PASSWORD" 2>/dev/null | tail -1)
+              FILEBEAT_HASH=$(bash $HASH_TOOL -p "$FILEBEAT_PASSWORD" 2>/dev/null | tail -1)
+
+              # Write internal_users.yml with correct hashes
+              cat > /security-config/internal_users.yml << EOF
+              ---
+              _meta:
+                type: "internalusers"
+                config_version: 2
+              admin:
+                hash: "$ADMIN_HASH"
+                reserved: true
+                backend_roles:
+                  - "admin"
+                description: "Admin user"
+              kibanaserver:
+                hash: "$KIBANA_HASH"
+                reserved: true
+                description: "Dashboard server user"
+              filebeat_internal:
+                hash: "$FILEBEAT_HASH"
+                reserved: false
+                description: "Filebeat user for log shipping"
+              EOF
+
+              # Write roles_mapping.yml with all required mappings
+              cat > /security-config/roles_mapping.yml << EOF
+              ---
+              _meta:
+                type: "rolesmapping"
+                config_version: 2
+              all_access:
+                reserved: false
+                backend_roles:
+                  - "admin"
+                description: "Maps admin to all_access"
+              own_index:
+                reserved: false
+                users:
+                  - "*"
+                description: "Allow users to own index"
+              kibana_server:
+                reserved: true
+                users:
+                  - "kibanaserver"
+              kibana_wazuh_access:
+                reserved: false
+                users:
+                  - "kibanaserver"
+                description: "Maps kibanaserver to wazuh index access"
+              kibana_user:
+                reserved: false
+                backend_roles:
+                  - "kibanauser"
+              manage_wazuh_index:
+                reserved: false
+                users:
+                  - "filebeat_internal"
+              EOF
+
+              # Replace manage_wazuh_index role in roles.yml with correct cluster permissions
+              # Default Wazuh roles.yml ships without cluster_monitor - we must override it
+              if grep -q 'manage_wazuh_index' /security-config/roles.yml 2>/dev/null; then
+                awk '/^manage_wazuh_index:/{skip=1; next} /^[a-zA-Z_]/{skip=0} !skip' /security-config/roles.yml > /tmp/roles_clean.yml
+                mv /tmp/roles_clean.yml /security-config/roles.yml
+              fi
+              cat >> /security-config/roles.yml << EOF
+
+              manage_wazuh_index:
+                reserved: false
+                cluster_permissions:
+                  - "cluster_monitor"
+                  - "cluster_composite_ops"
+                  - "cluster:admin/ingest/pipeline/put"
+                  - "cluster:admin/ingest/pipeline/get"
+                  - "indices:admin/template/put"
+                  - "indices:admin/template/get"
+                  - "indices:admin/template/delete"
+                index_permissions:
+                  - index_patterns:
+                      - "wazuh-*"
+                    allowed_actions:
+                      - "indices_all"
+
+              kibana_wazuh_access:
+                reserved: false
+                cluster_permissions:
+                  - "cluster_monitor"
+                index_permissions:
+                  - index_patterns:
+                      - "wazuh-monitoring-*"
+                      - "wazuh-statistics-*"
+                      - "wazuh-alerts-*"
+                    allowed_actions:
+                      - "indices:admin/get"
+                      - "indices:admin/create"
+                      - "indices:admin/delete"
+                      - "indices:admin/settings/update"
+                      - "indices:admin/settings/get"
+                      - "indices:admin/mapping/put"
+                      - "indices:admin/mapping/get"
+                      - "indices:admin/mappings/fields/get"
+                      - "indices:data/read/get"
+                      - "indices:data/read/mget"
+                      - "indices:data/read/search"
+                      - "indices:data/write/index"
+                      - "indices:data/write/update"
+                      - "indices:data/write/bulk"
+                      - "indices:data/write/bulk[s]"
+                      - "indices:data/write/bulk[n]"
+                      - "indices:data/write/delete"
+              EOF
+
+              # Remove leading whitespace from heredocs
+              sed -i 's/^              //' /security-config/internal_users.yml
+              sed -i 's/^              //' /security-config/roles_mapping.yml
+              sed -i 's/^              //' /security-config/roles.yml
+
+              echo "=== Security config ready ==="
+              echo "Admin hash: ${ADMIN_HASH:0:20}..."
+              echo "Kibana hash: ${KIBANA_HASH:0:20}..."
+              echo "Filebeat hash: ${FILEBEAT_HASH:0:20}..."
+          volumeMounts:
+            - name: security-config
+              mountPath: /security-config
+      containers:
+        - name: wazuh-indexer
+          image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
+          imagePullPolicy: {{ .Values.indexer.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: indexer-rest
+              containerPort: 9200
+              protocol: TCP
+            - name: indexer-nodes
+              containerPort: 9300
+              protocol: TCP
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: OPENSEARCH_JAVA_OPTS
+              value: {{ .Values.indexer.javaOpts | quote }}
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.indexerSecretName" . }}
+                  key: password
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    # Flush translog and synced flush before shutdown
+                    curl -s -k --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                      --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                      --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                      -XPOST "https://localhost:9200/_flush/synced" 2>/dev/null || true
+                    # Allow time for cluster to rebalance shards
+                    sleep 10
+            postStart:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    # Only run on indexer-0 (cluster manager)
+                    if [ "$HOSTNAME" != "{{ include "wazuh.fullname" . }}-indexer-0" ]; then
+                      exit 0
+                    fi
+                    export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+                    # Wait for indexer to be ready
+                    for i in $(seq 1 120); do
+                      if curl -s -k --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                        --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                        --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                        https://localhost:9200/_cluster/health 2>/dev/null | grep -qE '"status":"(green|yellow)"'; then
+                        echo "Running securityadmin..."
+                        /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh \
+                          -cd /usr/share/wazuh-indexer/config/opensearch-security/ \
+                          -nhnv \
+                          -cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                          -cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                          -key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                          -h localhost > /dev/null 2>&1
+                        echo "Security initialized."
+                        {{- if .Values.agent.namespaceMapping }}
+                        # Create ingest pipeline for namespace enrichment
+                        echo "Creating namespace enrichment pipeline..."
+                        curl -s -k --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                          --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                          --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                          -XPUT "https://localhost:9200/_ingest/pipeline/wazuh-namespace-enrichment" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "description": "Enriches events with project metadata based on namespace",
+                            "processors": [
+                              {
+                                "script": {
+                                  "lang": "painless",
+                                  "source": "def loc = ctx.location; if (loc != null && loc.contains('/var/log/containers/')) { def fname = loc.substring(loc.lastIndexOf('/') + 1); def parts = fname.split('_'); if (parts.length >= 2) { def ns = parts[1]; def mapping = params.ns_mapping; if (mapping.containsKey(ns)) { def meta = mapping.get(ns); ctx.namespace_meta = new HashMap(); ctx.namespace_meta.put('namespace', ns); for (def entry : meta.entrySet()) { ctx.namespace_meta.put(entry.getKey(), entry.getValue()); } } } }",
+                                  "params": {
+                                    "ns_mapping": {
+                                      {{- $first := true }}
+                                      {{- range $ns, $meta := .Values.agent.namespaceMapping }}
+                                      {{- if not $first }},{{ end }}
+                                      "{{ $ns }}": {
+                                        {{- $innerFirst := true }}
+                                        {{- range $k, $v := $meta }}
+                                        {{- if not $innerFirst }},{{ end }}
+                                        "{{ $k }}": "{{ $v }}"
+                                        {{- $innerFirst = false }}
+                                        {{- end }}
+                                      }
+                                      {{- $first = false }}
+                                      {{- end }}
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }' > /dev/null 2>&1
+                        # Apply pipeline to wazuh index templates
+                        curl -s -k --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                          --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                          --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                          -XPUT "https://localhost:9200/_index_template/wazuh-enrichment" \
+                          -H "Content-Type: application/json" \
+                          -d '{
+                            "index_patterns": ["wazuh-alerts-*", "wazuh-archives-*"],
+                            "priority": 1,
+                            "template": {
+                              "settings": {
+                                "index.default_pipeline": "wazuh-namespace-enrichment"
+                              }
+                            }
+                          }' > /dev/null 2>&1
+                        echo "Namespace enrichment pipeline created."
+                        {{- end }}
+                        # Force replicas=1 for monitoring/statistics indices (prevents UNASSIGNED shards after rolling update)
+                        {{- if gt (int .Values.indexer.replicas) 1 }}
+                        echo "Creating index template to force replicas=1 for monitoring/statistics indices..."
+                        for i in $(seq 1 30); do
+                          if curl -s -k --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                            --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                            --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                            -X PUT "https://localhost:9200/_index_template/wazuh-monitoring-replicas" \
+                            -H 'Content-Type: application/json' \
+                            -d '{
+                              "index_patterns": ["wazuh-monitoring-*", "wazuh-statistics-*"],
+                              "priority": 1,
+                              "template": {
+                                "settings": {
+                                  "number_of_replicas": 1
+                                }
+                              }
+                            }' 2>/dev/null | grep -q '"acknowledged":true'; then
+                            echo "Index template wazuh-monitoring-replicas created successfully"
+                            break
+                          fi
+                          echo "Attempt $i/30 - waiting for indexer to accept index template..."
+                          sleep 10
+                        done
+                        {{- end }}
+                        {{- if gt (int .Values.indexer.replicas) 1 }}
+                        # Patch EXISTING monitoring/statistics indices to replicas=1
+                        # Prevents UNASSIGNED shards on indices created before this template existed
+                        echo "[$(date)] Patching existing monitoring/statistics indices to replicas=1..."
+                        for idx_pattern in "wazuh-monitoring-*" "wazuh-statistics-*"; do
+                          PATCH_RESPONSE=$(curl -s -k \
+                            --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                            --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                            --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                            -X PUT "https://localhost:9200/$idx_pattern/_settings" \
+                            -H "Content-Type: application/json" \
+                            -d '{"index": {"number_of_replicas": 1}}' 2>/dev/null)
+                          if echo "$PATCH_RESPONSE" | grep -q '"type":"index_not_found_exception"'; then
+                            echo "[$(date)] $idx_pattern: no existing indices (OK, template covers new ones)"
+                          elif echo "$PATCH_RESPONSE" | grep -q '"error"'; then
+                            echo "[$(date)] WARNING: patch failed for $idx_pattern: $(echo "$PATCH_RESPONSE" | head -c 200)"
+                          else
+                            echo "[$(date)] $idx_pattern: patched to replicas=1"
+                          fi
+                        done
+                        {{- end }}
+                        exit 0
+                      fi
+                      sleep 5
+                    done
+          startupProbe:
+            tcpSocket:
+              port: indexer-rest
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Check that this indexer node responds to HTTP requests (node-level health)
+                  # We accept any cluster color (green/yellow/red) because RED means UNASSIGNED
+                  # shards — a cluster-level issue, not a node-level issue
+                  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -k \
+                    --cert /usr/share/wazuh-indexer/config/certs/admin.pem \
+                    --key /usr/share/wazuh-indexer/config/certs/admin-key.pem \
+                    --cacert /usr/share/wazuh-indexer/config/certs/root-ca.pem \
+                    'https://localhost:9200/_cluster/health')
+                  [ "$HTTP_CODE" -eq 200 ]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: indexer-rest
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.indexer.resources | nindent 12 }}
+          volumeMounts:
+            - name: wazuh-indexer-data
+              mountPath: /var/lib/wazuh-indexer
+            - name: indexer-config
+              mountPath: /usr/share/wazuh-indexer/config/opensearch.yml
+              subPath: opensearch.yml
+              readOnly: true
+            - name: indexer-certs
+              mountPath: /usr/share/wazuh-indexer/config/certs
+              readOnly: true
+            - name: security-config
+              mountPath: /usr/share/wazuh-indexer/config/opensearch-security
+        {{- if .Values.indexer.exporter.enabled }}
+        - name: opensearch-exporter
+          image: "{{ .Values.indexer.exporter.image.repository }}:{{ .Values.indexer.exporter.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.indexer.exporter.port }}
+              protocol: TCP
+          args:
+            - "--es.uri=https://localhost:9200"
+            - "--es.ssl-skip-verify"
+            - "--es.all"
+            - "--es.indices"
+            - "--es.shards"
+            - "--web.listen-address=:{{ .Values.indexer.exporter.port }}"
+            - "--web.telemetry-path=/metrics"
+            # Use admin certs for authentication
+            - "--es.ca=/usr/share/wazuh-indexer/config/certs/root-ca.pem"
+            - "--es.client-cert=/usr/share/wazuh-indexer/config/certs/admin.pem"
+            - "--es.client-private-key=/usr/share/wazuh-indexer/config/certs/admin-key.pem"
+          volumeMounts:
+            - name: indexer-certs
+              mountPath: /usr/share/wazuh-indexer/config/certs
+              readOnly: true
+          resources:
+            {{- toYaml .Values.indexer.exporter.resources | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+        {{- end }}
+      volumes:
+        - name: indexer-config
+          configMap:
+            name: {{ include "wazuh.fullname" . }}-indexer-config
+        - name: indexer-certs
+          secret:
+            secretName: {{ include "wazuh.fullname" . }}-indexer-certs
+        - name: security-config
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: wazuh-indexer-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.indexer.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.indexer.storage.size }}
+{{- end }}

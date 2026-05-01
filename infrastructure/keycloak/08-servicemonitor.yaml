@@ -1,0 +1,29 @@
+# Phase 7.6 — Keycloak ServiceMonitor.
+#
+# Keycloak (Quarkus) exposes /metrics on the management port (9000), enabled
+# via additionalOptions[metrics-enabled=true] on the Keycloak CR. The HTTP
+# port (8080) is the user-facing OIDC endpoint and is NOT scraped.
+#
+# release=kps label is required for kube-prometheus-stack's default selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    release: kps
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: secforge-platform
+spec:
+  selector:
+    matchLabels:
+      app: keycloak
+  namespaceSelector:
+    matchNames:
+      - keycloak
+  endpoints:
+    - port: management
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http

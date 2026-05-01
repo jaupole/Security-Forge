@@ -1,0 +1,122 @@
+# ClusterSPIFFEID registrations for SecForge platform components
+#
+# The Helm chart (infrastructure/spire/values.yaml) already defines a
+# label-based default registration that issues
+#   spiffe://secforge.local/ns/{ns}/sa/{sa}
+# to any pod carrying spiffe.io/spire-managed-identity: "true".
+#
+# This file adds NAMESPACE-SCOPED registrations for the platform-component
+# namespaces — keycloak, spicedb, openbao, app, istio-system. In those
+# namespaces, every pod gets an identity automatically, *without* the label.
+#
+# Registrations are reconciled by spire-controller-manager. The chart sets
+# `watchClassless: true`, so we don't need a className field here.
+#
+# Apply with:
+#   kubectl apply -f infrastructure/spire/cluster-spiffe-ids.yaml
+#
+# See:
+#   - docs/01-architecture/06-workload-identity.md
+#   - docs/06-reference/spiffe-ids.md
+#   - ADR-0005
+
+---
+# ============================================================================
+# keycloak — every pod in the keycloak namespace
+# ============================================================================
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-keycloak
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["keycloak"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+# ============================================================================
+# spicedb — every pod in the spicedb namespace
+# ============================================================================
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-spicedb
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["spicedb"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+# ============================================================================
+# openbao — every pod in the openbao namespace
+# ============================================================================
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-openbao
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["openbao"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+# ============================================================================
+# app — every pod in the app namespace (BFF, hello-world API, the three apps)
+# ============================================================================
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-app
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["app"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+# ============================================================================
+# istio-system — every pod in the Istio control plane namespace
+# Istio Ambient consumes SVIDs as an external CA in Phase 6.
+# ============================================================================
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-istio-system
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["istio-system"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false

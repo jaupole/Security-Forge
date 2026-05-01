@@ -1,0 +1,27 @@
+# Phase 7.6 — ztunnel PodMonitor.
+#
+# ztunnel is a DaemonSet without a Service. PodMonitor handles per-pod
+# scraping by pod label. Metrics path is /metrics on port 15020
+# (named ztunnel-stats in the pod spec).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ztunnel
+  namespace: istio-system
+  labels:
+    release: kps
+    app.kubernetes.io/name: ztunnel
+    app.kubernetes.io/part-of: secforge-platform
+spec:
+  selector:
+    matchLabels:
+      app: ztunnel
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  podMetricsEndpoints:
+    - port: ztunnel-stats
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http

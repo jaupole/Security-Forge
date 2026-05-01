@@ -1,0 +1,79 @@
+# cert-manager Certificates issued by the mkcert ClusterIssuer.
+# - openbao-seal-tls: in-cluster only; never via Ingress
+# - openbao-tls: in-cluster + bao.secforge.local (the Ingress hostname)
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-seal-tls
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-seal
+    secforge.platform/component: openbao-seal
+spec:
+  secretName: openbao-seal-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: openbao-seal
+      secforge.platform/component: openbao-seal
+  duration: 8760h     # 1 year
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: openbao-seal.openbao.svc.cluster.local
+  dnsNames:
+    - openbao-seal
+    - openbao-seal.openbao
+    - openbao-seal.openbao.svc
+    - openbao-seal.openbao.svc.cluster.local
+  usages: [server auth, digital signature, key encipherment]
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-tls
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao
+    secforge.platform/component: openbao
+spec:
+  secretName: openbao-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: openbao
+      secforge.platform/component: openbao
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: openbao.openbao.svc.cluster.local
+  dnsNames:
+    - openbao
+    - openbao.openbao
+    - openbao.openbao.svc
+    - openbao.openbao.svc.cluster.local
+    # Per-replica DNS names (StatefulSet pods get these via the headless
+    # internal service). Required for in-cluster Raft TLS handshake.
+    - openbao-0.openbao-internal
+    - openbao-0.openbao-internal.openbao.svc.cluster.local
+    - openbao-1.openbao-internal
+    - openbao-1.openbao-internal.openbao.svc.cluster.local
+    - openbao-2.openbao-internal
+    - openbao-2.openbao-internal.openbao.svc.cluster.local
+    # Public Ingress hostname.
+    - bao.secforge.local
+  usages: [server auth, client auth, digital signature, key encipherment]
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

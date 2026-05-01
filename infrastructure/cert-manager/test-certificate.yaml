@@ -1,0 +1,35 @@
+# Smoke-test Certificate to prove the mkcert ClusterIssuer is wired up.
+# Issues a leaf cert for test.secforge.local into the `app` namespace.
+#
+# Verify after apply:
+#   kubectl -n app get certificate test-secforge-local
+#   kubectl -n app get secret test-secforge-local-tls -o yaml
+#   kubectl -n app exec -it <some-pod> -- \
+#     curl -v https://test.secforge.local
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test-secforge-local
+  namespace: app
+  labels:
+    secforge.platform/component: cert-manager
+    secforge.platform/edition: local
+spec:
+  secretName: test-secforge-local-tls
+  duration: 2160h        # 90d — matches our planned rotation cadence
+  renewBefore: 360h      # renew with 15 days remaining
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  dnsNames:
+    - test.secforge.local
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

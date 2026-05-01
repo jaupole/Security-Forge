@@ -1,0 +1,42 @@
+# Postgres cluster for the SecForge applications (Hello World now;
+# Proposal Forge / Project Tracker / PM app later — each in its own schema).
+# App-user secret: secforge-app-db-app
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secforge-app-db
+  namespace: app
+  labels:
+    secforge.platform/component: app
+    secforge.platform/edition: local
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: false
+  storage:
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: secforge_app
+      owner: app
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+      postInitApplicationSQL:
+        # Per-app schemas inside the secforge_app database. Owner is the
+        # `app` role; apps set search_path explicitly. Runs as superuser
+        # in the application DB during bootstrap (NOT postgres or template1).
+        - "CREATE SCHEMA IF NOT EXISTS hello_world AUTHORIZATION app;"
+        - "CREATE SCHEMA IF NOT EXISTS proposal_forge AUTHORIZATION app;"
+        - "CREATE SCHEMA IF NOT EXISTS project_tracker AUTHORIZATION app;"
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  monitoring:
+    enablePodMonitor: false

@@ -1,0 +1,71 @@
+# Kyverno ClusterPolicy: enforce restricted-tier Pod Security Standards.
+#
+# Mode: Enforce (deny on violation).
+#
+# Wraps the Kubernetes Pod Security Standards "restricted" profile with a
+# few explicit overrides for known infrastructure that needs more (those
+# namespaces are excluded — see infrastructure/namespaces/namespaces.yaml
+# for the per-namespace PSA labels we set as belt-and-braces).
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: enforce-pod-security-restricted
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/edition: local
+    secforge.platform/policy-tier: workload-hardening
+  annotations:
+    policies.kyverno.io/title: "Enforce Pod Security Restricted"
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Reject pods that don't meet the restricted PSS profile: must run as
+      non-root, drop ALL capabilities, no privilege escalation, read-only
+      root filesystem, RuntimeDefault seccomp.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  failurePolicy: Fail
+  rules:
+    - name: restricted
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - cert-manager
+                - kyverno
+                - ingress-nginx
+                - local-path-storage
+                - istio-system          # ztunnel CNI requires privileged
+                - spire                 # agent DaemonSet needs hostPath
+                - observability         # node-exporter needs hostPath/hostNetwork/hostPID for node metrics (Phase 7.3)
+                - wazuh                 # Wazuh stack (Phase 7.2): manager runs as root inside container; certs-job lacks per-container seccompProfile in chart. Namespace-level PSS=baseline (see infrastructure/wazuh/01-namespace.yaml). Agent DaemonSet deferred to Phase 7d with capabilities-based hardening.
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+          # No PSS-level exclusions today.
+          # NOTE on `observability` exclusion: only node-exporter genuinely
+          # requires the exemption (host-namespace + hostPath for /proc, /sys,
+          # /). The remaining observability components (Grafana, Prometheus,
+          # Alertmanager, Loki, Tempo, OTel, kube-state-metrics) set their own
+          # restricted-compliant securityContext in chart values
+          # (infrastructure/observability/01-kube-prometheus-stack-values.yaml
+          # disables Grafana's init-chown-data; fsGroup handles ownership).
+          # Wazuh exclusion added 2026-05-01 (Phase 7.2 Session 4) — chart's
+          # certs-bootstrap Job and manager StatefulSet don't fully meet
+          # restricted (manager: runAsUser=0; certs-job: missing per-container
+          # seccompProfile). Namespace declares PSS=baseline (see
+          # infrastructure/wazuh/01-namespace.yaml) so admission still enforces
+          # baseline at the kubelet layer.
+          # PSS restricted does NOT require readOnlyRootFilesystem, so MinIO,
+          # Postgres etc. that write to mounted volumes need no exception.

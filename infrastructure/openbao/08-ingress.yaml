@@ -1,0 +1,44 @@
+# Ingress for the main OpenBao UI/API at https://bao.secforge.local.
+#
+# We ship our own (chart's Ingress is disabled in 04-openbao-values.yaml)
+# because the chart hardcodes the backend Service to `<release>-active`,
+# which expects pod labels that don't get applied by the chart — the
+# resulting Ingress always returns 503. Our Ingress points at the
+# regular `openbao` Service (covers all 3 Raft replicas; OpenBao
+# internally forwards write requests to the leader).
+#
+# Source-IP allowlist follows the Phase 3.6 / Phase 4.6 pattern.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openbao
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao
+    secforge.platform/component: openbao
+  annotations:
+    # OpenBao listener is HTTPS on 8200; ingress-nginx must speak HTTPS
+    # to the backend (its cert validates auth.secforge.local).
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Docker Desktop bridge + loopback. Cloud edition swaps for a
+    # bastion / VPN CIDR.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "172.19.0.0/16,127.0.0.1/32"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [bao.secforge.local]
+      secretName: openbao-tls
+  rules:
+    - host: bao.secforge.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openbao
+                port:
+                  number: 8200

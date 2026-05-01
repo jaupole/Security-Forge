@@ -1,0 +1,22 @@
+# REFERENCE ONLY — do NOT apply this file as-is.
+#
+# The real Secret is created by apply.sh, which generates a random
+# 32-char password and prints it ONCE to stdout. The password is
+# bootstrap-only: use it once to log into the admin console
+# (Phase 3.6), set up your TOTP, then this Secret can be deleted.
+#
+# Stored shape (same as what apply.sh generates):
+#
+#   apiVersion: v1
+#   kind: Secret
+#   metadata:
+#     name: keycloak-bootstrap-admin
+#     namespace: keycloak
+#     labels:
+#       app.kubernetes.io/name: keycloak
+#       secforge.platform/component: keycloak
+#       secforge.platform/purpose: bootstrap-only
+#   type: Opaque
+#   stringData:
+#     username: bootstrap-admin
+#     password: <32-char random>

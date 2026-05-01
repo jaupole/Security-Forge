@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Workspace-level Claude Code settings for the SecForge Local Edition",
+  "permissions": {
+    "_comment_permissions": "Tools allowed without per-call confirmation. Local development is more permissive than cloud since blast radius is smaller.",
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(go test:*)",
+      "Bash(go build:*)",
+      "Bash(go vet:*)",
+      "Bash(go fmt:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "Bash(helm lint:*)",
+      "Bash(helm template:*)",
+      "Bash(helm install:*)",
+      "Bash(helm upgrade:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl create:*)",
+      "Bash(kubectl exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)"
+    ],
+    "deny": [
+      "Bash(kubectl delete namespace:*)",
+      "Bash(rm -rf:*)",
+      "Bash(curl * | sh)",
+      "Bash(wget * | sh)"
+    ],
+    "_comment_deny": "Even locally, namespace deletion and untrusted-script-execution require explicit confirmation"
+  },
+  "context": {
+    "_comment_context": "Files Claude Code should always have in context",
+    "always_include": [
+      "CLAUDE.md",
+      "PLAN.md"
+    ]
+  }
+}

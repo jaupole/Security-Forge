@@ -1,0 +1,37 @@
+# Validator: a viewer can view but cannot edit or delete.
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+
+relationships: |
+  document:welcome#viewer@user:alice
+  document:welcome#app@app:helloworld-app
+
+assertions:
+  assertTrue:
+    - document:welcome#view@user:alice
+  assertFalse:
+    - document:welcome#edit@user:alice
+    - document:welcome#delete@user:alice

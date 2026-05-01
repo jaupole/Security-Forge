@@ -1,0 +1,540 @@
+# =============================================================================
+# Wazuh Helm Chart - Configuration Values
+# =============================================================================
+# Documentation: https://github.com/ileonelperea/wazuh-helm
+# =============================================================================
+
+# -- Global settings applied across all components
+global:
+  # -- Timezone for all containers (e.g., "UTC", "America/Mexico_City", "Europe/London")
+  timezone: "UTC"
+  # -- Images for init containers and auxiliary jobs (shared across components)
+  initImages:
+    busybox:
+      repository: public.ecr.aws/docker/library/busybox
+      tag: "1.36"
+    kubectl:
+      repository: public.ecr.aws/bitnami/kubectl
+      tag: "1.32.3-debian-12-r5"
+
+# =============================================================================
+# Security & Credentials
+# =============================================================================
+security:
+  # -- Admin password for the Wazuh Dashboard login (CHANGE THIS in production)
+  # When vault.enabled=true and vault.readAdminPasswordFromVault=true:
+  # This field is ignored — password is read from Vault KV at {vault.mount}/admin-password
+  # After first bootstrap, you can remove this from your values file
+  adminPassword: "SecurePassword123!"
+  # -- Internal passwords (auto-generated on first install, reused on upgrades)
+  # These are used for internal service communication and should NOT be changed manually.
+  # Override only if using existingSecrets.
+  # -- Use existing secrets instead of chart-created ones
+  # When set, the chart will NOT create the corresponding Secret resource
+  existingSecrets:
+    # -- Name of existing Secret containing 'username' and 'password' keys for indexer
+    indexer: ""
+    # -- Name of existing Secret containing 'username' and 'password' keys for API
+    api: ""
+    # -- Name of existing Secret containing 'password' key for dashboard
+    dashboard: ""
+    # -- Name of existing Secret containing 'password' key for filebeat
+    filebeat: ""
+
+# =============================================================================
+# Reloader (Stakater) - Auto-restart pods on Secret/ConfigMap changes
+# =============================================================================
+reloader:
+  # -- Enable Reloader annotations on workloads (requires Stakater Reloader installed)
+  enabled: false
+
+# =============================================================================
+# Credential Rotation CronJob
+# =============================================================================
+credentialRotation:
+  # -- Enable automatic credential rotation CronJob
+  enabled: false
+  # -- Cron schedule (default: annually on Jan 1st at 2am UTC)
+  schedule: "0 2 1 1 *"
+  # -- Mode: "vault" writes new passwords to Vault KV (requires vault.enabled=true + ESO)
+  # "kubernetes" updates K8s Secrets directly via kubectl
+  mode: "vault"
+  # -- Vault KV v2 mount path for credential storage (only used when mode=vault)
+  vaultMount: "wazuh"
+  # -- Wait time in seconds for ESO to sync after Vault update (only used when mode=vault)
+  esoSyncWaitSeconds: 90
+  # -- Verify OpenSearch cluster health after rotation
+  healthCheck:
+    enabled: true
+    # -- Max seconds to wait for cluster GREEN status
+    timeoutSeconds: 300
+  # -- Container image for the rotation job (alpine with curl+kubectl installed at runtime)
+  image:
+    repository: public.ecr.aws/docker/library/alpine
+    tag: "3.19"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# =============================================================================
+# Vault & External Secrets Operator (ESO) Integration
+# =============================================================================
+# When vault.enabled=true:
+# - Chart creates ClusterSecretStore (ESO → Vault connection)
+# - Chart creates 4 ExternalSecret resources (pull credentials from Vault)
+# - Vault bootstrap job auto-configures KV v2, K8s auth, policy, role
+# - Credentials stored in K8s Secrets (same names as vault.enabled=false)
+# Prerequisites: ESO must be pre-installed in cluster
+vault:
+  # -- Enable Vault integration with External Secrets Operator (ESO)
+  enabled: false
+  # -- Vault server address
+  address: "http://vault.vault.svc.cluster.local:8200"
+  # -- Skip TLS verification (development only)
+  tlsSkipVerify: false
+  # -- Vault K8s auth role name (auto-created by bootstrap job)
+  role: "wazuh"
+  # -- Vault KV v2 mount path (auto-enabled by bootstrap job)
+  mount: "wazuh"
+  # -- Vault K8s auth path
+  authPath: "kubernetes"
+  # -- ServiceAccount for ESO Vault auth
+  serviceAccount: "wazuh-vault-auth"
+  # -- Namespace where Vault is deployed
+  namespace: "vault"
+  # -- ExternalSecrets refresh interval
+  refreshInterval: "1h"
+  # -- Deletion policy for K8s Secrets managed by ESO: Retain or Delete
+  deletionPolicy: "Retain"
+  # -- Read adminPassword from Vault KV instead of Helm values
+  # When true: bootstrap job reads admin password from Vault KV at {mount}/admin-password
+  # When false (default): uses security.adminPassword from values
+  # Only relevant when bootstrap.enabled=true
+  readAdminPasswordFromVault: false
+  # -- Bootstrap job configuration
+  bootstrap:
+    # -- Enable the Vault bootstrap job (seeds KV, configures K8s auth, creates policy)
+    # Set to false after first successful install — re-enable only for credential rotation
+    enabled: true
+    # -- Vault token with permissions to seed KV and configure K8s auth
+    # Only required when bootstrap.enabled=true
+    # Generate with: vault token create -policy=wazuh-bootstrap -ttl=24h
+    bootstrapToken: ""
+    image:
+      repository: public.ecr.aws/docker/library/alpine
+      tag: "3.19"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+# =============================================================================
+# StorageClass
+# =============================================================================
+storageClass:
+  # -- Create a StorageClass resource (set to false if using an existing one)
+  create: true
+  # -- StorageClass name
+  name: gp3
+  # -- CSI provisioner. Use "ebs.csi.eks.amazonaws.com" for EKS Auto Mode
+  provisioner: ebs.csi.eks.amazonaws.com
+  # -- EBS volume type
+  type: gp3
+  # -- Enable EBS encryption
+  encrypted: true
+  # -- Reclaim policy for PVs
+  reclaimPolicy: Retain
+  # -- Volume binding mode
+  volumeBindingMode: WaitForFirstConsumer
+  # -- Allow PVC expansion
+  allowVolumeExpansion: true
+
+# =============================================================================
+# Indexer (Wazuh Indexer / OpenSearch)
+# =============================================================================
+indexer:
+  # -- Deploy Wazuh Indexer (OpenSearch). Set false for agent-only deployments.
+  enabled: true
+  image:
+    repository: wazuh/wazuh-indexer
+    tag: "4.14.4"
+    pullPolicy: IfNotPresent
+  # -- Number of indexer replicas (3 recommended for HA with quorum)
+  replicas: 3
+  resources:
+    # Burstable with high requests — OOM killer targets lower-request pods first
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 3Gi
+  # -- JVM heap options (recommended: set Xms=Xmx, and ~50% of memory limit)
+  javaOpts: "-Xms1536m -Xmx1536m"
+  storage:
+    storageClass: gp3
+    # -- Indexer data volume size
+    size: 10Gi
+  # -- Termination grace period in seconds (allows OpenSearch to migrate shards before pod dies)
+  terminationGracePeriodSeconds: 120
+  # -- Drift detection CronJob: periodically re-applies the index template and patches replica
+  # settings on existing monitoring/statistics indices. Only runs when indexer.replicas > 1.
+  driftDetection:
+    # -- Enable the drift detection CronJob
+    enabled: true
+    # -- Cron schedule for drift detection (default: every 6 hours)
+    schedule: "0 */6 * * *"
+  # -- Watchdog CronJob: detects and auto-heals two known failure modes on EKS Auto Mode:
+  # 1) Pods stuck in PodInitializing due to containerd race condition (force-delete → StatefulSet recreates)
+  # 2) wazuh-monitoring-* and wazuh-statistics-* indices with UNASSIGNED shards (NODE_LEFT) after rolling
+  #    update of indexer pods — deletes the dead index so OpenSearch recreates it automatically.
+  # Runs every 5 minutes. Safe: only deletes monitoring/statistics indices, never wazuh-alerts-*.
+  watchdog:
+    # -- Enable the watchdog CronJob
+    enabled: true
+    # -- Cron schedule (default: every 5 minutes)
+    schedule: "*/5 * * * *"
+    # -- Seconds a pod must be stuck in PodInitializing before force-delete (default: 10 minutes)
+    # Must be > init_containers (~80s) + containerd_lag (~150s) + OpenSearch_startup (~3-5min)
+    # Only triggers when containerID is empty (true race condition, not normal startup)
+    stuckThresholdSeconds: 600
+  # -- Prometheus metrics scraping
+  metrics:
+    enabled: true
+    port: 9200
+    path: "/_prometheus/metrics"
+  # -- OpenSearch Exporter sidecar for detailed Prometheus metrics
+  # Exposes shard health, index sizes, JVM heap, thread pools, query latency, etc.
+  # Requires: Prometheus scraping the exporter port (default 9108)
+  exporter:
+    # -- Enable opensearch-exporter sidecar container
+    enabled: false
+    image:
+      repository: quay.io/prometheuscommunity/elasticsearch-exporter
+      tag: "v1.8.0"
+    # -- Port where the exporter serves metrics
+    port: 9108
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  # -- Node selector for indexer pods
+  nodeSelector: {}
+  # -- Tolerations for indexer pods
+  tolerations: []
+  # -- Affinity rules for indexer pods
+  affinity: {}
+  # -- Anti-affinity preset for indexer pods.
+  # "soft" = prefer different nodes (allows co-location if needed — safe for single-node dev)
+  # "hard" = require different nodes (pod stays Pending if not possible)
+  # "" = disabled (no anti-affinity rule generated)
+  # Ignored when affinity is set (custom affinity takes priority)
+  antiAffinityPreset: "soft"
+
+# =============================================================================
+# Manager (Wazuh Manager)
+# =============================================================================
+manager:
+  # -- Deploy Wazuh Manager. Set false for agent-only deployments.
+  enabled: true
+  image:
+    repository: wazuh/wazuh-manager
+    tag: "4.14.4"
+    pullPolicy: IfNotPresent
+  # -- Number of manager replicas
+  replicas: 1
+  resources:
+    # Burstable with high requests — OOM killer targets lower-request pods first
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  storage:
+    storageClass: gp3
+    # -- Manager data volume size. 30Gi recommended due to vulnerability feed DB (~4G)
+    size: 30Gi
+  # -- Vulnerability feed update interval (default 60m, 12h reduces disk/CPU usage)
+  feedUpdateInterval: "12h"
+  # -- Enable logging ALL events (not just alerts) to archives
+  logallJson: true
+  # -- Wazuh Manager cluster configuration (HA mode)
+  cluster:
+    # -- Enable cluster mode (1 master + N-1 workers). Requires replicas > 1.
+    enabled: false
+    # -- Cluster name (must match across all nodes)
+    name: "wazuh-cluster"
+    # -- 32-character encryption key shared by all cluster nodes.
+    # If empty, auto-generated on first install (stored in Secret).
+    key: ""
+  # -- Days to keep rotated log files on disk (S3/Indexer retains full history)
+  logRetentionDays: 7
+  # -- Annotations for the manager Service. Use for ExternalDNS (Route53 private zone).
+  # Example:
+  #   external-dns.alpha.kubernetes.io/hostname: manager.wazuh.kamet.internal
+  #   external-dns.alpha.kubernetes.io/provider: aws
+  service:
+    annotations: {}
+  # -- Custom detection rules for monitored namespaces
+  customRules:
+    # -- Enable custom detection rules (5xx, 401, 403, 429, exceptions, DB errors, correlations)
+    enabled: true
+    # -- Extra custom rules. Each entry generates a rule matching monitoredNamespaces.
+    # id: rule ID (100008-100009 range), level: severity 1-15, pattern: regex, group: rule group
+    extraPatterns:
+      - id: "100008"
+        level: "10"
+        pattern: "Pomelo.*error|Pomelo.*fail|Failed to refresh Pomelo|Pomelo.*timeout"
+        description: "Pomelo integration error"
+        group: "integration_error,pomelo"
+  # -- Termination grace period in seconds
+  terminationGracePeriodSeconds: 90
+  # -- Prometheus metrics scraping
+  metrics:
+    enabled: true
+    port: 55000
+    path: "/metrics"
+  # -- Additional agent groups for cross-cluster agents
+  # Each group gets its own agent.conf pushed to agents in that group.
+  # The "default" group is auto-generated from the agent.* section above.
+  agentGroups:
+    internal-services:
+      labels:
+        account: "123456789012"
+        cluster: "my-internal-cluster"
+        environment: "internal"
+        region: "us-east-1"
+    prod:
+      labels:
+        account: "987654321098"
+        cluster: "my-prod-cluster"
+        environment: "production"
+        region: "us-east-1"
+  # -- Node selector for manager pods
+  nodeSelector: {}
+  # -- Tolerations for manager pods
+  tolerations: []
+  # -- Affinity rules for manager pods
+  affinity: {}
+  # -- Anti-affinity preset for manager pods.
+  # "soft" = prefer different nodes (allows co-location if needed — safe for single-node dev)
+  # "hard" = require different nodes (pod stays Pending if not possible)
+  # "" = disabled (no anti-affinity rule generated)
+  # Ignored when affinity is set (custom affinity takes priority)
+  antiAffinityPreset: "soft"
+
+# =============================================================================
+# Dashboard (Wazuh Dashboard / OpenSearch Dashboards)
+# =============================================================================
+dashboard:
+  # -- Deploy Wazuh Dashboard. Set false for agent-only deployments.
+  enabled: true
+  image:
+    repository: wazuh/wazuh-dashboard
+    tag: "4.14.4"
+    pullPolicy: IfNotPresent
+  # -- Number of dashboard replicas
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  # -- Service annotations for the dashboard Service.
+  # Required for ExternalDNS to auto-register the hostname, or for AWS Load Balancer
+  # Controller when using type: LoadBalancer.
+  # Example (ExternalDNS):
+  #   service:
+  #     annotations:
+  #       external-dns.alpha.kubernetes.io/hostname: wazuh.example.com
+  service:
+    annotations: {}
+  # -- Ingress configuration for dashboard access without port-forward
+  ingress:
+    enabled: false
+    # -- Ingress class name (e.g., "nginx", "alb")
+    ingressClassName: ""
+    # -- Hostname for the dashboard
+    host: "wazuh.example.com"
+    # -- Additional ingress annotations
+    annotations: {}
+    # -- TLS configuration
+    # Example:
+    #   tls:
+    #     - secretName: wazuh-dashboard-tls
+    #       hosts:
+    #         - wazuh.example.com
+    tls: []
+  # -- SSL/TLS on the dashboard server itself.
+  # Keep false when using Cloudflare Tunnel, Traefik, or any TLS-terminating proxy.
+  # Set true only for direct access without a proxy in front.
+  ssl:
+    enabled: false
+  # -- Prometheus metrics scraping
+  metrics:
+    enabled: true
+    port: 5601
+    path: "/api/status"
+  # -- Node selector for dashboard pods
+  nodeSelector: {}
+  # -- Tolerations for dashboard pods
+  tolerations: []
+  # -- Affinity rules for dashboard pods
+  affinity: {}
+
+# =============================================================================
+# Agent (Wazuh Agent DaemonSet)
+# =============================================================================
+# SECURITY NOTE: The agent DaemonSet requires `privileged: true` and `hostPID: true`.
+# Why privileged: Agents need read access to /var/log (container logs), /proc (process
+#   monitoring, rootcheck), and host network interfaces (anomaly detection). Without
+#   privileged mode, the agent cannot perform file integrity monitoring (FIM), rootkit
+#   detection, or collect logs from other containers on the node.
+# Why hostPID: Required for process inventory and detection rules that match on process
+#   names/command lines. Without it, the agent only sees its own PID namespace.
+# Trade-off: In environments where privileged DaemonSets are not allowed (e.g., PCI-DSS
+#   hardened clusters), you can disable the agent and use an external log shipper instead,
+#   but you lose host-level detection capabilities.
+# =============================================================================
+agent:
+  # -- Deploy Wazuh agents as a DaemonSet
+  enabled: true
+  # -- External manager address for cross-cluster deployments (e.g., Route53 PHZ hostname).
+  # When set, agents connect to this address instead of the in-cluster manager service.
+  # Used when manager.enabled=false and agents point to a remote SIEM (e.g., kamet-internal).
+  # Example: "wazuh-manager.internal.kamet.mx"
+  # Leave empty ("") for same-cluster deployments.
+  externalManagerAddress: ""
+  image:
+    repository: wazuh/wazuh-agent
+    tag: "4.14.4"
+    pullPolicy: IfNotPresent
+  # -- Agent group for centralized configuration
+  group: "default"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- Kubernetes namespaces to monitor container logs from.
+  # Empty list = monitor ALL namespaces.
+  # Example: ["my-app", "my-api"]
+  monitoredNamespaces: []
+  # -- SIEM-only mode: disable infrastructure monitoring modules that overlap
+  # with Prometheus/Grafana (hardware, network, ports, processes, etc.)
+  siemOnly: true
+  # -- Base labels injected into every event (cluster-level identification)
+  # Override per environment in values-{env}.yaml
+  labels: {}
+  # -- Namespace-to-project mapping. Enriches events with project metadata.
+  # The agent extracts the namespace from the log path and applies matching labels.
+  # Example:
+  #   namespaceMapping:
+  #     my-app:
+  #       project: "myproject"
+  #       component: "core"
+  #       team: "backend"
+  namespaceMapping: {}
+  # -- Node selector for agent pods
+  nodeSelector: {}
+  # -- Extra tolerations for agent pods (NoSchedule is always tolerated)
+  tolerations: []
+  # -- Affinity rules for agent pods
+  affinity: {}
+
+# =============================================================================
+# S3 Archive Sync (Sidecar)
+# =============================================================================
+s3:
+  # -- Enable S3 sidecar for cold storage of Wazuh archives
+  enabled: false
+  # -- S3 bucket name for archive storage
+  bucket: ""
+  # -- AWS region for S3 bucket
+  region: "us-east-1"
+  # -- Sync interval in seconds
+  syncIntervalSeconds: 300
+  image:
+    repository: public.ecr.aws/aws-cli/aws-cli
+    tag: "2.22.35"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# =============================================================================
+# Cleanup CronJob
+# =============================================================================
+cleanup:
+  # -- Enable periodic cleanup of vd_updater temp files (recommended for 4.14.x)
+  enabled: true
+  # -- Cron schedule for cleanup job
+  schedule: "0 */2 * * *"
+  image:
+    repository: public.ecr.aws/docker/library/busybox
+    tag: "1.36"
+
+# =============================================================================
+# NetworkPolicy
+# =============================================================================
+networkPolicy:
+  # -- Enable NetworkPolicy resources for pod-level traffic control
+  enabled: false
+  # -- Restrict exporter metrics scraping to pods in this namespace only
+  # When empty (""), allows scraping from any namespace (default for easy setup)
+  # Set to your Prometheus/monitoring namespace for production hardening (e.g., "monitoring")
+  prometheusNamespace: ""
+  # -- Additional egress rules for agents (e.g., to reach external APIs)
+  extraEgress: []
+  # -- CIDRs allowed to send agent traffic (ports 1514/1515) to the manager from outside the cluster.
+  # Use for cross-cluster agent deployments via Transit Gateway or VPC peering.
+  # Each CIDR generates a separate ipBlock ingress rule on the manager NetworkPolicy.
+  # Example: ["10.2.0.0/16", "10.3.0.0/16"]
+  crossClusterCidrs: []
+
+# =============================================================================
+# TLS Certificates
+# =============================================================================
+certs:
+  # -- RSA key size for generated certificates
+  keySize: 2048
+  # -- Root CA certificate validity in days (default: 10 years)
+  rootCaDays: 3650
+  # -- Leaf certificate validity in days (default: 5 years)
+  leafCertDays: 1825
+  # -- Certificate subject fields
+  subject:
+    country: "US"
+    locality: "California"
+    organization: "Wazuh"
+  # -- Automatic certificate rotation CronJob
+  rotation:
+    # -- Enable automatic cert rotation before expiration
+    enabled: false
+    # -- Cron schedule for rotation check (default: weekly on Sunday at 3am)
+    schedule: "0 3 * * 0"
+    # -- Days before expiration to trigger renewal
+    renewBeforeDays: 30
+
+# -- Override the chart name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""

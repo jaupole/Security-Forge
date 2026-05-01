@@ -1,0 +1,89 @@
+# Valkey — Helm values for SecForge Local Edition
+#
+# Chart:    bitnami/valkey  (https://charts.bitnami.com/bitnami)
+# Pinned:   5.5.1  (Valkey 9.0.3)
+#
+# Apply with:
+#   helm install valkey bitnami/valkey \
+#     --namespace valkey --version 5.5.1 \
+#     --values infrastructure/valkey/values.yaml
+#
+# NOTE: Bitnami chart 5.x renamed `master.*` → `primary.*`. Anything we set
+# under `master:` below is silently ignored — kept for reference, but the
+# `primary` block (when present) is what the chart honors.
+#
+# Auth: chart auto-generates a password into Secret `valkey` (key: valkey-password)
+# unless an existing secret is referenced. We let it auto-generate.
+#
+# TLS: DISABLED locally — gap documented in
+# docs/06-reference/cluster-services.md. Mesh-level mTLS comes with Istio
+# Ambient in Phase 6, which encrypts on-the-wire even without per-app TLS.
+
+architecture: standalone   # 1 master, 0 replicas
+
+auth:
+  enabled: true
+  # Auto-generated; see Secret `valkey` after install.
+
+tls:
+  enabled: false
+
+# Pod-security-restricted-compliant defaults via the chart's standard knobs.
+master:
+  count: 1
+
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 384Mi }
+
+  persistence:
+    enabled: true
+    size: 2Gi
+    # Default StorageClass on Docker Desktop.
+
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  # AOF for durability.
+  configuration: |-
+    appendonly yes
+    appendfsync everysec
+    maxmemory-policy allkeys-lru
+
+  # No replicas locally.
+  livenessProbe:
+    enabled: true
+  readinessProbe:
+    enabled: true
+
+replica:
+  replicaCount: 0
+
+# Disable Sentinel — single-node deploy.
+sentinel:
+  enabled: false
+
+# Bitnami's metrics sidecar wires to Phase 7 later.
+metrics:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  # Default-deny + allow same-namespace and ingress from labelled callers.
+  # Phase 6 (Istio AuthorizationPolicy) is the strong control; this is belt.
+  allowExternal: false

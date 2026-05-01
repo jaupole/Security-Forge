@@ -1,0 +1,61 @@
+# Phase 6.8 — public Ingress for the BFF.
+# TLS cert minted by mkcert-issuer (cert-manager ClusterIssuer).
+#
+# X-Forwarded-* headers are set by ingress-nginx by default. The BFF's
+# inboundHTU helper requires X-Forwarded-Proto + X-Forwarded-Host on
+# DPoP-protected paths (/api/*) and fails closed if either is missing —
+# see docs/01-architecture/04-bff-pattern.md §"htu canonicalization".
+#
+# Cookies: __Host-bff_sid is Secure + SameSite=Lax. Requires HTTPS end
+# to end; ingress-nginx terminates TLS, then BFF sees cleartext on its
+# pod network, then ztunnel mTLS-encrypts ambient hops.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: helloworld-bff-tls
+  namespace: app
+  labels:
+    app.kubernetes.io/name: helloworld-bff
+    secforge.platform/component: helloworld-bff
+spec:
+  secretName: helloworld-bff-tls
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+  commonName: app.secforge.local
+  dnsNames:
+    - app.secforge.local
+  duration: 2160h    # 90d
+  renewBefore: 720h  # 30d
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: helloworld-bff
+  namespace: app
+  labels:
+    app.kubernetes.io/name: helloworld-bff
+    secforge.platform/component: helloworld-bff
+  annotations:
+    # Strict cookie-security headers are set by the BFF itself; ingress-
+    # nginx defaults are fine here. Don't add proxy-set-headers — the
+    # BFF reads X-Forwarded-Proto/X-Forwarded-Host that ingress-nginx
+    # already sets.
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.secforge.local
+      secretName: helloworld-bff-tls
+  rules:
+    - host: app.secforge.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: helloworld-bff
+                port:
+                  number: 3000

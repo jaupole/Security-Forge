@@ -1,0 +1,52 @@
+# Promtail Helm values — Phase 7.4.
+#
+# DaemonSet — one Promtail pod per node, scraping every container's
+# STDOUT log via the kubelet log directory.
+
+fullnameOverride: promtail
+
+config:
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+  snippets:
+    # Pipeline stages run on every log line. The JSON stage attempts to
+    # parse the line; if the line isn't JSON the stage simply produces
+    # no extracted fields (no error). The labels stage then attaches
+    # whatever was extracted.
+    pipelineStages:
+      - cri: {}
+      - json:
+          expressions:
+            level: level
+            trace_id: trace_id
+            span_id: span_id
+            msg: msg
+      - labels:
+          level:
+          # trace_id is intentionally NOT a label (high cardinality);
+          # leave it as a queryable structured field.
+    # Do NOT override `common:` — the chart's default common block
+    # contains the critical `__path__` relabel that maps each discovered
+    # pod to its kubelet log file path under /var/log/pods. Replacing
+    # `common` drops that mapping and Promtail records "no_path" for
+    # every target. The ambient-mesh / istio-proxy filter we'd want here
+    # is moot anyway: ambient deploys no sidecars.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kps
+
+# Default DaemonSet tolerations cover the control-plane node (this is a
+# single-node cluster, so the control-plane node IS the worker).
+tolerations:
+  - effect: NoSchedule
+    operator: Exists

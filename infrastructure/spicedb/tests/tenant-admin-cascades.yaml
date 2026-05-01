@@ -1,0 +1,61 @@
+# Validator: a tenant admin inherits administer on every app in the
+# tenant, and edit/view/delete on every resource in those apps.
+#
+# This is the most important test — it exercises the cascade across all
+# three tiers (tenant → app → document) and is the one that goes silently
+# wrong if the schema's permission expressions are off by a `+` or a `->`.
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+
+# Linda is a tenant admin only.
+# Mark is a tenant member only.
+# Neither has any direct app or document relation.
+# The cascade alone must give them the right permissions.
+relationships: |
+  tenant:helloworld#admin@user:linda
+  tenant:helloworld#member@user:mark
+  app:helloworld-app#tenant@tenant:helloworld
+  app:dashboard-app#tenant@tenant:helloworld
+  document:welcome#app@app:helloworld-app
+  document:roadmap#app@app:dashboard-app
+
+assertions:
+  assertTrue:
+    # Tenant admin cascades all the way to delete.
+    - app:helloworld-app#administer@user:linda
+    - app:dashboard-app#administer@user:linda
+    - document:welcome#edit@user:linda
+    - document:welcome#delete@user:linda
+    - document:roadmap#edit@user:linda
+    - document:roadmap#delete@user:linda
+    # Tenant member cascades to use → view, but not edit/delete.
+    - app:helloworld-app#use@user:mark
+    - document:welcome#view@user:mark
+    - document:roadmap#view@user:mark
+  assertFalse:
+    - document:welcome#edit@user:mark
+    - document:welcome#delete@user:mark
+    - app:helloworld-app#administer@user:mark

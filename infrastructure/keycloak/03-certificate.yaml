@@ -1,0 +1,70 @@
+# cert-manager Certificates issued by the mkcert ClusterIssuer (Phase 1).
+#
+# We create one cert per hostname (rather than a SAN bundle) so the admin
+# host's cert can be rotated/revoked independently from the public host's.
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: auth-public-tls
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak
+spec:
+  secretName: auth-public-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: keycloak
+      secforge.platform/component: keycloak
+  duration: 8760h     # 1 year — local CA, low rotation pressure
+  renewBefore: 720h   # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: auth.secforge.local
+  dnsNames:
+    - auth.secforge.local
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: auth-admin-tls
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak
+spec:
+  secretName: auth-admin-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: keycloak
+      secforge.platform/component: keycloak
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: auth-admin.secforge.local
+  dnsNames:
+    - auth-admin.secforge.local
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

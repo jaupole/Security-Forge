@@ -1,0 +1,10 @@
+chart:        wazuh
+version:      1.2.10
+appVersion:   4.14.4
+source_repo:  https://ileonelperea.github.io/wazuh-helm
+upstream:     https://github.com/ileonelperea/wazuh-helm
+license:      MIT
+maintainer:   ileonelperea (single-maintainer; see PLAN.md "Path decision (2026-05-01)")
+vendored_on:  2026-05-01 (Session 4)
+reason:       Single-maintainer bus-factor mitigation per CLAUDE.md guidance —
+              we own the deployed artifact; chart upgrades are explicit git operations.

@@ -1,0 +1,92 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Keycloak auth events — HTTP traffic, login latency, JVM health. Login event success/failure counts come from Keycloak's event system in JSON logs (Loki) — see the `auth_events_loki` panel which uses logfmt extraction. Phase 7.6 dashboard.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "HTTP request rate (by outcome)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"fillOpacity": 10, "lineInterpolation": "linear"}}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (outcome) (rate(http_server_requests_seconds_count{namespace=\"keycloak\"}[5m]))", "legendFormat": "{{outcome}}", "refId": "A"}
+      ]
+    },
+    {
+      "title": "HTTP request duration p99 (by uri)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 0}}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "topk(5, histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{namespace=\"keycloak\"}[5m]))))", "legendFormat": "{{uri}}", "refId": "A"}
+      ]
+    },
+    {
+      "title": "Active HTTP connections",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 8},
+      "id": 3,
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 100}, {"color": "red", "value": 500}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(http_server_active_requests{namespace=\"keycloak\"})", "refId": "A"}
+      ]
+    },
+    {
+      "title": "JVM heap used %",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 8},
+      "id": 4,
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]}}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "100 * sum(base_memory_usedHeap_bytes{namespace=\"keycloak\"}) / sum(base_memory_maxHeap_bytes{namespace=\"keycloak\"})", "refId": "A"}
+      ]
+    },
+    {
+      "title": "DB pool — active / available",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 8},
+      "id": 5,
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(agroal_active_count{namespace=\"keycloak\"})", "legendFormat": "active", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(agroal_available_count{namespace=\"keycloak\"})", "legendFormat": "available", "refId": "B"}
+      ]
+    },
+    {
+      "title": "Login events (Loki)",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 14},
+      "id": 6,
+      "options": {"showLabels": false, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"},
+      "targets": [
+        {"datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=\"keycloak\",app=\"keycloak\"} |~ \"\\\"type\\\":\\\"(LOGIN|LOGIN_ERROR|LOGOUT|REFRESH_TOKEN)\\\"\"", "refId": "A"}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["secforge", "auth", "keycloak"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Auth events — Keycloak",
+  "uid": "secforge-auth-events",
+  "version": 1,
+  "weekStart": ""
+}

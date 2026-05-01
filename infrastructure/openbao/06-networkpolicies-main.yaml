@@ -1,0 +1,233 @@
+# NetworkPolicies for the main OpenBao.
+#
+# Builds on top of the Phase 5.2 default-deny-ingress in this namespace.
+#
+# Allowed flows:
+#   ingress-nginx (any ns)              → openbao:8200 (Ingress for UI/API)
+#   app ns                              → openbao:8200 (workload JWT auth)
+#   spicedb ns                          → openbao:8200 (PSK rotation in Phase 5.10)
+#   keycloak ns                         → openbao:8200 (OIDC validation if needed)
+#   observability ns (Phase 7)          → openbao:8200/sys/metrics
+#   role=openbao-debug                  → openbao:8200 (admin runbook helpers)
+#   openbao pod-to-pod                  → :8201 (Raft cluster)
+#
+# Egress:
+#   openbao → openbao-seal:8200         (auto-unseal Transit calls)
+#   openbao → kube-apiserver:443        (Kubernetes auth method)
+#   openbao → keycloak.keycloak.svc:8080 (OIDC discovery + JWKS)
+#   openbao → spire-server.spire.svc:8443 (SPIRE JWKS for jwt auth)
+#   openbao → secforge-app-db.app:5432  (database secrets engine)
+#   openbao → kube-dns                  (DNS)
+#   openbao pod-to-pod                  → :8201 (Raft)
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: allow ingress-nginx → main openbao:8200 (the public Ingress).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: allow `app` ns → openbao:8200 (workload JWT auth from BFFs).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-ns-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: allow openbao pod-to-pod on Raft (:8201) and API (:8200).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-internal
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 8201
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: allow operator-debug pods → openbao:8200 (runbook helpers).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-operator-debug-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: openbao-debug
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: Phase 7 Prometheus → openbao metrics.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-openbao-metrics
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Egress for main openbao.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-egress
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Egress]
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # kube-apiserver (Kubernetes auth method talks to the API server).
+    # We allow TCP/443 across the kube-system ns since the API server
+    # endpoint sits there.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 443
+    # openbao-seal in the same ns
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao-seal
+      ports:
+        - protocol: TCP
+          port: 8200
+    # openbao pod-to-pod (Raft) — same selector, both directions
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 8201
+    # Keycloak (OIDC discovery + JWKS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # SPIRE server JWKS (Phase 5.8)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spire
+      ports:
+        - protocol: TCP
+          port: 8443
+    # secforge-app-db Postgres (Phase 5.7 database engine)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: secforge-app-db
+      ports:
+        - protocol: TCP
+          port: 5432
+
+# ──────────────────────────────────────────────────────────────────────
+# Postgres (app ns) ingress allow for the OpenBao database engine.
+# We can't add this from the openbao ns; it must be created in `app` ns.
+# (It is — see infrastructure/openbao/07-postgres-app-ingress.yaml.)

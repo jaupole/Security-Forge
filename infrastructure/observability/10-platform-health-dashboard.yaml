@@ -1,0 +1,15 @@
+# Platform Health dashboard ConfigMap — Phase 7.7 (advance-landed in
+# Phase 7 first session per user caveat: must precede 7.2 Wazuh
+# deployment so we can observe Wazuh's boot).
+#
+# Picked up by Grafana's `sidecar.dashboards` provisioner via the
+# `grafana_dashboard: "1"` label. Source-of-truth JSON is at
+# infrastructure/grafana/dashboards/platform-health.json — apply.sh
+# generates this ConfigMap from that file.
+#
+# This file is a placeholder template; apply-platform-health-dashboard.sh
+# (called by apply.sh) generates the actual ConfigMap inline because
+# embedding the dashboard JSON in YAML is fragile.
+#
+# To regenerate this ConfigMap:
+#   bash infrastructure/observability/apply-platform-health-dashboard.sh

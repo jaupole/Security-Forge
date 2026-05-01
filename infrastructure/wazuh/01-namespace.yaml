@@ -1,0 +1,20 @@
+# Phase 7.2 — Wazuh namespace.
+#
+# PSS=baseline (NOT privileged): with the agent DaemonSet deferred to Phase 7d,
+# none of the remaining components (indexer, manager, dashboard, cleanup CronJob,
+# certs Job) need privileged. Each container has drop:[ALL] +
+# allowPrivilegeEscalation:false; manager runs as UID 0 inside the container
+# but baseline allows that — restricted does not. When the agent comes back in
+# 7d with capabilities-based hardening, we may revisit but a per-pod
+# `pod-security.kubernetes.io/exempt` annotation on just the agent SA is the
+# right answer rather than relaxing the whole namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wazuh
+  labels:
+    secforge.platform/component: wazuh
+    secforge.platform/edition: local
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline

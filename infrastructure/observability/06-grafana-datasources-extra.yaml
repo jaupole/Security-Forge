@@ -1,0 +1,70 @@
+# Extra Grafana datasources — Phase 7.4 (Loki) + Phase 7.5 (Tempo).
+#
+# Picked up by Grafana's `sidecar.datasources` provisioner (label
+# grafana_datasource=1). The kube-prometheus-stack chart auto-creates
+# the Prometheus datasource itself; this ConfigMap appends Loki and
+# Tempo (and configures the trace-to-logs correlation).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources-extra
+  namespace: observability
+  labels:
+    grafana_datasource: "1"
+    secforge.platform/component: observability
+data:
+  loki.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.observability.svc.cluster.local:3100
+        isDefault: false
+        editable: false
+        jsonData:
+          maxLines: 1000
+          # Trace-to-logs correlation: when viewing a Tempo trace,
+          # clicking a span links to the corresponding Loki entries
+          # filtered by trace_id.
+          derivedFields:
+            - name: trace_id
+              matcherRegex: '"trace_id":"([0-9a-f]+)"'
+              url: '${__value.raw}'
+              datasourceUid: tempo
+
+  tempo.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://tempo.observability.svc.cluster.local:3200
+        isDefault: false
+        editable: false
+        jsonData:
+          # Tempo → Loki linking: from a span, jump to the Loki query
+          # filtered by trace_id within that namespace.
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: '-1m'
+            spanEndTimeShift: '1m'
+            tags:
+              - key: 'service.namespace'
+                value: 'namespace'
+              - key: 'service.name'
+                value: 'app'
+            filterByTraceID: true
+            filterBySpanID: false
+            customQuery: true
+            query: '{namespace="${__span.tags["service.namespace"]}"} |~ "${__span.traceId}"'
+          # Span search defaults
+          search:
+            hide: false
+          nodeGraph:
+            enabled: true
+          serviceMap:
+            datasourceUid: prometheus

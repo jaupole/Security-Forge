@@ -1,0 +1,284 @@
+# Phase 6.4 — mTLS + AuthorizationPolicy verification with a 3-pod test set.
+#
+#   service-a: legitimate caller; allowed by AuthorizationPolicy.
+#   service-b: target; serves /healthz on :8080.
+#   service-c: unauthorized caller; in the same ns, NOT in the allow rule.
+#
+# All three opt into `mesh-authz: enforce` so default-deny applies, and
+# only the explicit ALLOW for service-a can satisfy a request to service-b.
+#
+# After Checkpoint A passes, this entire file is deleted with
+# `kubectl delete -f test-pair.yaml`.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-a
+  namespace: app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-b
+  namespace: app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: service-c
+  namespace: app
+---
+# Tiny static HTTP responder for service-b. Uses busybox httpd; the test
+# only needs a 200 on /healthz, no auth.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-b
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: service-b
+        secforge.platform/mesh-authz: enforce
+    spec:
+      serviceAccountName: service-b
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: http
+          image: python:3.13-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              mkdir -p /tmp/www
+              echo ok > /tmp/www/healthz
+              cd /tmp/www && exec python3 -m http.server 8080
+          ports:
+            - containerPort: 8080
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+  namespace: app
+spec:
+  selector:
+    app.kubernetes.io/name: service-b
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# service-a: legitimate caller. Sleeps; we exec curl into it for tests.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-a
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: service-a
+        secforge.platform/mesh-authz: enforce
+    spec:
+      serviceAccountName: service-a
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          image: curlimages/curl:8.10.1
+          command: ["sleep", "infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+---
+# service-c: unauthorized caller. Same image and shape as service-a; the
+# only difference is the ServiceAccount (and therefore SPIFFE ID), which
+# means the AuthorizationPolicy doesn't ALLOW it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-c
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-c
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: service-c
+        secforge.platform/mesh-authz: enforce
+    spec:
+      serviceAccountName: service-c
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          image: curlimages/curl:8.10.1
+          command: ["sleep", "infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+---
+# Only service-a can call service-b on :8080.
+# Identity assertion is by SPIFFE principal — exact match on service-a's
+# SVID, so service-c's principal cannot satisfy the rule even though both
+# are in the same namespace.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-service-a-to-service-b
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-b
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/app/sa/service-a"
+---
+# NetworkPolicies: one ingress for service-b allowing same-ns callers.
+# Defense in depth; AuthorizationPolicy is what does the SPIFFE-identity
+# narrowing. Without this NetworkPolicy, kindnet might block at L4 before
+# AuthorizationPolicy runs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-service-b
+  namespace: app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: service-b
+  policyTypes: [Ingress]
+  ingress:
+    # Same-ns mesh callers tunnel via HBONE :15008 (ztunnel inbound).
+    # Direct app port 8080 is here for non-mesh / local debugging.
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-service-a-c-egress
+  namespace: app
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [service-a, service-c]
+  policyTypes: [Egress]
+  egress:
+    # Ambient mode: outbound traffic from these pods is intercepted by
+    # ztunnel via the istio-cni redirect. The actual TCP socket exits
+    # the pod toward the local ztunnel (in istio-system) on port 15001
+    # (outbound listener) or to a remote pod's HBONE :15008. We allow
+    # broad egress within the same node here — the surgical authz at L4
+    # is done by the AuthorizationPolicy. Defense-in-depth narrowing of
+    # egress is appropriate when the source workload is not in the mesh,
+    # but in-mesh sources rely on AuthorizationPolicy as the gate.
+    - to:
+        - podSelector: {}                       # any pod in app
+        - namespaceSelector:                    # ztunnel + dns
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+    - ports:                                    # DNS UDP
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system

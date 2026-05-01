@@ -1,0 +1,51 @@
+# Admin console Ingress — auth-admin.secforge.local.
+#
+# Two layers of admin gating:
+#
+# 1. Application-layer: Keycloak's `hostname.admin: https://auth-admin.secforge.local`
+#    in the Keycloak CR (04-keycloak-cr.yaml) makes the application refuse
+#    to render the admin console under any other hostname. So even if a
+#    request reached this backend with `Host: auth.secforge.local`, the
+#    admin UI would not load.
+#
+# 2. Network-layer: the `whitelist-source-range` annotation below limits
+#    which client IPs ingress-nginx will accept on this hostname. On
+#    Docker Desktop, requests from the developer's laptop appear to nginx
+#    with source IPs in the docker0 / kindnet bridge range (172.19.0.0/16
+#    on this cluster). We allow that range and loopback. Cloud edition
+#    swaps this for a bastion / VPN CIDR.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-admin
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak
+    secforge.platform/role: admin-console
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Source-IP restriction (see header comment for context).
+    # 172.19.0.0/16 covers Docker Desktop's bridge; 127.0.0.1/32 is
+    # belt-and-suspenders. Loosen or replace at cloud migration.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "172.19.0.0/16,127.0.0.1/32"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth-admin.secforge.local
+      secretName: auth-admin-tls
+  rules:
+    - host: auth-admin.secforge.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-service
+                port:
+                  number: 8080

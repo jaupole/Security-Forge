@@ -1,0 +1,242 @@
+# KeycloakRealmImport for the `secforge-tenants` realm.
+#
+# Architecture: docs/01-architecture/01-iam-platform.md
+# ADR-0006:    docs/02-decisions/0006-keycloak-keys-local.md
+# ADR-0007:    docs/02-decisions/0007-totp-instead-of-passkeys-locally.md
+#
+# IMPORT BEHAVIOR — see realms/platform-realm.yaml.
+
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: secforge-tenants-realm-import
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak
+    secforge.platform/realm: secforge-tenants
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: secforge-tenants
+    displayName: SecForge Tenants
+    displayNameHtml: "<strong>SecForge</strong> Tenants"
+    enabled: true
+
+    # ─── Session and token lifetimes ───────────────────────────────
+    # Idle 30 min, absolute 12h. Remember-me disabled for tenant users.
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 43200
+    offlineSessionIdleTimeout: 0
+    offlineSessionMaxLifespan: 0
+    offlineSessionMaxLifespanEnabled: false
+    accessTokenLifespan: 300
+    accessTokenLifespanForImplicitFlow: 0
+    accessCodeLifespan: 60
+    accessCodeLifespanUserAction: 1800
+    accessCodeLifespanLogin: 1800
+    actionTokenGeneratedByAdminLifespan: 43200
+    actionTokenGeneratedByUserLifespan: 300
+
+    # ─── Refresh-token rotation with reuse detection ───────────────
+    revokeRefreshToken: true
+    refreshTokenMaxReuse: 0
+
+    # ─── Sign-in policy ────────────────────────────────────────────
+    # Self-service registration disabled: tenants are admin-mediated
+    # (or SCIM-provisioned per organization in Phase 10). Email
+    # verification required because tenant users come from outside.
+    registrationAllowed: false
+    registrationEmailAsUsername: false
+    rememberMe: false
+    verifyEmail: true
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: false   # password is not a primary factor
+    editUsernameAllowed: false
+
+    # ─── Brute-force protection ────────────────────────────────────
+    bruteForceProtected: true
+    permanentLockout: false
+    maxFailureWaitSeconds: 900
+    minimumQuickLoginWaitSeconds: 60
+    waitIncrementSeconds: 60
+    quickLoginCheckMilliSeconds: 1000
+    maxDeltaTimeSeconds: 43200
+    failureFactor: 5
+
+    # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
+    otpPolicyType: totp
+    otpPolicyAlgorithm: HmacSHA1
+    otpPolicyDigits: 6
+    otpPolicyPeriod: 30
+    otpPolicyLookAheadWindow: 1
+    otpPolicyInitialCounter: 0
+    otpSupportedApplications:
+      - totpAppFreeOTPName
+      - totpAppGoogleName
+      - totpAppMicrosoftAuthenticatorName
+
+    # ─── Required actions ──────────────────────────────────────────
+    # CONFIGURE_TOTP, CONFIGURE_RECOVERY_AUTHN_CODES default-action.
+    # VERIFY_EMAIL is enabled (and triggered on registration paths
+    # that admins use to create tenant users).
+    requiredActions:
+      - alias: CONFIGURE_TOTP
+        name: Configure OTP
+        providerId: CONFIGURE_TOTP
+        enabled: true
+        defaultAction: true
+        priority: 10
+        config: {}
+      - alias: CONFIGURE_RECOVERY_AUTHN_CODES
+        name: Recovery Authentication Codes
+        providerId: CONFIGURE_RECOVERY_AUTHN_CODES
+        enabled: true
+        defaultAction: true
+        priority: 20
+        config: {}
+      - alias: VERIFY_EMAIL
+        name: Verify Email
+        providerId: VERIFY_EMAIL
+        enabled: true
+        defaultAction: false
+        priority: 50
+        config: {}
+      - alias: UPDATE_PASSWORD
+        name: Update Password
+        providerId: UPDATE_PASSWORD
+        enabled: true
+        defaultAction: false
+        priority: 30
+        config: {}
+      - alias: VERIFY_PROFILE
+        name: Verify Profile
+        providerId: VERIFY_PROFILE
+        enabled: true
+        defaultAction: false
+        priority: 90
+        config: {}
+      - alias: TERMS_AND_CONDITIONS
+        name: Terms and Conditions
+        providerId: TERMS_AND_CONDITIONS
+        enabled: false
+        defaultAction: false
+        priority: 100
+        config: {}
+
+    # ─── Events / audit logging ────────────────────────────────────
+    eventsEnabled: true
+    eventsExpiration: 604800
+    eventsListeners:
+      - jboss-logging
+    enabledEventTypes:
+      - LOGIN
+      - LOGIN_ERROR
+      - LOGOUT
+      - LOGOUT_ERROR
+      - CODE_TO_TOKEN
+      - CODE_TO_TOKEN_ERROR
+      - CLIENT_LOGIN
+      - CLIENT_LOGIN_ERROR
+      - REFRESH_TOKEN
+      - REFRESH_TOKEN_ERROR
+      - INTROSPECT_TOKEN
+      - INTROSPECT_TOKEN_ERROR
+      - VALIDATE_ACCESS_TOKEN
+      - USER_INFO_REQUEST
+      - REVOKE_GRANT
+      - REVOKE_GRANT_ERROR
+      - REGISTER
+      - REGISTER_ERROR
+      - UPDATE_TOTP
+      - UPDATE_TOTP_ERROR
+      - REMOVE_TOTP
+      - REMOVE_TOTP_ERROR
+      - UPDATE_PASSWORD
+      - UPDATE_PASSWORD_ERROR
+      - RESET_PASSWORD
+      - RESET_PASSWORD_ERROR
+      - SEND_RESET_PASSWORD
+      - VERIFY_EMAIL
+      - SEND_VERIFY_EMAIL
+      - GRANT_CONSENT
+      - REVOKE_GRANT
+      - IDENTITY_PROVIDER_LOGIN
+      - IDENTITY_PROVIDER_LOGIN_ERROR
+      - IDENTITY_PROVIDER_FIRST_LOGIN
+      - IDENTITY_PROVIDER_LINK_ACCOUNT
+      - REMOVE_FEDERATED_IDENTITY
+      - FEDERATED_IDENTITY_OVERRIDE_LINK
+      - IMPERSONATE
+      - EXECUTE_ACTIONS
+      - EXECUTE_ACTION_TOKEN
+      - CUSTOM_REQUIRED_ACTION
+    adminEventsEnabled: true
+    adminEventsDetailsEnabled: true
+
+    # ─── Realm signing keys (ADR-0006) ─────────────────────────────
+    components:
+      org.keycloak.keys.KeyProvider:
+        - name: rsa-generated
+          providerId: rsa-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["RS256"]
+            keySize: ["2048"]
+        - name: rsa-enc-generated
+          providerId: rsa-enc-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["RSA-OAEP"]
+            keySize: ["2048"]
+        - name: hmac-generated-hs512
+          providerId: hmac-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["HS512"]
+        - name: aes-generated
+          providerId: aes-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+
+    defaultSignatureAlgorithm: RS256
+
+    # ─── Realm attributes ──────────────────────────────────────────
+    # organizationsEnabled toggles Keycloak Organizations (multi-tenant
+    # boundary inside one realm). The feature is GA in 26.x; flipping
+    # this on exposes /admin/realms/secforge-tenants/organizations.
+    attributes:
+      organizationsEnabled: "true"
+      cibaBackchannelTokenDeliveryMode: poll
+      cibaExpiresIn: "120"
+      cibaInterval: "5"
+      cibaAuthRequestedUserHint: login_hint
+      parRequestUriLifespan: "60"
+      "frontendUrl": "https://auth.secforge.local"
+      "acr.loa.map": "{}"
+
+    # ─── Internationalization ──────────────────────────────────────
+    internationalizationEnabled: true
+    supportedLocales:
+      - en
+    defaultLocale: en
+
+    # ─── Realm-level default roles ─────────────────────────────────
+    defaultRoles:
+      - default-roles-secforge-tenants
+
+    users: []
+    clients: []

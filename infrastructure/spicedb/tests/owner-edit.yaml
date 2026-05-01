@@ -1,0 +1,40 @@
+# Validator: an owner can edit and view their document.
+#
+# Run: bash infrastructure/spicedb/tests/run.sh
+# Or:  zed validate infrastructure/spicedb/tests/owner-edit.yaml
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+
+relationships: |
+  document:welcome#owner@user:jason
+  document:welcome#app@app:helloworld-app
+  app:helloworld-app#tenant@tenant:helloworld
+
+assertions:
+  assertTrue:
+    - document:welcome#edit@user:jason
+    - document:welcome#view@user:jason
+    - document:welcome#delete@user:jason

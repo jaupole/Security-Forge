@@ -1,0 +1,267 @@
+{{- if .Values.manager.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wazuh.fullname" . }}-manager-config
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.manager.selectorLabels" . | nindent 4 }}
+data:
+  ossec.conf: |
+    <ossec_config>
+      <global>
+        <jsonout_output>yes</jsonout_output>
+        <alerts_log>yes</alerts_log>
+        <logall>no</logall>
+        <logall_json>{{ ternary "yes" "no" .Values.manager.logallJson }}</logall_json>
+        <email_notification>no</email_notification>
+      </global>
+
+      <remote>
+        <connection>secure</connection>
+        <port>1514</port>
+        <protocol>tcp</protocol>
+        <queue_size>131072</queue_size>
+      </remote>
+
+      <auth>
+        <disabled>no</disabled>
+        <port>1515</port>
+        <use_source_ip>no</use_source_ip>
+        <purge>yes</purge>
+        <use_password>no</use_password>
+        <ssl_agent_ca></ssl_agent_ca>
+        <force>
+          <enabled>yes</enabled>
+          <disconnected_time enabled="yes">1h</disconnected_time>
+          <after_registration_time>1h</after_registration_time>
+          <key_mismatch>yes</key_mismatch>
+        </force>
+      </auth>
+
+      <alerts>
+        <log_alert_level>3</log_alert_level>
+        <email_alert_level>12</email_alert_level>
+      </alerts>
+
+      <vulnerability-detection>
+        <enabled>yes</enabled>
+        <index-status>yes</index-status>
+        <feed-update-interval>{{ .Values.manager.feedUpdateInterval }}</feed-update-interval>
+      </vulnerability-detection>
+
+      <indexer>
+        <enabled>yes</enabled>
+        <hosts>
+          <host>https://{{ include "wazuh.indexer.host" . }}:9200</host>
+        </hosts>
+        <ssl>
+          <certificate_authorities>
+            <ca>/etc/ssl/root-ca.pem</ca>
+          </certificate_authorities>
+          <certificate>/etc/ssl/filebeat.pem</certificate>
+          <key>/etc/ssl/filebeat-key.pem</key>
+        </ssl>
+      </indexer>
+
+      {{- if .Values.manager.cluster.enabled }}
+      <cluster>
+        <name>{{ .Values.manager.cluster.name }}</name>
+        <node_name>__NODE_NAME__</node_name>
+        <node_type>__NODE_TYPE__</node_type>
+        <key>__CLUSTER_KEY__</key>
+        <port>1516</port>
+        <bind_addr>0.0.0.0</bind_addr>
+        <nodes>
+          <node>{{ include "wazuh.fullname" . }}-manager-0.{{ include "wazuh.manager.fqdn" . }}</node>
+        </nodes>
+        <hidden>no</hidden>
+        <disabled>no</disabled>
+      </cluster>
+      {{- end }}
+
+      <ruleset>
+        <decoder_dir>ruleset/decoders</decoder_dir>
+        <rule_dir>ruleset/rules</rule_dir>
+        <rule_exclude>0215-policy_rules.xml</rule_exclude>
+        <list>etc/lists/audit-keys</list>
+        <list>etc/lists/amazon/aws-eventnames</list>
+        <list>etc/lists/security-eventchannel</list>
+      </ruleset>
+    </ossec_config>
+  filebeat.yml: |
+    filebeat.modules:
+      - module: wazuh
+        alerts:
+          enabled: true
+        archives:
+          enabled: {{ .Values.manager.logallJson }}
+
+    setup.template.json.enabled: true
+    setup.template.overwrite: true
+    setup.template.json.path: '/etc/filebeat/wazuh-template.json'
+    setup.template.json.name: 'wazuh'
+    setup.ilm.enabled: false
+
+    output.elasticsearch:
+      hosts: [https://{{ include "wazuh.indexer.host" . }}:9200]
+      username: '${FILEBEAT_USERNAME}'
+      password: '${FILEBEAT_PASSWORD}'
+      ssl.verification_mode: 'certificate'
+      ssl.certificate_authorities: ['/etc/ssl/root-ca.pem']
+      ssl.certificate: '/etc/ssl/filebeat.pem'
+      ssl.key: '/etc/ssl/filebeat-key.pem'
+
+    logging.metrics.enabled: false
+
+    seccomp:
+      default_action: allow
+      syscalls:
+      - action: allow
+        names:
+        - rseq
+  local_internal_options.conf: |
+    # Log rotation - keep local files only {{ .Values.manager.logRetentionDays }} days (S3/Indexer has the full history)
+    monitord.rotate_log=1
+    monitord.compress=1
+    monitord.keep_log_days={{ .Values.manager.logRetentionDays }}
+    monitord.size_rotate=512
+  {{- if .Values.manager.customRules.enabled }}
+  local_rules.xml: |
+    <!-- Custom Detection Rules -->
+    <!-- Rule IDs: 100001-100099 (custom range) -->
+    {{- $nsPattern := join "|" .Values.agent.monitoredNamespaces }}
+
+    <group name="custom,">
+
+      <!-- ============================================ -->
+      <!-- Application Errors (ERROR level)             -->
+      <!-- ============================================ -->
+      <rule id="100001" level="10">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <match> ERROR </match>
+        <description>Application error detected</description>
+        <group>custom,application_error,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- HTTP 5xx - Server Errors                     -->
+      <!-- ============================================ -->
+      <rule id="100002" level="12">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>status.?[=:].?5\d\d|statusCode.?[=:].?5\d\d| 5\d\d </regex>
+        <description>HTTP 5xx server error</description>
+        <group>custom,http_error,server_error,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- HTTP 401 - Authentication Failures           -->
+      <!-- ============================================ -->
+      <rule id="100003" level="8">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>status.?[=:].?401|statusCode.?[=:].?401|Unauthorized|authentication failed</regex>
+        <description>Authentication failure (401)</description>
+        <group>custom,auth_failure,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- HTTP 403 - Authorization Denied              -->
+      <!-- ============================================ -->
+      <rule id="100004" level="8">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>status.?[=:].?403|statusCode.?[=:].?403|Forbidden|Access Denied</regex>
+        <description>Authorization denied (403)</description>
+        <group>custom,auth_failure,access_denied,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- HTTP 429 - Rate Limiting                     -->
+      <!-- ============================================ -->
+      <rule id="100005" level="8">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>status.?[=:].?429|statusCode.?[=:].?429|rate.limit|too many requests|Too Many Requests</regex>
+        <description>Rate limiting triggered (429)</description>
+        <group>custom,rate_limit,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- Java/Spring Exceptions                       -->
+      <!-- ============================================ -->
+      <rule id="100006" level="10">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>Exception|StackTrace|NullPointerException|RuntimeException|OutOfMemoryError</regex>
+        <description>Java exception detected</description>
+        <group>custom,exception,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- Database Connection Errors                   -->
+      <!-- ============================================ -->
+      <rule id="100007" level="12">
+        {{- if .Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>Connection refused|Unable to acquire JDBC|connection pool|HikariPool|database.is.unavailable</regex>
+        <description>Database connection error</description>
+        <group>custom,database_error,</group>
+      </rule>
+
+      {{- range .Values.manager.customRules.extraPatterns }}
+      <!-- ============================================ -->
+      <!-- Custom: {{ .description }}                   -->
+      <!-- ============================================ -->
+      <rule id="{{ .id }}" level="{{ .level }}">
+        {{- if $.Values.agent.monitoredNamespaces }}
+        <regex>{{ $nsPattern }}</regex>
+        {{- end }}
+        <regex>{{ .pattern }}</regex>
+        <description>{{ .description }}</description>
+        <group>custom,{{ .group }},</group>
+      </rule>
+      {{- end }}
+
+      <!-- ============================================ -->
+      <!-- Correlation: Brute Force Detection           -->
+      <!-- 5+ auth failures in 2 minutes                -->
+      <!-- ============================================ -->
+      <rule id="100010" level="14" frequency="5" timeframe="120">
+        <if_matched_group>auth_failure</if_matched_group>
+        <description>Multiple authentication failures - possible brute force</description>
+        <group>custom,brute_force,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- Correlation: Service Degradation             -->
+      <!-- 10+ server errors in 5 minutes               -->
+      <!-- ============================================ -->
+      <rule id="100011" level="14" frequency="10" timeframe="300">
+        <if_matched_group>server_error</if_matched_group>
+        <description>Multiple server errors - service degradation</description>
+        <group>custom,service_degradation,</group>
+      </rule>
+
+      <!-- ============================================ -->
+      <!-- Correlation: Database Outage                 -->
+      <!-- 3+ DB errors in 1 minute                     -->
+      <!-- ============================================ -->
+      <rule id="100012" level="14" frequency="3" timeframe="60">
+        <if_matched_group>database_error</if_matched_group>
+        <description>Multiple database errors - possible outage</description>
+        <group>custom,database_outage,</group>
+      </rule>
+
+    </group>
+  {{- end }}
+{{- end }}
