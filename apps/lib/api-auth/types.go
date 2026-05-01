@@ -67,6 +67,17 @@ type MiddlewareConfig struct {
 	// Clock is the time source used for `exp`/`nbf`/`iat` validation.
 	// Optional; defaults to time.Now.
 	Clock func() time.Time
+
+	// Audit is the optional audit-log emitter used by Wrap to record one
+	// hop line per protected request (success or denial). When nil, Wrap
+	// still validates and forwards/responds, just without audit. Direct
+	// callers of ValidateInbound are responsible for their own auditing.
+	Audit *Audit
+
+	// WorkloadID is this service's SPIFFE-SVID, used as the
+	// `caller_workload_id` field in audit lines emitted by Wrap. Required
+	// when Audit is set; ignored otherwise.
+	WorkloadID string
 }
 
 // ClientConfig is passed to NewClient. Per ADR-0014 § Library API surface,
