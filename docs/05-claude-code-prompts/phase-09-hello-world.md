@@ -97,7 +97,7 @@ zed permission check document:welcome edit user:alice  → DENIED
   - POST /api/document/:id → check `edit`, "save" (just echo for the demo)
 - Middleware:
   - JWT validation (verify signature against Keycloak JWKS)
-  - DPoP validation (verify thumbprint matches `cnf.jkt` claim, check `htm`/`htu`/`iat`/`jti`/`ath`)
+  - DPoP validation (verify thumbprint matches `cnf.jkt` claim, check `htm`/`htu`/`iat`/`jti`/`ath`). **`htu` MUST follow the canonical rule in [`docs/06-reference/dpop-htu-canonicalization.md`](../06-reference/dpop-htu-canonicalization.md)** — the backend's `apps/lib/api-auth.Middleware.ValidateInbound` (Phase 6b-1) implements it; do NOT re-derive in this phase.
   - Replay cache for DPoP `jti` (in-memory LRU, 5-minute TTL)
 - Calls SpiceDB via gRPC for permission checks
 - Structured JSON logging with correlation to trace_id

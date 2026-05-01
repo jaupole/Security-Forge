@@ -45,7 +45,7 @@ This is intentional, not a deficiency. We're optimizing for fast iteration on th
 | Privileged Access | Teleport Community | Optional locally |
 | Browser Pattern | BFF | Same |
 | Token Strategy | OAuth 2.1 + PAR + DPoP-bound | Same |
-| Auth Factor | Passkeys + hardware keys for admin | Same; passkeys work on `*.secforge.local` over local TLS |
+| Auth Factor | TOTP (interim — see [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md)) + recovery codes; passkeys + hardware FIDO2 at production hardening | Same; passkeys work on `*.secforge.local` over local TLS |
 | Session Store | Valkey (BSD-3-Clause) | Same |
 | Database | Postgres (in-cluster) | Cloud equivalent: RDS Postgres |
 | Object Storage | MinIO | Cloud equivalent: S3 |

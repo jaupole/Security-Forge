@@ -353,3 +353,62 @@ Even though Keycloak's `roles` client scope is attached to the `openbao` client 
 …meaning Keycloak IS emitting the claim, with `platform_admin` present. Yet OpenBao 2.5.3 reports it missing during the actual auth flow. Conclusion: **defect is on the OpenBao side**, not Keycloak. The `preferred_username` workaround in `infrastructure/openbao/configure-auth-oidc.sh` remains in place; same for Grafana's `role_attribute_path` in `infrastructure/observability/01-kube-prometheus-stack-values.yaml`. Tracked in PLAN.md follow-up #1; defer per the 90-day fallback trigger 2026-07-29.
 
 **If you need to extend this debug:** OpenBao 2.5.3 ignores `verbose_oidc_logging` (silently — it's a Vault Enterprise feature). To capture the actual userinfo response OpenBao receives, mint an access_token via `client_credentials` against the openbao client and curl `https://auth.secforge.local/realms/platform/protocol/openid-connect/userinfo` with that token; compare the response body to what OpenBao's role rejects.
+
+---
+
+## Verifying claim plumbing with the Keycloak Evaluate tool
+
+**Use this BEFORE concluding a missing-claim is a Keycloak misconfig.** Phase 7.0.b's investigation surfaced the canonical example: OpenBao reported `realm_access/roles` missing during auth; the Keycloak Evaluate tool conclusively showed Keycloak was emitting it correctly in all three token outputs. The defect was on the OpenBao consumer side (upstream bug, not our config). Without the Evaluate tool's evidence, the investigation would have churned in Keycloak's realm/scope/mapper config indefinitely.
+
+### Where to find it
+
+In the Keycloak admin UI:
+
+1. Realm dropdown (top-left) → choose the realm that issues the token (`platform` or `secforge-tenants`).
+2. Left nav → **Clients** → click the client whose token shape you're debugging (`openbao`, `helloworld-bff`, `grafana`, `wazuh-dashboard` once provisioned, etc.).
+3. Tab row at top of the client page → **Client scopes**.
+4. Below the assigned-scopes list → **Evaluate** (a sub-tab next to "Setup").
+
+### What the panes show
+
+The Evaluate page has four output panes you can switch between (selector top-right):
+
+| Pane | What it shows | When to read it |
+|---|---|---|
+| **Effective protocol mappers** | The full mapper list contributed by every scope assigned to this client (Default + Optional + the scopes you toggle on the left). Read this first to understand what Keycloak intends to emit before any token is minted. |
+| **Generated user info** | The exact JSON that Keycloak's userinfo endpoint will return for the selected user. Compare against what your consumer's user-info-fetch logs claim it received. |
+| **Generated ID token** | The exact JSON inside the ID token's payload. Useful when an OIDC client validates ID-token claims directly (e.g. the BFF's `claims.PreferredUsername` binding). |
+| **Generated access token** | The exact JSON inside the access token's payload. Useful for backend APIs that gate on `aud` or scoped claims. |
+
+### How to read multivalued claims
+
+`realm_access.roles` is the most common offender — it's an array under a nested object:
+
+```json
+"realm_access": {
+  "roles": ["default-roles-platform", "offline_access", "platform_admin"]
+}
+```
+
+Some consumers expect this flattened (`"roles": [...]`) or differently-cased (`"realmRoles"`). The Evaluate tool's output is verbatim what Keycloak will emit — if your consumer expects a different shape, the bug is on the consumer side OR the consumer expects a transformation Keycloak should be configured to do (e.g., a hardcoded-claim mapper to flatten).
+
+### What "claim is in Evaluate output but not consumed downstream" implies
+
+**Downstream defect, not Keycloak misconfig.** Stop debugging the realm/scope/mapper and pivot to:
+
+1. Confirm the consumer is hitting the right endpoint (userinfo vs ID token vs access token).
+2. Capture what the consumer's HTTP path is actually receiving — direct curl to the same endpoint with the same Authorization header, then diff the JSON against the Evaluate output.
+3. If they match: the consumer's claim-extraction logic is the bug.
+4. If they don't match: there's an issuer-side detail the Evaluate tool didn't surface (rare; usually means a request-scoped claim mapper that depends on auth context the Evaluate tool can't simulate, OR a Quarkus-vs-classic Keycloak engine difference).
+
+This was the F-ADR-7-adjacent learning from Phase 7.0.b: the Evaluate tool's output convinced us within minutes that the claim plumbing was correct on Keycloak's side. The investigation pivoted to OpenBao 2.5.3's userinfo-fetch path and the upstream defect was scoped within an hour.
+
+### Reusable across the platform
+
+This section applies to ANY consumer reporting a missing claim:
+- BFF reading ID-token claims (Phase 6, `apps/lib/oidc/keycloak.go::ParseIDToken`)
+- OpenBao OIDC role validating `bound_claims` (Phase 5)
+- Grafana role mapping (Phase 7.3)
+- Wazuh dashboard once OIDC federation lands (Phase 7d follow-up)
+
+Any future "missing claim" debug starts with the Evaluate tool BEFORE assuming Keycloak's config is at fault.

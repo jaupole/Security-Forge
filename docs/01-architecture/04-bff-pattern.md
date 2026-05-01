@@ -203,6 +203,8 @@ This is one extra round-trip on the first request after a pod restart. The post-
 
 ### `htu` canonicalization rule (settles CLAUDE.md gotcha #3 once)
 
+> **Canonical source:** [`docs/06-reference/dpop-htu-canonicalization.md`](../06-reference/dpop-htu-canonicalization.md). The rule below is included here as the BFF's binding spec; every other consumer (Phase 6b-1's `apps/lib/api-auth/`, Phase 9+ backends, future BFFs) reads from the canonical doc. Closes F-ADR-3 — central reference replaces per-component re-derivation.
+
 The DPoP `htu` claim is the **HTTP target URI** of the request the proof secures. Canonicalization is the source of subtle bugs.
 
 **The rule, applied at every site that mints or validates a DPoP proof:**
@@ -278,7 +280,7 @@ Backend MUST reject any request that satisfies #1-3 but fails #4 with 401, with 
 
 ### Generation site
 
-A request-scoped middleware in `headers.go` generates a fresh 16-byte random nonce per request, base64url-encoded → 22 chars. The nonce lives in the request context (`context.WithValue`). Every response — even error responses, even redirects — gets a CSP header that includes this nonce.
+A request-scoped middleware in `headers.go` generates a fresh 16-byte cryptographically-random nonce per request via `crypto/rand.Read` (NOT `math/rand` — predictable nonces would enable CSP bypass; closing F-ADR-4). The nonce is base64url-encoded → 22 chars, lives in the request context (`context.WithValue`), and is included in CSP violation reports for traceability. Every response — even error responses, even redirects — gets a CSP header that includes this nonce.
 
 ### Plumbing to the frontend
 
