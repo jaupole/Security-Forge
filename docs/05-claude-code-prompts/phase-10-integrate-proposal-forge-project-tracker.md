@@ -1,6 +1,13 @@
 # Phase 10 — Integrate Proposal Forge and Project Tracker
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 9 — Hello World](./phase-09-hello-world.md) · [Next: Phase 11 — Develop Additional Apps](./phase-11-develop-apps.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 9 · Phase 6b-2 (outbound secrets pattern — apps need it for Anthropic/OpenAI/GSA/etc.)
+> **Blocks:** Phase 11
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Not started. Order: Project Tracker first (smaller, single-user, fewer outbound secrets), Proposal Forge second.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 3-5 weeks (mostly per-app refactoring; the platform integration pattern itself is a few days per app)
 

@@ -1,6 +1,13 @@
 # Phase 7d — Rotation and housekeeping batch
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 7 — Observability](./phase-07-observability.md) · [Next: Phase 8 — Teleport](./phase-08-teleport.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 7 ✅
+> **Blocks:** (none structurally — but BFF private_key_jwt rotation, SpiceDB datastore_uri dynamic-cred migration, Transit-TTL strategy, Wazuh agent hardening, Wazuh syslog forwarding, and Wazuh OIDC federation all live here)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Not started. Absorbs Transit-TTL strategy item from cold-pause incident 2026-05-01.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 1 day
 

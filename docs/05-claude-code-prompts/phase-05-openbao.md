@@ -1,6 +1,13 @@
 # Phase 5 — Secrets Management (OpenBao)
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 4 — SpiceDB](./phase-04-spicedb.md) · [Next: Phase 6 — Istio + BFF](./phase-06-istio-bff.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phases 0–4
+> **Blocks:** Phases 6–11 (every secret load goes through OpenBao)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-30). OIDC admin login working. 6 follow-ups carry-forward in PLAN.md (one — SPIFFE-CSI cold-boot — already structurally resolved in Phase 7.0.a 2026-05-01).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2-3 days
 

@@ -19,7 +19,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 ## Phase order — quick reference (execution order)
 
 > **MANDATORY:** when a phase status changes, update BOTH the detail block below AND this quick-reference row in the same edit. PLAN.md authoritativeness depends on this table staying current. Bump the "Last updated" date on every edit.
-> Last updated: 2026-05-01 (Session 4 — **7.2 ✅ Wazuh deployed.** All 3 pods (indexer + manager + dashboard) Ready 1/1; indexer cluster green; dashboard reachable at https://wazuh.secforge.local/app/login. Agent DaemonSet deferred to Phase 7d; OIDC + log forwarding tracked as 7.2 follow-ups. Phase 7 fully closed except for the 7-day SPIFFE-CSI soak running in background. **6b-0 follow-up relocated to "Watching briefs" subsection below the phase table** — it's a re-evaluation condition, not a phase to execute. **6b-1 unblocked (2026-05-01):** ADR-0012 § Resolution appended with Q1-Q4 decisions; ADR-0014 fleshed out from stub to full library design contract; `phase-06b-api-pattern.md` rewritten as 6b-1-only runnable prompt; `phase-06b-2-outbound-secrets.md` created to preserve the (never-stale) 6b-2 content. Status flips ⏸️ → ⬜. **✅ Git initialized 2026-05-01:** initial commit `10c6a06`, ed25519-signed; pre-commit hooks active; ADR-0021 accepted; operator backlog #6 closed. Unblocks Fix-after-07, Phase 6b-1 implementation, Phase 9.)
+> Last updated: 2026-05-01 (Session 4 — **7.2 ✅ Wazuh deployed.** All 3 pods (indexer + manager + dashboard) Ready 1/1; indexer cluster green; dashboard reachable at https://wazuh.secforge.local/app/login. Agent DaemonSet deferred to Phase 7d; OIDC + log forwarding tracked as 7.2 follow-ups. Phase 7 fully closed except for the 7-day SPIFFE-CSI soak running in background. **6b-0 follow-up relocated to "Watching briefs" subsection below the phase table** — it's a re-evaluation condition, not a phase to execute. **6b-1 unblocked (2026-05-01):** ADR-0012 § Resolution appended with Q1-Q4 decisions; ADR-0014 fleshed out from stub to full library design contract; `phase-06b-api-pattern.md` rewritten as 6b-1-only runnable prompt; `phase-06b-2-outbound-secrets.md` created to preserve the (never-stale) 6b-2 content. 6b-1 status flips from Blocked to Not Started (implementation pending). **✅ Git initialized 2026-05-01:** initial commit `10c6a06`, ed25519-signed; pre-commit hooks active; ADR-0021 accepted; operator backlog #6 closed. Unblocks Fix-after-07, Phase 6b-1 implementation, Phase 9.)
 
 | Phase | Notes |
 |-------|-------|
@@ -45,6 +45,42 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 | ⬜ Hello World End-to-End (Phase 9) | requires 6b-1, 3 follow-up, Fix-after-07 |
 | ⬜ Integrate Proposal Forge + Project Tracker (Phase 10) | requires 9 ✅, 6b-2 ✅ |
 | ⬜ Develop Additional Apps (Phase 11) | open-ended; requires 10 ✅ |
+
+### Dependency graph (corrected execution order)
+
+```
+Phase 0 (Prerequisites) ✅
+  └─→ Phase 1 (Foundation) ✅
+        └─→ Phase 2 (SPIRE) ✅
+              └─→ Phase 3 (Keycloak) ✅
+                    ├─→ Phase 3 follow-up (kcadm-admin) ⬜  ← MUST run before Phase 9
+                    └─→ Phase 4 (SpiceDB) ✅
+                          └─→ Phase 5 (OpenBao) ✅
+                                └─→ Phase 6 (Istio + BFF) ✅
+                                      ├─→ Phase 6b-0 (Token-exchange spike) ✅ NO-GO → ADR-0012
+                                      ├─→ Phase 6.10b (VSO + secret cutover) ✅
+                                      ├─→ Phase 6b-1 (API Auth Library) ⬜ Ready (design resolved 2026-05-01) → MUST ✅ before Phase 9
+                                      ├─→ Phase 6b-2 (Outbound secrets pattern) ⬜
+                                      └─→ Phase 7 (Observability) ✅
+                                            ├─→ 7.0.a (SPIFFE-CSI startupProbe) ✅ (4 OpenBao pods; apps already self-heal — F-CLU-1)
+                                            ├─→ 7.0.b (realm_access.roles debug) ✅ closed-with-evidence (defect is OpenBao 2.5.3 upstream)
+                                            ├─→ 7.0.c (OIDC CLI redirect URI) ✅
+                                            └─→ 7.1–7.10 (stack) ✅
+                                                  ├─→ Phase 7b (Post-6b-2 monitoring) ⬜  ← HOLD until Phase 6b-2 ✅
+                                                  ├─→ Phase 7c (SPIRE-as-CA + STRICT) ⬜
+                                                  └─→ Phase 7d (Rotation + housekeeping) ⬜
+                                                        ↓
+                                                ☆ Fix-after-07 (this package) 🟨 in progress ☆
+                                                        ↓
+                                                  ├─→ Phase 8 (Teleport) ⬜ optional
+                                                  └─→ Phase 9 (Hello World) ⬜
+                                                          [needs: 1-7 ✅, 6b-1 ✅, 3 follow-up ✅, Fix-after-07 ✅]
+                                                        └─→ Phase 10 (Integrate apps) ⬜
+                                                              [needs: 1-9 ✅, 6b-2 ✅]
+                                                              └─→ Phase 11 (Develop apps) ⬜
+```
+
+> Source: [Fix after 07/00-audit-findings.md § Dependency graph](./Fix%20after%2007/00-audit-findings.md#dependency-graph-corrected-execution-order). Reproduced here so the canonical execution order lives at the top of PLAN.md, not buried in an audit document.
 
 **Critical-path blockers for Phase 9:** Phase 7 ✅ → Phase 6b-1 design + execution → Phase 3 follow-up → Fix-after-07 package.
 
@@ -186,7 +222,7 @@ The `kcadm-admin` client is a long-lived (>24h) credential. CLAUDE.md prohibits 
 
 **See:** ADR (to be written), `docs/03-runbooks/keycloak-operations.md` (to be updated)
 
-**Scheduling:** Scheduled for after Phase 7 completes — decoupled from Phase 7 itself (the original cross-reference from Phase 5 follow-up #3 has been removed). The OIDC CLI redirect URI fix is now Phase 7.0.c (folded into Phase 7), independent of this kcadm-admin work. This work can run any time once Phase 7 is in place; it does NOT require Phase 7b/7c/7d.
+**Scheduling:** Scheduled for after Phase 7 completes — decoupled from Phase 7 itself (the original cross-reference from Phase 5 follow-up #3 has been removed). The OIDC CLI redirect URI fix is now Phase 7.0.c (folded into Phase 7), independent of this kcadm-admin work. This work can run any time once Phase 7 is in place; it does NOT require Phase 7b/7c/7d. **Hard sequencing constraint:** must run **before Phase 9** (Hello World End-to-End) — Phase 9's user provisioning (jason / alice / bob seeding in `secforge-tenants`) is the first place every existing kcadm script gets exercised end-to-end, so doing the migration after Phase 9 means re-doing user-provisioning work twice. Critical path: 7 ✅ → 6b-1 → **3 follow-up** → Fix-after-07 → 9.
 
 ---
 
@@ -282,7 +318,7 @@ OpenBao deployed with the production-realistic two-instance Transit auto-unseal 
 3. **OIDC `admin` role missing CLI redirect URI** (surfaced 2026-04-30 during Phase 6.10b Step 2). The `admin` role's `allowed_redirect_uris` only lists UI callbacks (`https://bao.secforge.local/...`); the bao CLI's local listener (`http://localhost:8250/oidc/callback`) is not whitelisted, so `bao login -method=oidc` fails. Worked around in Step 2 by getting the admin token via the UI. Fix: add the CLI listener URI to BOTH (a) the OpenBao role's `allowed_redirect_uris` in `infrastructure/openbao/configure-auth-oidc.sh`, and (b) the Keycloak `openbao` client's Valid Redirect URIs in `infrastructure/keycloak/clients/openbao.sh`. Effort: ~30 min. **Scheduled as Phase 7.0.c** — folded into the Phase 7 carry-ins block alongside the SPIFFE-CSI startupProbe and `realm_access.roles` debug.
 4. **SpiceDB datastore_uri is a static copy** (introduced 2026-04-30 during Phase 6.10b Step 3). To enable the SpiceDB-via-VSO cutover, `infrastructure/vault-secrets-operator/migrate-datastore-uri-to-openbao.sh` writes the CNPG-managed Postgres URL to `secret/data/spicedb/config` as a static value. CNPG password rotation will desync this. **Proper fix**: extend OpenBao's database secrets engine (already wired for `helloworld-app` in Phase 5.7) to issue dynamic Postgres creds for SpiceDB; replace the `VaultStaticSecret` with a `VaultDynamicSecret`; SpiceDB Operator's `secretName` keeps pointing at the rendered Secret, content becomes dynamic. Effort: ~half day. **Scheduled for Phase 7d** (rotation and housekeeping batch) alongside BFF `private_key_jwt` rotation. Until then, manual re-run of the static migration after CNPG rotation is the workaround. Tracked as ADR-0015 §"What we did NOT do."
 5. **`infrastructure/spicedb/check-permissions.sh` parser flake on zed version warnings** (surfaced 2026-04-30 during 6.10b Step 3 verification). When zed's upstream-update HTTP check succeeds, it prepends a JSON warning line to stdout (`{"level":"warn","this-version":"v1.51.1","latest-released-version":"v1.52.0",...}`); the script's parser grabs that line as the result instead of the actual permission decision, producing false-positive failures. The cutover itself was verified end-to-end via AuthZEN's HTTP API as a workaround. Fix: parse with `jq` to extract `decision`/`relationship`/`token` fields specifically rather than relying on first-line. Or pass `--quiet` / silence the version check via env var if zed supports one. Effort: ~30 min. Low priority — this is a tooling robustness issue, not a security/correctness one.
-6. **SPIFFE-CSI cold-boot race.** Every Docker Desktop restart causes a 60–90s window where the `csi.spiffe.io` driver isn't yet registered with kubelet, while workload pods (OpenBao × 3, helloworld-bff, authzen-facade × 2, plus everything Phases 9/10/11 add) try to mount the SPIFFE-CSI volume. Pods enter exponential backoff (up to 5 min between restart attempts), and even when they retry, the JWT-SVID minted by the spiffe-helper init container has 5-min TTL and may have already expired before the main container starts — a cascade of mount-fail → backoff → SVID-expired → CrashLoop. Today's manual fix: `kubectl delete pod` per-affected-workload after boot. **Proper fix: add `startupProbe` with `failureThreshold: 30` / `periodSeconds: 10s` (5 min grace) to all SPIFFE-consuming workloads** so kubelet keeps retrying the mount instead of escalating to liveness kills. The probe's success check should be tuned per-workload (existing readinessProbe if any; otherwise `test -S /spiffe-workload-api/<actual-socket-name>` after grepping the workload's mount config — SPIFFE-CSI driver versions name the socket file differently). Affected today: openbao-0/1/2, openbao-seal-0, helloworld-bff, authzen-facade. **Scheduled as Phase 7.0.a** — Loki + Prometheus arriving make the fix verifiable (target: zero post-boot manual deletes for 7 consecutive days, tracked via the platform-health Grafana dashboard's pod-restart panel). Effort: ~half day. **Bring forward to pre-Phase-9 if** the workload count grows past ~10 SPIFFE-CSI consumers, or if a cold boot ever takes more than ~10 min to self-heal. Defense-in-depth alternatives (init-container that polls for the CSI socket; PriorityClass for SPIRE/CSI pods) documented in [docs/03-runbooks/spire-rotation.md § cold-boot race](./docs/03-runbooks/spire-rotation.md). Background: this is a local-only race — cloud-edition K8s schedulers and DaemonSet rollout ordering avoid it, so the fix only needs to live in local-edition manifests.
+6. **SPIFFE-CSI cold-boot race.** Every Docker Desktop restart causes a 60–90s window where the `csi.spiffe.io` driver isn't yet registered with kubelet, while OpenBao StatefulSet pods (the 4 SPIFFE-CSI consumers needing the fix: `openbao-0/1/2` + `openbao-seal-0`) try to mount the SPIFFE-CSI volume. Pods enter exponential backoff (up to 5 min between restart attempts), and even when they retry, the JWT-SVID minted by the spiffe-helper init container has 5-min TTL and may have already expired before the main container starts — a cascade of mount-fail → backoff → SVID-expired → CrashLoop. **Note (Fix-after-07 §B.1 secondary verification, F-CLU-1):** `helloworld-bff` and `authzen-facade` already carry HTTP startupProbes (`/ready` and `/readyz`), so they self-heal via kubelet's retry without needing this fix; only the 4 OpenBao pods were affected. Today's manual workaround was: `kubectl delete pod` per-affected-OpenBao-pod after boot. **Resolved via the `wait-for-spiffe-csi` init container** (Phase 7.0.a roll, 2026-05-01) which blocks main-container start until `/spiffe-workload-api/spire-agent.sock` exists — structural fix for the "why" (no exponential backoff, no JWT-SVID expiry mid-retry). Chart 0.27.2 doesn't expose `server.startupProbe` with the exec-command form needed to test for the socket; the init container is the equivalent. Soak target: zero post-boot manual deletes for 7 consecutive days, tracked via the platform-health Grafana dashboard's pod-restart panel — runs as background-monitoring after Phase 7's full closure, not phase-blocking. Defense-in-depth alternatives (PriorityClass for SPIRE/CSI pods) documented in [docs/03-runbooks/spire-rotation.md § cold-boot race](./docs/03-runbooks/spire-rotation.md). Background: this is a local-only race — cloud-edition K8s schedulers and DaemonSet rollout ordering avoid it, so the fix only needs to live in local-edition manifests.
 
 **See:** [docs/05-claude-code-prompts/phase-05-openbao.md](./docs/05-claude-code-prompts/phase-05-openbao.md)
 
@@ -459,7 +495,7 @@ The `.env`-killer. Outbound third-party credentials (Stripe, OpenAI, SendGrid, S
 > - PLAN.md follow-up #1 — updated with empirical findings
 >
 > **Operator backlog (do these between sessions, no Claude needed):**
-> 1. **OpenBao 7.0.a roll** — your Shamir keys required. Order: seal-bao first → unseal → main bao auto-unseals via Transit. Result: all 6 SPIFFE-CSI consumers carry the wait-for-socket init container gate.
+> 1. **OpenBao 7.0.a roll** — your Shamir keys required. Order: seal-bao first → unseal → main bao auto-unseals via Transit. Result: all 4 OpenBao SPIFFE-CSI consumers (`openbao-0/1/2` + `openbao-seal-0`) carry the wait-for-socket init container gate. (Apps `helloworld-bff` + `authzen-facade` already self-heal via HTTP startupProbes — verified Fix-after-07 §B.1, F-CLU-1.)
 > 2. **`notes/loki-baseline-*`** — keep as historical "what broken Loki looked like" or prune. Either is defensible.
 > 3. **OpenBao upstream issue** (optional, when motivated) — file against `https://github.com/openbao/openbao` for the `realm_access/roles` userinfo bug.
 > 4. **Transit unseal token expired after multi-day pause (hit 2026-05-01)** — cold cluster recovery now needs Shamir unseal AND a Transit token rotation (the 24h renewable TTL didn't auto-renew while main was down). Workaround documented in [openbao-seal-unseal.md § Main openbao stuck `sealed=true`](./docs/03-runbooks/openbao-seal-unseal.md). Permanent fix tracked in **Phase 7d** (TTL strategy review).
@@ -627,7 +663,7 @@ Wazuh manager + indexer + dashboard + agent DaemonSet. The 5th pillar of observa
 ---
 
 ## Phase 7b — Post-6b-2 Monitoring Wire-up *(1-2 days)*
-**Status: ⬜**
+**Status: ⬜ HOLD until Phase 6b-2 ✅**
 
 Wires Phase 6b-2's secret-guardrail emission into Phase 7's observability stack. Separate phase rather than carry-in because Phase 6b-2 may not be complete by the time Phase 7 runs — they're both schedulable independently.
 
@@ -712,6 +748,8 @@ Teleport Community for cert-based local access. Less critical locally (you have 
 
 ## Phase 9 — Hello World End-to-End *(2-3 days)*
 **Status: ⬜**
+
+**Prerequisites (all four MUST be ✅ before Phase 9 can start):** Phase 6b-1 ✅ (api-auth library — Phase 9 is its first real consumer) · Phase 3 follow-up ✅ (kcadm-admin service-account pattern — Phase 9's user provisioning depends on it) · Fix-after-07 ✅ (closes audit findings that block Phase 9's design assumptions, e.g., F-APP-1/F-APP-2 vendor-neutral OIDC + secrets interfaces, F-ARCH-2 RLS strategy, F-ADR-3 DPoP `htu` canonicalization rule) · Phase 7 ✅ (observability stack live so Phase 9's flow visibility checks have somewhere to land).
 
 The minimal demo proving the platform works — and then explicitly torn down. Hello World is **disposable proof-of-platform**, not a tenant. Phase 9.10.5 is a hard checkpoint where the human verifies every component is operational; Phase 9.12 then removes all Hello World workloads, users, relationships, secrets, and roles so Phase 10 starts on a clean cluster. The reference *source code* under `apps/helloworld-*` stays as the canonical integration pattern.
 

@@ -1,6 +1,13 @@
 # Phase 3 — Identity Provider (Keycloak)
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 2 — SPIRE](./phase-02-spire.md) · [Next: Phase 4 — SpiceDB](./phase-04-spicedb.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phases 0–2
+> **Blocks:** Phases 4–11 + Phase 3 follow-up (kcadm-admin service-account pattern — must run before Phase 9)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-29). Manual TOTP enrollment done. **Phase 3 follow-up** (kcadm-admin service-account migration; surfaced by Phase 6b-0 2026-04-30) is tracked separately in PLAN.md and **must run before Phase 9**.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 3-5 days
 

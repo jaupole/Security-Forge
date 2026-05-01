@@ -1,6 +1,13 @@
 # Phase 0 — Prerequisites Verification (Local)
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** (start of chain) · [Next: Phase 1 — Foundation](./phase-01-foundation.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** (none — first phase)
+> **Blocks:** every subsequent phase
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-28).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 1 hour
 

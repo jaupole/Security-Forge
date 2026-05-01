@@ -1,6 +1,13 @@
 # Phase 6b-1 — API Auth Pattern (audience-at-login)
 
-**Status:** ⬜ Ready to execute (was ⏸️ Blocked on ADR-0012 design conversation; resolved 2026-05-01)
+> **Navigation:** ⬅ [Previous: Phase 6b-0 — Token-exchange spike](./phase-06b-0-token-exchange-spike.md) · [Next: Phase 7 — Observability](./phase-07-observability.md) ➡ (or run [Phase 6b-2 — Outbound Secrets](./phase-06b-2-outbound-secrets.md) in parallel) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 6 · Phase 6b-0 (NO-GO outcome) · [ADR-0012 § Resolution 2026-05-01](../02-decisions/0012-token-exchange-feasibility.md#resolution-2026-05-01) · [ADR-0014](../02-decisions/0014-api-auth-library-design.md)
+> **Blocks:** Phase 9 (Hello World — first real consumer of the library) · Phase 10 · Phase 11
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Ready to execute (was ⏸️ Blocked on ADR-0012 design conversation; **resolved 2026-05-01** — Q1-Q4 design decisions committed in ADR-0012 § Resolution; library contract committed in ADR-0014; this prompt rewritten as runnable).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2 days
 

@@ -1,6 +1,13 @@
 # Phase 7c — Istio SPIRE-as-CA cutover + PeerAuthentication STRICT
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 7 — Observability](./phase-07-observability.md) · [Next: Phase 8 — Teleport](./phase-08-teleport.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 7 ✅ (Loki + Tempo make the cutover observable as it lands)
+> **Blocks:** Cloud migration (cannot ship with two trust domains) — not a phase but a hard pre-cloud gate
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Not started. Absorbs the per-namespace AuthorizationPolicy work deferred from Fix-after-07 §B.2 (per Option C, 2026-05-01). Companion runbook: [`docs/03-runbooks/istio-peer-auth-tighten.md`](../03-runbooks/istio-peer-auth-tighten.md).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 1-2 days
 

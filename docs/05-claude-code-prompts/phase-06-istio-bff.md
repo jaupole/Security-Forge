@@ -1,6 +1,13 @@
 # Phase 6 — Service Mesh and BFF
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 5 — OpenBao](./phase-05-openbao.md) · [Next: Phase 6.10b — VSO + secret cleanup](./phase-06.10b-vso-and-secret-cleanup.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phases 0–5
+> **Blocks:** Phase 6.10b, 6b-0, 6b-1, 6b-2, 7, 7b, 7c, 7d, 8, 9, 10, 11
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-30). Istio Ambient + helloworld-bff live. 6.10b folded into the same flow.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 4-5 days
 

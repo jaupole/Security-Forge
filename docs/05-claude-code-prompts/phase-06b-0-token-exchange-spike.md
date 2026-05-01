@@ -1,6 +1,13 @@
 # Phase 6b-0 — Token-exchange spike
 
-**Status:** ✅ Complete (2026-04-30) — **NO-GO**. See [ADR-0012](../02-decisions/0012-token-exchange-feasibility.md). Phase 6b-1 pivots to audience-at-login.
+> **Navigation:** ⬅ [Previous: Phase 6.10b — VSO + secret cleanup](./phase-06.10b-vso-and-secret-cleanup.md) · [Next: Phase 6b-1 — API Auth Pattern](./phase-06b-api-pattern.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 6
+> **Blocks:** Phase 6b-1 (the spike's GO/NO-GO outcome shapes 6b-1's design)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-30) — **NO-GO**. See [ADR-0012](../02-decisions/0012-token-exchange-feasibility.md). Phase 6b-1 pivots to audience-at-login.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2 hours (actual: 3+; the spike prompt's own NO-GO trigger fired)
 
