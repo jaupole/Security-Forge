@@ -1,6 +1,13 @@
 # Phase 7b — Post-6b-2 Monitoring Wire-up
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 7 — Observability](./phase-07-observability.md) AND [Phase 6b-2 — Outbound Secrets](./phase-06b-2-outbound-secrets.md) · [Next: Phase 8 — Teleport](./phase-08-teleport.md) ➡ (or skip to [Phase 9 — Hello World](./phase-09-hello-world.md) if Teleport is skipped) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 7 ✅ AND Phase 6b-2 ✅
+> **Blocks:** Phase 9 (the secrets guardrail dashboards + alerts must be live before apps that hit the guardrails ship)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ HOLD until Phase 6b-2 ✅. (Phase 7 ✅ alone is not sufficient; 7b is the wire-up of 6b-2's emitted events into Phase 7's stack.)
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 1-2 days
 

@@ -1,6 +1,13 @@
 # Phase 1 — Foundation Cluster Services
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 0 — Prerequisites](./phase-00-prerequisites.md) · [Next: Phase 2 — SPIRE](./phase-02-spire.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 0
+> **Blocks:** Phases 2–11 (all subsequent infrastructure rests on Phase 1's namespaces, cert-manager, ingress-nginx, Postgres, Valkey, MinIO)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-28).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2-3 days
 

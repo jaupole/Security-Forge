@@ -27,17 +27,18 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jws"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+
+	libOIDC "github.com/secforge/lib/oidc"
 )
 
 type oidcClient struct {
-	cfg            cfg
-	issuer         string
-	clientPriv     *rsa.PrivateKey
-	clientKid      string // RFC 7638 thumbprint of the public key — must match Keycloak's registered kid
-	provider       *oidc.Provider
-	verifier       *oidc.IDTokenVerifier
-	endpoints      oidcEndpoints
-	hc             *http.Client
+	cfg        cfg
+	issuer     string
+	clientPriv *rsa.PrivateKey
+	clientKid  string // Keycloak-shaped kid — derived via libProv.KidFor (Fix-after-07 §A.2)
+	libProv    libOIDC.Provider
+	endpoints  oidcEndpoints
+	hc         *http.Client
 }
 
 type oidcEndpoints struct {
@@ -54,40 +55,50 @@ func newOIDC(ctx context.Context, c cfg, clientPrivPEM []byte) (*oidcClient, err
 	if err != nil {
 		return nil, fmt.Errorf("parse client private key: %w", err)
 	}
-	// Keycloak's kid for jwt.credential.public.key clients is
-	// base64url(SHA-256(DER-PKIX-encoded public key)). NOT RFC 7638
-	// thumbprint — empirically verified against Keycloak 26.x. If we
-	// signed the assertion with an RFC 7638 kid (over JWK canonical
-	// JSON), Keycloak rejects with "PublicKey wasn't found in the
-	// storage. Available kids: [<DER-SHA256-kid>]".
+
+	hc := &http.Client{Timeout: 15 * time.Second}
+
+	// Build the vendor-neutral provider (handles kid + ID-token verify).
+	// Per Fix-after-07 §A.2: Keycloak-specific quirks live in the
+	// `apps/lib/oidc/keycloak` adapter, not the BFF.
+	libProv, err := libOIDC.NewKeycloakProvider(ctx, c.KCIssuer, c.KCClientID, hc)
+	if err != nil {
+		return nil, fmt.Errorf("lib oidc provider: %w", err)
+	}
+
+	// kid for the BFF's private_key_jwt: ask the adapter what shape
+	// this issuer wants. Keycloak: base64url(SHA-256(DER-PKIX)).
 	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("marshal pubkey DER: %w", err)
 	}
-	pubSum := sha256.Sum256(pubDER)
-	kid := base64.RawURLEncoding.EncodeToString(pubSum[:])
-	prov, err := oidc.NewProvider(ctx, c.KCIssuer)
+	kid := libProv.KidFor(pubDER)
+
+	// Endpoint discovery (PAR, token, revocation, end_session) is OAuth-
+	// flow plumbing the BFF still owns directly. Use go-oidc here just
+	// to read the discovery doc; nothing about the *Provider escapes
+	// this constructor.
+	disco, err := oidc.NewProvider(ctx, c.KCIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery: %w", err)
 	}
 	var ep oidcEndpoints
-	if err := prov.Claims(&ep); err != nil {
+	if err := disco.Claims(&ep); err != nil {
 		return nil, fmt.Errorf("decode discovery: %w", err)
 	}
 	if ep.PAREndpoint == "" || ep.EndSessionEndpoint == "" {
 		return nil, errors.New("issuer missing PAR or end_session endpoint")
 	}
-	v := prov.Verifier(&oidc.Config{ClientID: c.KCClientID})
+
 	slog.Info("oidc client ready", "client_id", c.KCClientID, "kid", kid)
 	return &oidcClient{
 		cfg:        c,
 		issuer:     c.KCIssuer,
 		clientPriv: priv,
 		clientKid:  kid,
-		provider:   prov,
-		verifier:   v,
+		libProv:    libProv,
 		endpoints:  ep,
-		hc:         &http.Client{Timeout: 15 * time.Second},
+		hc:         hc,
 	}, nil
 }
 

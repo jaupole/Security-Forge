@@ -1,5 +1,11 @@
 # Multi-stage build for helloworld-bff.
 #
+# Build context: apps/ (wider than helloworld-bff/ since Fix-after-07 §A.5
+# introduced apps/lib/ as a replace target via local go.mod replace
+# directive). build.sh sets the context accordingly. The Dockerfile lives
+# at apps/helloworld-bff/Dockerfile but expects the working tree to start
+# one level above.
+#
 # Build determinism:
 #   - go.sum is committed; the build uses `go mod download` (read-only against
 #     the lockfile) instead of `go mod tidy` (which re-resolves the graph and
@@ -14,17 +20,25 @@
 #     the mkcert-issued cert without any per-process bundle plumbing.
 #   - mkcert's rootCA.pem is NOT committed — it's developer-local. The
 #     build.sh wrapper copies it from `mkcert -CAROOT` into the build
-#     context as ./mkcert-root.pem before invoking docker build.
+#     context at apps/helloworld-bff/mkcert-root.pem before invoking
+#     docker build.
 
 FROM golang:1.25-alpine AS build
 RUN apk add --no-cache ca-certificates
 WORKDIR /src
 
-# Module fetch first so this layer is cached across source-only changes.
-COPY go.mod go.sum ./
+# Bring in the shared lib first so its go files exist before module
+# resolution. The replace directive in helloworld-bff/go.mod points at
+# ../lib which resolves to /src/lib once we put helloworld-bff under
+# /src/helloworld-bff (matching the apps/ build context layout).
+COPY lib/ /src/lib/
+
+# Module fetch + sources for the BFF itself.
+COPY helloworld-bff/go.mod helloworld-bff/go.sum /src/helloworld-bff/
+WORKDIR /src/helloworld-bff
 RUN go mod download -x
 
-COPY *.go ./
+COPY helloworld-bff/*.go /src/helloworld-bff/
 
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 RUN go build \
@@ -34,7 +48,7 @@ RUN go build \
     ./
 
 # Build the merged CA bundle: system CAs + mkcert local root.
-COPY mkcert-root.pem /tmp/mkcert-root.pem
+COPY helloworld-bff/mkcert-root.pem /tmp/mkcert-root.pem
 RUN cat /etc/ssl/certs/ca-certificates.crt /tmp/mkcert-root.pem > /out/ca-bundle.crt
 
 # ─── Runtime ──────────────────────────────────────────────────────────

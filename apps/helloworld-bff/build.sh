@@ -40,7 +40,10 @@ cp "$MKCERT_ROOT/rootCA.pem" "$HERE/mkcert-root.pem"
 trap 'rm -f "$HERE/mkcert-root.pem"' EXIT
 
 green "==> 2/4 docker build $IMAGE"
-docker build -t "$IMAGE" .
+# Build context is apps/ (parent dir) so the Dockerfile can COPY both
+# helloworld-bff/ and the sibling lib/ via the local go.mod replace.
+# Fix-after-07 §A.5 introduced this multi-module dep.
+docker build -f "$HERE/Dockerfile" -t "$IMAGE" "$HERE/.."
 
 green "==> 3/4 SBOM (Syft → SPDX)"
 mkdir -p "$HERE/sbom"

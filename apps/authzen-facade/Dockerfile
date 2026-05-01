@@ -1,6 +1,10 @@
 # Multi-stage build — no Go install required on the developer machine.
 # The build stage downloads the toolchain + modules; the final image
 # is distroless (~25 MB) with just the static binary.
+#
+# Build context is apps/ (parent of authzen-facade/) so the sibling lib/
+# is in scope for the local go.mod replace directive that landed in
+# Fix-after-07 §A.6.
 
 FROM golang:1.25-alpine AS build
 
@@ -10,14 +14,16 @@ RUN apk add --no-cache git
 
 WORKDIR /src
 
+# Bring in the shared lib first (replace target).
+COPY lib/ /src/lib/
+
 # Deterministic build: go.sum is committed, so we use `go mod download`
-# (read-only against the lockfile) instead of `go mod tidy` (which would
-# re-resolve the graph and silently shift transitive deps on rebuild).
-# Source files come AFTER module fetch for layer-cache friendliness.
-COPY go.mod go.sum ./
+# (read-only against the lockfile) instead of `go mod tidy`.
+COPY authzen-facade/go.mod authzen-facade/go.sum /src/authzen-facade/
+WORKDIR /src/authzen-facade
 RUN go mod download -x
 
-COPY *.go ./
+COPY authzen-facade/*.go /src/authzen-facade/
 
 # Static, stripped binary.
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64

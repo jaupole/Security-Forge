@@ -217,3 +217,41 @@ When you migrate off local, here's what changes (roughly, in order of pain):
 The application code, Helm charts, BFF, SpiceDB schema, OpenBao policies — all of these move unchanged.
 
 Migration playbooks live in `docs/06-reference/migration-to-vps.md` and `docs/06-reference/migration-to-aws.md` (created when you're ready to migrate).
+
+---
+
+## NetworkPolicy contract
+
+**Every namespace MUST have a default-deny-ingress NetworkPolicy.** Closes F-ADR-6.
+
+This is a structural rule, not a per-component preference. New namespaces start locked down; explicit ALLOWs are documented in each component's architecture doc and in the NetworkPolicy YAML's per-rule comment.
+
+### What "default-deny-ingress" means here
+
+A NetworkPolicy with `policyTypes: [Ingress]` and an empty `podSelector: {}` denies ALL inbound pod traffic in the target namespace by default. Subsequent NetworkPolicies whose `podSelector` matches specific workloads grant explicit ALLOWs (per-pod, per-port, per-source-namespace or per-source-pod-label).
+
+CNI-level enforcement: Kindnet on Docker Desktop. The policy is evaluated by the CNI on every packet entering the namespace's pods.
+
+### Verification command
+
+```bash
+# Every active app/platform namespace must show at least one default-deny NP.
+for ns in $(kubectl get ns -o name | sed 's|namespace/||' | grep -vE '^(kube-|default$|local-path-storage)'); do
+  count=$(kubectl get networkpolicy -n "$ns" -o name 2>/dev/null | wc -l)
+  echo "$ns: $count NP(s)"
+done
+```
+
+A namespace with zero NetworkPolicies is a defect. The fix-after-07 audit verified this holds today across all 8 platform/app namespaces (F-CLU-10 ✅); this section converts the *practice* into a *rule* so future namespaces inherit it.
+
+### Egress
+
+This contract covers **ingress**. Egress NetworkPolicies are present where they add value (BFF egress allowlist limits the BFF to Keycloak / Valkey / OpenBao / observability / authzen-facade — Phase 6) but are not universal: a default-deny-egress on a workload that talks to the K8s API surface tends to break operators' health probes in subtle ways, and the platform's security model relies on Istio AuthorizationPolicy + ztunnel rather than NetworkPolicy egress for most lateral movement controls. Future Phase 7c (PeerAuthentication STRICT) tightens this further.
+
+### When to NOT add a default-deny
+
+Almost never. The exceptions are namespaces that are themselves the security boundary:
+- `kube-system` — kubelet/control-plane traffic; CNI manages this, not us.
+- `local-path-storage` — single-node local volume provisioner; no security-relevant ingress.
+
+Any new namespace that warrants an exception MUST justify in writing in this section before being admitted.

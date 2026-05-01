@@ -1,6 +1,13 @@
 # Phase 11 — Develop Additional Apps
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Ongoing
+> **Navigation:** ⬅ [Previous: Phase 10 — Integrate Proposal Forge + Project Tracker](./phase-10-integrate-proposal-forge-project-tracker.md) · (open-ended — no fixed next phase) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 10
+> **Blocks:** (none — terminal phase; the platform is operational and Phase 11 is the generic "build a new app" checklist for the future PM app and any further products)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Ongoing. Each new app follows the integration pattern proven by Phase 10.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** Open-ended
 

@@ -1,6 +1,13 @@
 # Phase 8 — Privileged Access (Teleport) — Optional Locally
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete · ⬜ **Skipped (with ADR)**
+> **Navigation:** ⬅ [Previous: Phase 7d — Rotation + housekeeping](./phase-07d-rotation-housekeeping.md) · [Next: Phase 9 — Hello World](./phase-09-hello-world.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 7 ✅ (typically run after 7d, but not strictly required)
+> **Blocks:** (none structurally — Phase 8 is **optional locally**; skip with an ADR if you'll never SSH or expose internal admin UIs)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Not started · ⬜ **Skipped (with ADR)** option available — document in `docs/02-decisions/0006-skip-teleport-locally.md` if you choose to skip.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2 days
 

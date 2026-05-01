@@ -1,6 +1,13 @@
 # Phase 9 — Hello World End-to-End Demo
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 8 — Teleport (optional)](./phase-08-teleport.md) · [Next: Phase 10 — Integrate Proposal Forge + Project Tracker](./phase-10-integrate-proposal-forge-project-tracker.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must ALL be ✅):** Phase 7 · Phase 6b-1 (api-auth library — Phase 9 is its first real consumer) · Phase 3 follow-up (kcadm-admin service-account pattern — Phase 9's user provisioning depends on it) · Fix-after-07 (closes audit findings that block Phase 9's design assumptions)
+> **Blocks:** Phase 10 · Phase 11
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Not started. **Hard-blocked on:** 6b-1, 3 follow-up, Fix-after-07. Phase 9 is **disposable proof-of-platform**, not a tenant — Phase 9.12 explicitly tears down the Hello World workloads/users/relationships/secrets after the 9.10.5 checkpoint.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2-3 days
 
@@ -97,7 +104,7 @@ zed permission check document:welcome edit user:alice  → DENIED
   - POST /api/document/:id → check `edit`, "save" (just echo for the demo)
 - Middleware:
   - JWT validation (verify signature against Keycloak JWKS)
-  - DPoP validation (verify thumbprint matches `cnf.jkt` claim, check `htm`/`htu`/`iat`/`jti`/`ath`)
+  - DPoP validation (verify thumbprint matches `cnf.jkt` claim, check `htm`/`htu`/`iat`/`jti`/`ath`). **`htu` MUST follow the canonical rule in [`docs/06-reference/dpop-htu-canonicalization.md`](../06-reference/dpop-htu-canonicalization.md)** — the backend's `apps/lib/api-auth.Middleware.ValidateInbound` (Phase 6b-1) implements it; do NOT re-derive in this phase.
   - Replay cache for DPoP `jti` (in-memory LRU, 5-minute TTL)
 - Calls SpiceDB via gRPC for permission checks
 - Structured JSON logging with correlation to trace_id

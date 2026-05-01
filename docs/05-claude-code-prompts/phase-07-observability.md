@@ -1,6 +1,13 @@
 # Phase 7 — Observability
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 6b-1 — API Auth Pattern](./phase-06b-api-pattern.md) (or Phase 6.10b if running 7 before 6b-1) · [Next: Phase 7b/7c/7d (parallel) → Fix-after-07 → Phase 8/9](./phase-07b-post-6b2-monitoring.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 6
+> **Blocks:** Phase 7b · 7c · 7d · Fix-after-07 · Phase 9 · Phase 10 · Phase 11 (every later phase needs the observability stack to verify itself)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (Sessions 1–4, 2026-04-29 → 2026-05-01). All sub-phases shipped: 7.0 / 7.1 / 7.2 (Wazuh) / 7.3 / 7.4 / 7.5 / 7.6 / 7.7 / 7.8 / 7.9 / 7.10. The 7-day SPIFFE-CSI startupProbe soak runs as background-monitoring; not phase-blocking. Three follow-ups carried to Phase 7d.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 4 days
 

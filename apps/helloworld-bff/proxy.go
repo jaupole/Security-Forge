@@ -83,20 +83,13 @@ func handleCallback(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) htt
 			httpJSON(w, 502, errBody("token_exchange"))
 			return
 		}
-		idTok, err := o.verifier.Verify(r.Context(), tr.IDToken)
+		// ID-token verification + claim extraction lives in the
+		// vendor-neutral lib (Fix-after-07 §A.5). The BFF just gets
+		// claims back and runs the OAuth-flow nonce check.
+		claims, err := o.libProv.ParseIDToken(r.Context(), tr.IDToken)
 		if err != nil {
 			slog.Error("id_token verify failed", "err", err)
 			httpJSON(w, 502, errBody("id_token_invalid"))
-			return
-		}
-		var claims struct {
-			Sub               string `json:"sub"`
-			PreferredUsername string `json:"preferred_username"`
-			Nonce             string `json:"nonce"`
-			SessionState      string `json:"session_state"`
-		}
-		if err := idTok.Claims(&claims); err != nil {
-			httpJSON(w, 502, errBody("id_token_claims"))
 			return
 		}
 		if claims.Nonce != login.Nonce {
@@ -110,7 +103,7 @@ func handleCallback(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) htt
 		}
 		now := time.Now().Unix()
 		sv := sessionV1{
-			Sub:            claims.Sub,
+			Sub:            claims.Subject,
 			PreferredUser:  claims.PreferredUsername,
 			SessionState:   claims.SessionState,
 			AccessToken:    tr.AccessToken,

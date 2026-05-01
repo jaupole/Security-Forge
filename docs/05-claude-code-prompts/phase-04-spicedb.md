@@ -1,6 +1,13 @@
 # Phase 4 — Authorization Engine (SpiceDB)
 
-**Status:** ⬜ Not started · ⬜ In progress · ⬜ Complete
+> **Navigation:** ⬅ [Previous: Phase 3 — Keycloak](./phase-03-keycloak.md) · [Next: Phase 5 — OpenBao](./phase-05-openbao.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phases 0–3
+> **Blocks:** Phases 5–11 (every authorization decision flows through SpiceDB)
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-29). AuthZEN façade live.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2 days
 

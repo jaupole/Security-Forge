@@ -1,6 +1,13 @@
 # Phase 6b-2 — Outbound Secrets Pattern + Guardrails
 
-**Status:** ⬜ Ready to execute (independent of 6b-1; can run before, after, or in parallel)
+> **Navigation:** ⬅ [Previous: Phase 6 — Istio + BFF](./phase-06-istio-bff.md) (independent of 6b-0/6b-1) · [Next: Phase 7b — Post-6b-2 Monitoring](./phase-07b-post-6b2-monitoring.md) ➡ (after Phase 7 ✅) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 6
+> **Blocks:** Phase 7b (post-6b-2 monitoring wire-up) · Phase 10 (apps need outbound secrets) · Phase 11
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Ready to execute (independent of 6b-1; can run before, after, or in parallel — split out from `phase-06b-api-pattern.md` on 2026-05-01).
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** 2 days
 

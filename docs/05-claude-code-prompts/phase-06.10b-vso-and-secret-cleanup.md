@@ -1,6 +1,13 @@
 # Phase 6.10b — VSO install + secret cutover cleanup
 
-**Status:** ⬜ Not started
+> **Navigation:** ⬅ [Previous: Phase 6 — Istio + BFF](./phase-06-istio-bff.md) · [Next: Phase 6b-0 — Token-exchange spike](./phase-06b-0-token-exchange-spike.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
+>
+> **Depends on (must be ✅):** Phase 6
+> **Blocks:** Phase 6b-0, 6b-1, 6b-2, 7+ (VSO is the operator-owned secret-distribution path documented in [ADR-0015](../02-decisions/0015-secret-distribution-pattern.md))
+>
+> **Status (mirrors PLAN.md, last updated 2026-05-01):** ✅ Complete (2026-04-30). VSO 1.3.0 installed; SpiceDB + AuthZEN cut over from K8s Secrets to OpenBao via VaultStaticSecret. ADR-0015 Accepted.
+>
+> PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 
 **Estimated time:** ~half day (6 steps, 2 destructive operations)
 
