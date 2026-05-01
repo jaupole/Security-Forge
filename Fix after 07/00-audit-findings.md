@@ -256,6 +256,25 @@
 - **Evidence:** Verified.
 - **Fix scope:** None for now. Convert the *practice* into a *rule* via F-ADR-6.
 
+### F-CLU-11 · HIGH · OpenBao `auth/oidc/role/admin` degraded — both CLI and Web UI lock-out (post-Fix-after-07 discovery, 2026-05-01)
+- **Phase introduced:** Phase 7.0.c carry-in. PLAN.md marks 7.0.c ✅, but cluster state does not match what the script would have written.
+- **Discovery context:** Surfaced post-Fix-after-07 (after merge `83a29f2` / tag `fix-after-07-complete`) when the operator went to rotate the Grafana `client_secret` in OpenBao. **Listed here in the audit catalog for completeness; remediation is tracked separately as PLAN.md operator-backlog #7** (the Fix-after-07 package itself is closed and tagged).
+- **Evidence (two failure modes, same role):**
+  - **CLI** (from inside `openbao-0`): `bao login -method=oidc role=admin` → `Unable to authorize role 'admin' with redirect_uri 'http://localhost:8250/oidc/callback'.` The role's `allowed_redirect_uris` is missing the localhost CLI listener URI even though `infrastructure/openbao/configure-auth-oidc.sh` lines 74–78 list it. Phase 7.0.c was supposed to add this URI.
+  - **Web UI** (`https://bao.secforge.local`, OIDC method, role=admin): `Invalid role. Please try again.` Pre-Keycloak failure mode (different code path) for the same role — suggests the role's stored config is more degraded than just a missing URI; the role validation itself fails before the redirect.
+- **Root-cause hypothesis (operator's "extra `bao`" diagnosis is a NON-issue):** `bao bao write auth/oidc/role/admin ...` in the script is **not a typo**. The script defines a bash function named `bao` (lines 27–30) that wraps `kubectl exec ... -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$BAO_TOKEN" "$@"`. The first `bao` invokes that function; the second `bao` is the OpenBao CLI binary inside the pod. All 5 occurrences (`bao bao auth list`, `bao bao auth enable`, `bao bao write auth/oidc/config`, `bao bao write auth/oidc/role/admin`, `bao bao write auth/oidc/role/reader`) are the same correct wrapper-pattern call. Removing the second `bao` would break the script. The actual regression has a different cause — likely either (a) Phase 7.0.c was marked ✅ on source-edit only, never re-applied to the cluster; (b) a later kcadm or post-7.0.c operation overwrote the role; or (c) OpenBao 2.5.3 has an upstream behavior where `bao write` on an existing role merges-or-replaces fields in an unexpected way. Investigate before fixing.
+- **Why it matters:** Locks the operator out of admin-level OpenBao writes. Blocks the Grafana `client_secret` rotation (operator-backlog #7) and any future OIDC-bound admin operation. Does NOT affect already-issued tokens (existing `BAO_TOKEN` env-vars still work) or workload-side JWT-SVID auth (different auth method). Hits its blast radius as soon as the operator needs to make an admin change without holding a recent token.
+- **Investigation steps before remediation:**
+  1. Read the live role config: `bao read auth/oidc/role/admin` (requires admin token — chicken-and-egg; use the bootstrap root token Shamir-protected on operator laptop, or a still-valid `BAO_TOKEN` from a prior session).
+  2. Diff the live config against `infrastructure/openbao/configure-auth-oidc.sh` lines 71–87 and capture which fields differ.
+  3. Decide: re-apply the script as-is (it uses `bao write` which fully replaces the role's named-fields per OpenBao API semantics, so this should overwrite the degraded state), OR patch only the differing fields with a targeted `bao write` if the script-driven approach risks losing other in-cluster state.
+- **Fix scope (after investigation):**
+  1. Use root token (or any still-valid admin-policy token) to bypass OIDC.
+  2. Re-run `BAO_TOKEN=$ROOT CLIENT_SECRET=$KEYCLOAK_OPENBAO_CLIENT_SECRET bash infrastructure/openbao/configure-auth-oidc.sh`.
+  3. Verify by reading back: `bao read auth/oidc/role/admin` should show all three `allowed_redirect_uris` entries (UI callback × 2 + `http://localhost:8250/oidc/callback`) and `bound_claims.preferred_username = ["jason.upole"]`.
+  4. Verify end-to-end: `bao login -method=oidc role=admin` from host should succeed; Web UI login (role=admin or blank) should land on admin policy.
+- **Operator-backlog tracking:** Grafana `client_secret` rotation deferred to PLAN.md operator-backlog item #7 until OpenBao admin auth is functional. Operator picks the timing.
+
 ---
 
 ## Dependency graph (corrected execution order)
