@@ -12,6 +12,12 @@
 # Apply with:
 #   kubectl apply -f infrastructure/spire/test-workload/manifest.yaml
 #   kubectl logs -n test-spire -l app=spiffe-test -f
+#
+# CLEANUP after verification (Fix-after-07 §B.3, F-CLU-4): the Job is
+# one-shot (ttlSecondsAfterFinished:600) but the namespace persists.
+# Leaving an empty `test-spire` ns is the F-CLU-4 audit finding. Run:
+#   kubectl delete ns test-spire
+# once the smoke test prints what you needed to see.
 
 ---
 apiVersion: v1

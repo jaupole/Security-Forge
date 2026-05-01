@@ -189,6 +189,14 @@ server:
   # the prompt prescribes for native startupProbes. See PLAN.md
   # Phase 5 follow-up #6 (defense-in-depth alternative) and the
   # cold-boot race section in docs/03-runbooks/spire-rotation.md.
+  #
+  # Fix-after-07 §B.1 (F-CLU-1) revisited this and confirmed the init
+  # container is the structural fix for the audit finding's "why"
+  # (pods entering exponential backoff, JWT-SVID expiring mid-retry).
+  # Verified empirically: chart 0.27.2 still exposes only timing
+  # knobs for startupProbe, not the exec-command form needed to test
+  # the SPIFFE socket. F-CLU-1 closes with this init-container path,
+  # not a redundant native probe.
   extraInitContainers:
     - name: wait-for-spiffe-csi
       image: docker.io/openbao/openbao:2.5.3
