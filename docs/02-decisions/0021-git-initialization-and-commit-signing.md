@@ -1,8 +1,9 @@
 # ADR-0021: Git initialization and commit-signing strategy
 
-**Status:** In progress (stub — slot reserved 2026-05-01)
-**Date:** TBD (operator session — pre-Fix-after-07 and pre-Phase-9)
+**Status:** Accepted
+**Date:** 2026-05-01
 **Decision-makers:** Project owner
+**Initial commit:** `10c6a06` (ed25519-signed; verify with `git log --show-signature -1 10c6a06`)
 
 ## Context
 
@@ -18,72 +19,93 @@ The project lives at `/mnt/c/Users/jaupo/Projects/Security Forge/` (Windows host
 4. **Compliance posture.** Image-signing pipelines (Cosign), SBOM generation, supply-chain attestations all expect commit hashes as inputs. Threat model needs to document "how do you know the cluster matches what's in source" — without git, that answer is "we don't track it."
 5. **Multi-Claude coordination.** Two Claude instances (VS Code + WSL) edit this codebase. Without commits, there's no concurrency story — just last-writer-wins on whatever each session happens to touch.
 
-## Decision (to be filled in)
+## Decision
 
-This stub reserves the ADR slot. The decision session covers:
+The decisions below were made in a 2026-05-01 operator session. The original stub framing for each section is preserved for context; the resolved choice is recorded under "**Decided:**".
 
 ### 1. `.gitignore` contents
 
-Must exclude (NON-NEGOTIABLE):
-- Shamir unseal keys (any path)
-- OpenBao recovery PEMs / root tokens / Transit tokens
-- `infrastructure/mkcert/` private keys
-- `.claude/settings.local.json` (per-machine settings; not per-project state)
-- Any `*.key`, `*.pem`, `*.crt` outside `infrastructure/<component>/certificates/` (and even there, only if the cert lifecycle is meant to be reviewed)
-- Generated artifacts: `/tmp/*-debug.log`, build outputs
+**Decided:** see [`.gitignore`](../../.gitignore) at project root, committed in `10c6a06`. Categories:
 
-Should exclude (defaults to yes unless operator says otherwise):
-- `notes/` (operator scratchpad; loki-baseline diagnostics, etc.)
-- Helm-vendored chart artifacts that can be re-pulled (e.g., `infrastructure/wazuh/vendor/wazuh/charts/*.tgz`)
+- **Secrets (non-negotiable):** Shamir unseal keys, OpenBao recovery PEMs, root tokens, Transit tokens, mkcert CA private keys, generic `*.key`/`*.pem`/`*.p12`/`*.pfx`/`*.jks` outside known-good paths, `.env*` (except `.env.example`)
+- **Per-machine state:** `.claude/settings.local.json`, `.claude/projects/`, `.vscode/`, `.idea/`, OS files (`.DS_Store`, `Thumbs.db`), editor swap files
+- **Build artifacts:** Go binaries (`apps/helloworld-bff/helloworld-bff`, `apps/authzen-facade/authzen-facade`), `*.test`, `*.out`, `coverage.txt`
+- **Vendored Helm tarballs:** `infrastructure/wazuh/vendor/wazuh/charts/*.tgz` (the unpacked chart source IS committed; the tarballs that can be re-pulled are not)
+- **Operator scratchpad:** `notes/` (loki-baseline diagnostics, etc.)
+- **Logs and temp:** `*.log` (with carve-outs for docs), `*.tmp`, `/tmp/`
+- **Kubectl dumps and debug outputs:** `kubectl-dump-*.yaml`, `*-debug.log`, `*-baseline-*`
 
-Must INCLUDE:
+Notably **kept in tree** (per .gitignore comments):
 - All ADRs, runbooks, architecture docs
 - All YAML manifests, Helm values, Kustomize overlays
 - All apply scripts and verification scripts
-- The vendored Wazuh chart source (we own the maintenance burden — keep it in tree)
-- `Fix after 07/` directory and all contents
-- All app code (`apps/helloworld-bff/`, `apps/authzen-facade/`)
+- The vendored Wazuh chart source (we own the maintenance burden)
+- `apps/*/sbom/*` (signed audit artifacts)
+- `Fix after 07/` directory and contents
 
 ### 2. Commit author identity
 
-`git config user.name` and `user.email`. The user's email per auto-memory is `jaupole@googlemail.com`. Confirm.
+**Decided:** `Jason Upole <jaupole@gmail.com>`. Aligned with the operator's pre-existing global git config (rather than the previously-noted `googlemail.com` form, which is functionally an alias but split commit identity unnecessarily). Configured at the repo level via `git config --unset user.email` to fall through to the global identity.
 
-### 3. GPG / SSH commit signing
+### 3. SSH commit signing
 
-Strong recommendation: **enable signed commits from day one.** The user is a security specialist building a security platform; verifiable commit provenance is foundational. Choices:
+**Decided:** SSH signing via existing `~/.ssh/id_ed25519` key. Configuration:
 
-- **GPG signing** (traditional, requires key management)
-- **SSH signing** (`gpg.format = ssh`, simpler — uses existing SSH keys; supported by GitHub since 2023)
+```
+gpg.format = ssh
+user.signingkey = ~/.ssh/id_ed25519.pub
+commit.gpgsign = true
+tag.gpgsign = true
+gpg.ssh.allowedsignersfile = ~/.config/git/allowed_signers
+```
 
-SSH signing is the pragmatic local-edition choice: lower setup cost, works with existing keys, GitHub verifies it natively if the project ever pushes to a remote.
+The `~/.config/git/allowed_signers` file lives on the operator's WSL host (per-machine state, not committed). Format is one line per allowed signer:
+
+```
+<email-principal> ssh-ed25519 <public-key-blob>
+```
+
+The actual key blob and SHA256 fingerprint are intentionally NOT recorded in this ADR — they're per-machine state, and embedding them here would (a) trip pre-commit's secret-detection hooks (high entropy, even though public), (b) drift from reality the moment the key is rotated, (c) duplicate information already verifiable via `git log --show-signature -1`.
+
+To verify the current signing identity:
+
+```bash
+git log --show-signature -1                    # any signed commit
+ssh-keygen -lf ~/.ssh/id_ed25519.pub           # current public-key fingerprint
+cat ~/.config/git/allowed_signers              # configured trust anchor
+```
+
+GPG signing was rejected as overkill for a single-developer local edition; SSH signing achieves the same provenance goal with lower operational cost and is GitHub-natively verifiable if the project ever pushes to a remote.
 
 ### 4. Initial commit strategy
 
-Two real options:
-
-- **(a) Single big "initial state 2026-05-XX" commit.** Everything currently on disk becomes the first commit. No phase-by-phase history. Pros: one decision, fast. Cons: future-you has no `git log` story for "when did we add SPIRE?"
-- **(b) Backfilled phase-by-phase history.** Use PLAN.md's status dates to construct a synthetic history (Phase 0 commit → Phase 1 commit → ... → Phase 7 commit). Each commit captures roughly what landed in that phase. Pros: clean log; future archeology works. Cons: requires manual reconstruction; dates and authorship are synthetic, which is itself a documentation issue.
-
-**Default recommendation: (a) single initial commit.** Synthetic history is honest only if labeled as such, and the value of `git log` for archeology is dwarfed by what PLAN.md and the ADRs already record. Future commits start the real history.
+**Decided:** single "Initial state of SecForge platform (2026-05-01)" commit (`10c6a06`). Synthetic phase-by-phase backfill was rejected — PLAN.md and the ADRs already record the project's history with honest dates and explicit decision authorship; a synthetic git history would duplicate that with strictly-less-true metadata.
 
 ### 5. Remote
 
-Three options:
-- **Private GitHub repo** — most flexibility; integrates with future Cosign keyless signing (GitHub OIDC); standard for the security/dev community.
-- **Self-hosted Gitea** — full sovereignty; no external dependency; matches the local-edition / cloud-migration story (could run on the same Postgres operator).
-- **Local-only** — no remote yet. Defensible until Phase 9 ramps multi-developer collaboration.
+**Decided:** local-only for now. Revisit at Phase 9 (when real apps land) or cloud-migration time. Defensible because:
 
-For a single-developer local-edition platform with cloud aspirations, **start local-only and decide on remote at Phase 9 / cloud-migration time** is reasonable. But if any thought of collaboration exists, push to a remote sooner — `git` without backups is barely better than no `git`.
+- Single-developer local edition; no collaborator coordination needed yet
+- Backups are an existing operational concern (Docker Desktop volume snapshots, host-level OneDrive backup of `/mnt/c/Users/jaupo/Projects/`)
+- The decision between Private GitHub vs. self-hosted Gitea is meaningful and shouldn't be made under tonight's "we just need git working" pressure
+
+When a remote does land, the choice should consider: future Cosign keyless image signing via GitHub OIDC (favors GitHub), full sovereignty / no external dependency (favors Gitea), and whether the cluster will be the source of identity for git access (favors Gitea hosted in-cluster).
 
 ### 6. Pre-commit hooks
 
-The project's own `templates/app-repo/.pre-commit-config.yaml` already references the right pattern (per Fix-after-07 audit findings). Apply the same to the project root:
-- **gitleaks** — secret detection (catches accidentally-committed credentials)
-- **block-env-files** — refuses any `.env` or `.envrc`
-- **block-secret-shaped-vars** — refuses things like `*_PASSWORD =`, PEM key block headers (the `BEGIN ... KEY` family), etc.
-- **trailing-whitespace** + **end-of-file-fixer** — hygiene
+**Decided:** committed `.pre-commit-config.yaml` activates these hooks at every `git commit`:
 
-These prevent the project from ever getting into the state where a Shamir key was almost committed.
+- **gitleaks v8.18.4** — secret detection
+- **trailing-whitespace** — hygiene
+- **end-of-file-fixer** — hygiene
+- **check-merge-conflict** — refuses merge-conflict markers
+- **check-yaml** (with `--allow-multiple-documents`; excluded for `infrastructure/wazuh/vendor/` because Helm templates contain Go-template syntax that breaks pure-YAML validation)
+- **detect-private-key** — blocks accidentally-committed key blobs
+- **check-added-large-files** with `--maxkb=500` (excluded for `apps/*/sbom/` because SBOMs are known-large supply-chain artifacts kept in tree by design)
+
+The first run during initialization auto-fixed trailing whitespace on `apps/helloworld-bff/sbom/helloworld-bff.sbom.txt`, end-of-file fixes on `docs/03-runbooks/keycloak-operations.md` and `apps/helloworld-bff/dpop.go`, and surfaced one false positive (`detect-private-key` matched a literal PEM key block header phrase inside backticks in an earlier draft of this ADR; the prose was reworded to break the regex match while preserving meaning). Lesson learned: when documenting what a regex matches, never paste the literal trigger string into the doc itself — describe it.
+
+Pre-flight gitleaks scan against the working tree returned **zero findings** — confirming the project's CLAUDE.md "no secrets in code, ever" rule has held across all 7 phases.
 
 ## Out of scope of this ADR
 
