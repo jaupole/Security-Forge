@@ -89,12 +89,7 @@ rotation work in Phase 7 demands it.
   Migration to `apps/lib/secrets/` is feasible but adds ~half day of
   work and is not required by anything in flight; revisit if AuthZEN
   ever needs dynamic secret rotation faster than VSO can render.
-- **OpenBao database secrets engine for SpiceDB**: deferred. The
-  `datastore_uri` written to OpenBao at `secret/data/spicedb/config`
-  is a STATIC copy of the CNPG-managed Postgres URL. CNPG password
-  rotation will desync this value; the proper fix is OpenBao's
-  database engine for SpiceDB (analogous to the helloworld-app setup
-  from Phase 5.7). Tracked as a post-6.10b follow-up.
+- ~~**OpenBao database secrets engine for SpiceDB**~~: ✅ **Resolved Phase 7d.2 (2026-05-02)**, with one structural caveat that drove a follow-on ADR. The original plan was to replace the `VaultStaticSecret` with a `VaultDynamicSecret` rendering credentials from a SpiceDB-specific database role. That ran into a VSO-inherent gap: SpiceDB Operator's `secretName` semantics require a single Secret holding **both** `preshared_key` and `datastore_uri`, and VSO can't compose a single rendered Secret from two OpenBao sources (one static KV, one dynamic engine). Phase 7d.2 ships the dynamic-cred role + a 12h CronJob that re-populates the existing static KV path from the database engine, leaving the VSO binding unchanged. Net effect: the original "CNPG password rotation desyncs the value" caveat is closed at the consumer level — SpiceDB sees a Secret that is never older than the dynamic-cred max_ttl. See [ADR-0023](./0023-spicedb-datastore-uri-rotation-pattern.md) for the full reasoning, the three approaches considered, and the cloud-edition revisit clause.
 - **CLI redirect URI for OpenBao OIDC `admin` role**: surfaced during
   Step 2 when `bao login -method=oidc` failed because
   `http://localhost:8250/oidc/callback` is not in the role's

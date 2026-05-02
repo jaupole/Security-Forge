@@ -144,13 +144,16 @@ Rotation is manual via `bao kv put` (creates a new version) + consumer pickup.
 
 ### `database/`
 
-Configured against `secforge-app-db` (Phase 1 CNPG cluster). On role-creation request, OpenBao opens a new SQL connection (using its own bootstrap creds), runs the `creation_statements` template (typically `CREATE ROLE ... WITH LOGIN PASSWORD '...' VALID UNTIL '...'; GRANT ...`), and returns the freshly minted username/password to the caller.
+Configured against two CNPG clusters: `secforge-app` (Phase 1 cluster, helloworld backend) and `secforge-spicedb` (Phase 7d.2). On role-creation request, OpenBao opens a new SQL connection (using its own bootstrap creds), runs the `creation_statements` template (typically `CREATE ROLE ... WITH LOGIN PASSWORD '...' VALID UNTIL '...'; GRANT ...`), and returns the freshly minted username/password to the caller.
 
 Roles defined today:
-- `helloworld-app-readwrite` — TTL 1h, max 24h, full read/write on `secforge-app-db`'s public schema
+- `helloworld-app-readwrite` — TTL 1h, max 24h, full read/write on `secforge-app`'s public schema
 - `helloworld-app-readonly` — TTL 1h, max 24h, read-only
+- `spicedb-readwrite` — TTL 1h, max 24h, DML (SELECT/INSERT/UPDATE/DELETE) on `secforge-spicedb`'s public schema. Schema migrations during SpiceDB Operator upgrades require a temporary fallback to the static `spicedb` user (Postgres has no `GRANT ALTER`); see [`docs/03-runbooks/spicedb-operations.md` § SpiceDB schema migration during operator upgrades](../03-runbooks/spicedb-operations.md).
 
 Phase 9 BFFs ask for `database/creds/helloworld-app-readwrite` at startup, get a username + password good for an hour, and either renew or re-fetch on expiry. No long-lived passwords ever.
+
+SpiceDB consumes `database/creds/spicedb-readwrite` indirectly via the `spicedb-datastore-refresher` CronJob (Phase 7d.2 / [ADR-0023](../02-decisions/0023-spicedb-datastore-uri-rotation-pattern.md)) — the CronJob mints a fresh credential every 12h and writes a new KV-v2 version at `secret/data/spicedb/config` (combined with the static PSK), VSO renders the rendered Secret, and SpiceDB Operator triggers a pod roll. The indirection is required because SpiceDB Operator's `secretName` semantics demand a single Secret holding both `preshared_key` and `datastore_uri`, and VSO can't compose a single rendered Secret from two OpenBao sources.
 
 ### `transit/`
 

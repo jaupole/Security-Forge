@@ -1,0 +1,30 @@
+# Phase 7d.2 — allow OpenBao (in `openbao` ns) → secforge-spicedb-db (in
+# `spicedb` ns) on port 5432, for the database secrets engine connection
+# `database/config/secforge-spicedb` and the dynamic-cred role
+# `database/creds/spicedb-readwrite`. Mirrors 07-postgres-app-ingress.yaml
+# (Phase 5.7) but for the spicedb cluster.
+#
+# Lives in `spicedb` ns because NetworkPolicy ingress rules apply to the
+# destination's namespace. Companion egress allow on the openbao side is
+# in 06-networkpolicies-main.yaml (allow-openbao-egress).
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-to-secforge-spicedb-db
+  namespace: spicedb
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: secforge-spicedb-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - protocol: TCP
+          port: 5432

@@ -1,0 +1,297 @@
+# Phase 7d.2.c — SpiceDB datastore_uri refresher CronJob (ADR-0023).
+#
+# What this manifest defines:
+#   - ServiceAccount `spicedb-datastore-refresher` in `spicedb` ns. The
+#     namespace's existing ClusterSPIFFEID `secforge-spicedb` covers it,
+#     issuing SPIFFE-ID
+#     spiffe://secforge.local/ns/spicedb/sa/spicedb-datastore-refresher.
+#   - ConfigMap `spicedb-datastore-refresher-spiffe-helper` — helper.conf
+#     for the spiffe-helper init container (audience=openbao).
+#   - ConfigMap `spicedb-datastore-refresher-script` — the refresh script
+#     embedded inline (small enough to keep in the manifest rather than
+#     a separate apply.sh ConfigMap-from-file step).
+#   - CronJob — runs every 12h (`0 */12 * * *`). Cadence is below the
+#     dynamic-cred max_ttl of 24h so each refresh leaves a 12h overlap
+#     window. Single concurrency-policy=Forbid; backoffLimit=0 (one
+#     shot per scheduled run; failure surfaces via kube-state-metrics
+#     KubeJobFailed).
+#
+# Auth flow inside the CronJob pod:
+#   1. spiffe-helper init container writes a JWT-SVID (audience=openbao)
+#      to /shared/openbao.jwt.
+#   2. Main container reads the JWT, POSTs to OpenBao auth/jwt/login
+#      (role=spicedb-datastore-refresher), captures client_token.
+#   3. Reads database/creds/spicedb-readwrite (mints fresh dynamic
+#      Postgres user) and secret/data/spicedb/preshared-key (static
+#      PSK).
+#   4. Composes datastore_uri =
+#        postgres://<dyn_user>:<dyn_pwd>@secforge-spicedb-db-rw.spicedb.svc:5432/spicedb?sslmode=require
+#      matching the existing static value's URI shape exactly.
+#   5. Writes a new KV-v2 version at secret/data/spicedb/config with
+#      preshared_key + datastore_uri.
+#   6. VSO's existing VaultStaticSecret refreshes from the bumped KV
+#      version, the rendered K8s Secret content changes, and SpiceDB
+#      Operator's secretName watch fires → SpiceDB pod rolls.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spicedb-datastore-refresher
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb-datastore-refresher
+    secforge.platform/component: spicedb
+automountServiceAccountToken: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spicedb-datastore-refresher-spiffe-helper
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb-datastore-refresher
+    secforge.platform/component: spicedb
+data:
+  helper.conf: |
+    agent_address = "/spiffe-workload-api/socket"
+    daemon_mode = false
+    jwt_svids = [
+      {
+        jwt_audience       = "openbao"
+        jwt_svid_file_name = "/shared/openbao.jwt"
+      }
+    ]
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spicedb-datastore-refresher-script
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb-datastore-refresher
+    secforge.platform/component: spicedb
+data:
+  refresh.sh: |
+    #!/usr/bin/env bash
+    # Phase 7d.2.c refresh logic. Logs structured JSON to STDOUT.
+    set -euo pipefail
+
+    : "${BAO_ADDR:?}"
+    : "${BAO_JWT_PATH:?}"
+    : "${BAO_ROLE:?}"
+
+    log() {
+        # log <severity> <step> [extra-jq-object-string]
+        local severity="$1" step="$2"
+        local extra="${3:-{\}}"
+        local ev="spicedb.datastore.refresh.step"
+        case "$severity" in
+            error)   ev="spicedb.datastore.refresh.failed" ;;
+            success) ev="spicedb.datastore.refresh.success" ;;
+        esac
+        local ts; ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        jq -cn \
+            --arg ts "$ts" \
+            --arg severity "$severity" \
+            --arg event "$ev" \
+            --arg step "$step" \
+            --argjson extra "$extra" \
+            '{ts:$ts, severity:$severity, event:$event, step:$step, phase:"7d.2.c"} + $extra'
+    }
+
+    die() {
+        local step="$1"; local extra="${2:-{\}}"
+        log error "$step" "$extra" >&2
+        exit 1
+    }
+
+    log info preflight-start
+
+    if [ ! -r "$BAO_JWT_PATH" ]; then
+        die preflight '{"reason":"JWT-SVID not readable; spiffe-helper init failed?"}'
+    fi
+    JWT=$(cat "$BAO_JWT_PATH")
+    [ -n "$JWT" ] || die preflight '{"reason":"JWT-SVID empty"}'
+
+    # Mint OpenBao token. -k tolerated locally (mkcert CA not bundled in
+    # alpine/k8s); cloud-edition migration MUST replace -k with a CA mount.
+    LOGIN_RESP=$(curl -ksS -X POST -H 'Content-Type: application/json' \
+        -d "{\"role\":\"$BAO_ROLE\",\"jwt\":\"$JWT\"}" "$BAO_ADDR/v1/auth/jwt/login")
+    BAO_TOKEN=$(printf '%s' "$LOGIN_RESP" | jq -r '.auth.client_token // empty')
+    [ -n "$BAO_TOKEN" ] && [ "$BAO_TOKEN" != "null" ] || \
+        die auth-jwt-login "{\"reason\":\"no client_token in response\",\"resp\":$(printf '%s' "$LOGIN_RESP" | jq -c .)}"
+    log info auth-jwt-login-success
+
+    # Mint a fresh dynamic Postgres credential.
+    CRED_RESP=$(curl -ksS -H "X-Vault-Token: $BAO_TOKEN" \
+        "$BAO_ADDR/v1/database/creds/spicedb-readwrite")
+    DYN_USER=$(printf '%s' "$CRED_RESP" | jq -r '.data.username // empty')
+    DYN_PASS=$(printf '%s' "$CRED_RESP" | jq -r '.data.password // empty')
+    LEASE_ID=$(printf '%s' "$CRED_RESP" | jq -r '.lease_id // empty')
+    LEASE_DUR=$(printf '%s' "$CRED_RESP" | jq -r '.lease_duration // 0')
+    [ -n "$DYN_USER" ] && [ -n "$DYN_PASS" ] || \
+        die mint-cred '{"reason":"no username/password in cred response"}'
+    log info mint-cred-success "{\"username\":\"$DYN_USER\",\"lease_id\":\"$LEASE_ID\",\"lease_duration\":$LEASE_DUR}"
+
+    # Read the static preshared_key.
+    PSK_RESP=$(curl -ksS -H "X-Vault-Token: $BAO_TOKEN" \
+        "$BAO_ADDR/v1/secret/data/spicedb/preshared-key")
+    PSK=$(printf '%s' "$PSK_RESP" | jq -r '.data.data.preshared_key // empty')
+    [ -n "$PSK" ] || die read-psk '{"reason":"empty preshared_key at secret/data/spicedb/preshared-key"}'
+    log info read-psk-success
+
+    # Compose datastore_uri. URI shape MUST match what SpiceDB Operator
+    # already consumes; existing static value uses
+    # postgres://spicedb:<pwd>@secforge-spicedb-db-rw.spicedb.svc:5432/spicedb?sslmode=require
+    # (the short .svc form, not .svc.cluster.local). DYN_PASS is
+    # URL-encoded conservatively because OpenBao's generated passwords
+    # avoid URL-special chars by default, but we encode anyway as
+    # belt-and-suspenders. jq's @uri filter handles it.
+    DYN_PASS_ENC=$(printf '%s' "$DYN_PASS" | jq -sRr '@uri')
+    DATASTORE_URI="postgres://${DYN_USER}:${DYN_PASS_ENC}@secforge-spicedb-db-rw.spicedb.svc:5432/spicedb?sslmode=require"
+
+    # Write new KV-v2 version. KV-v2 wants {"data":{...}}.
+    KV_BODY=$(jq -cn --arg dsn "$DATASTORE_URI" --arg psk "$PSK" \
+        --arg src "phase-7d-spicedb-datastore-refresher" \
+        --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        '{data:{datastore_uri:$dsn, preshared_key:$psk, source:$src, refreshed_at:$ts}}')
+    WRITE_RESP=$(curl -ksS -X POST -H "X-Vault-Token: $BAO_TOKEN" \
+        -H 'Content-Type: application/json' \
+        -d "$KV_BODY" "$BAO_ADDR/v1/secret/data/spicedb/config")
+    NEW_VERSION=$(printf '%s' "$WRITE_RESP" | jq -r '.data.version // empty')
+    [ -n "$NEW_VERSION" ] && [ "$NEW_VERSION" != "null" ] || \
+        die kv-write "{\"reason\":\"no version in KV write response\",\"resp\":$(printf '%s' "$WRITE_RESP" | jq -c .)}"
+    log success kv-write-complete "{\"kv_version\":${NEW_VERSION},\"username\":\"$DYN_USER\"}"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: spicedb-datastore-refresher
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb-datastore-refresher
+    secforge.platform/component: spicedb
+spec:
+  # Every 12h at 00:00 and 12:00 UTC. Below the 24h max_ttl of the
+  # dynamic-cred role; gives 12h overlap between consecutive refreshes.
+  schedule: "0 */12 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: spicedb-datastore-refresher
+            spiffe.io/spire-managed-identity: "true"
+        spec:
+          serviceAccountName: spicedb-datastore-refresher
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: spiffe-helper
+              image: ghcr.io/spiffe/spiffe-helper:0.11.0
+              args: ["-config", "/etc/spiffe/helper.conf"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests: { cpu: 20m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }
+              volumeMounts:
+                - { name: spiffe-workload-api, mountPath: /spiffe-workload-api, readOnly: true }
+                - { name: helper-conf, mountPath: /etc/spiffe, readOnly: true }
+                - { name: shared, mountPath: /shared }
+          containers:
+            - name: refresher
+              image: alpine/k8s:1.31.0
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                capabilities: { drop: ["ALL"] }
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                - { name: BAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
+                - { name: BAO_JWT_PATH, value: "/shared/openbao.jwt" }
+                - { name: BAO_ROLE, value: "spicedb-datastore-refresher" }
+              command: ["/bin/bash", "/scripts/refresh.sh"]
+              volumeMounts:
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: shared, mountPath: /shared, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 128Mi }
+          volumes:
+            - { name: spiffe-workload-api, csi: { driver: csi.spiffe.io, readOnly: true } }
+            - { name: helper-conf, configMap: { name: spicedb-datastore-refresher-spiffe-helper } }
+            - { name: scripts, configMap: { name: spicedb-datastore-refresher-script, defaultMode: 0755 } }
+            - { name: shared, emptyDir: {} }
+            - { name: tmp, emptyDir: {} }
+
+# ─── NetworkPolicy: refresher pod → openbao API ─────────────────────────
+# default-deny-ingress in spicedb ns is in place; egress is implicitly
+# allowed by default but cluster policy may add ns-level egress deny in
+# the future. Add an explicit egress allow for the refresher Pod →
+# openbao:8200 + DNS so this stays self-contained.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spicedb-datastore-refresher-egress
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb-datastore-refresher
+    secforge.platform/component: spicedb
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: spicedb-datastore-refresher
+  policyTypes: [Egress]
+  egress:
+    # DNS for service-name resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # OpenBao API on 8200.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - { protocol: TCP, port: 8200 }
+    # SPIRE workload-api socket egress is covered by the CSI mount, no
+    # NetworkPolicy needed for the unix-domain-socket path.
+
+# ─── NetworkPolicy: openbao ns → refresher pod (reverse for replies) ────
+# K8s NetworkPolicy is stateful for established connections, so an
+# Egress allow on the source side suffices for the refresher's outbound.
+# The OpenBao egress already covers openbao → openbao itself; no extra
+# rule needed on the OpenBao side because connections are
+# refresher-initiated.

@@ -12,7 +12,7 @@
 All commands assume:
 - `kubectl` on PATH, default context = Docker Desktop K8s
 - Working directory: `infrastructure/spicedb/`
-- The `spicedb-config-vso` Secret exists in `spicedb` ns (VSO-rendered from OpenBao path `secret/data/spicedb/config` per Phase 6.10b; see [ADR-0015](../02-decisions/0015-secret-distribution-pattern.md)). Keys: `preshared_key`, `datastore_uri`.
+- The `spicedb-config-vso` Secret exists in `spicedb` ns. Keys: `preshared_key`, `datastore_uri`. **As of Phase 7d.2 (ADR-0023):** the underlying OpenBao KV path `secret/data/spicedb/config` is **periodically re-populated** by the `spicedb-datastore-refresher` CronJob, which mints fresh dynamic Postgres credentials from `database/creds/spicedb-readwrite` (combined with the still-static PSK) every 12 hours. VSO refreshes the rendered K8s Secret on KV-version bump → SpiceDB Operator's `secretName` watch fires → SpiceDB pod rolls. CNPG-side password rotation is handled at the consumer level (the rendered Secret is never older than the dynamic-cred max_ttl of 24h). See [ADR-0015](../02-decisions/0015-secret-distribution-pattern.md) for the broader VSO/direct-API split and [ADR-0023](../02-decisions/0023-spicedb-datastore-uri-rotation-pattern.md) for why this is a CronJob-refreshed VaultStaticSecret rather than a native VaultDynamicSecret.
 - Docker available for one-shot zed/skopeo image runs
 
 The drop-in zed CLI:
@@ -107,6 +107,87 @@ kubectl rollout restart -n spicedb deployment/spicedb-spicedb
 ```
 
 Phase 5 (OpenBao) replaces this manual rotation with a SPIFFE-bound dynamic credential.
+
+> **Note (Phase 7d.2):** the procedure above patches a Secret that no longer exists by that name (`spicedb-config` → `spicedb-config-vso` after Phase 6.10b). Direct patches to `spicedb-config-vso` are reverted by VSO's next refresh. The current PSK rotation procedure is to write a new value to `secret/data/spicedb/preshared-key` in OpenBao; VSO renders the change. PSK rotation runbook update is on the operator backlog (the existing AuthZEN coupling — both SpiceDB and AuthZEN read from `secret/data/spicedb/preshared-key` — must be rotated together).
+
+### Rotate the Postgres `datastore_uri` (Phase 7d.2 — automated)
+
+Routine rotation runs automatically every 12h via the `spicedb-datastore-refresher` CronJob. There is **no operator action required** for steady-state rotation.
+
+To trigger an immediate rotation off-cycle (e.g., after suspected database-credential compromise):
+
+```bash
+kubectl create job -n spicedb spicedb-datastore-refresher-manual-$(date +%s) \
+    --from=cronjob/spicedb-datastore-refresher
+```
+
+Then watch the rendered Secret bump and the SpiceDB pod roll:
+
+```bash
+kubectl get jobs -n spicedb -l app.kubernetes.io/name=spicedb-datastore-refresher \
+    --watch
+kubectl logs -n spicedb -l app.kubernetes.io/name=spicedb-datastore-refresher --tail=20
+kubectl rollout status -n spicedb deployment/spicedb-spicedb --timeout=180s
+```
+
+The refresher logs are structured JSON with discriminator `event=spicedb.datastore.refresh.<step|success|failed>`. Promtail picks them up; query in Loki:
+
+```logql
+{namespace="spicedb", app_kubernetes_io_name="spicedb-datastore-refresher"}
+    | json | severity="error"
+```
+
+### Recover from CNPG-side `spicedb` user password rotation
+
+If the CNPG `secforge-spicedb-db` cluster's `spicedb` user password is rotated outside OpenBao (e.g., by an operator running `ALTER USER spicedb WITH PASSWORD ...` directly, or by a CNPG version upgrade that re-issues credentials), OpenBao's stored connection root credential goes stale and **the next `spicedb-datastore-refresher` run will fail** with a SASL authentication error. The static `datastore_uri` in the rendered Secret continues to work for SpiceDB (it carries the same password OpenBao knows about, until VSO renders a new dynamic-cred-based URI), but new dynamic-cred mints are blocked.
+
+Recovery procedure (mirrors [`infrastructure/openbao/database-roles/spicedb-readwrite.sh`](../../infrastructure/openbao/database-roles/spicedb-readwrite.sh) §3):
+
+```bash
+# 1. Read the current CNPG-issued password.
+PG_PASS=$(kubectl get secret -n spicedb secforge-spicedb-db-app -o jsonpath='{.data.password}' | base64 -d)
+PG_USER=$(kubectl get secret -n spicedb secforge-spicedb-db-app -o jsonpath='{.data.username}' | base64 -d)
+
+# 2. Mint an admin-tier OpenBao token (any of the standard paths — admin OIDC,
+#    admin-break-glass via Kubernetes auth, etc.).
+TOK=...   # see openbao-recovery.md
+
+# 3. Update the connection's stored credential. allowed_roles / connection_url
+#    do not change.
+kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$TOK" \
+    bao write database/config/secforge-spicedb \
+        plugin_name=postgresql-database-plugin \
+        allowed_roles="spicedb-readwrite" \
+        connection_url="postgresql://{{username}}:{{password}}@secforge-spicedb-db-rw.spicedb.svc.cluster.local:5432/spicedb?sslmode=require" \
+        username="$PG_USER" \
+        password="$PG_PASS"
+unset PG_PASS PG_USER
+
+# 4. Verify a credential mint succeeds.
+kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$TOK" \
+    bao read database/creds/spicedb-readwrite
+
+# 5. Trigger an immediate refresher run so SpiceDB picks up a fresh dynamic
+#    cred (the stale dynamic cred from before the rotation may still be valid
+#    on the postgres side until its lease expires; this short-circuits to the
+#    new cycle).
+kubectl create job -n spicedb spicedb-datastore-refresher-recovery-$(date +%s) \
+    --from=cronjob/spicedb-datastore-refresher
+```
+
+This is the same shape as Phase 5.7 follow-up #16 for the `secforge-app` connection (per [PLAN.md operator-backlog #16](../../PLAN.md)) — the OpenBao database engine assumes static root credentials at the postgres level, so any out-of-band rotation requires a re-bootstrap step. Cloud-edition migration should evaluate RDS IAM auth or equivalent to remove this coupling (see [ADR-0023 § Consequences → Future work](../02-decisions/0023-spicedb-datastore-uri-rotation-pattern.md)).
+
+### SpiceDB schema migration during operator upgrades
+
+The dynamic-cred role `spicedb-readwrite` grants explicit DML privileges (SELECT/INSERT/UPDATE/DELETE on `public.*`) but **does not** grant the table OWNER privileges that SpiceDB Operator's migration job needs for `ALTER TABLE` during version upgrades. (Postgres has no `GRANT ALTER`; only the table owner can ALTER.) When upgrading SpiceDB:
+
+1. Suspend the `spicedb-datastore-refresher` CronJob: `kubectl patch cronjob -n spicedb spicedb-datastore-refresher --type=merge -p '{"spec":{"suspend":true}}'`.
+2. Manually update the rendered `spicedb-config-vso` Secret to use the static `spicedb` user credentials (read from `secforge-spicedb-db-app`). VSO will revert this on its next refresh, so disable the underlying VaultStaticSecret too: `kubectl patch vaultstaticsecret -n spicedb spicedb-config-vso --type=merge -p '{"spec":{"refreshAfter":"24h"}}'`. (This buys you a 24h window.)
+3. Apply the SpiceDB Operator version bump and let the migration job complete.
+4. Restore the `VaultStaticSecret` `refreshAfter` and unsuspend the CronJob.
+5. Trigger an immediate refresher run to flip back to dynamic creds.
+
+This is documented as a known sharp edge in [ADR-0023](../02-decisions/0023-spicedb-datastore-uri-rotation-pattern.md). A future enhancement could template `creation_statements` to add the dynamic user as a member of `spicedb` via the role-creation `WITH ADMIN OPTION` flow (Postgres 16+ requirement) — but that pattern hit the SQLSTATE 42501 wall during Phase 7d.2 bootstrap; the explicit-grants approach was chosen for stability.
 
 ### Backup the SpiceDB database
 

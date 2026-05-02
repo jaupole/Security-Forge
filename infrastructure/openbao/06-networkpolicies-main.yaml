@@ -70,6 +70,38 @@ spec:
           port: 8200
 
 # ──────────────────────────────────────────────────────────────────────
+# Ingress: spicedb ns (specifically the spicedb-datastore-refresher
+# CronJob pod) → openbao API. Phase 7d.2.c — the refresher mints a
+# dynamic Postgres cred + writes the composed config Secret as a new
+# KV-v2 version. Pod-selector keeps the scope tight: only the refresher
+# can reach OpenBao from spicedb ns; SpiceDB itself stays unable to
+# touch the API directly (it consumes via VSO-rendered Secrets only).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spicedb-datastore-refresher-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: spicedb-datastore-refresher
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
 # Ingress: allow openbao pod-to-pod on Raft (:8201) and API (:8200).
 ---
 apiVersion: networking.k8s.io/v1
@@ -245,8 +277,23 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # secforge-spicedb-db Postgres (Phase 7d.2 database engine — required
+    # for `database/config/secforge-spicedb` connection-verify and
+    # `database/creds/spicedb-readwrite` dynamic-cred mint).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: secforge-spicedb-db
+      ports:
+        - protocol: TCP
+          port: 5432
 
 # ──────────────────────────────────────────────────────────────────────
 # Postgres (app ns) ingress allow for the OpenBao database engine.
 # We can't add this from the openbao ns; it must be created in `app` ns.
 # (It is — see infrastructure/openbao/07-postgres-app-ingress.yaml.)
+# Same applies to spicedb ns (Phase 7d.2 — see
+# infrastructure/openbao/10-postgres-spicedb-ingress.yaml).

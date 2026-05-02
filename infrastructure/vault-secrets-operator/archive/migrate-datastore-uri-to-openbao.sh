@@ -1,4 +1,19 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED — DO NOT RUN.
+#
+# Superseded by Phase 7d.2 (ADR-0023). The static-copy approach this
+# script implements is replaced by a CronJob
+# (infrastructure/spicedb/cron/spicedb-datastore-refresher.yaml) that
+# composes the Secret content from OpenBao's database secrets engine
+# + the static PSK on a 12h cadence. Re-running this script clobbers
+# the dynamic value with a static one and breaks the rotation cycle
+# until the next CronJob run.
+#
+# Retained for audit / historical context only. To unwind back to the
+# pre-7d static-only state, see ADR-0023's "What we did NOT do" and the
+# spicedb-operations runbook.
+#
 # Phase 6.10b Step 3 — write secret/data/spicedb/config to OpenBao.
 #
 # This is a ONE-TIME migration. It reads the current values from the K8s
