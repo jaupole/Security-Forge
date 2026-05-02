@@ -275,6 +275,62 @@
   4. Verify end-to-end: `bao login -method=oidc role=admin` from host should succeed; Web UI login (role=admin or blank) should land on admin policy.
 - **Operator-backlog tracking:** Grafana `client_secret` rotation deferred to PLAN.md operator-backlog item #7 until OpenBao admin auth is functional. Operator picks the timing.
 
+#### Resolution (2026-05-01) — `RESOLVED`
+
+**Original root-cause hypothesis was wrong.** Investigation surfaced a different failure mode entirely:
+
+- The `auth/oidc/role/admin` config was **healthy** all along — every monitored field (`allowed_redirect_uris` × 3 incl. `http://localhost:8250/oidc/callback`, `bound_claims.preferred_username = ["jason.upole"]`, `policies = ["admin"]`, `oidc_scopes`, `bound_claims_type`, `ttl=8h`, `max_ttl=24h`, `role_type="oidc"`, `user_claim`) matched what `infrastructure/openbao/configure-auth-oidc.sh:71-87` would write. Phase 7.0.c's source edit DID land in cluster state.
+- The actual failure was at the **OpenBao OIDC mount** layer: `auth/oidc/config` reported `"status": "invalid"` with warning `failed to construct JWK validator: keyset configuration error: Get "https://auth.secforge.local/realms/platform/.well-known/openid-configuration": dial tcp 10.96.97.16:443: i/o timeout`.
+- Network-layer diagnostics: hostAlias `auth.secforge.local → 10.96.97.16` resolved correctly inside the openbao pod; current ingress-nginx ClusterIP IS `10.96.97.16` (matches); but `wget` from inside `openbao-2` to that IP timed out at 5s.
+- **Root cause: `infrastructure/openbao/06-networkpolicies-main.yaml` `allow-openbao-egress` had no egress rule for `ingress-nginx → 443`.** The existing Keycloak rule allows pod-direct on `:8080`, but OpenBao's OIDC discovery URL is `https://auth.secforge.local/...` (the *public* hostname) which routes via the ingress-nginx ClusterIP at port 443. OpenBao must use the public URL because Keycloak puts that hostname in token `iss` claims — using a different in-cluster URL would fail JWK validation differently.
+
+**Why the failure modes presented as role/role-config issues:** OpenBao's CLI surfaced the discovery-fetch timeout as the misleading `Unable to authorize role 'admin' with redirect_uri 'http://localhost:8250/oidc/callback'` error — `http://localhost:8250/...` was the next URL in the failed code path's context, NOT the URL that actually failed. Web UI showed `Invalid role` for the same reason: the OIDC mount validates state on every login attempt, finds the validator un-constructable, returns generic role failure.
+
+**Why it ever worked:** Likely never did, post-Phase-7 NetworkPolicy tightening. The Phase 5 OIDC setup may have predated this NP, OR an earlier NP version had broader egress that was tightened during Phase 7. The Phase 7.0.c source edit added the localhost CLI redirect URI to the role config (correctly), but couldn't be exercised because the OIDC mount was already failing at the network layer; the symptom got attributed to role config in the F-CLU-11 capture.
+
+**Fix applied:** added a second egress rule into `allow-openbao-egress` for `namespace=ingress-nginx` on `port=443`:
+
+```yaml
+    # ingress-nginx for the public Keycloak OIDC discovery URL.
+    # `auth.secforge.local` resolves via hostAlias to the ingress-nginx
+    # ClusterIP; OpenBao reaches Keycloak via the public hostname so the
+    # token's `iss` claim matches what's stored at auth/oidc/config.
+    # Without this rule, openbao→ingress is dropped at egress, OpenBao
+    # can't construct its OIDC JWK validator, and OIDC login fails with
+    # the misleading "Unable to authorize role" error.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+The existing pod-direct keycloak rule (port 8080) was kept additive — comment updated to flag it as available for any future non-OIDC pod-direct call path.
+
+**Verification (V1+V2+V3 all green, 2026-05-01):**
+
+```
+V1: kubectl exec ... wget https://auth.secforge.local/realms/platform/.well-known/openid-configuration
+    → returned full Keycloak discovery JSON, issuer = https://auth.secforge.local/realms/platform
+
+V2: bao read auth/oidc/config | jq '.data.status, .warnings'
+    → "valid"
+    → null
+
+V3: bao login -method=oidc role=admin (host-side, browser-interactive)
+    → "Signed in via your OIDC provider. You can now close this window
+       and start using OpenBao."
+```
+
+**Side-finding (separate follow-up, NOT bundled into F-CLU-11 fix):** `docs/03-runbooks/openbao-recovery.md` § "Generate a new root token via recovery keys" is stale on OpenBao 2.5.3 — `bao operator generate-root -init` returns `405 unsupported operation` against `sys/generate-root/attempt`. Likely OpenBao 2.5.x restricts that endpoint on Transit-auto-unsealed instances; needs source-grep + runbook re-test against current OpenBao surface. The `Kubernetes auth break-glass` path in the same runbook (lines 24-44) DID work cleanly and was used to obtain the admin token for this fix. Tracked as a new operator-backlog item — runbook-currency-check.
+
+**Approach taken: option (b) targeted patch** (single new egress rule via NetworkPolicy YAML edit) rather than option (a) wholesale `configure-auth-oidc.sh` re-apply, because:
+- The role + mount config were already correct on every value the script writes.
+- Re-running the script would be a no-op for the role/config and would not have addressed the network-layer failure.
+- Targeted patch avoids the risk of sourcing a stale `CLIENT_SECRET` env var into a wholesale re-apply that doesn't need it.
+
 ---
 
 ## Dependency graph (corrected execution order)

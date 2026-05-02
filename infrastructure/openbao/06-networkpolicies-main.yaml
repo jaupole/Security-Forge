@@ -14,7 +14,8 @@
 # Egress:
 #   openbao → openbao-seal:8200         (auto-unseal Transit calls)
 #   openbao → kube-apiserver:443        (Kubernetes auth method)
-#   openbao → keycloak.keycloak.svc:8080 (OIDC discovery + JWKS)
+#   openbao → ingress-nginx:443         (public Keycloak OIDC URL via hostAlias — F-CLU-11)
+#   openbao → keycloak.keycloak.svc:8080 (kept for non-OIDC pod-direct paths)
 #   openbao → spire-server.spire.svc:8443 (SPIRE JWKS for jwt auth)
 #   openbao → secforge-app-db.app:5432  (database secrets engine)
 #   openbao → kube-dns                  (DNS)
@@ -196,7 +197,10 @@ spec:
           port: 8200
         - protocol: TCP
           port: 8201
-    # Keycloak (OIDC discovery + JWKS)
+    # Keycloak — direct pod-to-pod on in-cluster :8080 (kept for any
+    # future non-OIDC / non-public-hostname call path; current OIDC
+    # discovery + JWKS uses the public hostname via ingress-nginx — see
+    # rule below).
     - to:
         - namespaceSelector:
             matchLabels:
@@ -207,6 +211,21 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # ingress-nginx for the public Keycloak OIDC discovery URL.
+    # `auth.secforge.local` resolves via hostAlias to the ingress-nginx
+    # ClusterIP; OpenBao reaches Keycloak via the public hostname so the
+    # token's `iss` claim matches what's stored at auth/oidc/config.
+    # Without this rule, openbao→ingress is dropped at egress, OpenBao
+    # can't construct its OIDC JWK validator, and OIDC login fails with
+    # the misleading "Unable to authorize role" error. See F-CLU-11
+    # resolution (Fix after 07/00-audit-findings.md) for the diagnosis.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 443
     # SPIRE server JWKS (Phase 5.8)
     - to:
         - namespaceSelector:
