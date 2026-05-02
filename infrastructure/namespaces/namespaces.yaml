@@ -517,11 +517,16 @@ spec:
     # Bumped Phase 7.3 — full obs stack (Prometheus + Grafana + Alertmanager
     # + Loki + Tempo + OTel + node-exporter + kube-state-metrics + chart
     # admission hooks) doesn't fit in 6Gi limit / 4Gi request. Bumped
-    # again in 7.5 — Tempo+OTel push CPU limits over 6.
+    # again in 7.5 — Tempo+OTel push CPU limits over 6. Bumped 2026-05-01
+    # (limits.memory 10Gi → 14Gi): Grafana 13.0.1 chart upgrade tried to
+    # roll a new ReplicaSet at 1792Mi limit and got FailedCreate from
+    # quota at 9664Mi/10Gi (96.6%). 14Gi gives ~4Gi headroom for the
+    # Grafana roll plus future component growth (likely metrics-server
+    # and post-6b-2 monitoring additions).
     requests.cpu: "3"
     requests.memory: 6Gi
     limits.cpu: "8"
-    limits.memory: 10Gi
+    limits.memory: 14Gi
     pods: "40"
 ---
 apiVersion: v1
