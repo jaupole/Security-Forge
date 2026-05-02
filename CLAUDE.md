@@ -83,6 +83,8 @@ These are bright-line rules. They apply locally too — if anything, the local e
 - ❌ Implicit OAuth flow, ROPC password grant, or any OAuth 2.0 (non-2.1) flow for new clients.
 - ❌ SMS as an MFA factor.
 - ❌ Putting Keycloak's admin console on the same hostname/path as the public OIDC endpoints.
+- ❌ Storing outbound third-party credentials (Stripe, OpenAI, SendGrid, GitHub, etc.) in a `.env` file, an env var, a baked-in image layer, or an unencrypted-at-rest K8s `Secret`. They live in OpenBao at `secret/data/apps/<app>/<integration>` and are fetched at runtime via `apps/lib/secrets/`. The platform has six guardrail layers that reject any other path; see [ADR-0013](./docs/02-decisions/0013-outbound-secrets-no-env.md) and the runbook chain ([secrets-library.md](./docs/03-runbooks/secrets-library.md), [migrate-env-to-openbao.md](./docs/03-runbooks/migrate-env-to-openbao.md), [new-app-bootstrap.md](./docs/03-runbooks/new-app-bootstrap.md), [secrets-guardrails-verification.md](./docs/03-runbooks/secrets-guardrails-verification.md), [secrets-guardrails-monitoring.md](./docs/03-runbooks/secrets-guardrails-monitoring.md), [ci-secrets-check.md](./docs/03-runbooks/ci-secrets-check.md)). The expiring escape hatch (`secforge.local/legacy-secret-env*` annotations) is the ONLY acceptable bypass and is itself time-bounded ≤90d with a tracked ticket reference.
+- ❌ Defining environment variables whose names contain `KEY`, `SECRET`, `TOKEN`, `PASSWORD`, or `CREDENTIAL` on Pods in the `app` namespace. Kyverno admission denies them at deploy time. If a vendor SDK strictly requires this shape, use the escape hatch above with an expiry annotation.
 
 When you encounter one of these, flag it. Do not "fix" it silently.
 

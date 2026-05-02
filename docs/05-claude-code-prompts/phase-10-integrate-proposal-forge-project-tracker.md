@@ -140,27 +140,55 @@ Test locally before deploy: pointing the local app's frontend at a stub that inj
 
 ## Phase 10.{N}.5 — Route outbound secrets through OpenBao
 
-For every secret in the app's existing .env, write it into OpenBao:
-  - bao kv put secret/data/apps/{APP}/anthropic-api-key value=<...>
-  - bao kv put secret/data/apps/{APP}/openai-api-key value=<...>   (Proposal Forge only)
-  - etc.
+The canonical migration runbook is [docs/03-runbooks/migrate-env-to-openbao.md](../03-runbooks/migrate-env-to-openbao.md) (shipped Phase 6b-2 commit 6); follow it step-by-step. Quick recap:
 
-Replace every `process.env.X_API_KEY` lookup in the server with a call to `apps/lib/secrets/`:
+For every credential in the app's existing `.env`, write it into OpenBao under the per-integration KV path. **Group fields under one integration**, don't make a separate path per key:
 
-  // before
-  const key = process.env.ANTHROPIC_API_KEY;
-  // after
-  const key = await secrets.read("apps/{APP}/anthropic-api-key");
+```bash
+bao kv put secret/apps/{APP}/anthropic api_key=<...>
+bao kv put secret/apps/{APP}/openai    api_key=<...> organization_id=<...>   # Proposal Forge only
+bao kv put secret/apps/{APP}/sendgrid  api_key=<...> from_email=<...>
+```
 
-The library handles SPIFFE-JWT auth to OpenBao, caching, refresh. The app code never sees a raw KV read.
+Wire `apps/lib/secrets/` at startup, mirroring [apps/helloworld-bff/admin.go](../../apps/helloworld-bff/admin.go) (the Phase 6b-2 reference adopter):
 
-Database credentials: fetch dynamic Postgres credentials via the secrets library at startup (Phase 5 pattern). Per-pod credentials, 1h TTL, library refreshes transparently.
+```go
+client, err := libSecrets.New(bootstrap, libSecrets.Config{
+    AppName:  "{APP}",
+    CacheTTL: 5 * time.Minute,
+    Hardened: true,
+})
+```
+
+Replace every `process.env.X_API_KEY` / `os.Getenv("X_API_KEY")` lookup with the library's `GetField` + `Secret.Use` pattern:
+
+```go
+// before
+key := os.Getenv("ANTHROPIC_API_KEY")
+err := callAnthropic(key)
+
+// after
+secret, err := client.GetField(ctx, "anthropic", "api_key")
+if err != nil { return err }
+err = secret.Use(func(b []byte) error {
+    return callAnthropic(string(b))
+})
+// Secret is best-effort-zeroed on Use return.
+```
+
+The library handles SPIFFE-JWT auth to OpenBao, TTL caching, and silent refresh. The app code never sees a raw KV read. The `Secret` type's `String()` and `MarshalJSON()` return `[redacted]` so accidental `fmt.Printf`/`json.Marshal` won't leak the value.
+
+**Database credentials**: fetch dynamic Postgres credentials via `client.GetDynamic(ctx, "<role>")` at startup. Per-pod credentials, lease-bound TTL, library refreshes transparently. The `DynamicCredential.DSN(template)` helper assembles the connection string without exposing the password to the call site.
+
+**Hardened mode default**: new apps get `Hardened: true` per ADR-0013 § 7. `GetField` returns `Secret` (not `string`); call sites MUST consume via `Use` or one of the bundled accessor helpers (`HTTPHeader`, `BasicAuth`, `DSN`).
 
 After cutover:
   - The .env file in the repo is DELETED, not gitignored — it must not exist
-  - .env.example exists and contains ONLY non-secret config (PORT, NODE_ENV, etc.)
-  - Pre-commit hook from `templates/app-repo/` (Phase 6b-2) is installed in the {APP} repo
-  - Verify `git log -p` for the .env file shows no committed secrets in history; if any are found, document for rotation per the migrate-env-to-openbao runbook
+  - .env.example exists and contains ONLY non-secret config (PORT, NODE_ENV, etc.) per [`templates/app-repo/.env.example`](../../templates/app-repo/.env.example)
+  - The pre-commit + CI workflow from `templates/app-repo/` is installed in the {APP} repo per [docs/03-runbooks/new-app-bootstrap.md](../03-runbooks/new-app-bootstrap.md) and [docs/03-runbooks/ci-secrets-check.md](../03-runbooks/ci-secrets-check.md)
+  - The `apps/lib/errreport/` `ScrubbingReporter` is wired into the app's error path (mirror [apps/helloworld-bff/errreport.go](../../apps/helloworld-bff/errreport.go))
+  - Verify `git log -p -- .env .env.*` for the app's history shows every value that was ever committed; **rotate every credential whose value appears anywhere in history** per ADR-0013 § Pre-migration checklist
+  - Run `bash infrastructure/secrets-guardrails/verify/run-all.sh` from the platform repo; expect 9/9 PASS
 
 ## Phase 10.{N}.6 — Containerize, sign, deploy
 
