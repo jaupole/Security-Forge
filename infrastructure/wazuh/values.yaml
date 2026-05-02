@@ -138,16 +138,17 @@ dashboard:
     enabled: true
 
 # ─── Agent (DaemonSet) ───────────────────────────────────────────────
-# Deferred to Phase 7d — will be reintroduced with capabilities-based hardening
-# (SYS_PTRACE, AUDIT_READ, AUDIT_CONTROL) instead of privileged: true, and
-# image pinned by digest. See PLAN.md Phase 7d.
+# Chart's agent DaemonSet is DISABLED. Phase 7d Item 5 (2026-05-02)
+# learned that PSS=baseline (the wazuh ns label) blocks hostPath volumes
+# entirely — the agent can't run in this namespace regardless of how
+# we configure capabilities. The agent NEEDS hostPath mounts of /etc,
+# /var/log, /host/proc for any meaningful host-level monitoring.
 #
-# Without the agent we still get SIEM coverage for our two highest-value
-# event sources (Keycloak auth events, OpenBao audit) via syslog forwarding
-# from those services directly to wazuh-manager.wazuh.svc:1514. Host-level
-# file-integrity monitoring (`/etc`, `/var/log`, `/usr/bin`) is what we lose
-# without the agent — acceptable tradeoff for local edition; the host VM is
-# already a single-tenant dev environment, not a production node.
+# Solution: deploy a standalone hardened DaemonSet in a dedicated
+# namespace `wazuh-agent` with PSS=privileged (which allows hostPath).
+# Manifests at infrastructure/wazuh-agent/. The wazuh-agent ns's
+# privilege bubble is contained — manager/indexer/dashboard stay
+# PSS=baseline-locked in this namespace.
 agent:
   enabled: false
 

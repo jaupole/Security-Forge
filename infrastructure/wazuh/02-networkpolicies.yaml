@@ -122,6 +122,35 @@ spec:
           port: 1514
 
 # ──────────────────────────────────────────────────────────────────────
+# Phase 7d Item 5 — wazuh-agent ns DaemonSet → manager:1514 (events)
+# and 1515 (registration). Cross-ns ingress allow.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-wazuh-agent-to-manager
+  namespace: wazuh
+  labels:
+    secforge.platform/component: wazuh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wazuh
+      app.kubernetes.io/component: manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: wazuh-agent
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: wazuh-agent
+      ports:
+        - { protocol: TCP, port: 1514 }
+        - { protocol: TCP, port: 1515 }
+
+# ──────────────────────────────────────────────────────────────────────
 # Allow intra-namespace mesh: indexer ↔ manager ↔ dashboard ↔ certs-job
 # ↔ cleanup CronJob all need to talk to each other on chart-internal
 # ports. NetworkPolicy only restricts INGRESS for namespaces with at

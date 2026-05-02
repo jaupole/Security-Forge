@@ -1,0 +1,13 @@
+# Phase 7d Item 5 — Wazuh agent ServiceAccount.
+# No K8s RBAC required at runtime (the agent talks to wazuh-manager
+# over TCP, not the K8s API). SA exists for SPIRE-managed identity
+# wiring + telemetry attribution.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wazuh-agent
+  namespace: wazuh-agent
+  labels:
+    secforge.platform/component: wazuh-agent
+automountServiceAccountToken: false

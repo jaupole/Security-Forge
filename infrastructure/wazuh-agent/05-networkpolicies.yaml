@@ -1,0 +1,52 @@
+# Phase 7d Item 5 — wazuh-agent ns NetworkPolicies.
+#
+# Default-deny ingress on the ns + explicit egress allow for the agent
+# pod to reach wazuh-manager (cross-ns) on ports 1514 (events) and 1515
+# (registration), plus DNS for service-name resolution.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: wazuh-agent
+  labels:
+    secforge.platform/component: wazuh-agent
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-wazuh-agent-egress
+  namespace: wazuh-agent
+  labels:
+    secforge.platform/component: wazuh-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wazuh-agent
+  policyTypes: [Egress]
+  egress:
+    # DNS for service-name resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Wazuh manager (events + registration). Cross-ns to wazuh ns.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: wazuh
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: manager
+              app.kubernetes.io/name: wazuh
+      ports:
+        - { protocol: TCP, port: 1514 }
+        - { protocol: TCP, port: 1515 }

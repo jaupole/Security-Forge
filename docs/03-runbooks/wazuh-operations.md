@@ -52,26 +52,76 @@ OIDC federation against Keycloak is **not yet wired** — see `Deferred componen
 
 The Phase 7.2 deploy intentionally omits four pieces. Each has a clear "when to revisit" criterion.
 
-### 1. Wazuh Agent DaemonSet — deferred to Phase 7d
+### 1. Wazuh Agent DaemonSet — Phase 7d Item 5 (2026-05-02): hardening shipped, key persistence deferred
 
-**Why deferred:** the chart's agent ships with `securityContext.privileged: true` + `hostPID: true` + hostPath mounts of `/etc`, `/var/log`, `/proc`. That demands a namespace-wide PSS=`privileged` label or a per-SA exemption. The operator's call (Session 4 GREEN) was to keep the namespace at PSS=`baseline` and defer the agent rather than relax PSS for the whole stack.
+**Status:** infrastructure shipped (separate ns `wazuh-agent` with PSS=privileged), agent registers with manager + connects, but `/var/ossec/etc/client.keys` doesn't persist across pod restarts → enrollment-loop quirk prevents stable steady-state. The hardening work (Item 5's substantive ask) is complete; the persistence wiring is a known limitation tracked as a focused follow-up.
 
-**What we lose without the agent:**
-- File integrity monitoring (FIM) on the host filesystem (`/etc`, `/var/log`, `/usr/bin`)
-- syscheck / rootcheck against the host
-- Active-response on host-level events (kill-process, block-IP)
+**What's in `infrastructure/wazuh-agent/`:**
 
-**What we still get without the agent:**
-- Forwarded-events SIEM via syslog from in-cluster sources (Keycloak event log, OpenBao audit log) into the Wazuh manager — this is the "what events reach the SIEM" path covered by the architecture doc, just sourced from the apps directly instead of from an agent watching their disk files
-- All Wazuh manager rules + indexing + dashboards still apply to those forwarded events
+- Standalone DaemonSet (NOT chart-managed — the chart's `agent.enabled` template hard-codes `privileged: true` + `hostPID: true` + hostPath, all of which PSS=baseline blocks; we rejected forking the chart in favor of cleanly separated manifests).
+- New ns `wazuh-agent` with PSS=`privileged` (so hostPath mounts admit; the rest of `wazuh` ns stays PSS=`baseline`).
+- Hardening: `privileged: false`; `hostPID: false`; `capabilities.add: [DAC_OVERRIDE, SETUID, SETGID]` only; image pinned by SHA256 digest; `seccompProfile: RuntimeDefault`; `fsGroup: 999` (the wazuh user's GID).
+- Cross-ns NetworkPolicy: agent ns → manager:1514+1515 (events + registration).
+- `pod-security.yaml` Kyverno cluster policy excludes `wazuh-agent` ns (host-path/host-pid/runAsUser=0 needs).
 
-**Revisit when:** Phase 7d. Plan: pin agent image by digest, replace `privileged: true` with `securityContext.capabilities.add: [SYS_PTRACE, AUDIT_READ, AUDIT_CONTROL]`, drop hostPID if not strictly needed, and add a `pod-security.kubernetes.io/exempt` annotation only on the agent's ServiceAccount rather than the whole namespace.
+**What this hardening costs us:**
 
-### 2. Log forwarding from Keycloak + OpenBao — deferred (small follow-up)
+- **Host-level process inventory:** without `hostPID: true`, the agent only sees its own PID namespace. Process inventory scans, ptrace-based introspection, and rootcheck process scans don't catch host processes. File-based rootcheck still works.
+- **Auditd integration:** would need `AUDIT_READ` (not in the baseline-allowed set; we excluded it).
+- **Active-response:** disabled (would need root + more capabilities; not used on local-edition).
 
-The 5th pillar's pass criterion is "Wazuh manager receives + indexes Keycloak/OpenBao events". Today's deploy gets the manager listening on TCP/1514; the source-side syslog config in Keycloak (`spi-events-listener-syslog-*` Quarkus options) and OpenBao (`bao audit enable syslog address=wazuh-manager.wazuh.svc:1514`) is the missing wire. Both are small, non-destructive changes. Tracked as a Phase 7.2 follow-up.
+**Known issue: enrollment key persistence.** `/var/ossec/etc/` is mounted as an EmptyDir, so the agent's `client.keys` is wiped on pod restart. The agent's auto-enrollment then races against the manager's existing-name registration:
 
-NetworkPolicy is already in place (`02-networkpolicies.yaml`'s `allow-syslog-to-wazuh-manager` allows keycloak/openbao/app namespaces to reach manager:1514).
+1. Pod restart → empty `client.keys` → agentd auto-enrolls → manager creates new agent ID with the same node name.
+2. Agent's local enrollment-response handling doesn't reliably persist the key to `client.keys` (image's init quirk).
+3. Subsequent re-enrollment fails with `Duplicate agent name` (manager's `<purge>yes</purge>` is gated by `<after_registration_time>1h</after_registration_time>`).
+
+Effect: manager `agent_control -l` shows the agent as `Active`, but `wazuh-logcollector` doesn't reach steady state, and Phase 7d Item 6 pod-log events from Keycloak/OpenBao don't flow reliably until the operator intervenes.
+
+**Recovery (manual):**
+
+```bash
+# Remove the duplicate agent ID from the manager's keys file:
+kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/manage_agents <<< $'r\n<id>\ny\nq\n'
+# Restart the agent so it re-enrolls cleanly:
+kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
+```
+
+**Permanent fix (Phase 7d.5 follow-up — separate from this Item 5 closure):**
+
+- Pre-register the agent on the manager with a known name + extract the key once
+- Persist as a K8s Secret in `wazuh-agent` ns
+- Mount the Secret as `/var/ossec/etc/client.keys` via subPath (overrides the EmptyDir for that one file)
+- DaemonSet's `spec.template.spec.containers[0].env.WAZUH_REGISTRATION_*` removed (agent uses pre-registered key, no auto-enroll)
+
+Approximately 30–60 min of focused work. Tracked separately so the Item 5 hardening surface ships clean.
+
+### 2. Log forwarding from Keycloak + OpenBao — Phase 7d Item 6 (2026-05-02): config in place, blocked by Item 5 stability
+
+**Approach (vs. the original prompt's syslog path):** instead of source-side syslog forwarding (which OpenBao 2.x doesn't natively support over a network — `syslog` audit device is `/dev/log`-only), we configured the Wazuh agent's `<localfile>` blocks to tail Keycloak + OpenBao pod logs from the host's `/var/log/pods/` tree (mounted at `/host/var/log/pods/` via the agent's hostPath mount).
+
+**Where the config lives:**
+
+- `infrastructure/wazuh-agent/03-configmap.yaml` — `ossec-supplements.xml` includes:
+
+```xml
+<localfile>
+  <log_format>json</log_format>
+  <location>/host/var/log/pods/openbao_openbao-*/openbao/*.log</location>
+  <label key="source">openbao</label>
+</localfile>
+<localfile>
+  <log_format>json</log_format>
+  <location>/host/var/log/pods/keycloak_keycloak-0_*/keycloak/*.log</location>
+  <label key="source">keycloak</label>
+</localfile>
+```
+
+The init container appends these to the agent image's default `ossec.conf`. Verified loaded at runtime: `kubectl exec -n wazuh-agent ds/wazuh-agent -c wazuh-agent -- tail /var/ossec/etc/ossec.conf` shows the localfile blocks at the bottom.
+
+**Status:** the config is correct and in-place, but events don't reach the manager + indexer reliably until the Item 5 enrollment-loop quirk is fixed (see § 1 above). Once `client.keys` persists, `wazuh-logcollector` stays running and the localfile tailing kicks in.
+
+**Custom decoders for the JSON formats** (originally planned manager-side at `/var/ossec/etc/decoders/local_decoder.xml`) are NOT in this commit — they're tracked as a Phase 7d.6 follow-up; until decoders land, raw JSON events ship as `wazuh-alerts` entries with `data.*` fields but without parsed Wazuh field mappings (search by `agent.labels.source: keycloak` to find them).
 
 ### 3. OIDC federation with Keycloak — deferred (medium follow-up)
 
