@@ -13,6 +13,7 @@
 3. [Unseal OpenBao — after a multi-day pause (the gotcha case)](#3-unseal-openbao--after-a-multi-day-pause-the-gotcha-case)
 4. [Where the unseal keys live](#4-where-the-unseal-keys-live)
 5. [Apps stuck in CrashLoopBackOff after a Docker Desktop restart](#5-apps-stuck-in-crashloopbackoff-after-a-docker-desktop-restart)
+6. [Bootstrap kcadm-admin from scratch (the actual 5-step procedure)](#6-bootstrap-kcadm-admin-from-scratch-the-actual-5-step-procedure)
 
 ---
 
@@ -120,7 +121,7 @@ Both flavors are now handled automatically by `unseal-seal.sh` (added 2026-05-01
 
 So in practice: just run the normal unseal (Section 2) and the cleanup happens automatically. You'll see `✓ deleted openbao-N (will restart against now-unsealed seal-pod)` and/or `✓ deleted helloworld-bff-... (will restart with fresh SVID)` in the script's output.
 
-**This is the friction-relief workaround.** The proper structural fix is an `initContainer` on the main OpenBao StatefulSet that blocks pod startup until `openbao-seal-0` reports unsealed — same pattern as the SPIFFE-CSI startupProbe wait already in use elsewhere. Tracked separately in operator-backlog; once it lands, this whole section becomes unnecessary because the main pods won't crash in the first place.
+**Status note (2026-05-02):** the proper structural fix has landed — commit `f2e9c02` added a `wait-for-seal-unsealed` initContainer on the main OpenBao StatefulSet that polls `openbao-seal-0` and blocks pod startup until it reports unsealed (same pattern as the SPIFFE-CSI socket wait). Once your dev cluster has been helm-upgraded with that values.yaml, the main-OpenBao crashloop arm of this section becomes unreachable — the pods sit in `Init:0/2` phase instead, with no kubelet backoff. The app-namespace SVID-refresh sweep below remains useful belt-and-suspenders for the SPIRE-rotation race; it's not made obsolete by the initContainer.
 
 **If you need to do it manually** (pods in some other namespace, or one of the auto-cleanups didn't catch it):
 
@@ -133,6 +134,62 @@ kubectl delete pod -n <namespace> <pod-name>
 **If the script fails at "Main OpenBao pods didn't reach Ready in 90s":** that's a deeper issue than the routine backoff cycle (Raft state, NetworkPolicy, etc.). The script intentionally stops there rather than restart apps against a broken OpenBao. See `kubectl get pods -n openbao` and `kubectl logs -n openbao openbao-0 -c openbao --tail=30` for the actual error.
 
 **See also:** the script lives at [`infrastructure/openbao/unseal-seal.sh`](../../infrastructure/openbao/unseal-seal.sh); the broader SPIFFE workload-identity model is in [`docs/01-architecture/02-workload-identity.md`](../01-architecture/02-workload-identity.md).
+
+---
+
+## 6. Bootstrap kcadm-admin from scratch (the actual 5-step procedure)
+
+**When:** a fresh cluster (or one rebuilt after a Keycloak destroy-and-rebuild). Until `kcadm-admin` exists in the master realm with the right role grants, **none** of the kcadm-using provisioning scripts (`openbao.sh`, `grafana.sh`, `security-events.sh`, the realm bootstrap scripts) can run — they all source `_lib/kcadm-auth.sh` which authenticates as `kcadm-admin` against the master realm.
+
+**What's happening:** chicken-and-egg. The provisioning script *needs* kcadm-admin to authenticate, but the client doesn't yet exist for the script to create. ADR-0022 § Bootstrap caveat documents this as "a one-time manual UI step" — that framing **understates** what's involved. The real procedure is **five UI clicks + one OpenBao write + eleven role grants** before the script can take over and self-bootstrap.
+
+**The procedure (five steps, ~10 minutes, browser + one OpenBao write):**
+
+1. **Create the client.** Open `https://auth-admin.secforge.local/admin/master/console/`. Realm: `master` → **Clients** → **Create client**.
+   - Client ID: `kcadm-admin`
+   - Client authentication: **ON**
+   - Authorization: OFF
+   - Standard flow: OFF · Direct access grants: OFF · Implicit flow: OFF
+   - Service accounts roles: **ON**
+   - Save.
+
+2. **Copy the auto-generated secret.** Credentials tab → **Client secret** → copy.
+
+3. **Write to OpenBao** (substitute the value from step 2):
+
+   ```bash
+   kubectl exec -n openbao openbao-0 -c openbao -- \
+       env BAO_SKIP_VERIFY=1 BAO_TOKEN=$ROOT_TOKEN \
+       bao kv put secret/keycloak/clients/kcadm-admin \
+           client_secret='THE-COPIED-SECRET-VALUE'
+   ```
+
+4. **Apply 11 role grants from the master-realm UI** (this is the long part). For each grant: in the master realm → **Users** → search `service-account-kcadm-admin` → click → **Role mappings** tab → **Assign role** → **Filter by clients** → select. The 11 grants are:
+
+   | Realm-management client | Roles to grant |
+   |---|---|
+   | `master-realm` | `manage-clients`, `manage-users` (2) |
+   | `platform-realm` | `manage-clients`, `manage-realm`, `manage-users`, `view-realm` (4) |
+   | `secforge-tenants-realm` | `manage-clients`, `manage-users`, `view-realm`, `view-authorization`, `view-events` (5) |
+
+   Each role must be the **client role** of the named realm-management client (not a realm-level role, not a master-realm composite). 11 roles total across 3 clients.
+
+5. **Run the self-bootstrap.** With `BAO_TOKEN` set to a token with read on `secret/data/keycloak/clients/kcadm-admin`:
+
+   ```bash
+   BAO_TOKEN=$(cat ~/.bao-token) bash infrastructure/keycloak/clients/kcadm-admin.sh
+   ```
+
+   The script reads the secret you just wrote, authenticates kcadm as `kcadm-admin`, and reconciles the role grants from ADR-0022's "Roles granted" table (idempotent — if a grant is already in place from step 4, kcadm reports it as present and moves on). After this, every other kcadm-using script just works.
+
+**Verification:** the next provisioning script you run finishes without "kcadm auth failed" or "user lacks permission" — for example `BAO_TOKEN=$(cat ~/.bao-token) bash infrastructure/keycloak/clients/security-events.sh` returns "auth ok" and creates its clients clean.
+
+**If it didn't work:**
+- "kcadm auth failed" → step 3 wrote the wrong secret, or the kcadm-admin client in step 1 has Service-accounts-roles OFF (re-check the toggle in the UI).
+- "user lacks permission to manage clients in `<realm>`" → step 4 missed a role; re-open the Users → service-account-kcadm-admin → Role mappings page and check the realm-management client's listed roles against the table above.
+- Step 5's `kcadm-admin.sh` exits with "OpenBao read returned empty" → BAO_TOKEN doesn't have read capability on the path; re-mint with `bao token create -policy=admin` (5 min ttl is fine).
+
+**See also:** [ADR-0022](../02-decisions/0022-kcadm-admin-service-account.md) (the architectural rationale), [`infrastructure/keycloak/clients/kcadm-admin.sh`](../../infrastructure/keycloak/clients/kcadm-admin.sh) (script header reproduces these steps), [`infrastructure/keycloak/_lib/kcadm-auth.sh`](../../infrastructure/keycloak/_lib/kcadm-auth.sh) (the shared fetch+auth helper every consumer script uses). The ADR text itself is being updated to match this 5-step reality — see operator-backlog #11.
 
 ---
 
