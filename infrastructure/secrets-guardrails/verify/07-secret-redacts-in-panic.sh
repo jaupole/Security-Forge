@@ -50,7 +50,7 @@ go 1.25.0
 
 require github.com/secforge/lib v0.0.0
 
-replace github.com/secforge/lib => /lib
+replace github.com/secforge/lib => /secforge-lib
 EOF
 
 # Build the Go program with the sigils baked into a slice. We can't
@@ -101,8 +101,10 @@ GOEOF
 } > main.go
 
 yellow "VERIFY-07: running ScrubbingReporter chain via dockerized Go"
+# Mount target is /secforge-lib, NOT /lib — see verify-06's matching
+# comment for the musl-libc shadowing trap.
 OUTPUT=$(docker run --rm \
-    -v "$REPO_ROOT/apps/lib":/lib \
+    -v "$REPO_ROOT/apps/lib":/secforge-lib \
     -v "$WORK":/work \
     -w /work \
     -e CGO_ENABLED=0 \

@@ -44,7 +44,7 @@ go 1.25.0
 
 require github.com/secforge/lib v0.0.0
 
-replace github.com/secforge/lib => /lib
+replace github.com/secforge/lib => /secforge-lib
 EOF
 
 cat > main.go <<EOF
@@ -68,8 +68,14 @@ func main() {
 EOF
 
 yellow "VERIFY-06: building + running synthetic emitter via dockerized Go"
+# Mount target is /secforge-lib, NOT /lib — bind-mounting on /lib shadows
+# the container's runtime libc directory (alpine ships musl libc symlinks
+# at /lib/ld-musl-* and /lib/libc.musl-*), and dynamic linking of /bin/sh
+# against musl then fails with "exec /bin/sh: no such file or directory"
+# before any go command can run. Verified empirically on Docker Desktop
+# WSL2; the same trap exists on every other Linux runtime.
 OUTPUT=$(docker run --rm \
-    -v "$REPO_ROOT/apps/lib":/lib \
+    -v "$REPO_ROOT/apps/lib":/secforge-lib \
     -v "$WORK":/work \
     -w /work \
     -e CGO_ENABLED=0 \
