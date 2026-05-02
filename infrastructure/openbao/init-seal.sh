@@ -120,12 +120,20 @@ POLICY
 authed policy write unseal-policy /tmp/unseal-policy.hcl >/dev/null
 green "    unseal-policy written"
 
-# 6. Mint the TTL token for the main OpenBao.
-green "==> minting Transit unseal token (TTL=24h, renewable)"
+# 6. Mint the periodic Transit unseal token for the main OpenBao.
+#
+# Phase 7d Item 3 (operator-backlog #4): switched from `-ttl=24h
+# -renewable=true` to `-period=720h` (30 days). Rationale: a periodic
+# token refreshes its TTL on every USE — and main OpenBao's transit-
+# unseal call at boot counts as use. With a 30d period, normal local-
+# edition usage (any cluster reboot more frequent than once-per-month)
+# refreshes the token transparently. Cold-pause must exceed 30 days
+# before the recovery script `rotate-transit-token.sh` is needed —
+# vs. the prior 24h ceiling. ADR-0009 documents the trade-off.
+green "==> minting Transit unseal token (period=720h, auto-renews on use)"
 token_out=$(authed token create \
     -policy=unseal-policy \
-    -ttl=24h \
-    -renewable=true \
+    -period=720h \
     -format=json 2>&1)
 TRANSIT_TOKEN=$(jq -r '.auth.client_token' <<<"$token_out")
 

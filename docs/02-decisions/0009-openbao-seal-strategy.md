@@ -117,6 +117,16 @@ Increases physical separation but Docker Desktop K8s is single-node anyway; phys
 1. **Single Raft cluster on a single node.** No machine-fault tolerance. Acceptable for local; documented gap.
 2. **Seal-OpenBao on a single replica with file storage.** Loss of the seal-OpenBao's PVC means total loss of the main OpenBao's seal key (and therefore its data, even if recovery keys are present, because recovery keys don't decrypt the at-rest data — they only allow root regeneration on an unsealed OpenBao). Backup procedure for the seal-OpenBao's PV is in [docs/03-runbooks/openbao-recovery.md](../03-runbooks/openbao-recovery.md).
 3. **No periodic rotation of the Transit unseal key on the seal-OpenBao.** Rotating it requires re-sealing the main OpenBao, which is invasive. Documented; not a routine cadence.
+4. **Transit unseal token TTL strategy** (refined Phase 7d, 2026-05-02; operator-backlog #4 closed). The token main OpenBao presents to seal-OpenBao for `transit/decrypt/unseal` calls is now minted as a **periodic token** (`-period=720h`, no `-ttl`/`-renewable`). Periodic tokens refresh their TTL on every USE, and main OpenBao's transit-unseal call at boot counts as use. With the 30-day period, normal local-edition usage (any cluster reboot more frequent than once per month) refreshes the token transparently. The original 24h-TTL-with-renewable design assumed the main OpenBao would be up continuously and auto-renewing on a schedule; that assumption fails for part-time local clusters that sit cold for days. **Tradeoffs considered:**
+
+    | Option | Cold-pause ceiling | Operator burden | Auto-recovery |
+    |---|---|---|---|
+    | (a) `-ttl=24h -renewable=true` (original) | 24h | Manual re-mint via `rotate-transit-token.sh` after every >24h pause | None |
+    | (b) `-ttl=720h -renewable=true` (long-TTL with periodic rotation) | 720h | Same script, less frequent | Same |
+    | (c) `-period=720h` (chosen) | 720h, refreshed on every cluster boot | Same script, only after 30+ days continuous cold | Auto-refresh on every main OpenBao reboot — silent in normal usage |
+    | (d) Mint-on-bring-up via apply-main.sh / hook | Effectively unbounded | Tied to bring-up flow (every `apply-main.sh` run) | Always fresh on apply |
+
+    Option (c) is the local-edition sweet spot: zero operator action in normal usage; the existing `rotate-transit-token.sh` script handles the rare >30-day cold pause. The change is two lines in `init-seal.sh` + `rotate-transit-token.sh`. No infrastructure additions. The live token under deployment was minted with `-ttl=24h`; it is converted to the new `-period=720h` semantics on next rotate-transit-token.sh run (or on next cluster bootstrap from scratch). Recovery flow is unchanged — the script still handles both shapes.
 
 ## Re-evaluation criteria
 

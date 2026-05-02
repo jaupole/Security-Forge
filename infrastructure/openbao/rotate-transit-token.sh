@@ -74,7 +74,7 @@ green "==> 1/5 seal-OpenBao root accepted"
 # ──────────────────────────────────────────────────────────────────────
 NEW_TOKEN=$(kubectl exec -n "$NS" "$SEAL_POD" -c openbao -- \
     env BAO_SKIP_VERIFY=1 BAO_TOKEN="$SEAL_ROOT" \
-    bao token create -policy=unseal-policy -ttl=24h -renewable=true -format=json \
+    bao token create -policy=unseal-policy -period=720h -format=json \
     2>/dev/null | jq -r '.auth.client_token')
 unset SEAL_ROOT
 
@@ -83,7 +83,10 @@ if [ -z "$NEW_TOKEN" ] || [ "$NEW_TOKEN" = "null" ]; then
     red "not the main OpenBao root, and that unseal-policy exists in seal-OpenBao."
     exit 1
 fi
-green "==> 2/5 fresh Transit token minted (24h TTL, renewable)"
+# Phase 7d Item 3: -period=720h matches init-seal.sh — periodic tokens
+# auto-renew on every use (= every main OpenBao transit-unseal call at
+# boot). 30-day idle ceiling vs the prior 24h. See ADR-0009.
+green "==> 2/5 fresh Transit token minted (period=720h, auto-renews on use)"
 
 # ──────────────────────────────────────────────────────────────────────
 # 3. Patch the openbao-transit-token K8s Secret.
