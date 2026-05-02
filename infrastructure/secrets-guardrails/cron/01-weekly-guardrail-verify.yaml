@@ -1,0 +1,135 @@
+# Phase 7b.6 — Weekly guardrail-verification CronJob.
+#
+# Schedules `bash infrastructure/secrets-guardrails/verify/run-all.sh`
+# every Sunday at 02:00 UTC. Mounts the verify scripts as a ConfigMap
+# (built from the on-disk scripts via `bash apply.sh`). On failure, the
+# CronJob exits non-zero — surfaced via kube-state-metrics'
+# `kube_job_failed{job_name=~"weekly-guardrail-verify-.*"}` — AND
+# attempts a wget POST of a `severity=critical, rule=weekly-verify-
+# regression` event to the collector's webhook so it lights up the
+# secrets-guardrails dashboard alongside other guardrail signals.
+#
+# Operator-backlog #12 caveat: the wget POST will get rejected on auth
+# (no DPoP) and the collector synthesizes a `severity=high,
+# actor=unauthenticated, outcome=blocked` event in its place. That's
+# still visible to the dashboard but doesn't fire the
+# SecretsGuardrailBypassCritical PrometheusRule — fall back to the
+# kube-state-metrics-based alert (KubeJobFailed in the upstream rules,
+# fires automatically when the CronJob's last Job exits non-zero).
+# Once #12 lands and the CronJob mints a service-tier JWT, the
+# severity=critical event will route through the proper alert.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: weekly-guardrail-verify
+  namespace: app
+  labels:
+    app.kubernetes.io/name: weekly-guardrail-verify
+    secforge.platform/component: secrets-guardrails
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: weekly-guardrail-verify
+  namespace: app
+rules:
+  # Read-only: the verify suite (LIVE mode) probes admission via
+  # `kubectl apply --dry-run=server`. Restricting to GET on
+  # ClusterPolicy/PolicyReport AND on Pod/get-list-watch in app ns
+  # is sufficient.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: weekly-guardrail-verify
+  namespace: app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: weekly-guardrail-verify
+subjects:
+  - kind: ServiceAccount
+    name: weekly-guardrail-verify
+    namespace: app
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: weekly-guardrail-verify
+  namespace: app
+  labels:
+    app.kubernetes.io/name: weekly-guardrail-verify
+    secforge.platform/component: secrets-guardrails
+spec:
+  schedule: "0 2 * * 0"     # Sunday 02:00 UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0       # one shot; weekly cadence handles retries
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: weekly-guardrail-verify
+            spiffe.io/spire-managed-identity: "true"
+        spec:
+          serviceAccountName: weekly-guardrail-verify
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: verify
+              # alpine/k8s bundles bash + kubectl + jq + wget — the
+              # only image needed for the verify scripts' LIVE mode.
+              # Same image as legacy-env-warner so containerd cache
+              # is shared.
+              image: alpine/k8s:1.31.0
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: COLLECTOR_URL
+                  value: "http://security-events-collector.app.svc.cluster.local:8080/v1/secrets/guardrail/bypass"
+              volumeMounts:
+                - name: verify-scripts
+                  mountPath: /verify
+                - name: tmp
+                  mountPath: /tmp
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -u
+                  cd /verify
+                  bash run-all.sh
+                  RC=$?
+                  echo "verify-suite exit=$RC"
+                  if [ $RC -ne 0 ]; then
+                    TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                    PAYLOAD=$(printf '{"ts":"%s","event":"secrets.guardrail.bypass","layer":"ci","severity":"critical","actor":"weekly-guardrail-verify-cron","resource":"CronJob/app/weekly-guardrail-verify","rule":"weekly-verify-regression","outcome":"leaked"}' "$TS")
+                    wget -q -O - --header "Content-Type: application/json" --post-data "$PAYLOAD" "$COLLECTOR_URL" || true
+                  fi
+                  exit $RC
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 128Mi }
+          volumes:
+            - name: verify-scripts
+              configMap:
+                name: secrets-guardrails-verify-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}

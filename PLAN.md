@@ -67,7 +67,7 @@ Phase 0 (Prerequisites) ✅
                                             ├─→ 7.0.b (realm_access.roles debug) ✅ closed-with-evidence (defect is OpenBao 2.5.3 upstream)
                                             ├─→ 7.0.c (OIDC CLI redirect URI) ✅
                                             └─→ 7.1–7.10 (stack) ✅
-                                                  ├─→ Phase 7b (Post-6b-2 monitoring) ⬜  ← unblocked 2026-05-02 (Phase 6b-2 ✅); ready to run
+                                                  ├─→ Phase 7b (Post-6b-2 monitoring) ✅ 2026-05-02 (Promtail+Loki+Grafana+PrometheusRule wired; weekly CronJobs scheduled; runbook updated; verify-08 phase-2 deferred to operator-backlog #12)
                                                   ├─→ Phase 7c (SPIRE-as-CA + STRICT) ⬜
                                                   └─→ Phase 7d (Rotation + housekeeping) ⬜
                                                         ↓
@@ -540,6 +540,8 @@ The `.env`-killer. Outbound third-party credentials (Stripe, OpenAI, SendGrid, S
 > 10. **Script Grafana `client_secret` rotation via kcadm-admin** (deferred from Session 4 rotation) — replaces the current `kcadm-grafana-tmp` Path A throwaway client pattern with a reusable script that follows the Phase 3 follow-up pattern (auth via `infrastructure/keycloak/scripts/kcadm-admin.sh` with secret fetched from OpenBao at `secret/data/keycloak/kcadm-admin/client-secret` per ADR-0022). Run order when scripted: revoke `kcadm-grafana-tmp` → write `infrastructure/keycloak/scripts/rotate-grafana-client-secret.sh` → mint new Grafana client secret → store at `secret/data/keycloak/grafana/client-secret` in OpenBao → patch Grafana deployment env (or restart so VSO refreshes if Grafana ever moves to that path) → smoke-test OIDC login. Effort: ~1 hour. **Cadence reminder ("next due ~2026-08-01") lives in a separate `/scheduled` agent — not tracked here**, since multi-month due-dates rot in a backlog list.
 > 11. **ADR-0022 § Bootstrap caveat is incomplete** (surfaced 2026-05-02 during Phase 6b-2 operator-time prerequisites). The caveat currently documents kcadm-admin bootstrap as a one-step manual UI client creation, but the actual procedure on a fresh cluster is **5 UI steps + 11 role grants across 3 realm-management clients** (master-realm, platform-realm, secforge-tenants-realm) before the script can self-bootstrap. The operator just walked the full procedure end-to-end and it's documented in [`docs/06-reference/operator-cheatsheet.md` § 6](./docs/06-reference/operator-cheatsheet.md#6-bootstrap-kcadm-admin-from-scratch-the-actual-5-step-procedure); ADR text + `infrastructure/keycloak/clients/kcadm-admin.sh` script header still understate the work. Update both to match. Effort: ~30 min.
 > 12. **api-auth: service-tier-without-DPoP path for collector ingestion** (surfaced 2026-05-02 during Phase 6b-2 LIVE verify-08 phase-2). [ADR-0014](./docs/02-decisions/0014-api-auth-library.md) currently mandates DPoP unconditionally on every inbound request — the correct posture for **user-tier** browser-bound tokens where DPoP is the XSS-exfiltration replay defense. The collector's actual callers are **service-tier**: in-cluster callers use SPIFFE-SVID via mTLS (already cryptographically bound — DPoP redundant), out-of-cluster CI runners use Keycloak `client_credentials` JWTs with `typ: at+jwt` (RFC 9068; DPoP would help but adds tooling cost on every CI runner, and is not where most CI tooling lives natively). **Symptom:** `LIVE=1 bash infrastructure/secrets-guardrails/verify/run-all.sh` reports verify-08 phase-2 FAIL — the `legacy-env-warner` CronJob (and any future CI runner) cannot authenticate to `security-events-collector`; every inbound gets `ErrDPoPMissing` → synthesized `{actor:"unauthenticated", outcome:"blocked"}` rejection event, never the `outcome:"annotated-bypass"` the verify probe wants. Verified empirically via host-side `curl` with a security-events-ci client_credentials token: collector returns 401 with `rule="collector.auth: apiauth: invalid token"`. **Until this lands**, verify-08 LIVE phase-2 is operator-validatable manually only (the LIVE summary settles at 7/8 PASS by design, not regression). **Proper fix:** ADR-0014 amendment + `Middleware.ServiceTierMode` (or audience-based branching that skips the DPoP check when `typ: at+jwt`) + tests + collector redeploy. Effort: ~1-2 days of focused Phase 6b-1 follow-up work.
+> 13. **Migrate `BFF_VALKEY_PASSWORD` to OpenBao via `apps/lib/secrets/`** (surfaced 2026-05-02 during Phase 7b.5 verification). The Valkey-client password is helloworld-bff's only remaining outbound credential carried via env var. ADR-0013 § Layer 4 admission denies any env name matching the secret-shaped regex; helloworld-bff currently rides on a 90-day legacy-secret-env escape-hatch annotation (`secforge.local/legacy-secret-env: "OPS-MIGRATE-VALKEY-PW"`, expires 2026-07-31). **Proper fix:** add a Valkey-password KV path in OpenBao, fetch via `apps/lib/secrets/` at BFF bootstrap (mirror the existing helloworld-bff outbound-Client wire-in pattern from Phase 6b-2 commit 5), drop the env var + escape-hatch annotation, redeploy. Effort: ~1 hour. Tracked here and on the Phase 7b.3 dashboard's expiring-annotation panel as a forcing function — operators will see the annotation drift toward expiry on the dashboard before admissions start failing.
+> 14. **Docker Desktop containerd image-load quirk** (surfaced 2026-05-02 during Phase 7b.5 runtime verification). `docker save local/<image>:<tag> | docker exec -i desktop-control-plane ctr -n=k8s.io images import -` reports `total: 0.0 B (0.0 B/s)` on every reload of an image whose tag is already cached in containerd, even after `crictl rmi <image>:<tag>` AND scaling the consuming Deployment to 0 replicas. The pre-existing image ID stays bound to the tag indefinitely; the new build (verifiable in `docker images` with a fresh content sha256) never reaches the kubelet's containerd. Same shape on `docker cp` into the Docker Desktop VM (file appears in `docker cp` output but `docker exec ... ls` reports `no such file or directory`). Confirmed reproducer on helloworld-bff. **Symptom for Phase 7b:** the post-7b.5 helloworld-bff binary (with the OTel-span-event sink) cannot be deployed for live verification of "scrubbed errors appear as span events in Tempo" — the running pod keeps using the pre-Phase-6b-2-commit-5 image (`b0158279476bd...`) which doesn't even have the errreport wiring yet. **Workaround paths to investigate:** (a) `kind load docker-image` if Docker Desktop K8s actually uses kind under the hood, (b) push to a local registry (we have `registry/` running), reference by registry URL in deploy manifests, (c) build directly into containerd via `nerdctl build` from inside the Docker Desktop VM. Effort: ~1-2 hours of investigation; resolution unblocks every future image-redeploy iteration on this cluster, not just 7b.5's verification.
 >
 > **Next session menu (suggested order — 7.6 + 7.7 highest leverage; dashboards have no real data until telemetry is wired):**
 > 1. **7.6 telemetry wiring (continue)** —
@@ -702,9 +704,62 @@ Wazuh manager + indexer + dashboard + agent DaemonSet. The 5th pillar of observa
 ---
 
 ## Phase 7b — Post-6b-2 Monitoring Wire-up *(1-2 days)*
-**Status: ⬜ HOLD until Phase 6b-2 ✅**
+**Status: ✅ Complete 2026-05-02**
 
-Wires Phase 6b-2's secret-guardrail emission into Phase 7's observability stack. Separate phase rather than carry-in because Phase 6b-2 may not be complete by the time Phase 7 runs — they're both schedulable independently.
+Three signed commits landed (`6e9f386`, `cb41a4b`, plus the wrap-up commit
+this section is part of). Phase 6b-2's secret-guardrail emission is now
+wired through Phase 7's observability stack:
+
+- **7b.1 Promtail scrape** — `extraScrapeConfigs` job `secrets-guardrails`
+  in `04-promtail-values.yaml`. Discovers collector pods, JSON-parses
+  events, promotes 5 closed-enum fields to indexed labels, emits a
+  Prometheus counter (actual name: `promtail_custom_secrets_guardrail_bypass_total` —
+  Promtail prefixes user counters with `promtail_custom_`).
+- **7b.2 Loki retention** — `retention_stream` of 90d for
+  `{job="secrets-guardrails"}`. Aspirational until
+  `compactor.retention_enabled` flips (DIAGNOSTIC fresh-bucket boot
+  loop documented inline; flip is a separate operator-backlog item).
+- **7b.3 Grafana dashboard** — `infrastructure/grafana/dashboards/secrets-guardrails.json`
+  (uid: `secrets-guardrails`), 7 panels, tagged `secrets, guardrails, audit`.
+- **7b.4 PrometheusRule** — `secforge.secrets-guardrails` group, 4 rules
+  (Critical immediate, High in 1m, Annotated-bypass-aged-30d weekly,
+  bypass-rate-anomaly 2σ).
+- **7b.5 Scrubber sink swap** — helloworld-bff's
+  `errreport.ScrubbingReporter` Sink: `NoOpSink` → `otelSink`
+  (records scrubbed errors as span events on the active trace span).
+  Live runtime verification deferred to operator-backlog #14
+  (Docker Desktop containerd-cache image-load quirk). Code change
+  compiles + tests pass.
+- **7b.6 Weekly verify CronJob** — `infrastructure/secrets-guardrails/cron/01-weekly-guardrail-verify.yaml`,
+  Sunday 02:00 UTC.
+- **7b.7 Weekly template-drift CronJob** — `02-weekly-template-drift.yaml`,
+  Sunday 03:00 UTC. Runs harmlessly until apps stamp the
+  `secforge.platform/template-version` annotation (lands with
+  Phase 9/10 app provisioning).
+- **7b.8 End-to-end verification** — pipeline confirmed live:
+  Kyverno admission → collector rejection event (synthesized,
+  `outcome=blocked, actor=unauthenticated` per #12) → Promtail
+  scrape → Loki ingestion (queryable with `{job="secrets-guardrails"}`)
+  → Promtail metric counter increments → Prometheus scrapes
+  Promtail's `/metrics` endpoint → all 4 alert rules reference
+  the correct metric name.
+- **7b.9 Documentation** — runbook (`docs/03-runbooks/secrets-guardrails-monitoring.md`)
+  updated with live wire-up details, the Promtail metric naming
+  caveat, and the operator-backlog #12 dashboard-panel-emptiness
+  consequence. PLAN.md flipped here.
+
+**Operator-backlog rows opened during 7b execution:**
+- `#13` — Migrate `BFF_VALKEY_PASSWORD` to OpenBao via
+  `apps/lib/secrets/`. Currently riding on a 90-day legacy-secret-env
+  escape-hatch annotation (`secforge.local/legacy-secret-env: OPS-MIGRATE-VALKEY-PW`,
+  expires 2026-07-31).
+- `#14` — Docker Desktop containerd image-load quirk:
+  `docker save | docker exec ... ctr import -` reports `total: 0.0 B`
+  on every helloworld-bff reload, so the post-7b.5 binary stays
+  unloaded even with `crictl rmi` and scaling to 0 replicas. Blocks
+  live verification of the OTel scrubber sink.
+
+
 
 **Prerequisites:** Phase 7 ✅ AND Phase 6b-2 ✅.
 

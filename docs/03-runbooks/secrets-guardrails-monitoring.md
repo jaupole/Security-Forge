@@ -70,40 +70,92 @@ event payload.
 ## Sink today (Phase 6b-2)
 
 The collector writes one JSON-line per accepted event to **stdout**.
-Phase 7b's Promtail tails the container logs:
+Phase 7b's Promtail tails the container logs.
 
-```yaml
-# Phase 7b sketch — promtail scrape config snippet
-scrape_configs:
-  - job_name: security-events-collector
-    kubernetes_sd_configs: [{ role: pod }]
-    relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-        action: keep
-        regex: security-events-collector
-    pipeline_stages:
-      - json:
-          expressions:
-            ts: ts
-            event: event
-            layer: layer
-            severity: severity
-            outcome: outcome
-            actor: actor
-      - labels:
-          layer:
-          severity:
-          outcome:
-```
+## Phase 7b — wire-up (live as of 2026-05-02)
 
-Once Loki ingests the events, Grafana queries can group by layer +
-severity + outcome. The Phase 7b dashboard:
+The sketch in the section below is now the live config. Three pieces:
 
-- **Top-level**: counter of events per layer, last 24h
-- **Drill-down**: timeline of `outcome=annotated-bypass` events
-  grouped by `annotation_ref` ticket
-- **Alerts**: any `severity=critical` event → page; >5
-  `severity=high` events / hour → notify
+**1. Promtail scrape job `secrets-guardrails`** (committed in
+`infrastructure/observability/04-promtail-values.yaml` §
+`extraScrapeConfigs`):
+
+- Discovers Pods labeled `app.kubernetes.io/name=security-events-collector` across all namespaces.
+- JSON-parses each line; drops anything that isn't the canonical
+  `secrets.guardrail.bypass` event.
+- Promotes `severity, layer, rule, outcome, actor` to indexed labels
+  (wider than Loki best-practice usually wants, bounded in practice
+  by the closed enums + per-workload SPIFFE-ID clustering).
+- Emits a Prometheus counter via the `metrics:` pipeline stage. Note
+  the **actual metric name is `promtail_custom_secrets_guardrail_bypass_total`** —
+  Promtail prefixes user-defined counters with `promtail_custom_`,
+  which is easy to miss when writing PrometheusRule expressions
+  against it.
+
+**2. Loki per-stream retention** (`infrastructure/observability/03-loki-values.yaml` §
+`limits_config.retention_stream`): 90d for `{job="secrets-guardrails"}`,
+14d global. Aspirational until `compactor.retention_enabled: true`
+flips — the diagnostic comment in the values file documents why
+that's still off (fresh-bucket boot loop on missing
+`delete_requests.gz`); flip in a separate change once the bucket
+has accumulated at least one delete request and Loki still reaches
+`/ready` post-restart.
+
+**3. PrometheusRule group `secforge.secrets-guardrails`** (4 rules in
+`infrastructure/observability/13-alerting-rules.yaml`):
+
+| Alert | Trigger | Severity |
+|---|---|---|
+| `SecretsGuardrailBypassCritical` | any `severity=critical` event in 5m | critical |
+| `SecretsGuardrailBypassHigh` | any `severity=high` event in 5m, 1m delay | high |
+| `SecretsGuardrailAnnotatedBypassActiveOver30d` | annotated-bypass label group emitting events for >30d | medium (weekly digest) |
+| `SecretsGuardrailBypassRateAnomaly` | current 1h rate >2σ above 7d rolling avg | medium (Slack/email <4h) |
+
+## Phase 7b — secrets-guardrails CronJobs
+
+Two weekly CronJobs in `infrastructure/secrets-guardrails/cron/`,
+applied via `bash apply.sh`:
+
+- **`weekly-guardrail-verify`** (Sunday 02:00 UTC): mounts the verify
+  scripts as a ConfigMap and runs `bash run-all.sh` in offline mode
+  (the LIVE-mode probes need the host's `kubectl + docker` which the
+  CronJob doesn't have). On non-zero exit, it POSTs a
+  `severity=critical, rule=weekly-verify-regression` event to the
+  collector. Backstop alert: `kube_job_failed{job_name=~"weekly-guardrail-verify-.*"}`
+  fires regardless of whether the event POST is accepted.
+- **`weekly-template-drift`** (Sunday 03:00 UTC, after weekly verify):
+  scans Pods for `secforge.platform/template-version` annotations
+  predating a 30-day staleness window. At commit time (2026-05-02)
+  no app stamps that annotation yet — the marker convention lands
+  with Phase 9/10. The CronJob runs harmlessly until those markers
+  exist; the first drift event will fire when an app pins to a
+  template version older than 30 days.
+
+## Operator-backlog #12 caveat (verify-08 phase-2 + weekly CronJobs)
+
+The collector's auth middleware (apps/lib/api-auth/) requires DPoP
+unconditionally — see operator-backlog #12. Practical consequence
+for the 7b wire-up:
+
+- The `legacy-env-warner` CronJob's wget POSTs to the collector
+  cannot speak DPoP, so each emission gets `ErrDPoPMissing` →
+  synthesized `{actor:"unauthenticated", outcome:"blocked",
+  rule:"collector.auth: apiauth: invalid token"}` rejection event.
+- Same applies to `weekly-guardrail-verify` and `weekly-template-drift`
+  CronJob emissions.
+- Net effect: until #12 lands, the **annotated-bypass and
+  expiring-annotation panels** on the Grafana dashboard stay empty
+  even though events are flowing — they all land on the **Rejected
+  probes** panel (`outcome=blocked, actor=unauthenticated`) instead.
+- This is documented inline on the dashboard panel descriptions and
+  in the PrometheusRule comment block. It is not a regression in 7b's
+  wire-up; it's a cleanly-deferred verification path.
+
+The Promtail metric counter still increments (with `severity=high`,
+`outcome=blocked`), so 7b's pipeline IS exercised end-to-end —
+just on the rejection-event leg rather than the accepted-event leg.
+
+## Phase 7b sketch — promtail scrape config snippet
 
 ## Privacy guardrail on the events themselves
 

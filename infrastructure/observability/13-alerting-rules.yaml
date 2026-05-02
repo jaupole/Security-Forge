@@ -146,7 +146,7 @@ spec:
             description: "{{ $value | humanizePercentage }} of mesh TCP connections fail for 10m. Check AuthorizationPolicies, ztunnel logs, target workload health. Runbook: alerts.md#istiotcpconnectionfailurespike"
 
     # Phase 7b.4 — Secrets-guardrails alert rules. Source metric:
-    # `secrets_guardrail_bypass_total` is emitted by Promtail's
+    # `promtail_custom_secrets_guardrail_bypass_total` is emitted by Promtail's
     # metrics-pipeline-stage on the `secrets-guardrails` job (see
     # 04-promtail-values.yaml § extraScrapeConfigs); labels are the
     # closed-enum dimensions {severity, layer, outcome, actor, rule}.
@@ -163,7 +163,7 @@ spec:
       rules:
         - alert: SecretsGuardrailBypassCritical
           expr: |
-            sum(increase(secrets_guardrail_bypass_total{severity="critical"}[5m])) > 0
+            sum(increase(promtail_custom_secrets_guardrail_bypass_total{severity="critical"}[5m])) > 0
           for: 0m
           labels:
             severity: critical
@@ -174,7 +174,7 @@ spec:
 
         - alert: SecretsGuardrailBypassHigh
           expr: |
-            sum(increase(secrets_guardrail_bypass_total{severity="high"}[5m])) > 0
+            sum(increase(promtail_custom_secrets_guardrail_bypass_total{severity="high"}[5m])) > 0
           for: 1m
           labels:
             severity: high
@@ -187,10 +187,10 @@ spec:
           expr: |
             (
               max by (actor, rule, annotation_ref)
-                (timestamp(secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
+                (timestamp(promtail_custom_secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
               - on(actor, rule, annotation_ref)
               min by (actor, rule, annotation_ref)
-                (timestamp(secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
+                (timestamp(promtail_custom_secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
             ) > 30 * 24 * 3600
           for: 1h
           labels:
@@ -203,12 +203,12 @@ spec:
         - alert: SecretsGuardrailBypassRateAnomaly
           expr: |
             (
-              sum(rate(secrets_guardrail_bypass_total[1h]))
+              sum(rate(promtail_custom_secrets_guardrail_bypass_total[1h]))
             )
             >
             (
-              avg_over_time(sum(rate(secrets_guardrail_bypass_total[1h]))[7d:1h])
-              + 2 * stddev_over_time(sum(rate(secrets_guardrail_bypass_total[1h]))[7d:1h])
+              avg_over_time(sum(rate(promtail_custom_secrets_guardrail_bypass_total[1h]))[7d:1h])
+              + 2 * stddev_over_time(sum(rate(promtail_custom_secrets_guardrail_bypass_total[1h]))[7d:1h])
             )
           for: 30m
           labels:
