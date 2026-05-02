@@ -5,7 +5,7 @@
 > **Depends on (must be ✅):** Phase 6
 > **Blocks:** Phase 7b (post-6b-2 monitoring wire-up) · Phase 10 (apps need outbound secrets) · Phase 11
 >
-> **Status (mirrors PLAN.md, last updated 2026-05-01):** ⬜ Ready to execute (independent of 6b-1; can run before, after, or in parallel — split out from `phase-06b-api-pattern.md` on 2026-05-01).
+> **Status (mirrors PLAN.md, last updated 2026-05-01 22:59):** 🟨 **In progress — 3 of 7 commits landed.** See `RESUME-NEXT-MORNING` marker at the top of [PLAN.md § Phase 6b-2 detail block](../../PLAN.md#phase-6b-2--outbound-secrets-pattern--guardrails-2-days) for the full handoff. Quick recap: ADR-0013 ✅ (`aa10402`) → `apps/lib/secrets/` outbound extension ✅ (`f82700a`, 398 LoC, 88.7% cov) → `apps/lib/errreport/` scrubber + no-op sink ✅ (`9803725`, 225 LoC, 89.7% cov). NEXT: commit 3 — `templates/app-repo/` + CI workflow + Trivy/hadolint.
 >
 > PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 

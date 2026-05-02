@@ -19,7 +19,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 ## Phase order — quick reference (execution order)
 
 > **MANDATORY:** when a phase status changes, update BOTH the detail block below AND this quick-reference row in the same edit. PLAN.md authoritativeness depends on this table staying current. Bump the "Last updated" date on every edit.
-> Last updated: 2026-05-01 (Session 4 — **Housekeeping commit:** picked up Windows-side concurrent edit to `infrastructure/namespaces/namespaces.yaml` (observability quota `limits.memory` 10Gi→14Gi, made during Grafana 13.0.1 rotation when the chart's new ReplicaSet hit FailedCreate at 9664Mi/10Gi); added operator-backlog **#9** (Docker Desktop resource ceiling — symptoms: memory quota at 94%, node CPU at 97.5%, Grafana roll blocked twice in one session) and **#10** (script Grafana `client_secret` rotation via kcadm-admin to replace the `kcadm-grafana-tmp` throwaway). Earlier in session: **F-CLU-11 ✅ resolved.** Single signed commit (this commit). Root cause: NetworkPolicy egress for `openbao → ingress-nginx:443` was missing — OpenBao couldn't reach Keycloak's discovery URL via the public hostname (the URL Keycloak puts in token `iss` claims). Original "role degraded" diagnosis was misleading; role config was always healthy. Fix: added the egress rule into `infrastructure/openbao/06-networkpolicies-main.yaml`. Verified V1+V2+V3 all green incl. host-side `bao login -method=oidc role=admin` succeeding end-to-end. **All Phase 9 gates closed and operationally clean.** Earlier in session: **Phase 3 follow-up ✅ complete.** Four signed commits (`824c3f0` ADR-0022 → `73f2d12` kcadm-admin.sh → `225cd6e` four-script migration + verify.sh `--otp` removal → `f34a1f0` runbook + legacy-env purge + flip). All four kcadm-using scripts now authenticate via `--client kcadm-admin --secret <fetched-from-OpenBao>`; KCADM_USER/PASSWORD/TOTP env-var pattern purged; bootstrap is one-time UI step per ADR-0022. Earlier in session: **Phase 6b-1 ✅ complete.** `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer; 84.2% test coverage, `-race -count=10` green; Q3 live curl deferred to operator-runnable script. Six signed commits: `d9996be` → `a6ce8d1` → `07f86d9` → `06c87ef` → `db786fc` → `282d55c`. **Phase 9 critical-path: 7 ✅ → 6b-1 ✅ → 3 follow-up ✅ → Fix-after-07 ✅ → 9. All four gates closed; Phase 9 ready to run** (operationally still needs F-CLU-11 OpenBao admin auth recovery for BAO_TOKEN minting workflow). Earlier in same session: **Fix-after-07 ✅ complete; tagged `fix-after-07-complete`.** Six commits: `bbe223b` § A interface refactors → `c92edf0` § B cluster fixes → `529daa7` § C ADRs+arch → `b5506a1` § D PLAN.md+nav → `ca00464` § F threat model → § E merge. Threat model at `docs/04-security/threat-model.md` ships 8 Accepted residuals signed off by operator. **Post-package finding 2026-05-01:** F-CLU-11 (HIGH) — OpenBao `auth/oidc/role/admin` degraded → admin auth locked out via both CLI and Web UI; catalogued in `Fix after 07/00-audit-findings.md`, tracked as operator-backlog #7. The "extra `bao`" the operator flagged in `configure-auth-oidc.sh` is **not** a typo; it's the wrapper-function pattern (function `bao` + CLI `bao` inside the pod). Does not block 6b-1 / 9 (workload SPIFFE-JWT auth path is separate).
+> Last updated: 2026-05-01 (Session 4 — **Phase 6b-2 in progress (3/7 commits).** Library halves shipped: `aa10402` ADR-0013 finalize (10 mandates: storage/auth/forbidden-carriers/templated-policy/library-surface/six-layer-guardrails/Hardened-mode/escape-hatch/VSO-compat/webhook-receiver-auth) → `f82700a` `apps/lib/secrets/` outbound extension (Client + GetField + GetDynamic + Secret type with redaction-aware String/MarshalJSON + Use accessor + TTL cache + OpenBao templated HCL policy; 398 LoC, 88.7% cov, race-clean) → `9803725` `apps/lib/errreport/` scrubber + no-op sink (Reporter/Scrubber interfaces + ScrubbingReporter fail-closed middleware + DefaultScrubber with 3 regex rule sets + NoOpSink writing JSON-line events + FuzzDefaultScrubber_NoSecretSurvives invariant; 225 LoC, 89.7% cov). **NEXT (commit 3/7):** `templates/app-repo/` + CI workflow + Trivy/hadolint config. See `RESUME-NEXT-MORNING` marker in Phase 6b-2 detail block for full handoff. **Recalibrated budget locked in: ≤400 LoC for outbound-secrets library extensions** (original 150-300 was miscalibrated, same as 6b-1's 1153-LoC outcome). Earlier in session: **Housekeeping commit:** picked up Windows-side concurrent edit to `infrastructure/namespaces/namespaces.yaml` (observability quota `limits.memory` 10Gi→14Gi, made during Grafana 13.0.1 rotation when the chart's new ReplicaSet hit FailedCreate at 9664Mi/10Gi); added operator-backlog **#9** (Docker Desktop resource ceiling — symptoms: memory quota at 94%, node CPU at 97.5%, Grafana roll blocked twice in one session) and **#10** (script Grafana `client_secret` rotation via kcadm-admin to replace the `kcadm-grafana-tmp` throwaway). Earlier in session: **F-CLU-11 ✅ resolved.** Single signed commit (this commit). Root cause: NetworkPolicy egress for `openbao → ingress-nginx:443` was missing — OpenBao couldn't reach Keycloak's discovery URL via the public hostname (the URL Keycloak puts in token `iss` claims). Original "role degraded" diagnosis was misleading; role config was always healthy. Fix: added the egress rule into `infrastructure/openbao/06-networkpolicies-main.yaml`. Verified V1+V2+V3 all green incl. host-side `bao login -method=oidc role=admin` succeeding end-to-end. **All Phase 9 gates closed and operationally clean.** Earlier in session: **Phase 3 follow-up ✅ complete.** Four signed commits (`824c3f0` ADR-0022 → `73f2d12` kcadm-admin.sh → `225cd6e` four-script migration + verify.sh `--otp` removal → `f34a1f0` runbook + legacy-env purge + flip). All four kcadm-using scripts now authenticate via `--client kcadm-admin --secret <fetched-from-OpenBao>`; KCADM_USER/PASSWORD/TOTP env-var pattern purged; bootstrap is one-time UI step per ADR-0022. Earlier in session: **Phase 6b-1 ✅ complete.** `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer; 84.2% test coverage, `-race -count=10` green; Q3 live curl deferred to operator-runnable script. Six signed commits: `d9996be` → `a6ce8d1` → `07f86d9` → `06c87ef` → `db786fc` → `282d55c`. **Phase 9 critical-path: 7 ✅ → 6b-1 ✅ → 3 follow-up ✅ → Fix-after-07 ✅ → 9. All four gates closed; Phase 9 ready to run** (operationally still needs F-CLU-11 OpenBao admin auth recovery for BAO_TOKEN minting workflow). Earlier in same session: **Fix-after-07 ✅ complete; tagged `fix-after-07-complete`.** Six commits: `bbe223b` § A interface refactors → `c92edf0` § B cluster fixes → `529daa7` § C ADRs+arch → `b5506a1` § D PLAN.md+nav → `ca00464` § F threat model → § E merge. Threat model at `docs/04-security/threat-model.md` ships 8 Accepted residuals signed off by operator. **Post-package finding 2026-05-01:** F-CLU-11 (HIGH) — OpenBao `auth/oidc/role/admin` degraded → admin auth locked out via both CLI and Web UI; catalogued in `Fix after 07/00-audit-findings.md`, tracked as operator-backlog #7. The "extra `bao`" the operator flagged in `configure-auth-oidc.sh` is **not** a typo; it's the wrapper-function pattern (function `bao` + CLI `bao` inside the pod). Does not block 6b-1 / 9 (workload SPIFFE-JWT auth path is separate).
 
 
 | Phase | Notes |
@@ -36,7 +36,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 | ✅ Observability (Phase 7 mainline) | 7.0/7.1/7.3/7.4/7.5 (Sessions 1+2) + 7.6/7.7/7.8/7.9/7.10 (Session 3); 7-day SPIFFE-CSI soak in background |
 | ✅ Phase 7.2 — Wazuh deployment | **Session 4 (2026-05-01)** complete: vendored `ileonelperea/wazuh-helm` 1.2.10 at `infrastructure/wazuh/vendor/`, indexer/manager/dashboard 1/1 Ready, indexer cluster green, dashboard live at https://wazuh.secforge.local/. Agent DaemonSet + OIDC federation + Keycloak/OpenBao log forwarding deferred to Phase 7d / follow-ups. See `### Path decision (2026-05-01)` and `docs/03-runbooks/wazuh-operations.md`. |
 | ✅ 6b-1 — API Auth Pattern | **Complete 2026-05-01** — six signed commits (`d9996be` skeleton → `a6ce8d1` middleware → `07f86d9` client + Q3 verify → `06c87ef` audit → `db786fc` BFF wiring → commit-6 verification + docs + flip). `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer. 84.2% line coverage, `-race -count=10` green. Q3 live curl deferred to operator (script at `infrastructure/lib/api-auth/verify-q3-refresh.sh`); library handles both Q3 outcomes. |
-| ⬜ 6b-2 — Outbound Secrets + Guardrails | independent; can run any time after Phase 6 |
+| 🟨 6b-2 — Outbound Secrets + Guardrails | **In progress 2026-05-01** — 3/7 commits landed (`aa10402` ADR-0013 → `f82700a` `apps/lib/secrets/` outbound (88.7% cov) → `9803725` `apps/lib/errreport/` scrubber (89.7% cov)). NEXT: commit 3 — `templates/app-repo/` + CI + Trivy/hadolint. See **RESUME-NEXT-MORNING** marker in detail block. |
 | ✅ 3 follow-up — kcadm-admin service-account pattern | **Complete 2026-05-01** — four signed commits (`824c3f0` ADR-0022 → `73f2d12` provisioning script → `225cd6e` four-script migration + `--otp` removal → commit-4 runbook + legacy-env purge + flip). Steady-state auth via `kcadm config credentials --client kcadm-admin --secret <fetched-from-OpenBao>`. Bootstrap is a one-time manual UI step per ADR-0022 § Bootstrap caveat. |
 | ⬜ 7b — Post-6b-2 Monitoring Wire-up | requires 7 ✅ AND 6b-2 ✅ |
 | ⬜ 7c — Istio SPIRE-as-CA + PeerAuth STRICT | requires 7 ✅ |
@@ -422,7 +422,62 @@ Inbound API auth as a reusable Go library. Phase 6 shipped browser→BFF (Tier 1
 ---
 
 ## Phase 6b-2 — Outbound Secrets Pattern + Guardrails *(2 days)*
-**Status: ⬜**
+**Status: 🟨 In progress (3 of 7 commits landed, 2026-05-01 Session 4)**
+
+<!-- ============================================================ -->
+<!-- RESUME-NEXT-MORNING — phase-6b-2 — written 2026-05-01 22:59  -->
+<!-- ============================================================ -->
+
+> ### ▶ RESUME HERE — Phase 6b-2, next commit is 3 of 7
+>
+> **Where we are (commits already landed, all signed):**
+>
+> | # | Hash | What | Status |
+> |---|---|---|---|
+> | 1a | `aa10402` | ADR-0013 stub → Accepted (10 mandates) | ✅ |
+> | 1b | `f82700a` | `apps/lib/secrets/` outbound extension (398 LoC, 88.7% cov) | ✅ |
+> | 2  | `9803725` | `apps/lib/errreport/` scrubber + no-op sink (225 LoC, 89.7% cov) | ✅ |
+> | 3  | —        | **dev-facing guardrails: `templates/app-repo/` + CI workflow + Trivy/hadolint** | ⬜ NEXT |
+> | 4  | —        | cluster-side guardrails: Kyverno admission + `apps/security-events-collector/` | ⬜ |
+> | 5  | —        | consumer wiring (BFF + AuthZEN reference adoption) | ⬜ |
+> | 6  | —        | verification suite (8 scripts) + 6 runbooks + CLAUDE.md + Phase 9/10 prompts + PLAN.md ✅ flip | ⬜ |
+>
+> **Next concrete action — commit 3 scope:**
+>
+> Create `templates/app-repo/` with:
+>   - `.gitignore` (bans `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.crt`, `id_rsa*`; `!.env.example` exception)
+>   - `.env.example` (placeholder for non-secret config only — `LOG_LEVEL=info`, `PORT=8080`)
+>   - `.pre-commit-config.yaml` (gitleaks + `block-env-files` + `block-secret-shaped-vars` local hooks)
+>   - `.dockerignore` (same patterns as `.gitignore` plus `Dockerfile`, `*.md`, `tests/`, `node_modules/`, `.git/`)
+>   - `Dockerfile.example` (canonical multi-stage pattern)
+>   - `README-secrets.md` (short "if you're about to add a secret, do this instead" doc)
+>   - `.template-version` (semver string for Phase 7's drift-detection cron)
+>   - `.gitleaks.toml` (custom rule additions if any)
+>   - `.github/workflows/secrets-check.yml` (mirrors pre-commit checks; cannot be `--no-verify`-bypassed)
+>
+> Plus: Trivy config flip to fail (not warn) on `--scanners secret`. Hadolint pre-commit + CI rules with DL3045 / DL3025.
+>
+> **Verification before committing 3:** none in-cluster; this commit is dev-tooling only. Pre-commit hooks should run cleanly on the new template files (gitleaks should flag NOTHING in the templates themselves — they contain only placeholders).
+>
+> **Operator-time pending (not for the LLM, do not attempt):**
+>   - Bootstrap kcadm-admin one-time UI step per ADR-0022 § Bootstrap caveat (pre-Phase-9 requirement)
+>   - Docker Desktop CPU bump 6 → 8+ (operator-backlog #9; ideally before Phase 9)
+>
+> **Out of scope for the rest of Phase 6b-2:**
+>   - `apps/lib/authzn/` go.sum drift (Fix-after-07 §A.4 territory; pre-existing)
+>   - Continued rotation work (operator-backlog #10's quarterly cron handles cadence)
+>   - Phase 9 work — close 6b-2 clean and report back
+>
+> **Recalibrated budgets in effect (lessons from 6b-1, 1b, 2):**
+>   - Library extensions: ≤400 LoC (was 150-300, repeatedly underestimated)
+>   - Test fixtures must split-concatenate vendor prefixes per CLAUDE.md "no secrets in code"; pattern in `apps/lib/errreport/fixtures_test.go`
+>   - Run tests via dockerized golang-1.25, restricted to the package(s) you touched (avoid `./...` due to authzn drift)
+>
+> **Resume command (in WSL Claude):** Just say "continue with commit 3" — the agent reads `RESUME-NEXT-MORNING` at the top of this Phase 6b-2 block and picks up.
+
+<!-- ============================================================ -->
+<!-- END RESUME-NEXT-MORNING marker                               -->
+<!-- ============================================================ -->
 
 The `.env`-killer. Outbound third-party credentials (Stripe, OpenAI, SendGrid, SAM.gov, etc.) live in OpenBao and are fetched via SPIFFE-JWT auth at runtime. Self-contained: needs no inbound auth work.
 
