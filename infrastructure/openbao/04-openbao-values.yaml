@@ -143,8 +143,18 @@ server:
         # api_addr / cluster_addr templated per-pod by the chart.
 
   extraEnvironmentVars:
+    # BAO_ADDR is the in-pod CLI default (`bao status` etc.); 127.0.0.1 is
+    # correct for that. BAO_API_ADDR is the *advertised* api_addr the active
+    # node hands out for client redirects and Active-Node-Address bookkeeping
+    # — that one MUST be the routable pod IP. (The chart 0.27.2 does not set
+    # BAO_API_ADDR for us; without it OpenBao refuses to start with
+    # "missing API address". The chart DOES set BAO_CLUSTER_ADDR per-pod,
+    # which is what raft request-forwarding actually uses.) Earlier
+    # revisions overrode this to https://127.0.0.1:8200, which made standby
+    # pods 307-redirect clients to localhost (unreachable from outside the
+    # pod); the $(POD_IP) form below is the routable advertise address.
     BAO_ADDR: https://127.0.0.1:8200
-    BAO_API_ADDR: https://127.0.0.1:8200
+    BAO_API_ADDR: https://$(POD_IP):8200
     BAO_CACERT: /openbao/tls/openbao-tls/ca.crt
     SKIP_CHOWN: "true"
     SKIP_SETCAP: "true"
