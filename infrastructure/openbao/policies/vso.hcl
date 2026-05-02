@@ -81,3 +81,14 @@ path "secret/data/minio/tempo/credentials" {
 path "secret/metadata/minio/tempo/credentials" {
   capabilities = ["read"]
 }
+
+# Wazuh dashboard OIDC client_secret + issuer + redirect_uri (Phase 7d
+# Item 7). Provisioned by infrastructure/keycloak/clients/wazuh.sh and
+# rendered into wazuh ns via VSO for the dashboard pod's
+# opensearch_dashboards.yml config.
+path "secret/data/wazuh/oidc" {
+  capabilities = ["read"]
+}
+path "secret/metadata/wazuh/oidc" {
+  capabilities = ["read"]
+}

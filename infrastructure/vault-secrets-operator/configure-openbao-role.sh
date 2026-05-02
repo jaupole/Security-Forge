@@ -143,6 +143,19 @@ bao bao write auth/kubernetes/role/tempo-vso \
     ttl="1h" \
     max_ttl="24h" 2>&1 | tail -1
 
+# Phase 7d Item 7 — Wazuh dashboard OIDC client_secret rendered to a
+# K8s Secret in wazuh ns; consumed by the dashboard pod's
+# opensearch_dashboards.yml config (operator runs configure-wazuh-oidc.sh
+# to wire it into the running config).
+green "==> writing K8s auth role: wazuh-vso (wazuh ns consumer)"
+bao bao write auth/kubernetes/role/wazuh-vso \
+    bound_service_account_names="wazuh-vso" \
+    bound_service_account_namespaces="wazuh" \
+    audience="$K8S_AUDIENCE" \
+    policies="vso" \
+    ttl="1h" \
+    max_ttl="24h" 2>&1 | tail -1
+
 green ""
 green "Done. Six K8s auth roles bound to the 'vso' policy:"
 green "  - vault-secrets-operator (operator-self, Step 2)"
