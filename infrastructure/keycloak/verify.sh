@@ -6,18 +6,25 @@
 #
 # USAGE
 #   bash verify.sh                          # anonymous checks only
-#   KCADM_USER=jaupole \
-#   KCADM_PASSWORD='…' \
-#   KCADM_TOTP=123456 \
-#   bash verify.sh                          # full validation incl. admin REST
+#   BAO_TOKEN=hvs.xxxx bash verify.sh       # full validation incl. admin REST
 #
-# Without admin creds, the BFF-client and required-action checks are
+# Auth (per ADR-0022): when BAO_TOKEN is set, the script fetches the
+# kcadm-admin client_secret from OpenBao and authenticates via
+# `kcadm config credentials --client kcadm-admin --secret …`. The legacy
+# KCADM_USER/KCADM_PASSWORD/KCADM_TOTP env-var pattern was retired in
+# this commit (kcadm 26.x dropped --otp; password+TOTP-concat was
+# version-dependent and fragile).
+#
+# Without BAO_TOKEN, the BFF-client and required-action checks are
 # skipped (printed as SKIP rather than FAIL). Anonymous-mode failures
 # still flunk the run.
 #
 # Exit code: non-zero on any failure.
 
 set -euo pipefail
+
+# shellcheck source=_lib/kcadm-auth.sh
+. "$(dirname "$0")/_lib/kcadm-auth.sh"
 
 PUBLIC_HOST="https://auth.secforge.local"
 ADMIN_HOST="https://auth-admin.secforge.local"
@@ -32,21 +39,11 @@ hdr()    { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 FAILED=0
 KCADM_AUTHED=0
 
-# Authenticate kcadm once per run if creds are provided. We do this
-# upfront so all subsequent admin-API checks share one session.
-if [ -n "${KCADM_USER:-}" ] && [ -n "${KCADM_PASSWORD:-}" ]; then
-    if [ -n "${KCADM_TOTP:-}" ]; then
-        OTP_FLAG=(--otp "$KCADM_TOTP")
-    else
-        OTP_FLAG=()
-    fi
-    if kubectl exec -n "$NS" "$KC_POD" -- /opt/keycloak/bin/kcadm.sh \
-            config credentials \
-            --server http://localhost:8080 \
-            --realm master \
-            --user "$KCADM_USER" \
-            --password "$KCADM_PASSWORD" \
-            "${OTP_FLAG[@]}" >/dev/null 2>&1; then
+# Authenticate kcadm once per run if BAO_TOKEN is provided. The session
+# is cached inside keycloak-0's $HOME/.keycloak/kcadm.config so all
+# subsequent admin-API checks reuse it.
+if [ -n "${BAO_TOKEN:-}" ]; then
+    if kcadm_admin_auth; then
         KCADM_AUTHED=1
     fi
 fi
@@ -95,8 +92,8 @@ code=$(curl -sk -o /dev/null -w "%{http_code}" "$PUBLIC_HOST/admin/")
 hdr "BFF clients (realm secforge-tenants)"
 expected=(helloworld-bff proposal-forge-bff project-tracker-bff pm-bff)
 if [ "$KCADM_AUTHED" -ne 1 ]; then
-    skip "no admin creds provided — skipping client-config checks"
-    skip "(set KCADM_USER, KCADM_PASSWORD, KCADM_TOTP to enable)"
+    skip "no admin auth — skipping client-config checks"
+    skip "(set BAO_TOKEN to a token with read on secret/data/keycloak/clients/kcadm-admin)"
 else
     clients=$(kubectl exec -n "$NS" "$KC_POD" -- /opt/keycloak/bin/kcadm.sh \
         get clients -r secforge-tenants --fields clientId --format csv --noquotes 2>/dev/null \
@@ -156,7 +153,7 @@ done
 # 7. Realm policies — TOTP + recovery-codes required actions.
 hdr "Realm required actions (TOTP + recovery codes)"
 if [ "$KCADM_AUTHED" -ne 1 ]; then
-    skip "no admin creds — skipping required-action checks"
+    skip "no admin auth — skipping required-action checks"
 else
     for realm in platform secforge-tenants; do
         js=$(kubectl exec -n "$NS" "$KC_POD" -- /opt/keycloak/bin/kcadm.sh \

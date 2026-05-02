@@ -18,8 +18,20 @@
 #     * fullScopeAllowed: false (clients get only what they ask for)
 #
 # Phase 5 migrates the JWT private keys from K8s Secrets to OpenBao.
+#
+# Auth (per ADR-0022): set BAO_TOKEN to an OpenBao token with read on
+# secret/data/keycloak/clients/kcadm-admin. Authentication via
+# kcadm-admin (master-realm service-account client). The legacy
+# bootstrap-admin path was retired in commit phase-3-fu (3/4) — see
+# ADR-0022 for the rationale.
+#
+# Usage:
+#   BAO_TOKEN=hvs.xxxx bash infrastructure/keycloak/realms/bootstrap-bff-clients.sh
 
 set -euo pipefail
+
+# shellcheck source=../_lib/kcadm-auth.sh
+. "$(dirname "$0")/../_lib/kcadm-auth.sh"
 
 NS=keycloak
 APP_NS=app
@@ -41,7 +53,6 @@ declare -A CLIENT_URLS=(
 # 1. Sanity checks.
 kubectl get ns "$APP_NS" >/dev/null
 kubectl get pod -n "$NS" "$KC_POD" >/dev/null
-kubectl get secret -n "$NS" keycloak-bootstrap-admin >/dev/null
 
 # 2. Per-client keypair + K8s Secret.
 declare -A PUBKEY_PEM
@@ -77,29 +88,18 @@ for client_id in "${!CLIENT_URLS[@]}"; do
     PUBKEY_PEM[$client_id]=$pem_body
 done
 
-# 3. Authenticate kcadm against the master realm using bootstrap-admin.
-#    kcadm internally uses admin-cli (the only built-in client allowed to
-#    do direct-access-grant). This is a one-time bootstrap path.
-green "==> Authenticating kcadm.sh in pod ${KC_POD}"
-BOOTSTRAP_PW=$(kubectl get secret -n "$NS" keycloak-bootstrap-admin \
-    -o jsonpath='{.data.password}' | base64 -d)
+# 3. Authenticate kcadm as kcadm-admin (per ADR-0022).
+#    kcadm.sh writes its session to ~/.keycloak/kcadm.config by default.
+#    Container HOME is /opt/keycloak; readOnlyRootFilesystem is disabled
+#    on this container (see 04-keycloak-cr.yaml comment), so the default
+#    location works.
+green "==> Authenticating kcadm.sh in pod ${KC_POD} as kcadm-admin"
+kcadm_admin_auth || exit 1
 
-# kcadm.sh writes its session to ~/.keycloak/kcadm.config by default.
-# Container HOME is /opt/keycloak; readOnlyRootFilesystem is disabled
-# on this container (see 04-keycloak-cr.yaml comment), so the default
-# location works. We don't pass --config — the flag has subcommand-
-# placement quirks that aren't worth fighting.
 kcadm() {
     kubectl exec -n "$NS" "$KC_POD" -c keycloak -- \
         /opt/keycloak/bin/kcadm.sh "$@"
 }
-
-kcadm config credentials \
-    --server http://localhost:8080 \
-    --realm master \
-    --user bootstrap-admin \
-    --password "$BOOTSTRAP_PW"
-unset BOOTSTRAP_PW
 
 # 4. For each client, create-or-update.
 for client_id in "${!CLIENT_URLS[@]}"; do

@@ -15,13 +15,16 @@
 #   - Temporary password (printed to STDOUT once; capture and use for
 #       the first BFF login).
 #
+# Auth (per ADR-0022): set BAO_TOKEN to an OpenBao token with read on
+# secret/data/keycloak/clients/kcadm-admin.
+#
 # Usage:
-#   KCADM_USER=jaupole \
-#   KCADM_PASSWORD='your-master-realm-pw' \
-#   KCADM_TOTP=123456 \
-#   bash infrastructure/keycloak/realms/create-tenant-test-user.sh
+#   BAO_TOKEN=hvs.xxxx bash infrastructure/keycloak/realms/create-tenant-test-user.sh
 
 set -euo pipefail
+
+# shellcheck source=../_lib/kcadm-auth.sh
+. "$(dirname "$0")/../_lib/kcadm-auth.sh"
 
 NS=keycloak
 POD=keycloak-0
@@ -35,36 +38,15 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-for v in KCADM_USER KCADM_PASSWORD; do
-    [ -z "${!v:-}" ] && { red "env $v is required"; exit 1; }
-done
-
 kcadm() {
     kubectl exec -n "$NS" "$POD" -c keycloak -- \
         /opt/keycloak/bin/kcadm.sh "$@"
 }
 
-# Authenticate (try password-only, then password+TOTP concatenation).
-green "==> kcadm config credentials (master realm)"
-auth_ok=0
-if kcadm config credentials \
-        --server http://localhost:8080 --realm master \
-        --user "$KCADM_USER" --password "$KCADM_PASSWORD" >/dev/null 2>&1; then
-    green "    auth ok (password only)"
-    auth_ok=1
-elif [ -n "${KCADM_TOTP:-}" ]; then
-    yellow "    password-only refused; trying password+TOTP concatenation"
-    if kcadm config credentials \
-            --server http://localhost:8080 --realm master \
-            --user "$KCADM_USER" --password "${KCADM_PASSWORD}${KCADM_TOTP}" >/dev/null 2>&1; then
-        green "    auth ok (password+TOTP)"
-        auth_ok=1
-    fi
-fi
-if [ "$auth_ok" -ne 1 ]; then
-    red "kcadm auth failed (re-run with a fresh KCADM_TOTP if codes are stale)"
-    exit 1
-fi
+# Authenticate as kcadm-admin (per ADR-0022).
+green "==> kcadm config credentials --client kcadm-admin (master realm)"
+kcadm_admin_auth || exit 1
+green "    auth ok"
 
 # Find or create the user.
 USER_ID=$(kcadm get users -r "$REALM" -q "username=$USERNAME" --fields id 2>/dev/null \

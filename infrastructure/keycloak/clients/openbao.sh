@@ -15,17 +15,18 @@
 #   - The client_secret (ONCE). Capture it; pass to the OpenBao OIDC
 #     configure script.
 #
-# Usage:
-#   KCADM_USER=jaupole \
-#   KCADM_PASSWORD='your-master-realm-pw' \
-#   KCADM_TOTP=123456 \
-#   bash infrastructure/keycloak/clients/openbao.sh
+# Auth (per ADR-0022): set BAO_TOKEN to an OpenBao token with read on
+# secret/data/keycloak/clients/kcadm-admin. The script fetches kcadm-
+# admin's client_secret and authenticates kcadm via
+# `--client kcadm-admin --secret …`.
 #
-# Why TOTP is required: jaupole is enrolled in TOTP per ADR-0007. The
-# code is good for ~30s; if the script fails on auth, re-run with a
-# fresh code.
+# Usage:
+#   BAO_TOKEN=hvs.xxxx bash infrastructure/keycloak/clients/openbao.sh
 
 set -euo pipefail
+
+# shellcheck source=../_lib/kcadm-auth.sh
+. "$(dirname "$0")/../_lib/kcadm-auth.sh"
 
 NS=keycloak
 POD=keycloak-0
@@ -37,51 +38,16 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-for v in KCADM_USER KCADM_PASSWORD; do
-    [ -z "${!v:-}" ] && { red "env $v is required"; exit 1; }
-done
-
 # kcadm wrapper. Runs inside the keycloak-0 pod against the in-pod API.
 kcadm() {
     kubectl exec -n "$NS" "$POD" -c keycloak -- \
         /opt/keycloak/bin/kcadm.sh "$@"
 }
 
-# ─── 1. Authenticate ────────────────────────────────────────────────
-green "==> kcadm config credentials (user=$KCADM_USER, master realm)"
-# kcadm.sh has no --otp flag. Two cases:
-#   (a) realm's direct-grant flow does not enforce OTP → plain
-#       password works
-#   (b) it does enforce OTP → Keycloak parses the trailing 6 digits
-#       of the password as the TOTP code (ROPC convention)
-# We try (a) first, then (b) if KCADM_TOTP was provided.
-auth_ok=0
-if kcadm config credentials \
-        --server http://localhost:8080 \
-        --realm master \
-        --user "$KCADM_USER" \
-        --password "$KCADM_PASSWORD" >/dev/null 2>&1; then
-    green "    auth ok (password only)"
-    auth_ok=1
-elif [ -n "${KCADM_TOTP:-}" ]; then
-    yellow "    password-only refused; trying password+TOTP concatenation"
-    if kcadm config credentials \
-            --server http://localhost:8080 \
-            --realm master \
-            --user "$KCADM_USER" \
-            --password "${KCADM_PASSWORD}${KCADM_TOTP}" >/dev/null 2>&1; then
-        green "    auth ok (password+TOTP)"
-        auth_ok=1
-    fi
-fi
-if [ "$auth_ok" -ne 1 ]; then
-    red "kcadm auth failed. If you saw 'Invalid user credentials':"
-    red "  - re-run with a fresh KCADM_TOTP (codes expire after ~30s)"
-    red "  - confirm the password is current"
-    red "  - or temporarily disable the direct-grant OTP requirement"
-    red "    on the master realm via admin UI"
-    exit 1
-fi
+# ─── 1. Authenticate as kcadm-admin (ADR-0022) ──────────────────────
+green "==> kcadm config credentials --client kcadm-admin (master realm)"
+kcadm_admin_auth || exit 1
+green "    auth ok"
 
 # ─── 2. Create or update the openbao client ─────────────────────────
 green "==> ensure openbao client in $REALM realm"
