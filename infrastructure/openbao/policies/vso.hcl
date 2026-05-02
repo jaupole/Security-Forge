@@ -92,3 +92,25 @@ path "secret/data/wazuh/oidc" {
 path "secret/metadata/wazuh/oidc" {
   capabilities = ["read"]
 }
+
+# Teleport OIDC client_secret + issuer + redirect_uri (Phase 8a Step 4).
+# Provisioned by infrastructure/keycloak/clients/teleport.sh and
+# rendered into teleport ns by VSO for the auth pod's OIDCConnector
+# config (Phase 8b).
+path "secret/data/teleport/oidc" {
+  capabilities = ["read"]
+}
+path "secret/metadata/teleport/oidc" {
+  capabilities = ["read"]
+}
+
+# Teleport scoped MinIO user creds (session-recording bucket access).
+# Provisioned by infrastructure/teleport/apply-minio-user.sh and
+# rendered into teleport ns by VSO for the auth pod's S3 backend
+# config (Phase 8b).
+path "secret/data/minio/teleport/credentials" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/teleport/credentials" {
+  capabilities = ["read"]
+}

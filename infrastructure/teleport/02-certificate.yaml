@@ -1,0 +1,51 @@
+# Phase 8a.5 — cert-manager Certificate for the Teleport public hostname.
+#
+# Issued by the mkcert ClusterIssuer (Phase 1). The Teleport chart's
+# auth+proxy pod consumes the rendered Secret `tp-secforge-local-tls`
+# at the hostname `tp.secforge.local`.
+#
+# Local-edition pattern — one cert per hostname; same shape as
+# infrastructure/keycloak/03-certificate.yaml.
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tp-secforge-local-tls
+  namespace: teleport
+  labels:
+    app.kubernetes.io/name: teleport
+    secforge.platform/component: teleport
+spec:
+  secretName: tp-secforge-local-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: teleport
+      secforge.platform/component: teleport
+  duration: 8760h     # 1 year — local CA, low rotation pressure
+  renewBefore: 720h   # 30 days
+  privateKey:
+    # ECDSA P-256 — matches the rest of the platform's mkcert-issued
+    # certs (auth, app, openbao, etc.). Teleport's chart accepts ECDSA
+    # for the proxy listener.
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: tp.secforge.local
+  dnsNames:
+    - tp.secforge.local
+    # Extra SANs for the in-cluster Service DNS so kube-agent + db-service
+    # can reach the auth pod without trusting a different cert chain.
+    - teleport-cluster.teleport.svc
+    - teleport-cluster.teleport.svc.cluster.local
+    - teleport-cluster-auth.teleport.svc
+    - teleport-cluster-auth.teleport.svc.cluster.local
+  usages:
+    - server auth
+    - client auth      # Teleport pod also acts as a client for the auth ↔ proxy split (chart-internal).
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: mkcert-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

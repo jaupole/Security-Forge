@@ -156,6 +156,19 @@ bao bao write auth/kubernetes/role/wazuh-vso \
     ttl="1h" \
     max_ttl="24h" 2>&1 | tail -1
 
+# Phase 8a — Teleport namespace consumes Keycloak OIDC client_secret +
+# scoped MinIO creds for session-recording S3 backend. Both rendered as
+# K8s Secrets in teleport ns by VSO; auth pod (Phase 8b) references via
+# secretKeyRef in chart values.
+green "==> writing K8s auth role: teleport-vso (teleport ns consumer)"
+bao bao write auth/kubernetes/role/teleport-vso \
+    bound_service_account_names="teleport-vso" \
+    bound_service_account_namespaces="teleport" \
+    audience="$K8S_AUDIENCE" \
+    policies="vso" \
+    ttl="1h" \
+    max_ttl="24h" 2>&1 | tail -1
+
 green ""
 green "Done. Six K8s auth roles bound to the 'vso' policy:"
 green "  - vault-secrets-operator (operator-self, Step 2)"

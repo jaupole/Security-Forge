@@ -1,8 +1,12 @@
-# Postgres cluster for Teleport (Phase 8, OPTIONAL locally).
+# Postgres cluster for Teleport (Phase 8a — foundation; Phase 8b deploys
+# Teleport itself).
 #
-# Apply only if you intend to deploy Teleport. Bundles the Namespace + quota
-# because `teleport` is not in infrastructure/namespaces/namespaces.yaml —
-# it lives here so it can be skipped wholesale per ADR 0006 if you opt out.
+# Bundles the Namespace + quota because `teleport` is not in
+# infrastructure/namespaces/namespaces.yaml — it lives here so the
+# whole stack can be skipped if a future operator chooses not to
+# deploy Teleport (per ADR-0024 § Re-evaluation criteria; the prompt
+# doc references "0006-skip-teleport-locally.md" but that slot is
+# taken — a future skip ADR would claim the next available slot).
 ---
 apiVersion: v1
 kind: Namespace
