@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	apiauth "github.com/secforge/lib/api-auth"
 )
 
 const cookieName = "__Host-bff_sid"
@@ -159,7 +160,20 @@ func handleLogout(c cfg, o *oidcClient, s *sessionStore) http.HandlerFunc {
 }
 
 // proxyToBackend reverse-proxies /api/* to the backend with Bearer + DPoP.
-func proxyToBackend(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) http.HandlerFunc {
+//
+// Phase 6b-1: token acquisition + audience-at-login refresh now flow
+// through apiauth.Client.MintTokenForAudience (apps/lib/api-auth/client.go).
+// The DPoP proof for the upstream URL is still minted by the BFF's
+// per-pod dpopSigner (separate from the api-auth library's role).
+//
+// Three Audit.LogHop sites per Phase 6b-1 § Section 6:
+//
+//	(a) inbound edge — at the entry of the protected handler, hop_index=1
+//	(b) outbound attempt — before the upstream HTTP call, hop_index=2,
+//	    status=0 (pre-call sentinel)
+//	(c) outbound result — after the upstream response, hop_index=2 with
+//	    the actual status code
+func proxyToBackend(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner, ap *apiAuthBundle) http.HandlerFunc {
 	if c.BackendURL == "" {
 		return func(w http.ResponseWriter, _ *http.Request) {
 			httpJSON(w, 502, errBody("no_backend_configured"))
@@ -178,6 +192,15 @@ func proxyToBackend(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) htt
 		origDirector(req)
 		req.Host = target.Host
 	}
+	// ModifyResponse fires after the upstream returns; we use it to emit
+	// the third LogHop with the actual status. The closure captures ap
+	// + the per-request user_sub/request_id via the request context (we
+	// stash them via withReqMeta below).
+	rp.ModifyResponse = func(resp *http.Response) error {
+		meta := metaFromCtx(resp.Request.Context())
+		_ = ap.audit.LogHop(resp.Request, 2, ap.workloadID, meta.userSub, ap.backendAudience, resp.StatusCode)
+		return nil
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Inbound DPoP requires forwarded headers. Fail-closed.
 		if _, err := inboundHTU(r); err != nil {
@@ -186,56 +209,87 @@ func proxyToBackend(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) htt
 		}
 		sid := readSessionCookie(r)
 		if sid == "" {
+			// Audit denial at hop_index=1 with status=401.
+			_ = ap.audit.LogHop(r, 1, ap.workloadID, "", ap.backendAudience, 401)
 			httpJSON(w, 401, errBody("no_session"))
 			return
 		}
+		// Look up session for the user_sub used in audit lines.
 		sv, err := s.get(r.Context(), sid)
 		if err != nil {
+			_ = ap.audit.LogHop(r, 1, ap.workloadID, "", ap.backendAudience, 401)
 			httpJSON(w, 401, errBody("session_invalid"))
 			return
 		}
-		// Refresh if needed (single-flight).
-		now := time.Now().Unix()
-		if sv.AccessExp-now < 30 || sv.DPoPJktAtIssue != dpop.jkt {
-			refreshed, rerr := s.withRefreshLock(r.Context(), sid, func() (sessionV1, error) {
-				tr, terr := o.refresh(r.Context(), dpop, sv.RefreshToken)
-				if terr != nil {
-					return sv, terr
-				}
-				sv.AccessToken = tr.AccessToken
-				if tr.RefreshToken != "" {
-					sv.RefreshToken = tr.RefreshToken
-				}
-				sv.AccessExp = time.Now().Unix() + int64(tr.ExpiresIn)
-				sv.RefreshExp = time.Now().Unix() + int64(tr.RefreshExpiresIn)
-				sv.DPoPJktAtIssue = dpop.jkt
-				return sv, s.put(r.Context(), sid, sv)
-			})
-			if rerr != nil {
-				slog.Error("token refresh failed", "err", rerr, "sid_prefix", sid[:8])
-				httpJSON(w, 502, errBody("refresh_failed"))
-				return
+
+		// (a) Inbound LogHop — request accepted at the BFF edge.
+		_ = ap.audit.LogHop(r, 1, ap.workloadID, sv.Sub, ap.backendAudience, 200)
+
+		// Replace prior cached-or-refresh dance with apiauth.Client. The
+		// Client handles the cache-hit short-circuit, the audience-at-login
+		// refresh, and the defense-in-depth aud check on the new token.
+		ctx := apiauth.ContextWithSessionKey(r.Context(), sid)
+		accessToken, mintErr := ap.cli.MintTokenForAudience(ctx, ap.backendAudience)
+		if mintErr != nil {
+			status, slug := errToHTTP(mintErr)
+			if errors.Is(mintErr, apiauth.ErrAudienceUnavailable) {
+				// Q3 fallback path — clear session and redirect to /login.
+				clearSessionCookie(w)
+				w.Header().Set("Location", "/login")
 			}
-			sv = refreshed
-		} else {
-			_ = s.touch(r.Context(), sid, sv)
+			_ = ap.audit.LogHop(r, 2, ap.workloadID, sv.Sub, ap.backendAudience, status)
+			httpJSON(w, status, errBody(slug))
+			return
 		}
-		// Mint per-call DPoP proof for the upstream URL.
+
+		// Mint per-call DPoP proof for the upstream URL — the BFF's job,
+		// not the api-auth library's.
 		upstreamURL := target.String() + r.URL.Path
 		if r.URL.RawQuery != "" {
 			upstreamURL += "?" + r.URL.RawQuery
 		}
-		proof, err := dpop.proofFor(r.Method, upstreamURL, sv.AccessToken)
+		proof, err := dpop.proofFor(r.Method, upstreamURL, accessToken)
 		if err != nil {
+			_ = ap.audit.LogHop(r, 2, ap.workloadID, sv.Sub, ap.backendAudience, 500)
 			httpJSON(w, 500, errBody("dpop_proof"))
 			return
 		}
-		r.Header.Set("Authorization", "DPoP "+sv.AccessToken)
+		r.Header.Set("Authorization", "DPoP "+accessToken)
 		r.Header.Set("DPoP", proof)
 		r.Header.Set("X-User-Sub", sv.Sub)
 		r.Header.Set("X-Request-Id", uuidOrEmpty(r.Header.Get("X-Request-Id")))
+
+		// (b) Outbound attempt LogHop — emitted before the upstream call;
+		// status=0 marks "in flight." The (c) outbound-result LogHop fires
+		// from rp.ModifyResponse with the actual status.
+		_ = ap.audit.LogHop(r, 2, ap.workloadID, sv.Sub, ap.backendAudience, 0)
+
+		// Stash user_sub on the context so ModifyResponse's LogHop can
+		// pick it up without re-reading the session.
+		r = r.WithContext(withReqMeta(r.Context(), reqMeta{userSub: sv.Sub}))
+
+		// Touch session so idle TTL extends.
+		_ = s.touch(r.Context(), sid, sv)
+
 		rp.ServeHTTP(w, r)
 	}
+}
+
+// reqMeta carries per-request state ModifyResponse needs after the
+// upstream call.
+type reqMeta struct {
+	userSub string
+}
+
+type reqMetaKey struct{}
+
+func withReqMeta(ctx context.Context, m reqMeta) context.Context {
+	return context.WithValue(ctx, reqMetaKey{}, m)
+}
+
+func metaFromCtx(ctx context.Context) reqMeta {
+	v, _ := ctx.Value(reqMetaKey{}).(reqMeta)
+	return v
 }
 
 // proxyToFrontend reverse-proxies /* to the frontend pod, propagating

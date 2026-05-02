@@ -3,13 +3,14 @@
 // Wire contract: docs/01-architecture/04-bff-pattern.md
 //
 // Endpoints
-//   GET  /login              start OIDC PAR + DPoP auth-code flow
-//   GET  /callback           OIDC code exchange; sets opaque session cookie
-//   POST /logout             local invalidate, best-effort revoke, KC end-session redirect
-//   /api/*                   reverse-proxy to backend with Bearer + DPoP injection
-//   /*                       reverse-proxy to frontend with CSP nonce request header
-//   GET  /healthz            liveness (always 200)
-//   GET  /ready              readiness (Valkey + JWKS + OpenBao reachable)
+//
+//	GET  /login              start OIDC PAR + DPoP auth-code flow
+//	GET  /callback           OIDC code exchange; sets opaque session cookie
+//	POST /logout             local invalidate, best-effort revoke, KC end-session redirect
+//	/api/*                   reverse-proxy to backend with Bearer + DPoP injection
+//	/*                       reverse-proxy to frontend with CSP nonce request header
+//	GET  /healthz            liveness (always 200)
+//	GET  /ready              readiness (Valkey + JWKS + OpenBao reachable)
 package main
 
 import (
@@ -127,6 +128,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Phase 6b-1: api-auth library wiring (apps/lib/api-auth). The bundle
+	// holds Middleware (constructed-but-not-routed; see auth.go header),
+	// Client (used in proxyToBackend for outbound hops), and Audit (3-site
+	// LogHop in proxy.go: inbound edge, outbound attempt, outbound result).
+	apiAuth, err := newAPIAuth(c, sess, dpop, clientPriv, dpop.jkt)
+	if err != nil {
+		log.Error("api-auth init failed", "err", err)
+		os.Exit(1)
+	}
+	log.Info("api-auth ready",
+		"audiences", os.Getenv("BFF_AUDIENCE_LIST"),
+		"backend_audience", apiAuth.backendAudience,
+		"workload_id", apiAuth.workloadID)
+
 	// Routing.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
@@ -135,7 +150,7 @@ func main() {
 	mux.HandleFunc("GET /login", handleLogin(c, oidc, sess, dpop))
 	mux.HandleFunc("GET /auth/callback", handleCallback(c, oidc, sess, dpop))
 	mux.HandleFunc("POST /logout", handleLogout(c, oidc, sess))
-	mux.HandleFunc("/api/", proxyToBackend(c, oidc, sess, dpop))
+	mux.HandleFunc("/api/", proxyToBackend(c, oidc, sess, dpop, apiAuth))
 	mux.HandleFunc("/", proxyToFrontend(c, sess))
 
 	// otelhttp.NewHandler wraps the chain to emit a span per inbound

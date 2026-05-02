@@ -140,6 +140,24 @@ spec:
               value: "helloworld-bff"
             - name: BFF_LISTEN_ADDR
               value: ":3000"
+            # Phase 6b-1 — apps/lib/api-auth wiring.
+            # BFF_AUDIENCE_LIST: comma-separated allow-list. Q2 (ADR-0014)
+            # makes this static config the source of truth — runtime MUST
+            # NOT bypass. Adding a new downstream API audience is a 2-step
+            # PR'd workflow (see runbook docs/03-runbooks/api-auth-library.md).
+            - name: BFF_AUDIENCE_LIST
+              value: "authzen-facade,helloworld-api"
+            # BFF_BACKEND_AUDIENCE: the audience the /api/* route mints
+            # tokens for. Must appear in BFF_AUDIENCE_LIST or the BFF
+            # refuses to start.
+            - name: BFF_BACKEND_AUDIENCE
+              value: "helloworld-api"
+            # BFF_WORKLOAD_ID: the SPIFFE-SVID this BFF presents in audit
+            # lines as `caller_workload_id`. SPIRE-CSI plumbing of the
+            # actual SVID into the process is Phase 7c work; for now we
+            # mirror the SPIRE-managed identity name explicitly.
+            - name: BFF_WORKLOAD_ID
+              value: "spiffe://secforge.local/ns/app/sa/helloworld-bff"
             # Backend/frontend are wired in Phase 9. Until then /api/* and
             # /* return 502 with `{"error":"no_(backend|frontend)_configured"}`.
           ports:
