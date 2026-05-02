@@ -5,7 +5,7 @@
 > **Depends on (must be ✅):** Phase 6
 > **Blocks:** Phase 7b (post-6b-2 monitoring wire-up) · Phase 10 (apps need outbound secrets) · Phase 11
 >
-> **Status (mirrors PLAN.md, last updated 2026-05-02 post-commit-4):** 🟨 **In progress — 5 of 7 commits landed.** See `RESUME-NEXT-MORNING` marker at the top of [PLAN.md § Phase 6b-2 detail block](../../PLAN.md#phase-6b-2--outbound-secrets-pattern--guardrails-2-days) for the full handoff. Quick recap: ADR-0013 ✅ (`aa10402`) → `apps/lib/secrets/` outbound ✅ (`f82700a`, 88.7% cov) → `apps/lib/errreport/` scrubber ✅ (`9803725`, 89.7% cov) → `templates/app-repo/` + Trivy flip ✅ (`af152ea`) → cluster-side guardrails ✅ (2 Kyverno ClusterPolicies + `apps/security-events-collector/` 67.3% cov + `legacy-env-warner` CronJob). NEXT: commit 5 — consumer wiring (BFF + AuthZEN reference adoption).
+> **Status (mirrors PLAN.md, last updated 2026-05-02 post-commit-5):** 🟨 **In progress — 6 of 7 commits landed.** See `RESUME-NEXT-MORNING` marker at the top of [PLAN.md § Phase 6b-2 detail block](../../PLAN.md#phase-6b-2--outbound-secrets-pattern--guardrails-2-days) for the full handoff. Quick recap: ADR-0013 ✅ (`aa10402`) → `apps/lib/secrets/` outbound ✅ (`f82700a`, 88.7% cov) → `apps/lib/errreport/` scrubber ✅ (`9803725`, 89.7% cov) → `templates/app-repo/` + Trivy flip ✅ (`af152ea`) → Kyverno + collector + CronJob ✅ (`41e27d1`) → consumer wiring ✅ (BFF outbound-Client + ScrubbingReporter wire-in + AuthZEN ADR-0015 cross-ref). NEXT: commit 6 — verification suite + 6 runbooks + CLAUDE.md update + Phase 9/10 prompt updates + ✅ flip.
 >
 > PLAN.md is the source of truth for phase status. If this block diverges from PLAN.md's quick-ref table, **PLAN.md wins**; update this block in the same edit that bumps PLAN.md.
 

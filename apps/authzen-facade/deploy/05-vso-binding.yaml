@@ -1,6 +1,24 @@
 # VSO binding for AuthZEN façade — Phase 6.10b Step 3.
 # See ADR-0015 and docs/05-claude-code-prompts/phase-06.10b-vso-and-secret-cleanup.md.
 #
+# ─── Why this is VSO-shaped, not direct-API (post-Phase-6b-2 reader) ───
+# Phase 6b-2 commit 1b (`apps/lib/secrets/`) introduced a direct-API
+# library for outbound credentials. helloworld-bff is the reference
+# adopter (commit 5). AuthZEN does NOT migrate to direct-API — it stays
+# operator-shaped (VSO-rendered K8s Secret) per ADR-0015 § Per-consumer
+# decision and ADR-0013 § "What this ADR explicitly does NOT cover".
+# Rationale:
+#   * AuthZEN's SpiceDB PSK rotates manually (no automated cadence yet);
+#     VSO's 60-second refresh window is more than sufficient.
+#   * The chart that wraps SpiceDB itself only consumes K8s Secrets;
+#     introducing a sidecar that reads via direct-API would duplicate
+#     plumbing without solving any concrete problem.
+#   * The AuthZEN migration trigger is captured in ADR-0013 § Open
+#     questions: revisit when AuthZEN's load profile demands rotation
+#     faster than VSO's 60s refresh OR when AuthZEN itself acquires a
+#     third-party-credential need.
+# The split is intentional, not technical debt. Don't "fix" it.
+#
 # Four resources:
 #   1. ServiceAccount `authzen-facade-vso` — VSO-binding identity in
 #      app namespace. Distinct from the `authzen-facade` SA that the

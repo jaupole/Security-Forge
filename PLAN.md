@@ -19,7 +19,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 ## Phase order — quick reference (execution order)
 
 > **MANDATORY:** when a phase status changes, update BOTH the detail block below AND this quick-reference row in the same edit. PLAN.md authoritativeness depends on this table staying current. Bump the "Last updated" date on every edit.
-> Last updated: 2026-05-02 (Session 5 — Phase 6b-2 advanced to 5/7 commits. Latest: cluster-side guardrails (ADR-0013 § Layer 4 admission + § 10 webhook auth) — Kyverno `no-secret-shaped-env-vars` and `legacy-secret-env-expiry` ClusterPolicies (verified via `kyverno test` against 7 fixture Pods, 9 rule×resource cases all green) + `apps/security-events-collector/` Go service (event.go closed-enum schema, handler.go SPIFFE/Sub actor-override + 401-emits-bypass-event, redact_test.go vendor-sigil invariant + fuzz, 67.3% line cov, `-race -count=2` green) + daily `legacy-env-warner` CronJob (alpine/k8s image, 14-day expiry sweep). Operator-time: provision `security-events-collector` and `security-events-ci` Keycloak clients before applying manifests (runbook in commit 6). Resume from the `RESUME-NEXT-MORNING` marker in the Phase 6b-2 detail block — pointer now advanced to commit 5 (consumer wiring: BFF + AuthZEN reference adoption). Prior session-4 milestones live in their own phase rows + detail blocks, not here.)
+> Last updated: 2026-05-02 (Session 5 — Phase 6b-2 advanced to 6/7 commits. Latest: consumer wiring — `helloworld-bff` is now the reference adopter for `apps/lib/secrets/` outbound Client (Hardened: true, AppName: helloworld-bff, reuses the existing OpenBaoBootstrapper) AND `apps/lib/errreport/` ScrubbingReporter (NewDefaultScrubber + NewNoOpSink — Phase 7 swaps the sink). New feature-gated `/admin/test-outbound-secret` endpoint (BFF_ENABLE_ADMIN_TEST_OUTBOUND_SECRET=true, default off) demonstrates GetField + Secret.Use; response surfaces only a SHA-256 fingerprint, never the value. AuthZEN's `05-vso-binding.yaml` got an explicit cross-reference comment block on why it stays VSO-shaped per ADR-0015 (the inconsistency is intentional, not technical debt). Tests: 5 new BFF unit tests cover the wire-in (admin handler 83% / errreport 100%); race-clean ×2. Resume from the `RESUME-NEXT-MORNING` marker in the Phase 6b-2 detail block — pointer now advanced to commit 6 (verification suite + 6 runbooks + CLAUDE.md update + Phase 9/10 prompts + PLAN.md ✅ flip). Prior session-4 milestones live in their own phase rows + detail blocks, not here.)
 
 
 | Phase | Notes |
@@ -36,7 +36,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 | ✅ Observability (Phase 7 mainline) | 7.0/7.1/7.3/7.4/7.5 (Sessions 1+2) + 7.6/7.7/7.8/7.9/7.10 (Session 3); 7-day SPIFFE-CSI soak in background |
 | ✅ Phase 7.2 — Wazuh deployment | **Session 4 (2026-05-01)** complete: vendored `ileonelperea/wazuh-helm` 1.2.10 at `infrastructure/wazuh/vendor/`, indexer/manager/dashboard 1/1 Ready, indexer cluster green, dashboard live at https://wazuh.secforge.local/. Agent DaemonSet + OIDC federation + Keycloak/OpenBao log forwarding deferred to Phase 7d / follow-ups. See `### Path decision (2026-05-01)` and `docs/03-runbooks/wazuh-operations.md`. |
 | ✅ 6b-1 — API Auth Pattern | **Complete 2026-05-01** — six signed commits (`d9996be` skeleton → `a6ce8d1` middleware → `07f86d9` client + Q3 verify → `06c87ef` audit → `db786fc` BFF wiring → commit-6 verification + docs + flip). `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer. 84.2% line coverage, `-race -count=10` green. Q3 live curl deferred to operator (script at `infrastructure/lib/api-auth/verify-q3-refresh.sh`); library handles both Q3 outcomes. |
-| 🟨 6b-2 — Outbound Secrets + Guardrails | **In progress 2026-05-02** — 5/7 commits landed (`aa10402` ADR-0013 → `f82700a` `apps/lib/secrets/` outbound (88.7% cov) → `9803725` `apps/lib/errreport/` scrubber (89.7% cov) → `af152ea` `templates/app-repo/` + Trivy flip → commit 4 cluster-side guardrails: 2 Kyverno ClusterPolicies (9/9 fixture cases green) + `apps/security-events-collector/` (67.3% cov, race-clean) + legacy-env-warner CronJob). NEXT: commit 5 — consumer wiring (BFF + AuthZEN adoption). See **RESUME-NEXT-MORNING** marker in detail block. |
+| 🟨 6b-2 — Outbound Secrets + Guardrails | **In progress 2026-05-02** — 6/7 commits landed (`aa10402` ADR-0013 → `f82700a` `apps/lib/secrets/` outbound (88.7% cov) → `9803725` `apps/lib/errreport/` scrubber (89.7% cov) → `af152ea` `templates/app-repo/` + Trivy flip → `41e27d1` Kyverno admission + `apps/security-events-collector/` (67.3% cov) + CronJob → commit 5 consumer wiring: BFF outbound-Client + ScrubbingReporter wire-in + AuthZEN ADR-0015 cross-ref comment + `/admin/test-outbound-secret` debug endpoint feature-gated default-off). NEXT: commit 6 — verification suite + runbooks + CLAUDE.md + Phase 9/10 prompts + ✅ flip. See **RESUME-NEXT-MORNING** marker in detail block. |
 | ✅ 3 follow-up — kcadm-admin service-account pattern | **Complete 2026-05-01** — four signed commits (`824c3f0` ADR-0022 → `73f2d12` provisioning script → `225cd6e` four-script migration + `--otp` removal → commit-4 runbook + legacy-env purge + flip). Steady-state auth via `kcadm config credentials --client kcadm-admin --secret <fetched-from-OpenBao>`. Bootstrap is a one-time manual UI step per ADR-0022 § Bootstrap caveat. |
 | ⬜ 7b — Post-6b-2 Monitoring Wire-up | requires 7 ✅ AND 6b-2 ✅ |
 | ⬜ 7c — Istio SPIRE-as-CA + PeerAuth STRICT | requires 7 ✅ |
@@ -422,13 +422,13 @@ Inbound API auth as a reusable Go library. Phase 6 shipped browser→BFF (Tier 1
 ---
 
 ## Phase 6b-2 — Outbound Secrets Pattern + Guardrails *(2 days)*
-**Status: 🟨 In progress (5 of 7 commits landed, 2026-05-02 Session 5)**
+**Status: 🟨 In progress (6 of 7 commits landed, 2026-05-02 Session 5)**
 
 <!-- ============================================================ -->
-<!-- RESUME-NEXT-MORNING — phase-6b-2 — updated 2026-05-02 (post-4) -->
+<!-- RESUME-NEXT-MORNING — phase-6b-2 — updated 2026-05-02 (post-5) -->
 <!-- ============================================================ -->
 
-> ### ▶ RESUME HERE — Phase 6b-2, next commit is 5 of 7
+> ### ▶ RESUME HERE — Phase 6b-2, next commit is 6 of 7 (final)
 >
 > **Where we are (commits already landed, all signed):**
 >
@@ -437,46 +437,58 @@ Inbound API auth as a reusable Go library. Phase 6 shipped browser→BFF (Tier 1
 > | 1a | `aa10402` | ADR-0013 stub → Accepted (10 mandates) | ✅ |
 > | 1b | `f82700a` | `apps/lib/secrets/` outbound extension (398 LoC, 88.7% cov) | ✅ |
 > | 2  | `9803725` | `apps/lib/errreport/` scrubber + no-op sink (225 LoC, 89.7% cov) | ✅ |
-> | 3  | `af152ea` | `templates/app-repo/` skeleton (9 files) + Trivy `--scanners vuln,secret` flip + pre-commit hooks smoke-tested green | ✅ |
-> | 4  | _(this session)_ | cluster-side guardrails: 2 Kyverno ClusterPolicies (`no-secret-shaped-env-vars` + `legacy-secret-env-expiry`, 9/9 fixture cases via `kyverno test`) + `apps/security-events-collector/` Go webhook receiver (handler 90% / total 67.3% cov, race-clean ×2) + `legacy-env-warner` CronJob (alpine/k8s, 14-day sweep) | ✅ |
-> | 5  | —        | **consumer wiring (BFF + AuthZEN reference adoption)** | ⬜ NEXT |
-> | 6  | —        | verification suite (8 scripts) + 6 runbooks + CLAUDE.md + Phase 9/10 prompts + PLAN.md ✅ flip | ⬜ |
+> | 3  | `af152ea` | `templates/app-repo/` skeleton (9 files) + Trivy `--scanners vuln,secret` flip | ✅ |
+> | 4  | `41e27d1` | Kyverno admission (2 ClusterPolicies, 9/9 fixtures) + `apps/security-events-collector/` (67.3% cov) + CronJob | ✅ |
+> | 5  | _(this session)_ | BFF outbound-Client + ScrubbingReporter wire-in + `/admin/test-outbound-secret` debug endpoint (feature-gated, fingerprint-only response) + AuthZEN ADR-0015 cross-ref comment | ✅ |
+> | 6  | —        | **verification suite (8 scripts) + 6 runbooks + CLAUDE.md update + Phase 9/10 prompts + PLAN.md ✅ flip** | ⬜ NEXT |
 >
-> **Next concrete action — commit 5 scope:**
+> **Next concrete action — commit 6 scope (Phase 6b-2 closeout):**
 >
-> Reference-adopter wiring (ADR-0013 § 5 Library surface, applied to existing platform consumers):
->   - **helloworld-bff** (already a `apps/lib/secrets/` bootstrapper consumer for `private_key_jwt` PEM): exercise `Client.GetField` and `Client.GetDynamic` against a placeholder outbound integration to demonstrate Hardened-mode default + `Secret.Use` accessor. Likely a tiny `/admin/test-outbound-secret` debug endpoint feature-flagged off by default — purely so we have a runnable consumer.
->   - **AuthZEN façade** — note the asymmetry: per ADR-0013 § "What this ADR explicitly does NOT cover", AuthZEN remains operator-shaped (VSO-rendered K8s Secret) per ADR-0015. **Do not** migrate AuthZEN to direct-API at 6b-2; the consumer wiring here is for first-class apps only. Add the explicit cross-reference comment in AuthZEN's deployment manifest pointing at ADR-0013/ADR-0015 so the next reader doesn't try to "fix the inconsistency."
->   - `apps/lib/errreport/` wiring on the BFF: hook the scrubbing reporter into the BFF's existing slog handler chain so any secret-shaped value that reaches a panic / error log gets redacted before emission. The no-op sink stays — Phase 7 swaps in Sentry without touching this wire.
+> Phase 6b-2 prompt § Section 7 lists 8 verification cases and § Section 9 lists the docs. Commit 6 is the omnibus "make it all reproducible" commit.
 >
-> Out of scope for commit 5: any AuthZEN migration, any Phase 9/10 app onboarding (those apps don't exist yet), any non-default Hardened-mode flips.
+>   - **Verification suite** — `infrastructure/lib/outbound-secrets/verify-*.sh` (8 scripts, one per Section 7 case): probe each guardrail layer's deny path with a deliberate violation and confirm the layer fires + a `secrets.guardrail.bypass` event lands at the collector. Each script is operator-runnable (the LLM should write but not execute against the live cluster). Script #9 from Section 8: deploy a Pod with the legacy-secret-env annotation pair → admission succeeds AND an `outcome: annotated-bypass` event fires.
+>   - **Runbooks** under `docs/03-runbooks/`:
+>     - `secrets-library.md` — how to use `apps/lib/secrets/`, common mistakes, adding a new third-party integration, rotation flow
+>     - `migrate-env-to-openbao.md` — step-by-step for converting existing .env-driven projects (none exist today, but Phase 9/10 onboarding follows this)
+>     - `new-app-bootstrap.md` — the cp-and-init pattern for `templates/app-repo/`, plus operator-time prerequisites
+>     - `secrets-guardrails-verification.md` — how to run the 8 verify scripts, what each one proves
+>     - `secrets-guardrails-monitoring.md` — Section 8's event schema + Phase 7b wire-up instructions for Promtail/Loki/Grafana
+>     - `ci-secrets-check.md` — branch-protection setup for the `secrets-check.yml` workflow shipped in commit 3
+>   - **CLAUDE.md update** — add the no-`.env` bright-line rule under "Things that should NEVER happen", reference ADR-0013 + the runbook chain
+>   - **Phase 9 / 10 prompts updated** under `docs/05-claude-code-prompts/` — they need to know about the new `apps/lib/secrets/` outbound surface and that new tenant apps adopt the templates
+>   - **PLAN.md ✅ flip** — quick-ref row 🟨 → ✅, detail block Status header flipped, Last updated bumped one more time, RESUME marker can be removed (or kept as historical anchor — operator preference; default: remove)
 >
-> **Verification expectations for commit 5:**
->   - `helloworld-bff` Go tests stay green (no regressions in 84.2% baseline coverage).
->   - The new debug endpoint (if added) returns the expected shape and is feature-flag-gated default-off.
->   - `apps/lib/errreport/` integration test: hand the wired BFF reporter a panic carrying a secret-shaped string, assert the emitted JSON-line is redacted.
->   - In-cluster apply only after operator confirmation.
+> Out of scope for commit 6: any cluster-apply (operator runs verify scripts after they land); any Phase 7b wire-up (just document the wire-up plan).
+>
+> **Verification expectations for commit 6:**
+>   - The 8 verify scripts are syntactically clean (`bash -n` per script) and each one has a documented expected-pass-or-fail.
+>   - Each runbook cross-references the ADR(s) it implements and the runbook(s) it depends on.
+>   - CLAUDE.md edit doesn't conflict with existing bright-line rules.
+>   - `gitleaks detect` clean against the working tree (the 8 verify scripts may include sigil probes — use the same split-and-concat pattern as `apps/lib/errreport/fixtures_test.go` and `apps/security-events-collector/redact_test.go`).
 >
 > **Operator-time pending (not for the LLM, do not attempt):**
 >   - Bootstrap kcadm-admin one-time UI step per ADR-0022 § Bootstrap caveat (pre-Phase-9 requirement)
 >   - Docker Desktop CPU bump 6 → 8+ (operator-backlog #9; ideally before Phase 9)
->   - Provision `security-events-collector` + `security-events-ci` Keycloak clients before applying commit 4's manifests (runbook in commit 6)
->   - For commit 5's debug endpoint: pre-populate `secret/data/apps/helloworld-bff/test/api_key` in OpenBao so the endpoint has something to fetch (one-line `bao kv put`)
+>   - Provision `security-events-collector` + `security-events-ci` Keycloak clients before applying commit 4's manifests
+>   - Pre-populate `secret/apps/helloworld-bff/test api_key=<any-non-secret-test-value>` in OpenBao so commit 5's debug endpoint has something to fetch
+>   - Run the 8 verify scripts after commit 6 lands; record outcomes in PLAN.md follow-ups
 >
 > **Out of scope for the rest of Phase 6b-2:**
 >   - `apps/lib/authzn/` go.sum drift (Fix-after-07 §A.4 territory; pre-existing)
 >   - Continued rotation work (operator-backlog #10's quarterly cron handles cadence)
 >   - Phase 9 work — close 6b-2 clean and report back
 >
-> **Recalibrated budgets in effect (lessons from 6b-1, 1b, 2, 3, 4):**
+> **Recalibrated budgets in effect (lessons from 6b-1, 1b, 2, 3, 4, 5):**
 >   - Library extensions: ≤400 LoC (was 150-300, repeatedly underestimated)
 >   - Templates / dev-tooling commits: budget tracked separately
->   - New Go services: ≤700 LoC service+tests + ~250 LoC manifests; commit 4 landed at ~580+250 across collector + CronJob
->   - Test fixtures must split-concatenate vendor prefixes per CLAUDE.md "no secrets in code"; pattern in `apps/lib/errreport/fixtures_test.go` and `apps/security-events-collector/redact_test.go`
->   - Kyverno policies: verify with `kyverno test` against fixture Pods before committing; the `time_until` builtin doesn't exist in v1.13 — use `time_since` with negative duration comparisons instead
+>   - New Go services: ≤700 LoC service+tests + ~250 LoC manifests
+>   - Consumer wiring (this session's commit 5): ≤300 LoC across new files; reuses existing constructors and adds 1-2 startup lines + 1 conditional route + 1 reporter init
+>   - Test fixtures must split-concatenate vendor prefixes per CLAUDE.md "no secrets in code"; pattern in `apps/lib/errreport/fixtures_test.go`, `apps/security-events-collector/redact_test.go`, `apps/helloworld-bff/errreport_test.go`
+>   - Kyverno policies: verify with `kyverno test` against fixture Pods; `time_until` doesn't exist in v1.13 — use `time_since` with negative duration comparisons
 >   - Run Go tests via dockerized golang-1.25-bookworm (CGO_ENABLED=1 needed for `-race`); alpine image lacks the C toolchain
+>   - DefaultScrubber's vendor-prefix coverage today: Stripe live/test, Slack xoxb-, GitHub ghp_/gho_, OpenBao bao., JWT-shaped. **AWS keys (AKIA) are NOT covered** — adding new prefixes is an ADR-0013 § Re-evaluation trigger, not a commit-6 task. File as operator-backlog if it bites.
 >
-> **Resume command (in WSL Claude):** Just say "continue with commit 5" — the agent reads `RESUME-NEXT-MORNING` at the top of this Phase 6b-2 block and picks up.
+> **Resume command (in WSL Claude):** Just say "continue with commit 6" — the agent reads `RESUME-NEXT-MORNING` at the top of this Phase 6b-2 block and picks up.
 
 <!-- ============================================================ -->
 <!-- END RESUME-NEXT-MORNING marker                               -->

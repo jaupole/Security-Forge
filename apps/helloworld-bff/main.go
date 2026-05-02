@@ -142,6 +142,23 @@ func main() {
 		"backend_audience", apiAuth.backendAudience,
 		"workload_id", apiAuth.workloadID)
 
+	// Phase 6b-2 commit 5: outbound-secrets Client (ADR-0013 § 5). Reuses
+	// the same OpenBaoBootstrapper as the private_key_jwt path; the
+	// templated OpenBao policy authorizes reads from
+	// `secret/data/apps/helloworld-bff/*` for this app's role.
+	osc, err := newOutboundSecretsClient(bootstrap, "helloworld-bff")
+	if err != nil {
+		log.Error("outbound secrets client init failed", "err", err)
+		os.Exit(1)
+	}
+	log.Info("outbound-secrets client ready", "app", "helloworld-bff", "hardened", true)
+
+	// Phase 6b-2 commit 5: errreport ScrubbingReporter wired into a
+	// no-op sink (ADR-0013 § 6). Production code paths invoke errReporter()
+	// to capture errors with redaction; Phase 7 swaps the sink without
+	// touching consumers.
+	initErrReporter(log)
+
 	// Routing.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
@@ -151,6 +168,17 @@ func main() {
 	mux.HandleFunc("GET /auth/callback", handleCallback(c, oidc, sess, dpop))
 	mux.HandleFunc("POST /logout", handleLogout(c, oidc, sess))
 	mux.HandleFunc("/api/", proxyToBackend(c, oidc, sess, dpop, apiAuth))
+
+	// Feature-gated debug endpoint (ADR-0013 reference adopter). Default
+	// OFF; enable per-pod via BFF_ENABLE_ADMIN_TEST_OUTBOUND_SECRET=true.
+	// Demonstrates GetField + Secret.Use without ever returning the raw
+	// secret value to the client. See admin.go header for the operator-
+	// time prerequisite (one-line `bao kv put`).
+	if os.Getenv("BFF_ENABLE_ADMIN_TEST_OUTBOUND_SECRET") == "true" {
+		mux.HandleFunc("GET /admin/test-outbound-secret", handleAdminTestOutboundSecret(osc, log))
+		log.Info("admin test-outbound-secret endpoint enabled (debug)")
+	}
+
 	mux.HandleFunc("/", proxyToFrontend(c, sess))
 
 	// otelhttp.NewHandler wraps the chain to emit a span per inbound
