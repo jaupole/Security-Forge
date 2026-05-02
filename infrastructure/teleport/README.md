@@ -28,7 +28,66 @@ After this commit batch the cluster has:
 - ✅ VSO renders `teleport-oidc-vso` + `teleport-minio-vso` Secrets in `teleport` ns
 - ✅ TLS cert `tp-secforge-local-tls` Ready
 
-## Phase 8b — Teleport deploy + targets + verification
+## Phase 8b — Teleport deploy (WIP — stopped at auth-config validation blocker)
+
+**Status (2026-05-02):** manifests drafted; helm release attempted +
+uninstalled cleanly; resuming next session.
+
+| File / change | Drafted | Applied |
+|---|---|---|
+| `03-helm-values.yaml` | ✅ | ❌ (helm release uninstalled after debug) |
+| `04-oidc-connector.yaml` | ✅ | ❌ (depends on auth pod healthy) |
+| `05-roles.yaml` | ✅ | ❌ (depends on operator pod healthy) |
+
+**Blockers hit during 8b:**
+
+1. **`cannot disable multi-factor authentication`** — Teleport auth
+   pod refuses to start with our authentication config. Combinations
+   tried: `local_auth: false` + `second_factor: off` (forbidden as
+   expected — that's the documented invalid combo); `local_auth:
+   false` + `second_factor: optional` (still forbidden); `local_auth:
+   true` + `second_factor: optional` (STILL forbidden). The chart
+   auto-injected `webauthn` block (with `rp_id` initially set to the
+   cluster name, fixed by us to `tp.secforge.local`) didn't resolve
+   it. Fresh-PVC redeploys didn't clear it either, so it's not
+   persisted-bad-state from an earlier attempt. Worth investigating
+   v18.x source for stricter validation than the chart docs imply.
+
+2. **Proxy `x509: certificate signed by unknown authority`** —
+   Teleport's proxy validates the cert chain at startup and rejects
+   our mkcert-signed cert because the mkcert local CA isn't in the
+   pod's trust store. Same trust-store issue every other
+   `*.secforge.local`-hosting pod has solved (Keycloak, Grafana,
+   Wazuh dashboard). Fix: add `tls.existingCASecretName` (or env
+   `SSL_CERT_FILE` mounted volume) pointing at the mkcert root CA.
+
+3. **PVC accidentally wiped** during debug iteration — `kubectl
+   delete pvc -n teleport --all` was over-broad and took down
+   `secforge-teleport-db-1`'s PVC alongside the chart's PVC. CNPG
+   fully recovered (no data loss; nothing was using the cluster yet
+   — Teleport runs on PVC-SQLite per ADR-0024, not Postgres).
+   Lesson logged: scope `kubectl delete` to label selectors on
+   multi-tenant namespaces.
+
+**To resume next session:**
+
+1. Add CA trust mount to `03-helm-values.yaml` so the proxy can
+   validate `tp-secforge-local-tls`. Pattern to mirror: how the
+   Wazuh dashboard or Grafana pods trust the mkcert local CA today.
+2. Investigate the "cannot disable multi-factor authentication"
+   error against Teleport v18.x source. Likely workaround: enable
+   Teleport-native TOTP (`second_factor: otp`) as the registered
+   second factor — local users still don't exist (OIDC is the only
+   login flow), but the validation framework is satisfied. Update
+   ADR-0024 § MFA posture to reflect this if it works.
+3. Once auth pod is healthy: apply `04-oidc-connector.yaml` +
+   `05-roles.yaml` via the operator (auto-reconciles via tctl).
+4. Continue to 8b.3 (kube-agent), 8b.4 (DB targets), 8b.5 (e2e
+   test), 8b.6 (runbooks), 8b.7 (PLAN.md flip).
+
+---
+
+## Phase 8b — Teleport deploy + targets + verification (original plan)
 
 8b is a focused follow-up session that:
 

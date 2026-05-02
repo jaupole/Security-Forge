@@ -1,0 +1,187 @@
+# Phase 8b.2 — Teleport role definitions.
+#
+# Managed by teleport-operator (TeleportRole CRD).
+#
+# MFA posture per ADR-0024 § MFA posture (TOTP, not hardware FIDO2):
+# no `require_session_mfa` flag. Compensating control = tightened
+# session TTLs.
+
+# ─── viewer ────────────────────────────────────────────────────────────
+# Read-only kubectl across all namespaces; no exec, no DB access.
+---
+apiVersion: resources.teleport.dev/v7
+kind: TeleportRole
+metadata:
+  name: viewer
+  namespace: teleport
+  labels:
+    secforge.platform/component: teleport
+spec:
+  options:
+    max_session_ttl: 24h
+    idle_timeout: 8h
+    forward_agent: false
+    permit_x11_forwarding: false
+  allow:
+    kubernetes_groups:
+      - view
+    kubernetes_users:
+      - "{{external.email}}"
+    kubernetes_resources:
+      - kind: "*"
+        namespace: "*"
+        name: "*"
+        verbs:
+          - get
+          - list
+          - watch
+    kubernetes_labels:
+      "*": "*"
+
+# ─── developer ─────────────────────────────────────────────────────────
+# Read-only kubectl + namespace-scoped write to NON-platform namespaces.
+# DB read on secforge-app's app DBs.
+---
+apiVersion: resources.teleport.dev/v7
+kind: TeleportRole
+metadata:
+  name: developer
+  namespace: teleport
+  labels:
+    secforge.platform/component: teleport
+spec:
+  options:
+    max_session_ttl: 12h
+    idle_timeout: 4h
+    forward_agent: false
+    permit_x11_forwarding: false
+    record_session:
+      kubernetes: true
+  allow:
+    kubernetes_groups:
+      - edit
+    kubernetes_users:
+      - "{{external.email}}"
+    # Reads cluster-wide; writes only in non-platform namespaces.
+    kubernetes_resources:
+      - kind: "*"
+        namespace: "app"
+        name: "*"
+        verbs:
+          - "*"
+      - kind: "*"
+        namespace: "*"
+        name: "*"
+        verbs:
+          - get
+          - list
+          - watch
+    kubernetes_labels:
+      "*": "*"
+    # DB targets — secforge-app (app + helloworld DBs).
+    db_labels:
+      "secforge.platform/db-class": ["app"]
+    db_users:
+      - "app"
+      - "helloworld"
+    db_names:
+      - "*"
+  deny:
+    # Explicitly deny write in platform infrastructure namespaces.
+    kubernetes_resources:
+      - kind: "*"
+        namespace: "kube-system"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "cert-manager"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "kyverno"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "istio-system"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "spire"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "openbao"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "vault-secrets-operator"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "keycloak"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "wazuh"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "wazuh-agent"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "teleport"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "observability"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+      - kind: "*"
+        namespace: "minio"
+        name: "*"
+        verbs: ["create", "update", "patch", "delete", "deletecollection", "exec"]
+
+# ─── admin ─────────────────────────────────────────────────────────────
+# Full kubectl (system:masters), all DB targets including the
+# break-glass secforge-keycloak. NO require_session_mfa per
+# ADR-0024 — tightened TTLs are the compensating control.
+---
+apiVersion: resources.teleport.dev/v7
+kind: TeleportRole
+metadata:
+  name: admin
+  namespace: teleport
+  labels:
+    secforge.platform/component: teleport
+spec:
+  options:
+    max_session_ttl: 8h
+    idle_timeout: 4h
+    forward_agent: true
+    record_session:
+      kubernetes: true
+      ssh: true
+    # NOTE: require_session_mfa intentionally NOT set for local
+    # edition. ADR-0024 § MFA posture documents the TOTP-via-
+    # Keycloak-SSO posture. Cloud-edition values overlay re-adds
+    # `require_session_mfa: hardware_key_touch` at the production-
+    # hardening trigger.
+  allow:
+    kubernetes_groups:
+      - system:masters
+    kubernetes_users:
+      - "{{external.email}}"
+    kubernetes_resources:
+      - kind: "*"
+        namespace: "*"
+        name: "*"
+        verbs: ["*"]
+    kubernetes_labels:
+      "*": "*"
+    db_labels:
+      "*": "*"
+    db_users:
+      - "*"
+    db_names:
+      - "*"

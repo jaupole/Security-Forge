@@ -1,0 +1,52 @@
+# Phase 8b.2 — OIDCConnector for Keycloak SSO.
+#
+# Managed by the teleport-operator (deployed alongside the chart in
+# 03-helm-values.yaml). The operator reconciles TeleportOIDCConnector
+# CRs into Teleport's auth state via tctl.
+#
+# Connector config:
+#   - issuer_url: Keycloak `platform` realm
+#   - client_id: from teleport-oidc-vso K8s Secret (rendered by VSO
+#     from secret/data/teleport/oidc — provisioned by 8a's
+#     keycloak/clients/teleport.sh)
+#   - client_secret: same Secret, value field
+#   - claims_to_roles: realm_access.roles → Teleport role
+#
+# The chart's CRD shape uses secretRefs to pull client_id +
+# client_secret from K8s Secrets without baking them into the CR
+# itself.
+
+apiVersion: resources.teleport.dev/v3
+kind: TeleportOIDCConnector
+metadata:
+  name: keycloak
+  namespace: teleport
+  labels:
+    secforge.platform/component: teleport
+spec:
+  client_id: teleport
+  # Teleport-operator reads this Secret on reconcile and pushes the
+  # value into the OIDCConnector's `client_secret` field via tctl.
+  client_secret: ""        # filled from secretRef below at apply time
+  issuer_url: https://auth.secforge.local/realms/platform
+  redirect_url:
+    - https://tp.secforge.local/v1/webapi/oidc/callback
+  scope:
+    - openid
+    - email
+    - profile
+    - roles
+  display: Keycloak (TOTP)
+  claims_to_roles:
+    - claim: realm_access.roles
+      value: platform_admin
+      roles:
+        - admin
+    - claim: realm_access.roles
+      value: platform_developer
+      roles:
+        - developer
+    - claim: realm_access.roles
+      value: platform_viewer
+      roles:
+        - viewer

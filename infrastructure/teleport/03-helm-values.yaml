@@ -1,0 +1,194 @@
+# Phase 8b — Helm values for teleport-cluster (chart 18.7.6).
+#
+# chartMode: standalone — single-pod auth+proxy with PVC storage.
+# Local-edition tradeoff: the CNPG `secforge-teleport-db` cluster
+# provisioned in 8a is kept on disk as "reserved for HA promotion"
+# but unused at this single-replica hardening level. Postgres
+# backend would require chartMode=scratch + custom auth.teleportConfig
+# + plaintext password in the chart config (or extra Secret-rendering
+# init containers) — disproportionate complexity for single-replica.
+# Cloud edition uses cloud-managed Postgres or DynamoDB anyway, so
+# this is not a cloud-migration regression. See ADR-0024 § Backend
+# choice for the trade-off.
+#
+# Authentication:
+#   - OIDC connector applied separately as a CRD (8b.2) — references
+#     the teleport-oidc-vso K8s Secret rendered by VSO from
+#     secret/data/teleport/oidc.
+#
+# TLS: existing cert from cert-manager mkcert-issuer.
+#
+# Session recording: backend-managed (the auth pod uploads to MinIO
+# via S3-compatible API). audit_sessions_uri configured via
+# auth.teleportConfig override since the chart's standalone mode
+# defaults to local-disk recording.
+
+chartMode: standalone
+
+# Cluster identity. tsh users see this name; Teleport persists it
+# across pod restarts via the PVC.
+clusterName: secforge-local
+
+# Public hostname users hit in the browser + tsh.
+publicAddr: ["tp.secforge.local:443"]
+
+# OIDC is the only sign-in option (no local users, no GitHub).
+authentication:
+  type: oidc
+  # OIDCConnector itself is applied as a CRD post-deploy (see
+  # 04-oidc-connector.yaml in this directory).
+  # localAuth: false   # disable username/password fallback (8b.6 toggle if we want belt-and-braces)
+  # `optional` allows but doesn't require Teleport-native MFA. OIDC users
+  # come in via Keycloak SSO (which already involved TOTP at the realm)
+  # — Teleport accepts the federated identity as already-MFA-equivalent.
+  # `off` is forbidden by recent Teleport versions; `optional` is the
+  # closest match to ADR-0024 § MFA posture's "no Teleport-side
+  # per-session prompt" intent.
+  secondFactor: "optional"
+
+# TLS: existing mkcert cert from Phase 8a Certificate.
+tls:
+  existingSecretName: tp-secforge-local-tls
+
+# ACME OFF (we use mkcert).
+acme: false
+
+# Persistence: PVC-backed sqlite-style backend for cluster state.
+# Per-pod single-AZ; cloud-promotion swaps to cloud-managed Postgres
+# (chart values switch to "aws"/"gcp"/"azure" mode at that time).
+persistence:
+  enabled: true
+  volumeSize: 5Gi
+
+# Resource budget: small for local edition.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 768Mi
+
+# PSS=restricted compliance — teleport ns enforces this label.
+# Chart's default pod template lacks the required securityContext;
+# we provide the full restricted-tier set here.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 9807     # Teleport image's "teleport" UID (per upstream docs)
+  runAsGroup: 9807
+  fsGroup: 9807
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 9807
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+# Namespace-scoped service account (chart creates by default).
+# SPIFFE-CSI mount via extraVolumes/extraVolumeMounts so the auth
+# pod can present a SPIFFE-ID for OpenBao reads in the future
+# (currently unused but matches platform pattern).
+extraLabels:
+  pod:
+    spiffe.io/spire-managed-identity: "true"
+
+extraVolumes:
+  - name: spiffe-workload-api
+    csi:
+      driver: csi.spiffe.io
+      readOnly: true
+
+extraVolumeMounts:
+  - name: spiffe-workload-api
+    mountPath: /spiffe-workload-api
+    readOnly: true
+
+# Auth-pod config overrides — we layer in:
+#   - audit_sessions_uri pointing at MinIO (s3://teleport-recordings/?endpoint=...)
+#   - audit log to STDOUT (Promtail/Wazuh ingest from there)
+auth:
+  teleportConfig:
+    teleport:
+      log:
+        output: stdout
+        severity: INFO
+        format:
+          output: json
+      cache:
+        enabled: true
+      # Session recording → MinIO (S3-compatible). audit_sessions_uri
+      # belongs under teleport.storage per Teleport config schema.
+      storage:
+        type: dir
+        path: /var/lib/teleport
+        audit_sessions_uri: "s3://teleport-recordings?endpoint=minio.minio.svc.cluster.local:9000&disablesse=true&insecure=true&use_fips_endpoint=false"
+    auth_service:
+      enabled: true
+      cluster_name: secforge-local
+      authentication:
+        type: oidc
+        # local_auth left enabled (Teleport rejects local_auth:false
+        # combined with second_factor:optional as "cannot disable
+        # multi-factor authentication"). Practically we never use
+        # local users — OIDC is the only login UI presented — but
+        # Teleport's validation requires the framework be there.
+        local_auth: true
+        second_factor: "optional"
+        webauthn:
+          rp_id: "tp.secforge.local"
+      session_recording: "node-sync"
+
+  # Inject MinIO credentials as AWS_* env vars so Teleport's S3
+  # client picks them up for session recording uploads. The Secret
+  # is rendered by VSO from secret/data/minio/teleport/credentials.
+  extraEnv:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: teleport-minio-vso
+          key: access_key
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: teleport-minio-vso
+          key: secret_key
+    - name: AWS_REGION
+      value: "us-east-1"
+
+# Image: Community Edition (open source). Pinned to chart's app version.
+image: public.ecr.aws/gravitational/teleport-distroless
+
+# Operator: deploy alongside (lets us manage Roles + OIDCConnector
+# via TeleportRole / TeleportOIDCConnector CRDs). Saves us writing
+# tctl-driven apply scripts.
+operator:
+  enabled: true
+  image: public.ecr.aws/gravitational/teleport-operator
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
