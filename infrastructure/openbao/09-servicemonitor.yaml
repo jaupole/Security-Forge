@@ -1,15 +1,18 @@
 # Phase 7.6 — OpenBao ServiceMonitor.
 #
-# /v1/sys/metrics is gated by the listener's
-# `telemetry { unauthenticated_metrics_access = true }` block; the security
-# boundary is the `allow-prometheus-to-openbao-metrics` NetworkPolicy.
+# Phase 7d Item 4 (2026-05-02): /v1/sys/metrics now requires bearer-token
+# authentication via the metrics-policy-bound periodic token rendered
+# into the K8s Secret `openbao-metrics-token` by
+# infrastructure/openbao/configure-metrics-auth.sh. Belt-and-suspenders
+# on top of the existing `allow-prometheus-to-openbao-metrics`
+# NetworkPolicy.
 #
-# Local-edition uses insecureSkipVerify because openbao serves with the
-# cert-manager-issued `openbao-tls` cert valid for the in-cluster Service
-# DNS names — but Prometheus discovers pods by IP and connects via
-# https://<pod-IP>:8200, which doesn't match the SAN list. Trade-off
-# documented in the listener block of 04-openbao-values.yaml; cloud
-# migration switches to token-auth + proper SAN.
+# Local-edition still uses insecureSkipVerify because openbao serves
+# with the cert-manager-issued `openbao-tls` cert valid for the
+# in-cluster Service DNS names — but Prometheus discovers pods by IP
+# and connects via https://<pod-IP>:8200, which doesn't match the SAN
+# list. Cloud migration drops insecureSkipVerify after fixing the
+# Prometheus discovery to use Service DNS (or adding pod-IP SANs).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -44,3 +47,10 @@ spec:
       scheme: https
       tlsConfig:
         insecureSkipVerify: true
+      # Phase 7d Item 4 — bearer-token auth (replaces
+      # unauthenticated_metrics_access=true on the listener). Periodic
+      # token (period=720h) auto-refreshes on every scrape; cold-pause
+      # >30d expires it (re-run configure-metrics-auth.sh to recover).
+      bearerTokenSecret:
+        name: openbao-metrics-token
+        key: token

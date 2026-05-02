@@ -74,17 +74,20 @@ server:
           # Trusted CA path — same Secret that holds tls.crt/tls.key.
           tls_client_ca_file = "/openbao/tls/openbao-tls/ca.crt"
 
-          # Local-edition: allow Prometheus to scrape /v1/sys/metrics
-          # without a token. The security boundary is the
-          # `allow-prometheus-to-openbao-metrics` NetworkPolicy in
-          # 06-networkpolicies-main.yaml, which only allows ingress on
-          # 8200 from observability ns Prometheus pods. Cloud migration
-          # MUST switch to token-based auth (a `metrics-policy` token
-          # issued by OpenBao, mounted into the ServiceMonitor's
-          # bearerTokenSecret) — file ADR before promoting to a public
-          # network. Tracked in Phase 7d.
+          # Phase 7d Item 4 (2026-05-02): metrics auth now token-gated.
+          # `unauthenticated_metrics_access = false` (the default — block
+          # explicit for documentary clarity) requires Prometheus to
+          # present a bearer token in `Authorization: Bearer <tok>`. The
+          # token is minted by infrastructure/openbao/configure-metrics-auth.sh
+          # (periodic, period=720h, bound to metrics-policy which only
+          # allows read on sys/metrics) and lives in K8s Secret
+          # observability/openbao-metrics-token. The ServiceMonitor at
+          # 09-servicemonitor.yaml references it via bearerTokenSecret.
+          # `allow-prometheus-to-openbao-metrics` NetworkPolicy still
+          # provides L4 defense-in-depth — only observability ns can
+          # reach :8200 at all.
           telemetry {
-            unauthenticated_metrics_access = true
+            unauthenticated_metrics_access = false
           }
         }
 
