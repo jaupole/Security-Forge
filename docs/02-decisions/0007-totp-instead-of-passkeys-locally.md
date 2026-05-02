@@ -116,9 +116,43 @@ When the trigger fires, the reversal is:
 6. Re-evaluate session lifetimes given the stronger primary factor.
 7. Update `iam-platform.md` and PLAN.md.
 
+## Amendment 2026-05-02 — Teleport adopts the same TOTP posture
+
+Phase 8 deploys Teleport (privileged-access broker for kubectl + DB
+admin sessions). The original Phase 8 prompt called for
+`require_session_mfa: hardware_key_touch` on Teleport's `admin` role.
+For local edition we drop that and inherit this ADR's TOTP posture
+instead — Teleport accepts the Keycloak SSO assertion (which already
+involved TOTP at the realm's authentication flow) and does NOT add a
+Teleport-side per-session MFA prompt.
+
+Compensating controls (from [ADR-0024](./0024-teleport-community-edition-local.md)):
+
+| Teleport role | Max session TTL | Idle timeout |
+|---|---|---|
+| `admin` | 8h | 4h |
+| `developer` | 12h | 4h |
+| `viewer` | 24h | 8h |
+
+Reasoning: the realm's primary factor (TOTP) is already the chokepoint
+for every other platform admin login (Keycloak admin, OpenBao OIDC,
+Grafana, Wazuh dashboard). Singling out Teleport for hardware FIDO2
+without enabling it for the rest creates an asymmetric posture that
+doesn't reduce the operator's blast radius — every other admin path
+stays at TOTP.
+
+When the reversal trigger fires (production VPS or cloud), Teleport's
+admin role gets `require_session_mfa: hardware_key_touch` re-added
+in the cloud-edition values overlay, in lockstep with the realm's
+revert-to-passkeys flip. No architecture change.
+
+This amendment doesn't relax this ADR's reversal triggers (1)–(5)
+above; Teleport's posture follows the realm's primary-factor decision.
+
 ## References
 
 - [ADR-0002](./0002-local-passkey-via-windows-hello.md) — superseded for the local-dev window; reversal target.
+- [ADR-0024](./0024-teleport-community-edition-local.md) — Teleport CE for privileged access; cross-refs this amendment.
 - [docs/01-architecture/01-iam-platform.md](../01-architecture/01-iam-platform.md) — current realm configuration.
 - [CLAUDE.md](../../CLAUDE.md) — "values security over convenience" mission, SMS forbidden, OAuth 2.1 baseline.
 - RFC 6238 (TOTP): <https://datatracker.ietf.org/doc/html/rfc6238>

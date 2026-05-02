@@ -49,12 +49,16 @@ After this commit batch the cluster has:
      (platform_admin → admin, platform_developer → developer,
      platform_viewer → viewer).
 
-3. **Three Teleport role definitions:**
-   - `viewer.yaml`: read-only kubectl, no exec, no DB.
+3. **Three Teleport role definitions** (max_session_ttl + idle_timeout
+   per [ADR-0024 § MFA posture](../../docs/02-decisions/0024-teleport-community-edition-local.md) and [ADR-0007 amendment](../../docs/02-decisions/0007-totp-instead-of-passkeys-locally.md#amendment-2026-05-02--teleport-adopts-the-same-totp-posture)):
+   - `viewer.yaml`: read-only kubectl, no exec, no DB; max 24h, idle 8h.
    - `developer.yaml`: namespace-scoped write to non-platform
-     namespaces; DB read on `secforge-app`.
-   - `admin.yaml`: full kubectl, DB read+write all targets,
-     `require_session_mfa: hardware_key_touch`, max_session_ttl 4h.
+     namespaces; DB read on `secforge-app`; max 12h, idle 4h.
+   - `admin.yaml`: full kubectl, DB read+write all targets;
+     max 8h, idle 4h. **NO `require_session_mfa: hardware_key_touch`**
+     for local edition — MFA is realm-side TOTP via OIDC SSO assertion.
+     Cloud-edition values overlay re-adds `hardware_key_touch` at the
+     production-hardening trigger (ADR-0007's revert clause).
 
 4. **Kubernetes target** registration via `teleport-kube-agent` chart
    (joins to the auth server with a stored token).
@@ -63,10 +67,12 @@ After this commit batch the cluster has:
    - `secforge-app` (developer + admin reachable).
    - `secforge-keycloak` (admin only, break-glass).
 
-6. **End-to-end test** (operator-driven, requires hardware key):
+6. **End-to-end test** (operator-driven, TOTP only — no hardware key):
    - `tsh login --proxy=tp.secforge.local --auth=keycloak`
-   - Browser → Keycloak SSO → assigned `platform_admin` realm role
-   - Hardware key tap on session start
+   - Browser → Keycloak SSO (username + password + TOTP) → assigned
+     `platform_admin` realm role
+   - Cert issued by Teleport, no additional per-session MFA prompt
+     (the Keycloak SSO assertion satisfies Teleport's MFA gate)
    - `tsh kube login secforge-local` + `kubectl get pods -A`
    - `tsh db connect secforge-app` + sample query
    - Verify recording in `teleport-recordings/` MinIO bucket
@@ -85,14 +91,19 @@ After this commit batch the cluster has:
 
 ## Operator pre-checks before running 8b
 
-- [ ] Hardware FIDO2 key plugged in and registered as a Keycloak passkey
-      OR enrolled as a Teleport-side hardware key.
+- [ ] **TOTP enrolled** in your Keycloak `platform` realm user (already
+      true if you've ever used `bao login -method=oidc`, the Keycloak
+      admin console, Grafana SSO, or Wazuh OIDC). No hardware FIDO2
+      needed for local edition — see ADR-0007 amendment.
 - [ ] `tsh` CLI installed on the operator's machine
-      (`brew install --cask teleport-suite` on macOS, etc.).
+      (`brew install --cask teleport-suite` on macOS;
+      [Linux/Windows install docs](https://goteleport.com/docs/installation/)).
 - [ ] Browser trusts the mkcert local CA (already true if you've used
       any other `*.secforge.local` URL).
-- [ ] Operator user exists in Keycloak `platform` realm with at least
-      one of the three new realm roles assigned.
+- [ ] Your Keycloak `platform` realm user has at least one of the
+      three new realm roles assigned: `platform_admin`,
+      `platform_developer`, `platform_viewer`. Admin UI:
+      Users → your-user → Role mapping → Assign role → realm role.
 
 ## Why direct kubectl stays usable in local edition
 

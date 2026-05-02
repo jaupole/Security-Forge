@@ -58,7 +58,7 @@ Specifically:
 | Roles | `viewer` (read-only), `developer` (namespace-scoped write + DB read), `admin` (full + hardware FIDO2 required) |
 | Targets registered | Local Kubernetes cluster (`secforge-local`), `secforge-app-db` Postgres, `secforge-keycloak-db` Postgres (break-glass only) |
 | Session recording | MinIO bucket `teleport-recordings`; scoped MinIO user with bucket-only policy |
-| MFA enforcement | Per-session MFA = `hardware_key_touch` on `admin` role |
+| MFA enforcement | TOTP-via-Keycloak SSO assertion (no Teleport-side per-session re-prompt); compensated by tight session TTLs (`admin` 8h max + 4h idle, `developer` 12h + 4h idle, `viewer` 24h + 8h idle). See § "MFA posture (TOTP, not hardware FIDO2)" below. |
 | SPIFFE identity | `spiffe://secforge.local/ns/teleport/sa/teleport` (auth-pod side) |
 
 ## Rationale
@@ -119,29 +119,59 @@ or external CA needed. Cloud edition swaps in cert-manager + Let's
 Encrypt issuer (or whatever the cloud's regional CA is) at promotion
 time — chart values change, no architecture change.
 
-### Why hardware FIDO2 specifically for the `admin` role
+### MFA posture (TOTP, not hardware FIDO2)
 
-CLAUDE.md's bright-line list includes "SMS as an MFA factor" as a
-NEVER, and the architecture committed to "passkeys + hardware FIDO2 at
-production hardening" (ADR-0007's revert clause). The local-dev window
-uses TOTP (ADR-0007), which is fine for the user/tenant realms (low
-blast radius per compromise). For the `admin` role on the privileged-
-access broker, we hold the line at hardware FIDO2 even in local
-edition because:
+The original Phase 8 prompt called for `require_session_mfa:
+hardware_key_touch` on the `admin` role. **For local edition we drop
+that** and inherit ADR-0007's TOTP-via-Keycloak posture, with
+tightened session TTLs as the compensating control.
 
-- The admin role's blast radius IS the cluster (full kubectl, all DBs).
-- Per-session MFA-on-touch is what's measurably hard for an attacker
-  to bypass; TOTP-codes can be phished, hardware tap can't (within
-  reasonable threat models).
-- We exercise the hardware-FIDO2 flow now (cheap), not under
-  production pressure. ADR-0007's "interim TOTP" doesn't apply here
-  because Teleport's per-session MFA isn't tied to the realm's primary
-  factor; it's a Teleport-side option (`require_session_mfa:
-  hardware_key_touch`).
+Reasoning:
 
-The user-tenant realm (`secforge-tenants`) keeps TOTP; the platform
-realm + Teleport admin combine TOTP-primary-factor + hardware-tap-on-
-session.
+- **No hardware FIDO2 key available on the local-dev workstation today.**
+  ADR-0007 already accepted TOTP as the interim primary factor for
+  every admin login on the `platform` realm (Keycloak admin console,
+  OpenBao OIDC, Grafana, Wazuh dashboard). Adding Teleport as the
+  ONE consumer that requires hardware FIDO2 creates an asymmetric
+  posture — operator can admin every other component with TOTP but
+  not the access broker — that doesn't reduce blast radius (the
+  TOTP-only admins still have full kubectl + DB access via direct
+  paths).
+- **Local-edition threat model is single-tenant dev.** The TOTP-
+  vs-hardware-tap delta defends against credential phishing, which
+  isn't a meaningful threat against a single operator's local
+  workstation that never accepts inbound auth flows.
+- **Production VPS / cloud edition cuts over to hardware FIDO2** at
+  the same moment ADR-0007's revert-to-passkeys clause fires. Teleport's
+  `admin` role gets `require_session_mfa: hardware_key_touch` re-added
+  in the cloud-edition values overlay, no architecture change.
+
+**Compensating controls in lieu of per-session hardware tap:**
+
+| Role | Max session TTL | Idle timeout |
+|---|---|---|
+| `admin` | 8h | 4h |
+| `developer` | 12h | 4h |
+| `viewer` | 24h | 8h |
+
+The 8h `admin` ceiling forces re-auth via Keycloak SSO (which involves
+TOTP) at least once per shift; the 4h idle timeout caps the residual
+risk of an unattended laptop. These are stricter than Teleport's
+defaults (12h max, no idle by default).
+
+The Keycloak `platform` realm itself enforces TOTP as the secondary
+factor on every login (per the realm config from Phase 3 + ADR-0007).
+So the practical login flow is: `tsh login --proxy=tp.secforge.local
+--auth=keycloak` → browser → Keycloak username+password+TOTP →
+Teleport receives the SSO assertion → cert issued. No additional
+Teleport-side MFA prompt. Operationally light, matches Grafana/Wazuh
+SSO flows.
+
+Cross-references:
+- [ADR-0007 § Amendment 2026-05-02 — Teleport adopts TOTP posture](./0007-totp-instead-of-passkeys-locally.md)
+  documents the same decision from ADR-0007's side.
+- [`docs/06-reference/migration-to-vps.md` § Phase C Phase 3](../06-reference/migration-to-vps.md)
+  is the production-cutover trigger for hardware-FIDO2 enforcement.
 
 ### Why MinIO for session recording
 
@@ -205,10 +235,10 @@ available slot at that time and write the rationale + gaps.
   (`platform_admin`, `platform_developer`, `platform_viewer`). Same
   shape as the openbao + grafana + wazuh-dashboard clients already in
   this realm.
-- Hardware-FIDO2-keys present and registered in Keycloak — without
-  them, the admin role's session can't be established. Local-edition
-  tradeoff: until a key is enrolled, the operator's only admin path
-  is through the platform realm directly (i.e., outside Teleport).
+- Operator's Keycloak `platform` realm user has TOTP enrolled — same
+  as every other platform admin login (no new factor to provision).
+  Hardware-FIDO2 enrollment is deferred to the production VPS / cloud
+  cutover trigger documented in `migration-to-vps.md`.
 - Session recordings consume MinIO storage; size grows with admin
   activity. Quota check + retention policy is operator-time work.
 

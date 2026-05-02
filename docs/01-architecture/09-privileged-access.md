@@ -68,19 +68,36 @@ OIDCConnector's `claims_to_roles`:
 |---|---|---|
 | `platform_viewer` | `viewer` | `kubectl get/describe` cluster-wide; no exec; no DB |
 | `platform_developer` | `developer` | `kubectl read` + namespace-scoped write to non-platform namespaces (excludes `kube-system`, `cert-manager`, `kyverno`, `istio-system`, `spire`, `openbao`, `vault-secrets-operator`, `keycloak`, `wazuh`, `wazuh-agent`, `teleport`, `observability`, `minio`, `postgres-operator`); DB read on `secforge-app`'s app DBs |
-| `platform_admin` | `admin` | full kubectl (system:masters group); DB read+write on all targets; **`require_session_mfa: hardware_key_touch`** |
+| `platform_admin` | `admin` | full kubectl (system:masters group); DB read+write on all targets |
 
 The `developer` role's namespace-write exclusion list is the platform's
 infrastructure namespaces — operator-managed components stay out of
 developer reach. Application namespaces (`app` and any future tenant
 namespaces) are reachable for write.
 
-The `admin` role's `require_session_mfa: hardware_key_touch` setting
-forces a hardware-key tap on every session (not just at login). This
-is the primary control that makes the role's blast radius defensible.
+**MFA posture for the `admin` role: TOTP-via-Keycloak SSO + tightened
+session TTLs** (NOT hardware-FIDO2 per-session — see [ADR-0024 § MFA
+posture](../02-decisions/0024-teleport-community-edition-local.md) and
+the [ADR-0007 amendment](../02-decisions/0007-totp-instead-of-passkeys-locally.md#amendment-2026-05-02--teleport-adopts-the-same-totp-posture)).
+The realm enforces TOTP as the secondary factor on every login;
+Teleport accepts the resulting SSO assertion without an additional
+per-session MFA prompt. Tight TTLs do the assurance lifting:
 
-`max_session_ttl` defaults to 4h on `admin` (forcing re-auth + re-tap
-every 4 hours of admin work) and 12h on `developer` and `viewer`.
+| Role | Max session TTL | Idle timeout |
+|---|---|---|
+| `admin` | 8h | 4h |
+| `developer` | 12h | 4h |
+| `viewer` | 24h | 8h |
+
+The 8h `admin` ceiling forces re-auth via Keycloak SSO (which involves
+TOTP) at least once per shift; the 4h idle timeout caps the residual
+risk of an unattended laptop. These are stricter than Teleport's
+defaults (12h max, no idle by default).
+
+When the production-hardening trigger fires (per ADR-0007's revert
+clause), the cloud-edition values overlay re-adds
+`require_session_mfa: hardware_key_touch` to the `admin` role in
+lockstep with the realm's revert-to-passkeys flip.
 
 ## Authentication flow
 
@@ -91,9 +108,8 @@ every 4 hours of admin work) and 12h on `developer` and `viewer`.
   2. Browser opens tp.secforge.local/v1/webapi/oidc/login/cli
                           │ → Keycloak redirect
                           ▼
-  3. Keycloak presents login UI (TOTP per ADR-0007 today;
-     passkey/FIDO2 at production hardening per ADR-0007's revert
-     clause)
+  3. Keycloak presents login UI (username + password + TOTP per
+     ADR-0007 — the realm's interim primary-factor choice)
                           │ user authenticates
                           ▼
   4. Keycloak emits ID token with realm_access.roles claim
@@ -101,22 +117,21 @@ every 4 hours of admin work) and 12h on `developer` and `viewer`.
                           ▼
   5. Teleport's OIDCConnector maps realm role → Teleport role,
      issues a per-session cert (15min TTL by default, renewable
-     up to max_session_ttl)
+     up to max_session_ttl — capped at 8h for admin, 12h dev, 24h viewer)
                           │
                           ▼
-  6. tsh writes the cert to ~/.tsh/, kubectl/db-clients use it
-                          │
-                          │ (admin role only:)
-                          ▼
-  7. Each subsequent session start (kubectl exec, db connect, web
-     UI session) prompts the user to TAP their hardware FIDO2
-     key — Teleport rejects the session if no tap within ~10s.
+  6. tsh writes the cert to ~/.tsh/, kubectl/db-clients use it.
+     No additional Teleport-side MFA prompt — the Keycloak SSO
+     assertion is the MFA-equivalent (it already involved TOTP).
 ```
 
-Hardware FIDO2 is enforced by Teleport at the session-start layer,
-NOT by Keycloak. ADR-0007's TOTP-instead-of-passkeys interim applies
-to the realm's primary-factor choice; Teleport's per-session MFA is
-independent and stays at hardware-key-touch even during the interim.
+The realm-side TOTP posture (ADR-0007) IS the platform's primary-
+factor enforcement; Teleport inherits it via OIDC SSO without
+duplicating the prompt. The reversal to hardware FIDO2 happens at
+the realm level (ADR-0007's revert clause) at production-hardening
+time; Teleport's `admin` role gets `require_session_mfa:
+hardware_key_touch` added in the cloud-edition values overlay at
+the same flip.
 
 ## Targets
 
