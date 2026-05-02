@@ -12,6 +12,7 @@
 2. [Unseal OpenBao — routine case](#2-unseal-openbao--routine-case)
 3. [Unseal OpenBao — after a multi-day pause (the gotcha case)](#3-unseal-openbao--after-a-multi-day-pause-the-gotcha-case)
 4. [Where the unseal keys live](#4-where-the-unseal-keys-live)
+5. [Apps stuck in CrashLoopBackOff after a Docker Desktop restart](#5-apps-stuck-in-crashloopbackoff-after-a-docker-desktop-restart)
 
 ---
 
@@ -78,6 +79,8 @@ Prompts you for the **seal-OpenBao initial root token** (NOT the 5 unseal keys, 
 
 The script absorbs the 2026-05-01 gotcha: if `apply-main.sh` "bails" with a too-many-restarts watchdog message on openbao-0, the seal block has already been re-rendered before the watchdog fires; the script proceeds to the pod roll which is what completes recovery.
 
+**App cleanup is automatic:** after the main OpenBao pods are Ready, the script also scans the `app` namespace for `CrashLoopBackOff` pods (apps that have been failing to bootstrap for the past 24h+) and deletes them so they restart with fresh SPIRE-issued SVIDs. Same automation as `unseal-seal.sh` step 3 — see Section 5 for the why.
+
 **Source of truth:** `docs/03-runbooks/openbao-recovery.md § "Rotate the Transit unseal token"` (the manual 4-step procedure is preserved there for troubleshooting individual stages).
 
 **Heads-up:** this is the same situation that's tracked as **operator-backlog #4** (Phase 7d will codify a permanent TTL strategy fix so this doesn't keep biting). Until then, the script is the recipe. Strong argument for accelerating operator-backlog #10's quarterly rotation cadence — once cron-driven, a >24h cold cluster wouldn't trip the TTL.
@@ -97,6 +100,39 @@ They are NOT:
 **If you lose them:** there is no recovery for the seal-pod. The OpenBao runbook ([`openbao-seal-unseal.md` lines 47-63](../03-runbooks/openbao-seal-unseal.md)) documents the "destroy and rebuild" path, which loses ALL OpenBao state (every secret, every policy, every auth method config). You'd be re-running Phase 5.4-5.10 from scratch. **Do not lose the keys.**
 
 The 5 recovery keys for the *main* OpenBao (the 5/3 set you saw in `bao status`) are a SEPARATE set — they let you mint a fresh root token on an *already-unsealed* main OpenBao. They don't help you unseal the seal-pod.
+
+---
+
+## 5. Pods stuck in CrashLoopBackOff after a Docker Desktop restart
+
+**When:** the cluster restarted, you ran the unseal procedure (Section 2), seal-pod is `1/1 Running`, but other pods are stuck in `CrashLoopBackOff`. Two flavors, both handled by the same root cause:
+
+- **Main OpenBao** (`openbao-0/1/2`) — they tried to reach the seal-pod's Transit endpoint while it was still sealed, exited with code 1, kubelet kept restarting them with exponential backoff. Even after the seal-pod is healthy they're sitting on backoff timers.
+- **Apps in the `app` namespace** (`helloworld-bff`, `authzen-facade`, etc.) — same pattern but at the app layer. Their SPIFFE-JWT-SVIDs (5-minute TTL) expired during the bootstrap-retry storm, so they keep presenting stale SVIDs to OpenBao and OpenBao keeps rejecting them.
+
+**The procedure:**
+
+Both flavors are now handled automatically by `unseal-seal.sh` (added 2026-05-01). After unseal verifies, the script:
+
+1. Waits 15 seconds for main OpenBao to attempt auto-unseal on its own.
+2. Scans `openbao` namespace for `openbao-0/1/2` pods in `CrashLoopBackOff` or `Error` state and deletes them so they restart against the now-unsealed seal-pod. Waits up to 90s for the deleted pods to reach Ready.
+3. Scans `app` namespace for `CrashLoopBackOff` pods and deletes them so they restart with fresh SVIDs.
+
+So in practice: just run the normal unseal (Section 2) and the cleanup happens automatically. You'll see `✓ deleted openbao-N (will restart against now-unsealed seal-pod)` and/or `✓ deleted helloworld-bff-... (will restart with fresh SVID)` in the script's output.
+
+**This is the friction-relief workaround.** The proper structural fix is an `initContainer` on the main OpenBao StatefulSet that blocks pod startup until `openbao-seal-0` reports unsealed — same pattern as the SPIFFE-CSI startupProbe wait already in use elsewhere. Tracked separately in operator-backlog; once it lands, this whole section becomes unnecessary because the main pods won't crash in the first place.
+
+**If you need to do it manually** (pods in some other namespace, or one of the auto-cleanups didn't catch it):
+
+```bash
+kubectl delete pod -n <namespace> <pod-name>
+```
+
+**Verification:** `kubectl get pods --all-namespaces | grep -v "Running\|Completed"` should be empty within ~60 seconds.
+
+**If the script fails at "Main OpenBao pods didn't reach Ready in 90s":** that's a deeper issue than the routine backoff cycle (Raft state, NetworkPolicy, etc.). The script intentionally stops there rather than restart apps against a broken OpenBao. See `kubectl get pods -n openbao` and `kubectl logs -n openbao openbao-0 -c openbao --tail=30` for the actual error.
+
+**See also:** the script lives at [`infrastructure/openbao/unseal-seal.sh`](../../infrastructure/openbao/unseal-seal.sh); the broader SPIFFE workload-identity model is in [`docs/01-architecture/02-workload-identity.md`](../01-architecture/02-workload-identity.md).
 
 ---
 

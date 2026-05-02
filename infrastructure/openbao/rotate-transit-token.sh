@@ -128,15 +128,10 @@ green ""
 green "Waiting for all 3 main OpenBao pods to reach Ready (timeout 180s)..."
 green ""
 
-if kubectl wait --for=condition=Ready pod \
+if ! kubectl wait --for=condition=Ready pod \
         -n "$NS" \
         -l app.kubernetes.io/instance=openbao \
         --timeout=180s 2>&1; then
-    green ""
-    green "All 3 main OpenBao pods are Ready. Recovery complete."
-    kubectl get pod -n "$NS" -l app.kubernetes.io/instance=openbao
-    exit 0
-else
     red ""
     red "Timed out waiting for Ready. Current pod state:"
     kubectl get pod -n "$NS" -l app.kubernetes.io/instance=openbao >&2
@@ -144,3 +139,38 @@ else
     red "Inspect logs: kubectl logs -n $NS openbao-0 -c openbao --tail=30"
     exit 1
 fi
+
+green ""
+green "All 3 main OpenBao pods are Ready."
+kubectl get pod -n "$NS" -l app.kubernetes.io/instance=openbao
+
+# ──────────────────────────────────────────────────────────────────────
+# 6. Post-recovery app cleanup — restart apps that crashlooped during
+#    the multi-day outage. Same logic as unseal-seal.sh step 3.
+#
+#    In the multi-day-pause case, apps have been failing for >24h, not
+#    just minutes — they're definitely sitting on stale SVIDs by now.
+#    Force a restart so SPIRE issues fresh ones and bootstrap succeeds.
+#
+#    Scope is intentionally limited to the 'app' namespace.
+# ──────────────────────────────────────────────────────────────────────
+crashlooping=$(kubectl get pods -n app --no-headers 2>/dev/null \
+    | awk '$3 == "CrashLoopBackOff" { print $1 }' || true)
+
+if [ -n "$crashlooping" ]; then
+    yellow ""
+    yellow "Found CrashLooping pods in 'app' namespace (almost certainly stale SVIDs):"
+    while IFS= read -r pod; do
+        yellow "  - $pod"
+    done <<< "$crashlooping"
+    yellow ""
+    while IFS= read -r pod; do
+        kubectl delete pod -n app "$pod" >/dev/null
+        green "  ✓ deleted $pod (will restart with fresh SVID)"
+    done <<< "$crashlooping"
+fi
+
+green ""
+green "Recovery complete. Cluster should be fully healthy in ~30s."
+green "Verify: kubectl get pods --all-namespaces | grep -v 'Running\\|Completed'"
+exit 0

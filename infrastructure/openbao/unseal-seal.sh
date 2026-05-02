@@ -64,9 +64,90 @@ status=$(kubectl exec -n "$NS" "$POD" -c openbao -- \
 if echo "$status" | grep -q '"sealed": false'; then
     green ""
     green "openbao-seal is unsealed. Main OpenBao should auto-unseal within ~10s."
-    green "Verify: kubectl get pod -n openbao -l app.kubernetes.io/instance=openbao"
 else
     red "Unseal didn't take. status:"
     red "$status"
     exit 1
 fi
+
+# 3. Post-unseal cleanup — main OpenBao pods stuck in kubelet backoff.
+#
+# During the operator's manual-unseal window, main pods (openbao-0/1/2) try
+# to reach the seal-pod's Transit endpoint, get back 503 "Vault is sealed",
+# exit with code 1. Kubelet restarts them with exponential backoff. By the
+# time the operator finishes the 3-key entry, the main pods can be sitting
+# on backoff timers of 30s+ — they don't recover quickly even though the
+# seal-pod is now healthy. Force-delete them so kubelet recreates immediately.
+#
+# Until the proper structural fix lands (initContainer on the main OpenBao
+# StatefulSet that blocks startup until openbao-seal-0 reports Sealed: false
+# — see PLAN.md operator-backlog or post-investigation issue), this is the
+# friction-relief workaround.
+
+green ""
+green "Waiting 15s for main OpenBao to attempt auto-unseal..."
+sleep 15
+
+crashlooping_main=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null \
+    | awk '($3 == "CrashLoopBackOff" || $3 == "Error") && $1 ~ /^openbao-[0-9]+$/ { print $1 }' || true)
+
+if [ -n "$crashlooping_main" ]; then
+    yellow ""
+    yellow "Main OpenBao pods stuck in kubelet backoff (seal-pod was unavailable on their last start):"
+    while IFS= read -r pod; do
+        yellow "  - $pod"
+    done <<< "$crashlooping_main"
+    yellow ""
+    while IFS= read -r pod; do
+        kubectl delete pod -n "$NS" "$pod" >/dev/null
+        green "  ✓ deleted $pod (will restart against now-unsealed seal-pod)"
+    done <<< "$crashlooping_main"
+
+    yellow ""
+    yellow "Waiting up to 90s for main OpenBao pods to reach Ready..."
+    sleep 5  # let kubelet recreate the pods so the wait selector matches
+    if kubectl wait --for=condition=Ready pod -n "$NS" \
+            -l app.kubernetes.io/instance=openbao \
+            --timeout=90s >/dev/null 2>&1; then
+        green "  ✓ all main OpenBao pods Ready"
+    else
+        red ""
+        red "Main OpenBao pods didn't reach Ready in 90s. Inspect: kubectl get pods -n $NS"
+        red "May indicate a deeper issue (Raft state, NetworkPolicy, etc.). Stopping here so"
+        red "the app-namespace cleanup below doesn't restart apps against a broken OpenBao."
+        exit 1
+    fi
+fi
+
+# 4. Post-unseal cleanup — apps that crashlooped during the seal window.
+#
+# Apps that auth to OpenBao via SPIFFE-JWT-SVID (helloworld-bff, authzen-facade,
+# etc.) start trying to bootstrap before the operator has unsealed. They
+# accumulate failed login attempts with SVIDs that expire (5min default TTL)
+# by the time unseal completes, and end up stuck in CrashLoopBackOff with
+# stale SVIDs even after OpenBao is healthy. Force a pod restart so SPIRE
+# issues fresh SVIDs and bootstrap succeeds cleanly.
+#
+# Scope is intentionally limited to the 'app' namespace (where user-facing
+# apps live) — broader scopes risk deleting pods that are CrashLooping for
+# unrelated reasons.
+
+crashlooping=$(kubectl get pods -n app --no-headers 2>/dev/null \
+    | awk '$3 == "CrashLoopBackOff" { print $1 }' || true)
+
+if [ -n "$crashlooping" ]; then
+    yellow ""
+    yellow "Found CrashLooping pods in 'app' namespace (almost certainly stale SVIDs):"
+    while IFS= read -r pod; do
+        yellow "  - $pod"
+    done <<< "$crashlooping"
+    yellow ""
+    while IFS= read -r pod; do
+        kubectl delete pod -n app "$pod" >/dev/null
+        green "  ✓ deleted $pod (will restart with fresh SVID)"
+    done <<< "$crashlooping"
+fi
+
+green ""
+green "Cluster should be fully healthy in ~30s."
+green "Verify: kubectl get pods --all-namespaces | grep -v 'Running\\|Completed'"
