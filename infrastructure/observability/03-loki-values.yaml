@@ -41,11 +41,35 @@ loki:
       # via env (see env section below).
 
   limits_config:
+    # Global retention: 14d. Most app/system streams cap here.
     retention_period: 336h     # 14 days
     reject_old_samples: true
     reject_old_samples_max_age: 168h
     max_query_length: 721h
     split_queries_by_interval: 15m
+
+    # Phase 7b.2 — per-stream retention override for the secrets-
+    # guardrail audit trail. ADR-0013 § Audit trail requires bypass
+    # events to be queryable for at least 90 days (regulators tend to
+    # ask for 90d minimum on security-relevant logs). The match selector
+    # mirrors the Promtail job label set in
+    # 04-promtail-values.yaml § extraScrapeConfigs.
+    #
+    # NOTE: per-stream retention only takes effect when
+    # `compactor.retention_enabled: true`. We keep retention_enabled
+    # false today (see compactor block below for the fresh-bucket
+    # boot-loop diagnostic that triggered the off setting) — meaning
+    # 90d is *aspirational*: streams remain in the bucket up to the
+    # global 14d cap, then get garbage-collected via TSDB index expiry
+    # without the compactor's per-stream pass running. Phase 7b
+    # accepts this gap rather than re-trigger the boot loop. Tracked
+    # in operator-backlog #4-style follow-up work; flip
+    # retention_enabled to true once the bucket has at least one
+    # delete request and verify Loki still reaches /ready post-restart.
+    retention_stream:
+      - selector: '{job="secrets-guardrails"}'
+        priority: 1
+        period: 2160h           # 90 days
 
   # DIAGNOSTIC: retention_enabled forces the compactor to read
   # delete_requests.gz from S3 on startup; on a fresh bucket that
@@ -53,7 +77,8 @@ loki:
   # retrying, which holds the dskit services framework — no HTTP
   # responses, no /ready, no /metrics. Disable retention until the
   # bucket has at least one delete request so the compactor's startup
-  # path can complete cleanly.
+  # path can complete cleanly. Phase 7b.2 leaves this as-is and
+  # documents the aspirational-90d posture in limits_config above.
   compactor:
     working_directory: /var/loki/compactor
     retention_enabled: false

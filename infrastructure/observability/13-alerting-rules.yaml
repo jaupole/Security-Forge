@@ -144,3 +144,76 @@ spec:
           annotations:
             summary: "ztunnel TCP failure rate >10%"
             description: "{{ $value | humanizePercentage }} of mesh TCP connections fail for 10m. Check AuthorizationPolicies, ztunnel logs, target workload health. Runbook: alerts.md#istiotcpconnectionfailurespike"
+
+    # Phase 7b.4 — Secrets-guardrails alert rules. Source metric:
+    # `secrets_guardrail_bypass_total` is emitted by Promtail's
+    # metrics-pipeline-stage on the `secrets-guardrails` job (see
+    # 04-promtail-values.yaml § extraScrapeConfigs); labels are the
+    # closed-enum dimensions {severity, layer, outcome, actor, rule}.
+    # The metric is a counter; alerts use rate() / increase() not
+    # absolute value.
+    #
+    # Routing posture: the local-edition Alertmanager receiver is
+    # `null` (no paging configured). These rules establish the
+    # severity ladder so when the cloud-edition Alertmanager wires
+    # PagerDuty/Slack/email receivers, the rules already fire at the
+    # correct severities. Local operators view via Alertmanager UI
+    # at /alerts and via the Grafana "Secrets Guardrails" dashboard.
+    - name: secforge.secrets-guardrails
+      rules:
+        - alert: SecretsGuardrailBypassCritical
+          expr: |
+            sum(increase(secrets_guardrail_bypass_total{severity="critical"}[5m])) > 0
+          for: 0m
+          labels:
+            severity: critical
+            component: secrets-guardrails
+          annotations:
+            summary: "secrets.guardrail.bypass severity=critical event(s) seen in 5m"
+            description: "{{ $value }} critical bypass event(s) in last 5m. ADR-0013 § severity ladder: critical means the failure mode is not recoverable with the existing escape-hatch (e.g., a leaked image artifact, a `.dockerignore` regression). Page immediately. Inspect via Loki: `{job=\"secrets-guardrails\", severity=\"critical\"}`. Runbook: alerts.md#secretsguardrailbypasscritical"
+
+        - alert: SecretsGuardrailBypassHigh
+          expr: |
+            sum(increase(secrets_guardrail_bypass_total{severity="high"}[5m])) > 0
+          for: 1m
+          labels:
+            severity: high
+            component: secrets-guardrails
+          annotations:
+            summary: "secrets.guardrail.bypass severity=high event(s) seen"
+            description: "{{ $value }} high-severity bypass event(s) in 5m. Examples: Kyverno denial of secret-shaped env without escape hatch, library hardened-mode disabled at startup, scrubber rule fired. Slack/email within 1h. Inspect via Loki: `{job=\"secrets-guardrails\", severity=\"high\"}`. Runbook: alerts.md#secretsguardrailbypasshigh"
+
+        - alert: SecretsGuardrailAnnotatedBypassActiveOver30d
+          expr: |
+            (
+              max by (actor, rule, annotation_ref)
+                (timestamp(secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
+              - on(actor, rule, annotation_ref)
+              min by (actor, rule, annotation_ref)
+                (timestamp(secrets_guardrail_bypass_total{outcome="annotated-bypass"}))
+            ) > 30 * 24 * 3600
+          for: 1h
+          labels:
+            severity: medium
+            component: secrets-guardrails
+          annotations:
+            summary: "Annotated-bypass active >30d without ticket resolution: {{ $labels.annotation_ref }}"
+            description: "An escape-hatch annotation has been emitting events for >30d. Either the underlying ticket ({{ $labels.annotation_ref }}) is stalled or the escape hatch is being used as a permanent backdoor. Weekly digest. Re-evaluate per ADR-0013 § Time-bounded escape hatch. Runbook: alerts.md#secretsguardrailannotatedbypassactiveover30d"
+
+        - alert: SecretsGuardrailBypassRateAnomaly
+          expr: |
+            (
+              sum(rate(secrets_guardrail_bypass_total[1h]))
+            )
+            >
+            (
+              avg_over_time(sum(rate(secrets_guardrail_bypass_total[1h]))[7d:1h])
+              + 2 * stddev_over_time(sum(rate(secrets_guardrail_bypass_total[1h]))[7d:1h])
+            )
+          for: 30m
+          labels:
+            severity: medium
+            component: secrets-guardrails
+          annotations:
+            summary: "Bypass-event rate exceeds 7-day rolling baseline by >2σ"
+            description: "Current 1h rate is more than 2 standard deviations above the 7-day rolling average. Either a guardrail layer regressed (something newly emits events) or an attacker is probing. Slack/email within 4h. Cross-reference with the Grafana 'Secrets Guardrails' dashboard's bypass-rate-by-layer panel. Runbook: alerts.md#secretsguardrailbypassrateanomaly"
