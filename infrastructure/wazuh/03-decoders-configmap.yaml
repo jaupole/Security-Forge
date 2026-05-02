@@ -1,0 +1,56 @@
+# Phase 7d.6 (operator-backlog #18 fix) — manager-side custom decoders
+# for the kubelet-wrapped pod-log lines that the wazuh-agent's
+# <localfile> blocks tail (Item 6).
+#
+# Pod log line format from kubelet:
+#   <RFC3339-timestamp> (stdout|stderr) (P|F) <payload>
+# example:
+#   2026-05-02T19:41:06.213762033Z stdout F {"timestamp":"...","level":"INFO",...}
+#
+# This ConfigMap holds local_decoder.xml mounted into the wazuh-manager
+# pod at /var/ossec/etc/decoders/local_decoder.xml. The manager's
+# wazuh-analysisd auto-loads decoders from that path on startup +
+# `wazuh-control reload`.
+#
+# Decoder approach:
+#   1. `kubelet-pod-log` parent decoder fires on any line beginning with
+#      an RFC3339 timestamp followed by stdout/stderr.
+#   2. A child decoder uses the regex offset to capture the trailing
+#      payload, then plugin_decoder=JSON_Decoder parses any JSON within.
+#   3. The agent's per-localfile <label key="source">openbao|keycloak
+#      </label> tags arrive in the event's `decoder.parent` and
+#      `predecoder` fields; rules can match on those to differentiate.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-local-decoders
+  namespace: wazuh
+  labels:
+    secforge.platform/component: wazuh-manager
+data:
+  local_decoder.xml: |
+    <!-- Phase 7d.6: kubelet pod-log wrapper decoder.
+         Strips the timestamp + stdout/stderr + P/F prefix; the
+         JSON_Decoder child decoder parses the JSON part into data.*
+         fields.
+
+         All <prematch>/<regex> on this file use type="pcre2" because
+         Wazuh's default sregex does not accept the \d{n} quantifier
+         syntax we need to match the kubelet RFC3339 timestamp shape. -->
+    <!-- Wazuh's syslog pre-decoder strips the kubelet wrapper
+         (`<timestamp> stdout|stderr P|F `) before this decoder sees
+         the content. The post-pre-decode line is just the trailing
+         JSON `{"...":...}`. Match on that and let JSON_Decoder
+         flatten the fields into data.*.
+
+         The match is intentionally broad — any line whose post-
+         predecode content starts with a JSON object opener. Other
+         agents on this manager could conflict, but in this cluster
+         the only `<localfile>` JSON-tailing config is the wazuh-agent
+         DaemonSet's pod-log targets (Phase 7d Item 6), so the
+         broad match is operationally safe. -->
+    <decoder name="kubelet-pod-log">
+      <prematch>^{"</prematch>
+      <plugin_decoder>JSON_Decoder</plugin_decoder>
+    </decoder>

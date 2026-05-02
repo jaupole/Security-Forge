@@ -51,16 +51,21 @@ data:
 
       <!-- Phase 7d Item 6 — tail Keycloak + OpenBao pod logs from
            /host/var/log/pods/<ns>_<pod>_<uid>/<container>/0.log
-           kubelet writes JSON-line container logs there. The manager-
-           side custom decoders parse the inner JSON (see 03-decoders-
-           configmap.yaml on the manager side). -->
+           kubelet writes container logs with a wrapper:
+             <RFC3339-TS> (stdout|stderr) (P|F) <json-or-text-line>
+           Pure <log_format>json</log_format> can't parse this — each
+           line starts with the kubelet timestamp prefix, not '{'.
+           Use `syslog` format here (sends raw lines); the manager's
+           local_decoder.xml strips the kubelet wrapper and applies
+           JSON_Decoder to the trailing payload. See infrastructure/
+           wazuh/03-decoders-configmap.yaml. -->
       <localfile>
-        <log_format>json</log_format>
+        <log_format>syslog</log_format>
         <location>/host/var/log/pods/openbao_openbao-*/openbao/*.log</location>
         <label key="source">openbao</label>
       </localfile>
       <localfile>
-        <log_format>json</log_format>
+        <log_format>syslog</log_format>
         <location>/host/var/log/pods/keycloak_keycloak-0_*/keycloak/*.log</location>
         <label key="source">keycloak</label>
       </localfile>

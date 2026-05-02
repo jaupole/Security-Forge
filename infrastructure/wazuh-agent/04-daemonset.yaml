@@ -123,25 +123,36 @@ spec:
               # additively — no merge logic needed.
               cat /custom-conf/ossec-supplements.xml >> /etc-overlay/ossec.conf
 
-              # The image's etc/client.keys is mode 0640 (root:wazuh) — the
-              # wazuh-group user can read but NOT write. agentd needs to
-              # WRITE its enrollment key here, so widen group-write on
-              # files agentd touches at runtime. CAP_DAC_OVERRIDE lets
-              # root chmod regardless of ownership.
-              chmod -R g+w /etc-overlay/
-              # Ensure client.keys is at minimum 0660 so wazuh-group can
-              # rewrite the file (agentd does an open(O_WRONLY|O_TRUNC)).
-              chmod 0660 /etc-overlay/client.keys
+              # Phase 7d.5 (operator-backlog #17 fix): inject the
+              # pre-registered agent key from the K8s Secret so the
+              # agent doesn't auto-enroll on every pod restart. The
+              # Secret is created once by bootstrap-agent-key.sh and
+              # contains the manager-issued client.keys content.
+              # Without this injection, EmptyDir-mounted client.keys
+              # is empty on every restart → agent re-enrolls →
+              # manager rejects with "Duplicate agent name".
+              if [ -s /registered-key/client.keys ]; then
+                  cp /registered-key/client.keys /etc-overlay/client.keys
+                  echo "==registered key injected=="
+                  awk '{ printf "id=%s name=%s ip=%s key=<redacted>\n", $1, $2, $3 }' /etc-overlay/client.keys
+              else
+                  echo "==no registered key — agent will auto-enroll=="
+              fi
 
-              echo "==custom additions=="
-              tail -25 /etc-overlay/ossec.conf
-              echo "==client.keys mode=="
-              ls -la /etc-overlay/client.keys
+              # Widen group-write so agentd (running as wazuh user, GID
+              # 999) can update runtime state files. CAP_DAC_OVERRIDE
+              # on this init container lets root chmod regardless of
+              # ownership.
+              chmod -R g+w /etc-overlay/
+              chmod 0660 /etc-overlay/client.keys
           volumeMounts:
             - name: etc-overlay
               mountPath: /etc-overlay
             - name: custom-conf
               mountPath: /custom-conf
+              readOnly: true
+            - name: registered-key
+              mountPath: /registered-key
               readOnly: true
           resources:
             requests: { cpu: 50m, memory: 64Mi }
@@ -162,20 +173,50 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
+            # Phase 7d.5 (operator-backlog #17 fix): WAZUH_REGISTRATION_*
+            # env vars REMOVED. The init container injects a
+            # pre-registered key into client.keys (sourced from the K8s
+            # Secret `wazuh-agent-key`); the agent uses that key
+            # directly and never auto-enrolls. WAZUH_MANAGER_SERVER
+            # remains so the agent knows where to connect.
             - name: WAZUH_MANAGER_SERVER
-              value: "wazuh-manager-agents.wazuh.svc.cluster.local"
-            - name: WAZUH_REGISTRATION_SERVER
               value: "wazuh-manager-agents.wazuh.svc.cluster.local"
             - name: WAZUH_MANAGER_PORT
               value: "1514"
-            - name: WAZUH_REGISTRATION_PORT
-              value: "1515"
             - name: WAZUH_AGENT_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: WAZUH_AGENT_GROUPS
               value: "default,k8s"
+          # Phase 7d.5: the wazuh-agent image's cont-init.d/1-agent
+          # script runs `wazuh-control start` exactly once at container
+          # creation. In our environment that reliably starts execd +
+          # agentd but exits with status 1 BEFORE it gets to
+          # logcollector / syscheckd / modulesd. Without those, Item 6
+          # pod-log tailing doesn't happen. The postStart hook waits
+          # for the cont-init sequence to settle (~25s for s6-init +
+          # cont-init.d to run), then re-runs wazuh-control start to
+          # bring the missing daemons online. wazuh-control start is
+          # idempotent — it skips daemons that are already running.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # Wait for the image's cont-init.d sequence to settle
+                    # (it starts execd + agentd; the others fail silently).
+                    sleep 25
+                    # Start ONLY the daemons the image's init missed.
+                    # `wazuh-control start` is not safely idempotent on
+                    # this image — re-running it spawns a second agentd
+                    # that fights the first for the manager connection,
+                    # triggering the enrollment-rejection loop.
+                    pgrep -x wazuh-logcollector >/dev/null || /var/ossec/bin/wazuh-logcollector
+                    pgrep -x wazuh-syscheckd    >/dev/null || /var/ossec/bin/wazuh-syscheckd
+                    pgrep -x wazuh-modulesd     >/dev/null || /var/ossec/bin/wazuh-modulesd
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits:   { cpu: 500m, memory: 512Mi }
@@ -208,6 +249,13 @@ spec:
         - name: custom-conf
           configMap:
             name: wazuh-agent-ossec-conf
+        - name: registered-key
+          secret:
+            secretName: wazuh-agent-key
+            optional: true   # If missing, init container falls back to
+                             # the image's empty client.keys (agent will
+                             # try auto-enrollment — Phase 7d.5 path
+                             # not bootstrapped yet).
         - name: host-etc
           hostPath: { path: /etc }
         - name: host-var-log
