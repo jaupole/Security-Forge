@@ -41,6 +41,21 @@ spec:
       app.kubernetes.io/name: helloworld-bff
   template:
     metadata:
+      annotations:
+        # Phase 7b.5 — escape-hatch for BFF_VALKEY_PASSWORD env var.
+        # Surfaced 2026-05-02 when commit 7995664 applied the Kyverno
+        # `no-secret-shaped-env-vars` policy and helloworld-bff stopped
+        # admitting on the next pod recreate. The Valkey-client
+        # password is a real outbound credential and SHOULD migrate to
+        # OpenBao via apps/lib/secrets/ rather than ride the env var
+        # forever. Tracked as operator-backlog #13. Until that
+        # migration ships, this 90-day annotation pair admits the pod
+        # and is itself emitted by the legacy-env-warner CronJob into
+        # the Phase 7b dashboard's expiring-annotation panel — operators
+        # see the migration drift before the annotation expires and
+        # readmits start failing.
+        secforge.local/legacy-secret-env: "OPS-MIGRATE-VALKEY-PW"
+        secforge.local/legacy-secret-env-expires: "2026-07-31"
       labels:
         app.kubernetes.io/name: helloworld-bff
         app.kubernetes.io/component: bff
