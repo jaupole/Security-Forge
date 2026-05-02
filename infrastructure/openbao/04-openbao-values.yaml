@@ -208,6 +208,70 @@ server:
   # the SPIFFE socket. F-CLU-1 closes with this init-container path,
   # not a redundant native probe.
   extraInitContainers:
+    # Block pod startup until openbao-seal-0 reports Sealed: false. Without
+    # this, the main container starts immediately, calls the seal pod's
+    # Transit endpoint to decrypt its stored unseal key, gets HTTP 503
+    # ("Vault is sealed"), and exits 1. Kubelet's CrashLoopBackOff
+    # exponential delay then stretches the recovery window from "moments
+    # after the operator finishes pasting unseal keys" to several minutes
+    # of compounding 30s / 60s / 5m backoffs — which is what the operator
+    # was actually experiencing as "every restart is painful." Sitting in
+    # Init phase has no backoff timer; the transition to Running is
+    # immediate the moment the seal pod flips to unsealed.
+    #
+    # 60×10s = 10 min grace. Operators may need to fetch unseal keys from
+    # offline storage; 5 min (the SPIFFE wait below) is too tight here.
+    # Same security context as wait-for-spiffe-csi.
+    #
+    # The seal pod uses its own TLS Secret (openbao-seal-tls) but its cert
+    # is issued by the same internal CA as openbao-tls, so the CA cert
+    # mounted at /openbao/tls/openbao-tls/ca.crt validates the seal pod's
+    # leaf cert. The egress NetworkPolicy already permits
+    # openbao → openbao-seal:8200 for the runtime auto-unseal call;
+    # this init container reuses the same allow.
+    - name: wait-for-seal-unsealed
+      image: docker.io/openbao/openbao:2.5.3
+      env:
+        - name: BAO_ADDR
+          value: "https://openbao-seal.openbao.svc.cluster.local:8200"
+        - name: BAO_CACERT
+          value: /openbao/tls/openbao-tls/ca.crt
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 60); do
+            if STATUS=$(bao status -format=json 2>/dev/null) \
+               && echo "$STATUS" | grep -q '"sealed":[[:space:]]*false'; then
+              echo "openbao-seal is unsealed; proceeding"
+              exit 0
+            fi
+            echo "waiting for openbao-seal to be unsealed (attempt $i/60)"
+            sleep 10
+          done
+          echo "ERROR: openbao-seal did not unseal within 10 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: userconfig-openbao-tls
+          mountPath: /openbao/tls/openbao-tls
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
     - name: wait-for-spiffe-csi
       image: docker.io/openbao/openbao:2.5.3
       command:
