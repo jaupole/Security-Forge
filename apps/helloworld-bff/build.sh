@@ -56,11 +56,16 @@ docker run --rm \
 green "    wrote sbom/helloworld-bff.spdx.json + sbom/helloworld-bff.sbom.txt"
 
 green "==> 4/4 scan (Trivy + Grype)"
+# Trivy now runs vulns AND embedded-secret detection in one pass; both
+# fail the build (ADR-0013 § Layer 3 — no warn-only on secrets). Severity
+# floor stays at HIGH+CRITICAL for vulns; secret-scanner has no severity
+# axis (any finding is fail-on).
 TRIVY_FAIL=0
 docker run --rm \
     -v /var/run/docker.sock:/var/run/docker.sock \
     aquasec/trivy:0.58.0 image \
-        --severity CRITICAL \
+        --scanners vuln,secret \
+        --severity HIGH,CRITICAL \
         --ignore-unfixed \
         --exit-code 1 \
         --quiet \

@@ -1,0 +1,25 @@
+# SecForge app-repo template — gitleaks configuration.
+#
+# Extends the default ruleset (gitleaks ships with vendor patterns for
+# AWS, GCP, Stripe, OpenAI, SendGrid, GitHub, etc.). Add custom rules
+# below ONLY after a real near-miss; bare additions inflate false-positive
+# rates without raising the floor.
+#
+# To extend: append a [[rules]] block per pattern. To allowlist a known
+# false positive: append a [[allowlist]] block with a path or regex
+# scope. Document every allowlist with a ticket reference and a 30-day
+# review date per ADR-0013 § Open questions.
+
+[extend]
+useDefault = true
+
+# Custom rules go here as the platform learns about specific vendor
+# credential shapes. Empty for v1.0.0; populate as integrations land.
+
+# Example (commented out):
+#
+# [[rules]]
+# id = "secforge-internal-psk"
+# description = "SecForge internal pre-shared key"
+# regex = '''sf_psk_[A-Za-z0-9]{32}'''
+# tags = ["secforge", "psk"]

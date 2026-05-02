@@ -1,0 +1,86 @@
+# SecForge app-repo template — pre-commit hooks
+#
+# Layer 1 of ADR-0013's six-layer guardrail stack. These run on the
+# developer's machine; CI mirrors them in .github/workflows/secrets-check.yml
+# (layer 2) and cannot be `--no-verify`-bypassed.
+#
+# Install: pre-commit install
+# Manual:  pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        # DL3045 — COPY without explicit destination
+        # DL3025 — JSON array form for ENTRYPOINT/CMD
+        args: ['--failure-threshold', 'warning']
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+
+  - repo: local
+    hooks:
+      # ────────────────────────────────────────────────────────────────
+      # block-env-files — fail commit if any .env* file is staged,
+      # except the documented .env.example placeholder.
+      # ADR-0013 § Layer 1.
+      # ────────────────────────────────────────────────────────────────
+      - id: block-env-files
+        name: block-env-files
+        language: system
+        pass_filenames: false
+        always_run: true
+        entry: |
+          bash -c '
+          set -euo pipefail
+          bad=$(git diff --cached --name-only --diff-filter=AM \
+                | grep -E "(^|/)\.env($|\.)" \
+                | grep -vE "(^|/)\.env\.example$" || true)
+          if [ -n "$bad" ]; then
+            echo "ADR-0013 violation - .env file(s) staged:"
+            echo "$bad"
+            echo "Outbound secrets must come from apps/lib/secrets/ - see README-secrets.md."
+            exit 1
+          fi
+          '
+
+      # ────────────────────────────────────────────────────────────────
+      # block-secret-shaped-vars — fail commit if Go source reads an
+      # env var whose name contains KEY / SECRET / TOKEN / PASSWORD /
+      # CREDENTIAL. Same regex Kyverno enforces at admission time
+      # (ADR-0013 § Layer 4). Catches the pattern before it ships.
+      # ────────────────────────────────────────────────────────────────
+      - id: block-secret-shaped-vars
+        name: block-secret-shaped-vars
+        language: system
+        pass_filenames: false
+        always_run: true
+        entry: |
+          bash -c '
+          set -euo pipefail
+          files=$(git diff --cached --name-only --diff-filter=AM \
+                  | grep -E "\.go$" || true)
+          if [ -z "$files" ]; then exit 0; fi
+          bad=$(grep -nE "os\.Getenv\(\"[^\"]*(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[^\"]*\"\)" $files || true)
+          if [ -n "$bad" ]; then
+            echo "ADR-0013 violation - secret-shaped env-var read in Go source:"
+            echo "$bad"
+            echo "Use apps/lib/secrets/ Client.GetField instead - see README-secrets.md."
+            exit 1
+          fi
+          '

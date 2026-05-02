@@ -1,0 +1,57 @@
+# SecForge app-repo template — .dockerignore
+#
+# Mirrors .gitignore's secret-hostile patterns and adds image-build
+# noise reduction. ADR-0013 § Layer 3 (build-time): even if a secret
+# slipped past gitleaks, the build context must not carry it into the
+# image layer cache.
+
+# === SECRETS — same patterns as .gitignore ===
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.crt
+*.cer
+
+id_rsa
+id_rsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
+
+**/credentials.json
+**/service-account*.json
+.aws/
+.gcloud/
+
+# === BUILD-CONTEXT NOISE ===
+# Don't ship the build instructions inside the image.
+Dockerfile
+Dockerfile.*
+.dockerignore
+
+# Repo metadata, docs, tests, dev tooling.
+.git/
+.github/
+.gitignore
+.gitleaks.toml
+.pre-commit-config.yaml
+*.md
+tests/
+test/
+node_modules/
+coverage.txt
+*.test
+*.out
+
+# Editor/OS noise.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

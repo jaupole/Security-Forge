@@ -1,0 +1,57 @@
+# SecForge app-repo template — secret-hostile .gitignore
+#
+# Source of truth: ADR-0013 § Multi-layer prevention guardrails (layer 1).
+# Patterns mirror infrastructure/openbao/policies/app-template.hcl scope:
+# anything that could carry an outbound credential to disk gets blocked
+# at git-stage time so it never reaches the repo.
+#
+# To update, bump templates/app-repo/.template-version in the platform repo
+# and re-cp into each app per docs/03-runbooks/new-app-bootstrap.md.
+
+# === SECRETS / CREDENTIALS — NEVER COMMIT ===
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.crt
+*.cer
+
+id_rsa
+id_rsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
+
+# Cloud-provider credentials shaped files (defense-in-depth — these should
+# never have existed in this repo, but the pattern catches accidents).
+**/credentials.json
+**/service-account*.json
+.aws/
+.gcloud/
+
+# === BUILD / TEST ARTIFACTS ===
+*.test
+*.out
+coverage.txt
+dist/
+build/
+node_modules/
+
+# === EDITOR / OS ===
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# === LOGS ===
+*.log

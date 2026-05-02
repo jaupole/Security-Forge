@@ -1,0 +1,46 @@
+# SecForge app-repo template — canonical multi-stage Dockerfile.
+#
+# Mirrors apps/helloworld-bff/Dockerfile (the reference consumer of
+# apps/lib/api-auth/ + apps/lib/secrets/). Keep this in sync if the
+# helloworld-bff Dockerfile evolves.
+#
+# Hadolint-clean: explicit COPY destinations (DL3045), JSON-array
+# ENTRYPOINT (DL3025). Build context is the Go module root (containing
+# go.mod / go.sum), not the repo root, unless the app uses a multi-module
+# layout with apps/lib/ as a replace target — in which case the context
+# is the parent directory (see helloworld-bff for the pattern).
+#
+# Build determinism:
+#   - go.sum is committed; uses `go mod download` (read-only against the
+#     lockfile), NOT `go mod tidy` (which can silently change a transitive
+#     dep on rebuild).
+#   - Source files are copied AFTER module fetch so layer caching
+#     keeps subsequent rebuilds fast.
+
+FROM golang:1.25-alpine AS build
+RUN apk add --no-cache ca-certificates
+WORKDIR /src
+
+COPY go.mod go.sum /src/
+RUN go mod download -x
+
+COPY . /src/
+
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+RUN go build \
+    -trimpath \
+    -ldflags "-s -w -buildid= -extldflags=-static" \
+    -o /out/app \
+    ./
+
+# ─── Runtime ──────────────────────────────────────────────────────────
+# distroless/static = no shell, no package manager, no busybox; only
+# the binary plus the system CA bundle. Nothing for an attacker to
+# pivot through.
+FROM gcr.io/distroless/static-debian12:nonroot
+USER 65532:65532
+
+COPY --from=build /out/app /app
+
+EXPOSE 8080
+ENTRYPOINT ["/app"]
