@@ -1,6 +1,11 @@
 # ALLOWED: secret-shaped env name BUT carries the legacy-secret-env
 # escape-hatch annotation pair (within 90d, future). Sister policy
 # legacy-secret-env-expiry validates the expiry semantics independently.
+#
+# securityContext is set to PodSecurity-restricted-compliant values so
+# `kubectl apply` (verify-08 LIVE) reaches the Kyverno admission stage
+# rather than being short-circuited by built-in PodSecurity. kyverno-
+# test (offline) ignores securityContext.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -10,9 +15,19 @@ metadata:
     secforge.local/legacy-secret-env: "JIRA-1234"
     secforge.local/legacy-secret-env-expires: "2026-07-30"
 spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: app
       image: example.com/app:1
       env:
         - name: STRIPE_API_KEY
           value: "sk_live_REDACTED"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL

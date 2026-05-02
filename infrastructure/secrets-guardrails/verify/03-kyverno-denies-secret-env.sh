@@ -31,14 +31,22 @@ if [ "$LIVE" = "1" ]; then
         exit 2
     fi
     yellow "VERIFY-03 (LIVE): kubectl apply --dry-run=server"
-    if kubectl apply --dry-run=server \
-        -f infrastructure/kyverno/tests/fixtures/denied-api-key-env.yaml 2>&1 \
-        | tee /tmp/verify-03.log | grep -q "denied"; then
+    # Capture kubectl's stderr+stdout into a variable rather than
+    # piping. With `set -o pipefail`, a denied kubectl apply exits 1
+    # and propagates as the pipeline status — so an inline
+    # `kubectl ... | grep -q "denied"` flips the if-condition false
+    # *because* the admission was denied, the opposite of intent.
+    # `|| true` swallows the expected non-zero exit.
+    OUTPUT=$(kubectl apply --dry-run=server \
+        -f infrastructure/kyverno/tests/fixtures/denied-api-key-env.yaml 2>&1 || true)
+    echo "$OUTPUT" > /tmp/verify-03.log
+    if echo "$OUTPUT" | grep -q "denied the request"; then
         green "VERIFY-03 PASS (LIVE): Kyverno denied the synthetic STRIPE_API_KEY pod"
         exit 0
     fi
-    red "VERIFY-03 FAIL (LIVE): Pod admission was NOT denied"
-    red "Check Kyverno is in Enforce mode and the ClusterPolicy is loaded:"
+    red "VERIFY-03 FAIL (LIVE): Pod admission was NOT denied by Kyverno"
+    red "Inspect /tmp/verify-03.log; if 'PodSecurity' appears, the fixture is"
+    red "missing securityContext (built-in admission denies before Kyverno)."
     red "  kubectl get clusterpolicy no-secret-shaped-env-vars -o yaml"
     exit 1
 fi
