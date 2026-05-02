@@ -84,7 +84,7 @@ Document in docs/01-architecture/apps/{APP_NAME}.md.
 
 ## Step 4: Keycloak client
 - Verify the {APP_NAME}-bff client created in Phase 3 has correct redirect URIs for {APP_HOST}.
-  - Use `bash infrastructure/keycloak/verify.sh` (with KCADM_USER + KCADM_PASSWORD + KCADM_TOTP) for the full client check.
+  - Use `BAO_TOKEN=hvs.xxxx bash infrastructure/keycloak/verify.sh` (kcadm-admin auth per ADR-0022) for the full client check.
   - If the client doesn't exist (new app added after Phase 3), provision via `infrastructure/keycloak/clients/<APP_NAME>.sh` (clone the openbao.sh template). Lesson from Phase 5: every OIDC integration needs a committed kcadm provisioner script — UI-only setup makes fresh-cluster bootstraps painful.
 - If new app not in Phase 3 list, add it now
 

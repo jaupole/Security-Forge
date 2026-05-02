@@ -19,7 +19,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 ## Phase order — quick reference (execution order)
 
 > **MANDATORY:** when a phase status changes, update BOTH the detail block below AND this quick-reference row in the same edit. PLAN.md authoritativeness depends on this table staying current. Bump the "Last updated" date on every edit.
-> Last updated: 2026-05-01 (Session 4 — **Phase 6b-1 ✅ complete.** `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer; 84.2% test coverage, `-race -count=10` green; Q3 live curl deferred to operator-runnable script. Six signed commits: `d9996be` → `a6ce8d1` → `07f86d9` → `06c87ef` → `db786fc` → commit-6. Phase 9 path narrowed to Phase 3 follow-up + clean cluster state. Earlier in same session: **Fix-after-07 ✅ complete; tagged `fix-after-07-complete`.** Six commits: `bbe223b` § A interface refactors → `c92edf0` § B cluster fixes → `529daa7` § C ADRs+arch → `b5506a1` § D PLAN.md+nav → `ca00464` § F threat model → § E merge. Threat model at `docs/04-security/threat-model.md` ships 8 Accepted residuals signed off by operator. **Post-package finding 2026-05-01:** F-CLU-11 (HIGH) — OpenBao `auth/oidc/role/admin` degraded → admin auth locked out via both CLI and Web UI; catalogued in `Fix after 07/00-audit-findings.md`, tracked as operator-backlog #7. The "extra `bao`" the operator flagged in `configure-auth-oidc.sh` is **not** a typo; it's the wrapper-function pattern (function `bao` + CLI `bao` inside the pod). Does not block 6b-1 / 9 (workload SPIFFE-JWT auth path is separate).
+> Last updated: 2026-05-01 (Session 4 — **Phase 3 follow-up ✅ complete.** Four signed commits (`824c3f0` ADR-0022 → `73f2d12` kcadm-admin.sh → `225cd6e` four-script migration + verify.sh `--otp` removal → commit-4 runbook + legacy-env purge + flip). All four kcadm-using scripts now authenticate via `--client kcadm-admin --secret <fetched-from-OpenBao>`; KCADM_USER/PASSWORD/TOTP env-var pattern purged; bootstrap is one-time UI step per ADR-0022. Earlier in session: **Phase 6b-1 ✅ complete.** `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer; 84.2% test coverage, `-race -count=10` green; Q3 live curl deferred to operator-runnable script. Six signed commits: `d9996be` → `a6ce8d1` → `07f86d9` → `06c87ef` → `db786fc` → `282d55c`. **Phase 9 critical-path: 7 ✅ → 6b-1 ✅ → 3 follow-up ✅ → Fix-after-07 ✅ → 9. All four gates closed; Phase 9 ready to run** (operationally still needs F-CLU-11 OpenBao admin auth recovery for BAO_TOKEN minting workflow). Earlier in same session: **Fix-after-07 ✅ complete; tagged `fix-after-07-complete`.** Six commits: `bbe223b` § A interface refactors → `c92edf0` § B cluster fixes → `529daa7` § C ADRs+arch → `b5506a1` § D PLAN.md+nav → `ca00464` § F threat model → § E merge. Threat model at `docs/04-security/threat-model.md` ships 8 Accepted residuals signed off by operator. **Post-package finding 2026-05-01:** F-CLU-11 (HIGH) — OpenBao `auth/oidc/role/admin` degraded → admin auth locked out via both CLI and Web UI; catalogued in `Fix after 07/00-audit-findings.md`, tracked as operator-backlog #7. The "extra `bao`" the operator flagged in `configure-auth-oidc.sh` is **not** a typo; it's the wrapper-function pattern (function `bao` + CLI `bao` inside the pod). Does not block 6b-1 / 9 (workload SPIFFE-JWT auth path is separate).
 
 
 | Phase | Notes |
@@ -37,13 +37,13 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 | ✅ Phase 7.2 — Wazuh deployment | **Session 4 (2026-05-01)** complete: vendored `ileonelperea/wazuh-helm` 1.2.10 at `infrastructure/wazuh/vendor/`, indexer/manager/dashboard 1/1 Ready, indexer cluster green, dashboard live at https://wazuh.secforge.local/. Agent DaemonSet + OIDC federation + Keycloak/OpenBao log forwarding deferred to Phase 7d / follow-ups. See `### Path decision (2026-05-01)` and `docs/03-runbooks/wazuh-operations.md`. |
 | ✅ 6b-1 — API Auth Pattern | **Complete 2026-05-01** — six signed commits (`d9996be` skeleton → `a6ce8d1` middleware → `07f86d9` client + Q3 verify → `06c87ef` audit → `db786fc` BFF wiring → commit-6 verification + docs + flip). `apps/lib/api-auth/` shipped (Middleware + Client + Audit per ADR-0014); `helloworld-bff` is the reference consumer. 84.2% line coverage, `-race -count=10` green. Q3 live curl deferred to operator (script at `infrastructure/lib/api-auth/verify-q3-refresh.sh`); library handles both Q3 outcomes. |
 | ⬜ 6b-2 — Outbound Secrets + Guardrails | independent; can run any time after Phase 6 |
-| ⬜ 3 follow-up — kcadm-admin service-account pattern | ADR-first; **must run before Phase 9** |
+| ✅ 3 follow-up — kcadm-admin service-account pattern | **Complete 2026-05-01** — four signed commits (`824c3f0` ADR-0022 → `73f2d12` provisioning script → `225cd6e` four-script migration + `--otp` removal → commit-4 runbook + legacy-env purge + flip). Steady-state auth via `kcadm config credentials --client kcadm-admin --secret <fetched-from-OpenBao>`. Bootstrap is a one-time manual UI step per ADR-0022 § Bootstrap caveat. |
 | ⬜ 7b — Post-6b-2 Monitoring Wire-up | requires 7 ✅ AND 6b-2 ✅ |
 | ⬜ 7c — Istio SPIRE-as-CA + PeerAuth STRICT | requires 7 ✅ |
 | ⬜ 7d — Rotation + housekeeping batch | requires 7 ✅; absorbs Transit-TTL fix from 2026-05-01 |
 | ✅ ☆ Fix-after-07 remediation package | **Complete 2026-05-01.** See [Fix after 07/](./Fix%20after%2007/) and Phase 7 detail block; tagged `fix-after-07-complete`. |
 | ⬜ Privileged Access (Teleport) | optional locally |
-| ⬜ Hello World End-to-End (Phase 9) | requires 6b-1, 3 follow-up, Fix-after-07 |
+| ⬜ Hello World End-to-End (Phase 9) | **All four prerequisites ✅** (Phase 7, 6b-1, 3 follow-up, Fix-after-07). Operationally still gated on F-CLU-11 OpenBao admin auth recovery for kcadm-admin scripts; workload SPIFFE-JWT path unaffected. |
 | ⬜ Integrate Proposal Forge + Project Tracker (Phase 10) | requires 9 ✅, 6b-2 ✅ |
 | ⬜ Develop Additional Apps (Phase 11) | open-ended; requires 10 ✅ |
 
@@ -54,7 +54,7 @@ Phase 0 (Prerequisites) ✅
   └─→ Phase 1 (Foundation) ✅
         └─→ Phase 2 (SPIRE) ✅
               └─→ Phase 3 (Keycloak) ✅
-                    ├─→ Phase 3 follow-up (kcadm-admin) ⬜  ← MUST run before Phase 9
+                    ├─→ Phase 3 follow-up (kcadm-admin) ✅ 2026-05-01 (four signed commits; ADR-0022 + kcadm-admin client + four migrated scripts + runbook)
                     └─→ Phase 4 (SpiceDB) ✅
                           └─→ Phase 5 (OpenBao) ✅
                                 └─→ Phase 6 (Istio + BFF) ✅
@@ -83,7 +83,7 @@ Phase 0 (Prerequisites) ✅
 
 > Source: [Fix after 07/00-audit-findings.md § Dependency graph](./Fix%20after%2007/00-audit-findings.md#dependency-graph-corrected-execution-order). Reproduced here so the canonical execution order lives at the top of PLAN.md, not buried in an audit document.
 
-**Critical-path blockers for Phase 9:** Phase 7 ✅ → Phase 6b-1 design + execution → Phase 3 follow-up → Fix-after-07 package.
+**Critical-path blockers for Phase 9:** Phase 7 ✅ → Phase 6b-1 ✅ → Phase 3 follow-up ✅ → Fix-after-07 ✅. **All four gates closed; Phase 9 ready to run.** Operationally still gated on F-CLU-11 OpenBao admin auth recovery (operator-backlog #7) for the BAO_TOKEN-minting workflow that kcadm-admin scripts depend on; workload-side SPIFFE-JWT auth path is unaffected.
 
 ### Watching briefs (not phases to execute)
 
@@ -192,7 +192,9 @@ Keycloak deployed via the Operator. Two realms (platform, secforge-tenants) with
 ---
 
 ## Phase 3 follow-up — kcadm-admin service-account pattern *(1 day)*
-**Status: ⬜ — surfaced by Phase 6b-0 (2026-04-30); ADR-FIRST sequencing required**
+**Status: ✅ Complete (2026-05-01)** — four signed commits (`824c3f0` ADR-0022 → `73f2d12` provisioning script → `225cd6e` four-script migration + `--otp` removal → commit-4 runbook + legacy-env purge + flip). [ADR-0022](./docs/02-decisions/0022-kcadm-admin-long-lived-credential.md) accepts the long-lived credential with 90-day rotation cadence (precedent: ADR-0006 realm signing keys), kubectl-exec OpenBao access path (option (b) — pattern consistency with existing OpenBao infrastructure scripts), and a documented union-of-roles grant table that's ADR-amended whenever a new kcadm script needs additional roles. Provisioning script `infrastructure/keycloak/clients/kcadm-admin.sh` is idempotent + supports `--rotate`. The four kcadm-using scripts (`verify.sh`, `clients/openbao.sh`, `realms/bootstrap-bff-clients.sh`, `realms/create-tenant-test-user.sh`) source `infrastructure/keycloak/_lib/kcadm-auth.sh` and authenticate via `kcadm_admin_auth`. The legacy `KCADM_USER`/`KCADM_PASSWORD`/`KCADM_TOTP` env-var pattern is purged across the repo. Bootstrap is a one-time manual UI step (chicken-and-egg) documented in the script header AND in [`docs/03-runbooks/keycloak-operations.md` § The kcadm-admin pattern](./docs/03-runbooks/keycloak-operations.md). End-to-end script verification deferred to operator-time after the bootstrap UI step. **Phase 9 unblocked** (still gated on F-CLU-11 OpenBao admin auth recovery for the BAO_TOKEN minting workflow, but workload-side SPIFFE-JWT auth path is unaffected).
+
+**Original plan (kept for historical context — superseded by status above):** ⬜ — surfaced by Phase 6b-0 (2026-04-30); ADR-FIRST sequencing required
 
 **Why:** every kcadm-using script in `infrastructure/keycloak/` currently authenticates as a master-realm user (`jaupole` or the now-deleted `bootstrap-admin`) via password+TOTP-concat. **kcadm 26.x has no `--otp` flag**; the password+TOTP-concat trick depends on the master realm's direct-grant flow accepting trailing OTP digits, which is fragile and version-dependent. This came to a head during Phase 6b-0 when the spike script could not authenticate at all and we manually created a `kcadm-spike` service-account client with 6 scoped roles to unblock the spike. Every future kcadm script will hit this same wall.
 

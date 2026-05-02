@@ -43,7 +43,7 @@ The BFF performs an OAuth 2.1 Authorization Code + PAR + DPoP flow against Keycl
 Verify with:
 ```bash
 bash infrastructure/keycloak/verify.sh
-# expects KCADM_USER + KCADM_PASSWORD + KCADM_TOTP for the full client check
+# expects BAO_TOKEN (kcadm-admin auth per ADR-0022) for the full client check
 ```
 
 Each client must have:

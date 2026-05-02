@@ -135,8 +135,9 @@ If you want to take an extra step against this Secret being a hidden credential 
 bash infrastructure/keycloak/verify.sh
 
 # Full mode — also validates BFF client config and required actions.
-# Requires admin creds; provide TOTP code from your authenticator app.
-KCADM_USER=jaupole KCADM_PASSWORD='your-password' KCADM_TOTP=123456 \
+# Requires kcadm-admin auth (per ADR-0022); supply BAO_TOKEN with read
+# capability on secret/data/keycloak/clients/kcadm-admin.
+BAO_TOKEN=hvs.xxxx \
     bash infrastructure/keycloak/verify.sh
 ```
 
@@ -412,3 +413,105 @@ This section applies to ANY consumer reporting a missing claim:
 - Wazuh dashboard once OIDC federation lands (Phase 7d follow-up)
 
 Any future "missing claim" debug starts with the Evaluate tool BEFORE assuming Keycloak's config is at fault.
+
+---
+
+## The kcadm-admin pattern (per ADR-0022)
+
+Every kcadm-driven script in `infrastructure/keycloak/` authenticates as the `kcadm-admin` service-account client in the master realm. The pattern replaces the broken password+TOTP-concat approach (kcadm 26.x dropped `--otp`); details and rationale are in [ADR-0022](../02-decisions/0022-kcadm-admin-long-lived-credential.md).
+
+### One-time bootstrap (operator-driven, manual UI)
+
+The chicken-and-egg case: the provisioning script needs `kcadm-admin` to authenticate, but the client doesn't yet exist on a fresh install. So the very first creation is a manual step:
+
+1. Open `https://auth-admin.secforge.local/admin/master/console/`.
+2. Realm: `master` → **Clients → Create client**.
+   - Client ID: `kcadm-admin`
+   - Client authentication: **ON**
+   - Authorization: **OFF**
+   - Standard flow: **OFF**
+   - Direct access grants: **OFF**
+   - Implicit flow: **OFF**
+   - Service accounts roles: **ON**
+3. Save. Open **Credentials** tab → copy the generated **Client secret**.
+4. Write the secret into OpenBao:
+
+   ```bash
+   kubectl exec -n openbao openbao-0 -c openbao -- \
+       env BAO_TOKEN=$ROOT_TOKEN \
+       bao kv put secret/keycloak/clients/kcadm-admin \
+           client_secret='THE-COPIED-SECRET-VALUE'
+   ```
+
+5. Run `infrastructure/keycloak/clients/kcadm-admin.sh` (without `--rotate`) to apply the role grants from ADR-0022's "Roles granted" table.
+
+### Fetching the secret (every script run)
+
+Each migrated script (`verify.sh`, `clients/openbao.sh`, `realms/bootstrap-bff-clients.sh`, `realms/create-tenant-test-user.sh`) sources `infrastructure/keycloak/_lib/kcadm-auth.sh` and calls `kcadm_admin_auth`. The helper reads the secret from OpenBao via `kubectl exec` into `openbao-0` (option (b) from ADR-0022). All you need to provide is `BAO_TOKEN`:
+
+```bash
+# Mint a short-lived OpenBao token with read on the kcadm-admin path.
+# Use a 5-min TTL — the script needs it once per run.
+BAO_TOKEN=$(kubectl exec -n openbao openbao-0 -c openbao -- \
+    env BAO_TOKEN=$ROOT_TOKEN \
+    bao token create -policy=kcadm-admin-reader -ttl=5m \
+        -field=token)
+
+# Run any of the four migrated scripts.
+BAO_TOKEN=$BAO_TOKEN bash infrastructure/keycloak/verify.sh
+BAO_TOKEN=$BAO_TOKEN bash infrastructure/keycloak/clients/openbao.sh
+BAO_TOKEN=$BAO_TOKEN bash infrastructure/keycloak/realms/bootstrap-bff-clients.sh
+BAO_TOKEN=$BAO_TOKEN bash infrastructure/keycloak/realms/create-tenant-test-user.sh
+```
+
+The `kcadm-admin-reader` policy needs only:
+
+```hcl
+path "secret/data/keycloak/clients/kcadm-admin" {
+  capabilities = ["read"]
+}
+```
+
+### Rotation procedure (90-day cadence per ADR-0022)
+
+```bash
+# 1. Mint an OpenBao token with read+write on the kcadm-admin KV path.
+BAO_TOKEN=$(kubectl exec -n openbao openbao-0 -c openbao -- \
+    env BAO_TOKEN=$ROOT_TOKEN \
+    bao token create -policy=kcadm-admin-rotator -ttl=15m \
+        -field=token)
+
+# 2. Run the provisioning script with --rotate.
+BAO_TOKEN=$BAO_TOKEN \
+    bash infrastructure/keycloak/clients/kcadm-admin.sh --rotate
+
+# 3. Smoke-test against a representative migrated script.
+BAO_TOKEN=$BAO_TOKEN \
+    bash infrastructure/keycloak/verify.sh
+```
+
+The `kcadm-admin-rotator` policy needs `["read", "update"]` on `secret/data/keycloak/clients/kcadm-admin`.
+
+The script regenerates the secret in Keycloak, writes the new value back to OpenBao at the same KV path, and re-authenticates under the new secret so the in-script role-grant reconciliation runs cleanly. On the rare case where Keycloak rotates but the OpenBao write fails, the script surfaces a manual-recovery `kubectl exec ... bao kv put …` command rather than leaving the operator guessing.
+
+**90-day calendar reminder:** set a recurring task to rotate every 90 days. The provisioning script prints the next-due date on success.
+
+### Adding a new kcadm-using script
+
+When you write a new script that needs to perform Keycloak admin operations:
+
+1. **Identify the realms + roles your script needs.** Run kcadm verbs by hand against a test realm to discover the smallest set of roles that lets every operation succeed. Don't grant `manage-realm` if `manage-clients` suffices.
+2. **Append to ADR-0022 § "Roles granted" table.** Add a "Roles added 2026-MM-DD" note explaining what the new script does.
+3. **Extend `ROLE_GRANTS` in `infrastructure/keycloak/clients/kcadm-admin.sh`.** Match the ADR table verbatim.
+4. **Re-run `kcadm-admin.sh`** (without `--rotate`) to grant the new roles to the kcadm-admin service account. Idempotent.
+5. **Source `_lib/kcadm-auth.sh` in your new script** and call `kcadm_admin_auth` before any kcadm verb. Don't re-implement the fetch+auth — it's centralized so all scripts stay in lockstep.
+
+The role-review discipline keeps kcadm-admin's blast radius bounded. A script that needs `cluster-admin`-equivalent privilege is a smell — split it into smaller scripts or re-architect to use the Keycloak Operator's CRDs.
+
+### When kcadm-admin auth fails
+
+The helper's error message points at three likely causes; verify each in order:
+
+1. **Stale secret in OpenBao** — someone rotated the Keycloak-side secret without running this runbook's rotation procedure. Symptom: `kcadm config credentials` returns `401 unauthorized: Invalid client credentials`. Fix: rotate via the runbook procedure above (the rotation procedure handles the regenerate-and-write-back atomically).
+2. **kcadm-admin client doesn't exist** — fresh install where the bootstrap UI step hasn't been done. Symptom: `kcadm config credentials` returns `401: Invalid client credentials` AND the master realm's admin console shows no `kcadm-admin` client. Fix: do the one-time bootstrap procedure above.
+3. **`serviceAccountsEnabled=false`** — someone toggled the client setting via the UI. Symptom: `kcadm config credentials` returns `401: Invalid grant: client requires service-account flow`. Fix: re-enable in the master-realm admin console under Clients → kcadm-admin → Settings → Service accounts roles.
