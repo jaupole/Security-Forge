@@ -83,7 +83,19 @@ Best practice: use this root only to fix the broken admin path, then revoke it t
 
 The seal-OpenBao mints a TTL=24h renewable token bound to `unseal-policy`. The main OpenBao auto-renews it as long as it's running. If the main OpenBao is down for >24h, the token expires; on next start, auto-unseal fails with a Transit auth error.
 
-Mint a fresh one and update the seal config:
+### Canonical procedure — `rotate-transit-token.sh`
+
+```bash
+bash infrastructure/openbao/rotate-transit-token.sh
+```
+
+The script prompts for the seal-OpenBao initial root token (no echo; wiped from memory after use), then runs the full sequence: refuses to start unless the seal-OpenBao is up and unsealed → mints a fresh 24h renewable Transit token → patches the `openbao-transit-token` Secret → runs `apply-main.sh` to re-render the seal block (proceeds past the apply-main watchdog "bail" because the seal block is already re-rendered before the watchdog fires; this is the documented 2026-05-01 recovery sequence) → rolls main pods in `openbao-2 → 1 → 0` order → blocks on `kubectl wait --for=condition=Ready --timeout=180s` and exits 0 when all three are Ready.
+
+If the script exits non-zero on the wait, inspect `kubectl logs -n openbao openbao-0 -c openbao --tail=30` and consult the troubleshooting section below or [§ Rebuild the seal-OpenBao](#rebuild-the-seal-openbao) if the seal-OpenBao is itself unhealthy.
+
+### Manual procedure (reference — what the script does)
+
+If the script is missing or you need to run the steps individually for troubleshooting:
 
 ```bash
 # 1. Get a token from the seal-OpenBao using its (offline) initial root.

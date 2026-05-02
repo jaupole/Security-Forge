@@ -101,8 +101,8 @@ The main OpenBao retries the Transit unseal on a backoff. Wait up to a minute. I
 - Check the main openbao log: `kubectl logs -n openbao openbao-0 -c openbao --tail=20`
 - **Telltale: distinguish 503 vs 403 in the main pod's log.**
   - `503 Vault is sealed` → seal-OpenBao itself is still sealed; finish the Shamir unseal.
-  - `403 permission denied` → Transit token expired. The 24h TTL auto-renews while main is up, but if main was down >24h the renewal didn't fire. Recovery requires a fresh token *plus* a manual pod roll — see [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token).
-- **Hit on 2026-05-01:** full sequence after a multi-day cold cluster was `unseal-seal.sh` (Shamir) → `Rotate the Transit unseal token` (mint fresh, patch `openbao-transit-token`, re-render `openbao-seal-block`, helm upgrade) → manual `kubectl delete pod openbao-{0,1,2}` to pick up the new seal block. The `apply-main.sh` watchdog may "bail" reporting too many restarts on openbao-0 — that's just a timeout; the seal block has already been re-rendered and the manual delete completes recovery.
+  - `403 permission denied` → Transit token expired. The 24h TTL auto-renews while main is up, but if main was down >24h the renewal didn't fire. Recovery requires a fresh token plus a pod roll. **One-shot:** `bash infrastructure/openbao/rotate-transit-token.sh` — see [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token) for what it does and the manual procedure.
+- **Hit on 2026-05-01 and 2026-05-02:** full sequence after a multi-day cold cluster is `unseal-seal.sh` (Shamir) → `rotate-transit-token.sh` (codifies the mint-fresh + patch + re-render + roll sequence). The `apply-main.sh` watchdog may "bail" reporting too many restarts on openbao-0 — that's just a timeout; the seal block has already been re-rendered before the watchdog fires, and the rotate-transit-token script's pod-roll step completes recovery.
 
 ### "I want to STOP the manual-unseal cadence"
 
