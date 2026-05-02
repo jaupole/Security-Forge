@@ -1,0 +1,13 @@
+# DENIED: env name contains KEY → no-secret-shaped-env-vars regex.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: denied-api-key-env
+  namespace: app
+spec:
+  containers:
+    - name: app
+      image: example.com/app:1
+      env:
+        - name: STRIPE_API_KEY
+          value: "sk_live_REDACTED"

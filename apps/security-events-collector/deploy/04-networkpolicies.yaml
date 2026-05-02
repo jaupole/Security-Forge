@@ -1,0 +1,66 @@
+# NetworkPolicy default-deny + selective allow for the collector.
+#
+# Inbound: any pod in `app` ns OR Kyverno reporter pods can post events.
+# Outbound: Keycloak (JWKS fetch) + DNS. Nothing else.
+#
+# The legacy-env-warner CronJob (deploy/05-cronjob.yaml) reaches the
+# collector by Service name, which the inbound rule covers via the
+# Pod's `app.kubernetes.io/component: legacy-env-warner` label.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: security-events-collector
+  namespace: app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: security-events-collector
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Allow any pod in `app` ns to POST events (helloworld-bff, future
+    # tenants, the legacy-env-warner CronJob).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: app
+      ports:
+        - port: http
+          protocol: TCP
+    # Allow Kyverno reporter pods to ship policy-violation events.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kyverno
+      ports:
+        - port: http
+          protocol: TCP
+    # Allow ingress-nginx (out-of-cluster CI runner path).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: http
+          protocol: TCP
+  egress:
+    # DNS (cluster CoreDNS).
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Keycloak JWKS fetch — the collector resolves auth.secforge.local
+    # via hostAliases to ingress-nginx's ClusterIP, so the egress target
+    # is ingress-nginx ns at 443.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 443
+          protocol: TCP

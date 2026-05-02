@@ -1,0 +1,22 @@
+# Service for the collector. Cluster-internal only — no Ingress at 6b-2.
+# Out-of-cluster CI runners reach the collector via the platform's existing
+# ingress-nginx; the Ingress wiring lands when Phase 7b connects Promtail
+# (which itself runs in-cluster, so an Ingress isn't strictly needed for
+# in-cluster callers).
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-events-collector
+  namespace: app
+  labels:
+    app.kubernetes.io/name: security-events-collector
+    secforge.platform/component: security-events-collector
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: security-events-collector
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

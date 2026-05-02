@@ -1,0 +1,64 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: outbound-secrets-guardrails
+policies:
+  - ../policies/no-secret-shaped-env.yaml
+  - ../policies/legacy-secret-env-expiry.yaml
+resources:
+  - fixtures/allowed-no-secret-env.yaml
+  - fixtures/denied-api-key-env.yaml
+  - fixtures/denied-password-initcontainer.yaml
+  - fixtures/allowed-legacy-escape-hatch.yaml
+  - fixtures/denied-legacy-missing-expires.yaml
+  - fixtures/denied-legacy-expires-past.yaml
+  - fixtures/denied-legacy-expires-too-far.yaml
+results:
+  # ─── no-secret-shaped-env-vars ───────────────────────────────────────
+  - policy: no-secret-shaped-env-vars
+    rule: block-secret-shaped-env-names-containers
+    resource: allowed-no-secret-env
+    kind: Pod
+    result: pass
+  - policy: no-secret-shaped-env-vars
+    rule: block-secret-shaped-env-names-containers
+    resource: denied-api-key-env
+    kind: Pod
+    result: fail
+  - policy: no-secret-shaped-env-vars
+    rule: block-secret-shaped-env-names-initcontainers
+    resource: denied-password-initcontainer
+    kind: Pod
+    result: fail
+  - policy: no-secret-shaped-env-vars
+    rule: block-secret-shaped-env-names-containers
+    resource: allowed-legacy-escape-hatch
+    kind: Pod
+    result: skip
+
+  # ─── legacy-secret-env-expiry ────────────────────────────────────────
+  - policy: legacy-secret-env-expiry
+    rule: require-expires-when-legacy-secret-env-set
+    resource: denied-legacy-missing-expires
+    kind: Pod
+    result: fail
+  - policy: legacy-secret-env-expiry
+    rule: require-expires-when-legacy-secret-env-set
+    resource: allowed-legacy-escape-hatch
+    kind: Pod
+    result: pass
+  - policy: legacy-secret-env-expiry
+    rule: expires-must-be-future-iso-and-within-90d
+    resource: denied-legacy-expires-past
+    kind: Pod
+    result: fail
+  - policy: legacy-secret-env-expiry
+    rule: expires-must-be-future-iso-and-within-90d
+    resource: denied-legacy-expires-too-far
+    kind: Pod
+    result: fail
+  - policy: legacy-secret-env-expiry
+    rule: expires-must-be-future-iso-and-within-90d
+    resource: allowed-legacy-escape-hatch
+    kind: Pod
+    result: pass

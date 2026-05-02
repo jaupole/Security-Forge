@@ -1,0 +1,18 @@
+# ALLOWED: secret-shaped env name BUT carries the legacy-secret-env
+# escape-hatch annotation pair (within 90d, future). Sister policy
+# legacy-secret-env-expiry validates the expiry semantics independently.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: allowed-legacy-escape-hatch
+  namespace: app
+  annotations:
+    secforge.local/legacy-secret-env: "JIRA-1234"
+    secforge.local/legacy-secret-env-expires: "2026-07-30"
+spec:
+  containers:
+    - name: app
+      image: example.com/app:1
+      env:
+        - name: STRIPE_API_KEY
+          value: "sk_live_REDACTED"

@@ -1,0 +1,13 @@
+# DENIED: legacy-secret-env-expires is in the past.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: denied-legacy-expires-past
+  namespace: app
+  annotations:
+    secforge.local/legacy-secret-env: "JIRA-1234"
+    secforge.local/legacy-secret-env-expires: "2026-01-01"
+spec:
+  containers:
+    - name: app
+      image: example.com/app:1
