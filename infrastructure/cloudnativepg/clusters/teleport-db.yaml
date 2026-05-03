@@ -25,10 +25,23 @@ metadata:
   namespace: teleport
 spec:
   hard:
-    requests.cpu: "1"
-    requests.memory: 1Gi
-    limits.cpu: "2"
-    limits.memory: 2Gi
+    # Sized for Phase 8b's full footprint:
+    #   - secforge-teleport-db (CNPG, reserved for HA promotion): 500m / 512Mi
+    #   - teleport-auth:    500m / 768Mi
+    #   - teleport-proxy:   500m / 768Mi (chart default is 1000m/768Mi;
+    #                       tightened in 03-helm-values.yaml proxy.resources)
+    #   - teleport-operator: 200m / 256Mi
+    #   - teleport-kube-agent (8b.3, pending): ~200m / 256Mi
+    # Total ceiling ≈ 1900m / 2560Mi. Headroom rounded to 3 / 3Gi.
+    requests.cpu: "1500m"
+    requests.memory: 1500Mi
+    # 4 cpu (not 3) to absorb the rolling-restart peak: the proxy pod's
+    # init container `wait-auth-update` has chart-default limits.cpu=1
+    # which counts toward the quota concurrently with the steady-state
+    # main container during a rollout. Steady-state footprint is well
+    # under 2 cpu; this only matters during `kubectl rollout restart`.
+    limits.cpu: "4"
+    limits.memory: 3Gi
     pods: "10"
 ---
 apiVersion: v1

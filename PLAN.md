@@ -19,7 +19,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 ## Phase order — quick reference (execution order)
 
 > **MANDATORY:** when a phase status changes, update BOTH the detail block below AND this quick-reference row in the same edit. PLAN.md authoritativeness depends on this table staying current. Bump the "Last updated" date on every edit.
-> Last updated: 2026-05-02 (Session 5 — **Phase 7d ✅ Complete; Phase 8a ✅ Complete; Phase 8b queued.** Phase 7d landed full prompt-doc + Items 3, 4, 5, 6, 7 (8 commits); operator-backlog #4 + #16 closed; new follow-ups #17 + #18 filed (7d.5 client.keys persistence; 7d.6 manager decoders for OpenBao+Keycloak JSON). **Phase 8a foundation (1 commit):** teleport ns + CNPG `secforge-teleport-db-1` + Keycloak `teleport` client + 3 realm roles (`platform_admin`/`developer`/`viewer`) + MinIO `teleport-recordings` bucket (90d Object Lock) + OpenBao paths + VSO bindings + mkcert TLS cert. **Phase 8b (next session):** Helm release of teleport-cluster + OIDCConnector + role defs + kube-agent + DB targets + e2e verification + runbooks. **Local-edition MFA constraint:** no hardware FIDO2 key available; Teleport will adopt the same TOTP-via-Keycloak posture as the rest of the platform (per ADR-0007); hardware-FIDO2 cutover deferred to VPS migration (already covered in `migration-to-vps.md` § Phase C). **Scheduled remote agent** `trig_01TdbXs13jkY8jyLsfJuHEMM` fires 2026-07-08 for first cron-driven rotation verification.)
+> Last updated: 2026-05-03 (Session 6 — **Phase 8 ✅ Complete (8a foundation + 8b prototype B).** Browser SSO + tsh CLI login + `kubectl exec` interactive session + session recording uploaded to MinIO all verified end-to-end with full audit chain (`github_teams[]` → `roles[]` → `kubernetes_groups[]` in the `session.start` event). **Pivot from original plan:** Teleport CE has no OIDC connector (Enterprise-only), so the planned Keycloak SSO is replaced with a `TeleportGithubConnector` against operator-controlled org `security-forge1` / team `platform-admins` → `admin` role. Cloud-edition cutover restores OIDC at the same VPS-migration trigger that bumps Teleport CE → Enterprise. ADR-0024 amended; new runbook `docs/03-runbooks/teleport-operations.md`; helm-values now persists `proxy_listener_mode: multiplex` (CLI dial fails on default `separate` because the local port-forward only exposes the single web port). **Known gaps deliberately accepted** (documented in ADR-0024 § Amendment 2026-05-03 + runbook): admin role still grants `kubernetes_groups: [system:masters]` (scope-down deferred until cloud cutover or 2nd operator); no Object Lock on recordings; no Wazuh forwarding of audit events yet (Phase 7d follow-up). **Side commit:** `unseal-seal.sh` hardened to replay missed `*-refresher` cronjobs + bounce affected consumers — caught a SpiceDB→authzen-facade cascade that wedged the cluster mid-session. **Scheduled remote agent** `trig_01TdbXs13jkY8jyLsfJuHEMM` still fires 2026-07-08 for first cron-driven rotation verification.)
 
 
 | Phase | Notes |
@@ -42,7 +42,7 @@ This is the canonical plan for standing up the IAM platform on your local Docker
 | ⏸️ 7c — Istio SPIRE-as-CA + PeerAuth STRICT | **Deferred 2026-05-02** — gating 7c.0.1 pre-flight failed (Ambient AuthZ-denial observability gap on ztunnel 1.29.2); tracked as operator-backlog #15. Resume when investigation slot is available OR upstream Istio Ambient closes the gap. |
 | ✅ 7d — Rotation + housekeeping batch | **Complete 2026-05-02** — 8 signed commits across 7d.1 + 7d.2 + Items 3, 4, 5, 6, 7. Two known follow-ups tracked as operator-backlog #17 (client.keys persistence, ~30-60min) + #18 (manager decoders for OpenBao+Keycloak JSON, ~1hr); neither blocks Phase 8 or 9. |
 | ✅ ☆ Fix-after-07 remediation package | **Complete 2026-05-01.** See [Fix after 07/](./Fix%20after%2007/) and Phase 7 detail block; tagged `fix-after-07-complete`. |
-| 🟨 Privileged Access (Teleport — Phase 8) | **8a foundation ✅ Complete 2026-05-02** (1 signed commit; ns + CNPG db + Keycloak client + 3 realm roles + MinIO recording bucket + OpenBao paths + VSO bindings + mkcert TLS). **8b queued** (Helm release + OIDCConnector + role defs + kube-agent + DB targets + e2e + runbooks). **Local-edition MFA:** TOTP-via-Keycloak SSO only (no hardware FIDO2 — see ADR-0007); hardware-key cutover deferred to VPS migration. |
+| ✅ Privileged Access (Teleport — Phase 8) | **8a foundation ✅ 2026-05-02** + **8b prototype B ✅ 2026-05-03**. CE has no OIDC connector (Enterprise-only), so SSO uses GitHub OAuth (org `security-forge1`/team `platform-admins` → `admin`); Keycloak `teleport` client + `04-oidc-connector.yaml` preserved on disk for cloud-edition cutover. Browser + tsh CLI login + `kubectl exec` recording → MinIO all verified end-to-end. Helm values pin `proxy_listener_mode: multiplex` (default `separate` makes CLI dial 127.0.0.1:3023 which we don't forward). Known gaps: `admin` role still `system:masters` (scope-down at cloud cutover); no MinIO Object Lock on recordings; Wazuh forwarding of audit events deferred. See [ADR-0024 § Amendment 2026-05-03](./docs/02-decisions/0024-teleport-community-edition-local.md) + [docs/03-runbooks/teleport-operations.md](./docs/03-runbooks/teleport-operations.md). |
 | ⬜ Hello World End-to-End (Phase 9) | **All four prerequisites ✅** (Phase 7, 6b-1, 3 follow-up, Fix-after-07). F-CLU-11 closed 2026-05-01 — OpenBao admin auth fully functional via OIDC. **Operationally ready to start.** |
 | ⬜ Integrate Proposal Forge + Project Tracker (Phase 10) | requires 9 ✅, 6b-2 ✅ |
 | ⬜ Develop Additional Apps (Phase 11) | open-ended; requires 10 ✅ |
@@ -73,7 +73,7 @@ Phase 0 (Prerequisites) ✅
                                                         ↓
                                                 ☆ Fix-after-07 (this package) ✅ Complete 2026-05-01 (six signed commits; tagged `fix-after-07-complete`) ☆
                                                         ↓
-                                                  ├─→ Phase 8 (Teleport) 🟨 8a ✅ 2026-05-02 (foundation: ns + CNPG db + Keycloak client + roles + MinIO recordings + OpenBao + VSO + TLS) → 8b queued (Helm + OIDCConnector + e2e); MFA = TOTP-via-Keycloak per ADR-0007 (no local hardware FIDO2)
+                                                  ├─→ Phase 8 (Teleport) ✅ 8a ✅ 2026-05-02 + 8b prototype B ✅ 2026-05-03 (CE has no OIDC → pivoted to GitHub OAuth; e2e CLI + recording verified; ADR-0024 amended; runbook teleport-operations.md added)
                                                   └─→ Phase 9 (Hello World) ⬜
                                                           [needs: 1-7 ✅, 6b-1 ✅, 3 follow-up ✅, Fix-after-07 ✅, F-CLU-11 ✅ — all gates closed; Phase 8 is parallel/optional, not a blocker]
                                                         └─→ Phase 10 (Integrate apps) ⬜
@@ -835,21 +835,25 @@ Bundle of small rotation/housekeeping items that share infrastructure and can be
 ---
 
 ## Phase 8 — Privileged Access (Teleport) *(optional locally, 2 days)*
-**Status: ⬜**
+**Status: ✅ Complete (8a 2026-05-02, 8b prototype B 2026-05-03)**
 
 Teleport Community for cert-based local access. Less critical locally (you have direct kubectl access via Docker Desktop), but valuable for developing the production access workflow.
 
-**Deliverables:**
-- Teleport cluster (auth + proxy on a single replica)
-- Postgres backend
-- OIDC federation to Keycloak
-- Hardware FIDO2 enforced for `admin` role (requires browser passkey support, which works on localhost over HTTPS via mkcert)
-- Targets registered: kubectl to local cluster, Postgres
-- Session recording to MinIO
+**8a foundation ✅ Complete 2026-05-02** (1 signed commit) — `teleport` ns + CNPG `secforge-teleport-db-1` cluster (reserved for HA promotion, currently unused — chart is `chartMode: standalone` with PVC-backed sqlite) + Keycloak `teleport` client + 3 realm roles (`platform_admin`/`platform_developer`/`platform_viewer`) + MinIO `teleport-recordings` bucket (90d Object Lock attempt — see Known gap below) + OpenBao paths + VSO bindings (`teleport-oidc-vso`, `teleport-minio-vso`) + mkcert TLS cert.
 
-**Optional for local-only:** if you'll never SSH or expose internal admin UIs, you can skip Teleport entirely. Document the gap in `docs/02-decisions/0006-skip-teleport-locally.md` if you do.
+**8b prototype B ✅ Complete 2026-05-03** — Helm release of `teleport-cluster` 18.7.6 + `TeleportGithubConnector` + 3 `TeleportRoleV7` (admin/developer/viewer) + browser SSO + tsh CLI login + `kubectl exec` interactive session recording → MinIO, all end-to-end verified with full audit chain (`session.start` event has `github_teams: [platform-admins]` → `roles: [admin]` → `kubernetes_groups: [system:masters]`). Helm values pin `auth.teleportConfig.auth_service.proxy_listener_mode: multiplex` (chart default `separate` makes CLI dial 127.0.0.1:3023 which the local port-forward doesn't expose). Shelved keycloak `TeleportOIDCConnector` CR deleted from cluster.
 
-**See:** [docs/05-claude-code-prompts/phase-08-teleport.md](./docs/05-claude-code-prompts/phase-08-teleport.md)
+**Pivot from original plan:** Teleport CE does not support OIDC connectors (Enterprise-only feature; verified in operator logs and the [feature matrix](https://goteleport.com/docs/feature-matrix/)). The 8a foundation provisioned the Keycloak `teleport` client expecting it to be the IdP; in 8b we discovered the gap and pivoted to a `TeleportGithubConnector` against operator-controlled org `security-forge1` / team `platform-admins` → `admin` role. Cloud-edition cutover (CE → Enterprise at VPS time) restores the Keycloak OIDC path: `04-oidc-connector.yaml` is preserved on disk for that flip.
+
+**Known gaps deliberately accepted** (documented in [ADR-0024 § Amendment 2026-05-03](./docs/02-decisions/0024-teleport-community-edition-local.md#amendment-2026-05-03--ce-has-no-oidc-pivot-to-github-oauth)):
+1. `admin` role grants `kubernetes_groups: [system:masters]` — full cluster-admin equivalence via Teleport. Scope-down deferred to cloud cutover (where direct kubeconfig access is also removed) or to whenever a 2nd operator joins.
+2. MinIO Object Lock on `teleport-recordings` was specified but is not actually enforced in the local-edition deploy — a compromised admin can delete their own recording. Cloud cutover gets S3 Object Lock.
+3. Wazuh-side audit log forwarding deferred (Phase 7d follow-up). Audit events are queryable via Promtail → Loki today.
+4. Single-replica auth+proxy. Loss of auth pod = no Teleport logins until it recovers (~1min). Operator falls back to direct kubeconfig (`docker-desktop` context) for local recovery; cloud removes that fallback.
+
+**MFA posture:** GitHub.com governs the IdP-side factor (operator should enable TOTP on their GitHub account). Keycloak realm-side TOTP is unused locally. Compensating control = tightened session TTLs (8h admin / 12h developer / 24h viewer). At cloud-edition cutover, posture reverts to Keycloak-side TOTP (and eventually hardware FIDO2 per [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md)).
+
+**See:** [docs/05-claude-code-prompts/phase-08-teleport.md](./docs/05-claude-code-prompts/phase-08-teleport.md) · [ADR-0024](./docs/02-decisions/0024-teleport-community-edition-local.md) · [docs/03-runbooks/teleport-operations.md](./docs/03-runbooks/teleport-operations.md)
 
 ---
 

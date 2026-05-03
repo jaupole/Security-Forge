@@ -92,3 +92,40 @@ spec:
     name: teleport-minio-vso
     create: true
     type: Opaque
+
+---
+# Phase 8b prototype B — GitHub OAuth App credentials for the Teleport
+# GithubConnector. Path is populated by apply-github-connector.sh after
+# Jason registers the OAuth App at github.com.
+#
+# The `resources.teleport.dev/allow-lookup-from-cr` annotation is the
+# teleport-operator's opt-in marker: only Secrets carrying this annotation
+# can be referenced from a Teleport CR via `secret://...` syntax. Without
+# it the operator refuses with `MutationError: secret doesn't have the
+# allow-lookup-from-cr annotation`. Propagated from VSO via
+# destination.annotations (VSO requires destination.create: true for
+# annotations to take effect).
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: teleport-github
+  namespace: teleport
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: default
+  mount: secret
+  type: kv-v2
+  path: teleport/github
+  refreshAfter: 60s
+  destination:
+    name: teleport-github-vso
+    create: true
+    type: Opaque
+    annotations:
+      # Value is a comma-separated allowlist of Teleport CR names that
+      # may pull from this Secret via the `secret://...` lookup syntax.
+      # The connector CR is named `github`
+      # (infrastructure/teleport/06-github-connector.yaml metadata.name).
+      resources.teleport.dev/allow-lookup-from-cr: "github"

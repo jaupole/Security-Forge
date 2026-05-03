@@ -114,3 +114,16 @@ path "secret/data/minio/teleport/credentials" {
 path "secret/metadata/minio/teleport/credentials" {
   capabilities = ["read"]
 }
+
+# Teleport GitHub OAuth App client_id + client_secret (Phase 8b prototype B).
+# Teleport CE does not support OIDC connectors (Enterprise-gated), so the
+# Keycloak path planned in 8a is replaced for the local edition by a
+# GitHub OAuth App against real github.com. The connector CRD references
+# the rendered Secret via the operator's secret-lookup syntax. Provisioned
+# by infrastructure/teleport/apply-github-connector.sh.
+path "secret/data/teleport/github" {
+  capabilities = ["read"]
+}
+path "secret/metadata/teleport/github" {
+  capabilities = ["read"]
+}

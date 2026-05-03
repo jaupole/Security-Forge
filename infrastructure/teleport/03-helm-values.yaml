@@ -16,12 +16,24 @@
 #     the teleport-oidc-vso K8s Secret rendered by VSO from
 #     secret/data/teleport/oidc.
 #
-# TLS: existing cert from cert-manager mkcert-issuer.
+# TLS:
+#   - existingSecretName: cert-manager mkcert-issued cert for
+#     tp.secforge.local + in-cluster Service DNS SANs.
+#   - existingCASecretName: mkcert local CA bundle, copied into
+#     the teleport ns by apply-helm.sh. Setting this auto-injects
+#     SSL_CERT_FILE into the proxy + auth pods so they trust the
+#     mkcert CA when validating their own cert chain (and the
+#     OIDC discovery URL to Keycloak, which is also mkcert-signed).
+#     DANGER per chart docs: this DROPS the distroless container's
+#     default Mozilla CA bundle — Teleport will only trust mkcert.
+#     For local edition this is intentional; every TLS endpoint
+#     Teleport reaches is mkcert-signed (Keycloak) or in-cluster
+#     plaintext (MinIO via insecure=true in audit_sessions_uri).
 #
-# Session recording: backend-managed (the auth pod uploads to MinIO
-# via S3-compatible API). audit_sessions_uri configured via
-# auth.teleportConfig override since the chart's standalone mode
-# defaults to local-disk recording.
+# Session recording: the audit_sessions_uri override under
+# auth.teleportConfig.teleport.storage tells Teleport to upload
+# recordings to MinIO via the S3-compatible API. AWS_* env vars
+# below feed the MinIO creds.
 
 chartMode: standalone
 
@@ -30,25 +42,52 @@ chartMode: standalone
 clusterName: secforge-local
 
 # Public hostname users hit in the browser + tsh.
-publicAddr: ["tp.secforge.local:443"]
+#
+# Port 8443 (not 443) for the local-edition prototype: ingress-nginx
+# does not have --enable-ssl-passthrough, and Teleport's TLS routing
+# (single-port SNI/ALPN multiplex for web + kube-proxy + db-proxy)
+# is incompatible with L7 ingress termination. Operator port-forwards
+# `kubectl port-forward -n teleport svc/teleport 8443:443` on demand.
+# Cloud-edition uses a real LoadBalancer or SSL-passthrough ingress
+# on 443 — see ADR-0024 § Local-edition exposure.
+publicAddr: ["tp.secforge.local:8443"]
 
 # OIDC is the only sign-in option (no local users, no GitHub).
 authentication:
   type: oidc
-  # OIDCConnector itself is applied as a CRD post-deploy (see
-  # 04-oidc-connector.yaml in this directory).
-  # localAuth: false   # disable username/password fallback (8b.6 toggle if we want belt-and-braces)
-  # `optional` allows but doesn't require Teleport-native MFA. OIDC users
-  # come in via Keycloak SSO (which already involved TOTP at the realm)
-  # — Teleport accepts the federated identity as already-MFA-equivalent.
-  # `off` is forbidden by recent Teleport versions; `optional` is the
-  # closest match to ADR-0024 § MFA posture's "no Teleport-side
-  # per-session prompt" intent.
-  secondFactor: "optional"
+
+  # secondFactors is the modern (preferred) form — accepts a list
+  # of "otp" / "sso" / "webauthn". Setting it satisfies Teleport's
+  # "MFA framework must be configured" precondition that rejects
+  # `secondFactor: optional`/`off` with "cannot disable
+  # multi-factor authentication".
+  #
+  # Local-edition posture (per ADR-0024 § MFA posture and ADR-0007
+  # amendment): users authenticate via Keycloak OIDC SSO, which
+  # already enforces TOTP at the realm. The "sso" entry tells
+  # Teleport that an OIDC-asserted identity counts as MFA-equivalent
+  # so users get no Teleport-native per-session MFA prompt. The
+  # "otp" entry is included to satisfy the framework precondition
+  # and is unused in practice — there are no Teleport-local users
+  # to enroll a TOTP for.
+  #
+  # Cloud-edition values overlay swaps this to ["webauthn", "sso"]
+  # at the production-hardening trigger, with `require_session_mfa:
+  # hardware_key_touch` re-added on the admin role.
+  secondFactors: ["otp", "sso"]
+
+  # webauthn rp_id pinned to the public hostname so a future
+  # cloud-edition cutover to hardware FIDO2 doesn't invalidate
+  # existing registrations.
+  webauthn:
+    rp_id: "tp.secforge.local"
 
 # TLS: existing mkcert cert from Phase 8a Certificate.
+# CA bundle staged into the ns by apply-helm.sh (key: ca.pem,
+# matching the chart default `tls.existingCASecretKeyName`).
 tls:
   existingSecretName: tp-secforge-local-tls
+  existingCASecretName: mkcert-ca-bundle
 
 # ACME OFF (we use mkcert).
 acme: false
@@ -60,7 +99,17 @@ persistence:
   enabled: true
   volumeSize: 5Gi
 
-# Resource budget: small for local edition.
+# Single replica everywhere (local edition has one node + a small
+# ResourceQuota). The chart docs warn that the proxy defaults to 2
+# replicas even when highAvailability.replicaCount=1; the explicit
+# proxy.highAvailability.replicaCount: 1 below forces a single proxy.
+highAvailability:
+  replicaCount: 1
+
+# Resource budget: small for local edition. Top-level `resources`
+# applies to the auth pod; `proxy.resources` is its own knob and
+# defaults to limits.cpu=1 — too large for our quota. Tightened
+# here to match auth.
 resources:
   requests:
     cpu: 100m
@@ -68,6 +117,16 @@ resources:
   limits:
     cpu: 500m
     memory: 768Mi
+proxy:
+  highAvailability:
+    replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
 
 # PSS=restricted compliance — teleport ns enforces this label.
 # Chart's default pod template lacks the required securityContext;
@@ -96,6 +155,12 @@ securityContext:
 extraLabels:
   pod:
     spiffe.io/spire-managed-identity: "true"
+    # MinIO ingress NetworkPolicy in the minio ns selects on this
+    # label (see infrastructure/minio/networkpolicy-from-teleport.yaml).
+    # Auth uploads session recordings; proxy + operator do not reach
+    # MinIO but the chart's extraLabels.pod applies cluster-wide,
+    # which is fine — the NetworkPolicy is scoped by namespace + label.
+    minio-client: "true"
 
 extraVolumes:
   - name: spiffe-workload-api
@@ -108,11 +173,25 @@ extraVolumeMounts:
     mountPath: /spiffe-workload-api
     readOnly: true
 
-# Auth-pod config overrides — we layer in:
-#   - audit_sessions_uri pointing at MinIO (s3://teleport-recordings/?endpoint=...)
-#   - audit log to STDOUT (Promtail/Wazuh ingest from there)
+# Auth-pod config overrides — the chart auto-generates the
+# auth_service.authentication block from the top-level
+# `authentication.*` values above. We only inject what the chart
+# does NOT cover:
+#   - audit_sessions_uri pointing at MinIO (S3-compatible)
+#   - structured JSON logs to STDOUT (Promtail + Wazuh ingest from there)
 auth:
   teleportConfig:
+    # TLS routing (single-port ALPN/SNI multiplex). Without this the
+    # auth server defaults to proxy_listener_mode=separate, which makes
+    # tsh CLI try to dial individual proxy ports (3023 SSH proxy, 3024
+    # reverse tunnel, 3026 kube, 3036 mysql). The local-edition
+    # operator port-forward only exposes 443→8443, so separate-mode
+    # CLI flows fail with "dial tcp 127.0.0.1:3023: connection refused"
+    # even though browser SSO works. multiplex mode routes everything
+    # through the single 8443 port. Phase 8b prototype B verified
+    # 2026-05-03; see ADR-0024.
+    auth_service:
+      proxy_listener_mode: multiplex
     teleport:
       log:
         output: stdout
@@ -127,21 +206,6 @@ auth:
         type: dir
         path: /var/lib/teleport
         audit_sessions_uri: "s3://teleport-recordings?endpoint=minio.minio.svc.cluster.local:9000&disablesse=true&insecure=true&use_fips_endpoint=false"
-    auth_service:
-      enabled: true
-      cluster_name: secforge-local
-      authentication:
-        type: oidc
-        # local_auth left enabled (Teleport rejects local_auth:false
-        # combined with second_factor:optional as "cannot disable
-        # multi-factor authentication"). Practically we never use
-        # local users — OIDC is the only login UI presented — but
-        # Teleport's validation requires the framework be there.
-        local_auth: true
-        second_factor: "optional"
-        webauthn:
-          rp_id: "tp.secforge.local"
-      session_recording: "node-sync"
 
   # Inject MinIO credentials as AWS_* env vars so Teleport's S3
   # client picks them up for session recording uploads. The Secret

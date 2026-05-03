@@ -9,8 +9,8 @@
 # ─── viewer ────────────────────────────────────────────────────────────
 # Read-only kubectl across all namespaces; no exec, no DB access.
 ---
-apiVersion: resources.teleport.dev/v7
-kind: TeleportRole
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV7
 metadata:
   name: viewer
   namespace: teleport
@@ -19,7 +19,7 @@ metadata:
 spec:
   options:
     max_session_ttl: 24h
-    idle_timeout: 8h
+    client_idle_timeout: 8h
     forward_agent: false
     permit_x11_forwarding: false
   allow:
@@ -42,8 +42,8 @@ spec:
 # Read-only kubectl + namespace-scoped write to NON-platform namespaces.
 # DB read on secforge-app's app DBs.
 ---
-apiVersion: resources.teleport.dev/v7
-kind: TeleportRole
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV7
 metadata:
   name: developer
   namespace: teleport
@@ -52,11 +52,13 @@ metadata:
 spec:
   options:
     max_session_ttl: 12h
-    idle_timeout: 4h
+    client_idle_timeout: 4h
     forward_agent: false
     permit_x11_forwarding: false
-    record_session:
-      kubernetes: true
+    # Kubernetes session recording is configured cluster-wide via the
+    # auth_service.session_recording = "node-sync" setting in
+    # 03-helm-values.yaml; per-role record_session toggles are SSH/desktop
+    # only in the operator's V7 schema.
   allow:
     kubernetes_groups:
       - edit
@@ -147,8 +149,8 @@ spec:
 # break-glass secforge-keycloak. NO require_session_mfa per
 # ADR-0024 — tightened TTLs are the compensating control.
 ---
-apiVersion: resources.teleport.dev/v7
-kind: TeleportRole
+apiVersion: resources.teleport.dev/v1
+kind: TeleportRoleV7
 metadata:
   name: admin
   namespace: teleport
@@ -157,11 +159,13 @@ metadata:
 spec:
   options:
     max_session_ttl: 8h
-    idle_timeout: 4h
+    client_idle_timeout: 4h
     forward_agent: true
+    # SSH session recording on (cluster-wide is "node-sync"; this role
+    # explicitly opts in for SSH targets too). Kubernetes session
+    # recording is cluster-wide and not per-role-toggleable in V7.
     record_session:
-      kubernetes: true
-      ssh: true
+      ssh: best_effort
     # NOTE: require_session_mfa intentionally NOT set for local
     # edition. ADR-0024 § MFA posture documents the TOTP-via-
     # Keycloak-SSO posture. Cloud-edition values overlay re-adds

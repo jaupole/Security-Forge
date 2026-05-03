@@ -1,9 +1,9 @@
 # ADR-0024: Teleport Community Edition for privileged access (Local Edition)
 
-**Status**: Accepted
+**Status**: Amended 2026-05-03 (see § Amendment 2026-05-03 — CE has no OIDC; pivot to GitHub OAuth)
 **Date**: 2026-05-02
 **Decision-makers**: Project owner
-**Phase**: 8 (8a foundation)
+**Phase**: 8 (8a foundation, 8b prototype B)
 
 ## Context
 
@@ -288,3 +288,55 @@ Re-open this ADR if:
 - [docs/05-claude-code-prompts/phase-08-teleport.md](../05-claude-code-prompts/phase-08-teleport.md) — phase prompt (will be updated to reference this ADR).
 - [ADR-0003](./0003-cloudnativepg-vs-others.md) — CNPG choice (Postgres backend uses the same pattern).
 - [ADR-0007](./0007-totp-instead-of-passkeys-locally.md) — TOTP-vs-passkeys interim decision; Teleport's hardware-FIDO2 enforcement is independent of the realm's primary-factor choice.
+- [docs/03-runbooks/teleport-operations.md](../03-runbooks/teleport-operations.md) — daily ops + bootstrap + troubleshooting (added 2026-05-03).
+
+---
+
+## Amendment 2026-05-03 — CE has no OIDC; pivot to GitHub OAuth
+
+Phase 8b discovered that the original Decision's "OIDC IdP: Keycloak `platform` realm" row is not implementable on Community Edition. **OIDC connectors are an Enterprise-gated feature** in Teleport (verified two ways: the operator pod log emits `"OIDC connectors are only available in Teleport Enterprise edition. TeleportOIDCConnector resources won't be reconciled"` on every reconcile; and Teleport's [feature matrix](https://goteleport.com/docs/feature-matrix/) lists only **GitHub** under CE's SSO row, with OIDC + SAML marked Enterprise-only).
+
+Options considered (Phase 8b prototype matrix, evaluated 2026-05-02):
+
+- **A. Local Teleport users** — gives up SSO and the realm-side TOTP enforcement that the architecture commits to. Rejected.
+- **B. GitHub OAuth via Teleport CE's `TeleportGithubConnector`** — uses real github.com as the IdP. CE's only SSO option. Selected.
+- **C. Bypass Teleport's auth and run a custom OIDC proxy** — defeats the purpose of using Teleport. Rejected.
+- **D. Defer Phase 8 entirely until Enterprise tier is justified** — leaves the privileged-access pattern unbuilt locally. Rejected.
+
+**Decision (B):** Local edition uses a `TeleportGithubConnector` against a GitHub OAuth App registered against an org the operator controls. Mapping is `<org>:<team> → admin`/`developer`/`viewer` via `teams_to_roles`. Verified end-to-end on 2026-05-03 (browser SSO + CLI login + `kubectl exec` interactive session + session recording uploaded to MinIO; full audit chain `github_teams[]` → `roles[]` → `kubernetes_groups[]` visible in the `session.start` event).
+
+### What changed in the original Decision table
+
+| Row | Original | Amended |
+|---|---|---|
+| OIDC IdP | Keycloak `platform` realm; client `teleport` | **GitHub OAuth App** against operator-controlled org `security-forge1`; team `platform-admins` → `admin` role. Keycloak realm + `teleport` OIDC client remain provisioned (8a foundation) but are unused locally. |
+| Backend | Postgres (`secforge-teleport-db`) | **Standalone PVC-backed sqlite** (chart `chartMode: standalone`). The CNPG `secforge-teleport-db-1` cluster is preserved on disk as "reserved for HA promotion" but unused. Postgres backend on CE requires `chartMode: scratch` + a hand-written auth.teleportConfig + plaintext password in chart values — disproportionate complexity for a single-replica local install. Cloud edition uses cloud-managed Postgres or DynamoDB, so this is not a cloud-migration regression. |
+| Public hostname | `tp.secforge.local` | **`tp.secforge.local:8443`** — explicit non-default port. Local-edition compromise: ingress-nginx is not built with `--enable-ssl-passthrough` and Teleport's TLS routing is incompatible with L7 termination. The operator runs `kubectl port-forward -n teleport svc/teleport 8443:443` on demand. |
+| MFA via Keycloak | TOTP-via-Keycloak SSO assertion | **No platform-side TOTP enforcement.** GitHub.com governs the IdP-side factor — the operator can enable GitHub's TOTP on their account, but the platform doesn't enforce it. Compensating control = the same tightened session TTLs (8h admin / 12h developer / 24h viewer). |
+
+### Additional discovery: `proxy_listener_mode` must be `multiplex`
+
+The Helm chart defaults `proxy_listener_mode` to `separate`, which makes the proxy open four distinct ports (3023 SSH, 3024 reverse tunnel, 3026 kube, 3036 mysql) in addition to the web port (443 → 8443 in our setup). Browser SSO works because it goes through the web port, but `tsh` CLI tries to dial 127.0.0.1:3023 first and gets refused — the operator port-forward only exposes the web port.
+
+The fix is to set `auth.teleportConfig.auth_service.proxy_listener_mode: multiplex` in the helm values (now persisted in `infrastructure/teleport/03-helm-values.yaml`), which makes the proxy ALPN/SNI-multiplex everything onto the single web port. The setting is also reflected in the `cluster_networking_config` dynamic resource (origin: `dynamic`); applying it via static config too means a `kubectl delete cluster_networking_config` won't silently revert it.
+
+### Known gaps deliberately accepted in this amendment
+
+| Gap | Why accepted now | What triggers a fix |
+|---|---|---|
+| **`admin` role grants `kubernetes_groups: [system:masters]`** — full cluster-admin equivalence via Teleport. CLAUDE.md has a bright-line against `cluster-admin`/`*:*` RBAC. | Single-operator local edition; the operator already has cluster-admin via Docker Desktop's kubeconfig. The Teleport-mediated path provides session recording + cert-based access + audit; restricting the K8s group beneath that is value-additive but not the local-edition headline goal. | (a) A second operator joins and needs less-than-cluster-admin local access, or (b) cloud-edition cutover (where direct kubeconfig access is removed and the Teleport path becomes the only path — at that point the role MUST scope down to a real ClusterRole with explicit verbs). |
+| **Port-forward fragility.** The `kubectl port-forward` died mid-session during 8b verification; the audit pipeline survived (auth pod uploads via in-cluster network) but the operator's CLI got dropped. | Local-edition compromise. Wrapping the forward in a restart-on-exit shell loop is documented in the runbook; not worth a separate Service/Ingress for a single-operator dev cluster. | Cloud edition uses a real LoadBalancer / SSL-passthrough ingress. |
+| **No MinIO Object Lock on `teleport-recordings`.** A compromised admin can theoretically delete their own session recording. | Same gap acknowledged in the original Decision § Known local gaps. Not regressed by the amendment. | Cloud edition uses S3 Object Lock or its cloud-specific equivalent (already in the migration plan). |
+| **GitHub OAuth App requires org-level approval.** The first login attempt fails with `"list of user teams is empty, did you grant access?"` until the operator authorizes the OAuth App against the org. | One-time bootstrap step; documented in the runbook. | Doesn't apply post-bootstrap. |
+
+### Cloud-edition cutover trigger
+
+When promoting Teleport CE → Enterprise (typically at the same VPS migration trigger as the rest of the platform), restore the Keycloak OIDC connector and remove the GitHub one:
+
+1. `kubectl apply -f infrastructure/teleport/04-oidc-connector.yaml` (the file is preserved on disk for this purpose).
+2. `kubectl delete teleportgithubconnector github -n teleport`.
+3. Re-issue the `teleport` Keycloak client secret (8a foundation already provisioned `secret/data/teleport/oidc` and the `teleport-oidc-vso` Secret render path).
+4. `tsh login --proxy=tp.secforge.local --auth=keycloak`.
+5. The role mappings are identity-equivalent — `platform_admin` realm role → `admin` Teleport role (same target as `security-forge1:platform-admins`).
+
+The MFA posture also reverts at that point: Keycloak realm-side TOTP (and eventually hardware FIDO2 per [ADR-0007](./0007-totp-instead-of-passkeys-locally.md)) replaces github.com's user-side factor.
