@@ -1,6 +1,6 @@
 # ADR-0023: SpiceDB `datastore_uri` rotation pattern — CronJob-refreshed VaultStaticSecret over native VaultDynamicSecret
 
-**Status**: Accepted
+**Status**: Amended 2026-05-03 (TTL bug fix — see § Amendment 2026-05-03)
 **Date**: 2026-05-02
 **Decision-makers**: Project owner
 **Phase**: 7d.2
@@ -157,3 +157,56 @@ This is a meaningful caveat: the OpenBao database engine assumes static root cre
 - [`infrastructure/openbao/database-roles/spicedb-readwrite.sh`](../../infrastructure/openbao/database-roles/spicedb-readwrite.sh) — the database-engine bootstrap (Phase 7d.2.b).
 - [`infrastructure/spicedb/cron/spicedb-datastore-refresher.yaml`](../../infrastructure/spicedb/cron/spicedb-datastore-refresher.yaml) — the 12h refresher CronJob (Phase 7d.2.c).
 - [`docs/03-runbooks/spicedb-operations.md`](../03-runbooks/spicedb-operations.md) — operational runbook including CNPG-rotation recovery procedure.
+
+---
+
+## Amendment 2026-05-03 — TTL bug fix
+
+The original Decision § "Why 12h cadence" claimed a 12-hour overlap between consecutive refreshes:
+
+> 12h gives:
+> - A new credential mint at hours 0, 12, 24, 36, …
+> - **Each cred valid for max 24h on the Postgres side.**
+> - At the 12h refresh, **the OLD cred has 12h life remaining (alive)**; the NEW cred is freshly minted with a fresh 24h max_ttl.
+
+**This was wrong.** It misread OpenBao's lease semantics.
+
+`default_ttl` is the **initial** lease length when a credential is minted; `max_ttl` is the maximum the lease can be **extended to via explicit renewal** (`bao lease renew <lease-id>`). It is NOT the credential's default lifetime. Without an explicit renewal call, a credential lives only `default_ttl` and is then revoked.
+
+Nothing in the SpiceDB stack renews leases:
+- The refresher CronJob mints NEW credentials every 12h but does not touch existing leases.
+- SpiceDB's Postgres connection pool caches the password from pod startup; it never re-fetches from the K8s Secret nor calls OpenBao's renewal API.
+- VSO's `VaultStaticSecret` polls KV-version changes; it has no role in lease management.
+
+So with the original `default_ttl=1h, max_ttl=24h`:
+- Refresher mints credential at T0 → 1h lease
+- T0+1h → OpenBao revokes the Postgres role (revocation_statements run)
+- T0+1h to T0+12h → SpiceDB's existing connections may keep working (Postgres doesn't kill on user drop), but every new connection (e.g., from a `readyz` probe, idle reconnect, or pool growth) fails SASL → SpiceDB crashloop → AuthZEN-facade crashloop downstream
+- T0+12h → next refresh runs, K8s Secret bumps, SpiceDB rolls, cycle restarts
+
+**Empirical confirmation 2026-05-03:** the cluster wedged twice in one debug session, both times with `failed SASL auth: FATAL: password authentication failed for user "v-jwt-spif-spicedb--..."` exactly because the lease had expired between cron runs. Each recovery required manually triggering a `--from=cronjob/spicedb-datastore-refresher` job and bouncing the SpiceDB pod.
+
+**Fix:** change the role's `default_ttl` from `1h` to `14h` (12h cron interval + 2h overlap margin). Keep `max_ttl=24h` unchanged for headroom in case any future component starts renewing.
+
+This restores the original Decision's intended overlap semantics — the OLD credential stays alive for 2h after the new one is minted and SpiceDB rolls. Connections established pre-refresh continue working until they're closed normally; new connections post-refresh use the new credential.
+
+| | Before | After |
+|---|---|---|
+| `default_ttl` | `1h` | **`14h`** |
+| `max_ttl` | `24h` | `24h` (unchanged) |
+| Overlap window | -11h (broken 11h every cycle) | +2h |
+| Cluster healthy 24h/day? | No (failed every cycle) | Yes |
+
+### Implications for helloworld-app-readwrite (Phase 9)
+
+`infrastructure/openbao/configure-engines.sh` configures `helloworld-app-readwrite` with the same `default_ttl=1h, max_ttl=24h`. **That is correct for helloworld-app** because helloworld-app is a first-class app that fetches credentials via `apps/lib/secrets/` at request time and gets fresh values when leases expire — no static-cache-in-pod problem. SpiceDB cannot do that (off-the-shelf workload, K8s-Secret-only consumer).
+
+The bug applies specifically to consumers whose architecture is "read K8s Secret at startup, hold the value for the pod's lifetime." Future consumers of that shape need the same `default_ttl ≥ refresh_cron_interval + margin` rule. Direct-API consumers using `apps/lib/secrets/` keep `default_ttl=1h` for tighter dynamic-cred semantics.
+
+### What changed in this commit
+
+- `infrastructure/openbao/database-roles/spicedb-readwrite.sh` — `default_ttl=1h` → `default_ttl=14h`. Comment block expanded to explain the lease semantics + why this consumer differs from helloworld-app-readwrite.
+- This ADR — Status: Amended; this Amendment section.
+- `docs/03-runbooks/spicedb-operations.md` — corrected the "max_ttl 24h" framing of the rotation cadence.
+
+To apply on a running cluster: re-run the bootstrap script with an admin BAO_TOKEN. The script's `bao write database/roles/spicedb-readwrite ...` is idempotent — it overwrites the existing role with the new TTLs. Existing leases are NOT affected; they continue running their old TTL and will be revoked at expiry. The next refresher run mints a credential with the new 14h TTL and the cluster reaches steady state from that point forward.

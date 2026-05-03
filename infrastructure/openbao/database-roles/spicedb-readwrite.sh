@@ -144,15 +144,46 @@ unset PG_PASS PG_USER
 # objects, REASSIGN+DROP OWNED are no-ops; defense-in-depth in case
 # future spicedb schemas have the dynamic user creating temp objects.
 #
-# default_ttl: 1h. max_ttl: 24h. Matches helloworld-app-readwrite.
-# The 24h max_ttl is what the Phase 7d.2.c CronJob's 12h cadence
-# is calibrated against (12h overlap window).
+# default_ttl: 14h. max_ttl: 24h.
+#
+# **Why 14h** (corrected 2026-05-03; previously 1h):
+#
+# OpenBao's `default_ttl` is the INITIAL lease length when a credential
+# is minted; `max_ttl` is the maximum the lease can be EXTENDED TO via
+# explicit renewal (`bao lease renew <id>`). Nothing in the SpiceDB
+# stack renews leases — the refresher CronJob mints NEW credentials
+# every 12h, but the OLD credentials run out their initial TTL and get
+# revoked. SpiceDB's Postgres connection pool caches the password from
+# pod startup and never re-fetches; once the user is dropped, every new
+# DB connection fails SASL auth → SpiceDB crashloops → AuthZEN-facade
+# crashloops downstream.
+#
+# With default_ttl=1h and a 12h cron, the cluster spent 11 hours of
+# every 12-hour cycle in a broken state (bug confirmed empirically
+# 2026-05-03; cluster wedged twice in one session). The original ADR-
+# 0023 § "Why 12h cadence" reasoning was based on a misreading of
+# OpenBao lease semantics ("max 24h on the Postgres side" — false
+# without explicit renewal).
+#
+# 14h gives a 2-hour overlap with the 12h cron: the OLD credential
+# stays alive for 2h after the cron mints a new one and SpiceDB rolls
+# to use it. Connections established before the refresh continue
+# working until the OLD lease expires; new connections (post-refresh)
+# use the NEW credential. max_ttl=24h kept for headroom in case any
+# component ever DOES start renewing leases.
+#
+# Helloworld-app-readwrite (configure-engines.sh §3) ALSO has
+# default_ttl=1h. That's defensible there because helloworld-app is a
+# first-class app that fetches credentials via apps/lib/secrets/ at
+# request time and gets fresh values on lease expiry. SpiceDB cannot
+# do that — it's an off-the-shelf workload that only reads its
+# K8s Secret at pod startup.
 green "==> database/roles/spicedb-readwrite"
 bao bao write database/roles/spicedb-readwrite \
     db_name=secforge-spicedb \
     creation_statements='CREATE ROLE "{{name}}" WITH LOGIN PASSWORD '"'"'{{password}}'"'"' VALID UNTIL '"'"'{{expiration}}'"'"'; GRANT USAGE ON SCHEMA public TO "{{name}}"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{{name}}"; GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO "{{name}}";' \
     revocation_statements='GRANT "{{name}}" TO spicedb; REASSIGN OWNED BY "{{name}}" TO spicedb; DROP OWNED BY "{{name}}"; DROP ROLE IF EXISTS "{{name}}";' \
-    default_ttl=1h \
+    default_ttl=14h \
     max_ttl=24h 2>&1 | tail -1
 
 # 6. Sanity-check: mint one credential and confirm we get back a username
