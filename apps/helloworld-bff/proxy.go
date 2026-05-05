@@ -111,7 +111,15 @@ func handleCallback(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner) htt
 			RefreshToken:   tr.RefreshToken,
 			IDToken:        tr.IDToken,
 			AccessExp:      now + int64(tr.ExpiresIn),
-			RefreshExp:     now + int64(tr.RefreshExpiresIn),
+			// Keycloak's offline refresh token returns refresh_expires_in=0
+			// to mean "never expires" — preserve 0 as the sentinel so
+			// sessionTTL doesn't treat it as "already expired."
+			RefreshExp: func() int64 {
+				if tr.RefreshExpiresIn <= 0 {
+					return 0
+				}
+				return now + int64(tr.RefreshExpiresIn)
+			}(),
 			Scope:          tr.Scope,
 			DPoPJktAtIssue: dpop.jkt,
 		}
@@ -244,11 +252,22 @@ func proxyToBackend(c cfg, o *oidcClient, s *sessionStore, dpop *dpopSigner, ap 
 
 		// Mint per-call DPoP proof for the upstream URL — the BFF's job,
 		// not the api-auth library's.
-		upstreamURL := target.String() + r.URL.Path
-		if r.URL.RawQuery != "" {
-			upstreamURL += "?" + r.URL.RawQuery
+		// DPoP htu MUST match what the backend sees, not the upstream URL.
+		// The backend uses X-Forwarded-Proto/Host to canonicalize htu (those
+		// headers identify the *original* request as the user saw it). The
+		// BFF's reverse-proxy doesn't strip those headers, so the backend
+		// reconstructs the public URL. Mint the proof using the same public
+		// URL so both ends canonicalize identically.
+		htuURL, err := inboundHTU(r)
+		if err != nil {
+			_ = ap.audit.LogHop(r, 2, ap.workloadID, sv.Sub, ap.backendAudience, 500)
+			httpJSON(w, 500, errBody("htu_build"))
+			return
 		}
-		proof, err := dpop.proofFor(r.Method, upstreamURL, accessToken)
+		if r.URL.RawQuery != "" {
+			htuURL += "?" + r.URL.RawQuery
+		}
+		proof, err := dpop.proofFor(r.Method, htuURL, accessToken)
 		if err != nil {
 			_ = ap.audit.LogHop(r, 2, ap.workloadID, sv.Sub, ap.backendAudience, 500)
 			httpJSON(w, 500, errBody("dpop_proof"))

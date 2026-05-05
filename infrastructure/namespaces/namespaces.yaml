@@ -607,10 +607,13 @@ metadata:
   namespace: app
 spec:
   hard:
-    requests.cpu: "1"
-    requests.memory: 1Gi
-    limits.cpu: "2"
-    limits.memory: 2Gi
+    # Phase 9 added helloworld-backend + helloworld-frontend on top of the
+    # existing BFF + authzen-facade ×2 + security-events-collector + DB.
+    # Bumped to give helloworld-backend room to schedule.
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
     pods: "20"
 ---
 apiVersion: v1

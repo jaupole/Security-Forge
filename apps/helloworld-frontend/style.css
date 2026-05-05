@@ -1,0 +1,127 @@
+/* helloworld-frontend — minimal demo styling. No frameworks. */
+
+:root {
+    --fg: #1a1a1a;
+    --bg: #fafafa;
+    --muted: #6b6b6b;
+    --accent: #1f5fa6;
+    --error: #b1322f;
+    --border: #d8d8d8;
+    --radius: 4px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+}
+
+header {
+    padding: 2rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+header h1 { margin: 0; font-size: 1.5rem; }
+.tagline { color: var(--muted); margin: 0; font-size: 0.95rem; }
+
+main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+#status.loading { color: var(--muted); font-style: italic; }
+#status.error { color: var(--error); }
+
+#welcome {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+#welcome strong { color: var(--accent); }
+
+#document h2 { margin-top: 0; }
+
+.meta {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+#doc-content {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    white-space: pre-wrap;
+}
+
+#doc-editor {
+    width: 100%;
+    background: white;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: inherit;
+}
+
+.actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+}
+
+button {
+    background: white;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.9rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.feedback {
+    color: var(--muted);
+    font-size: 0.9rem;
+    min-height: 1.4em;
+    margin: 0.5rem 0 0;
+}
+
+#forbidden {
+    border-left: 3px solid var(--error);
+    background: white;
+    padding: 1rem 1.25rem;
+    border-radius: var(--radius);
+}
+
+#forbidden code {
+    background: #f0f0f0;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+}
+
+footer {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 1rem 2rem;
+}

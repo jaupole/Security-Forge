@@ -1,5 +1,7 @@
 # Migration Playbook: Local → Single VPS / Homelab Server
 
+> **Snapshot date: 2026-05-04 (post-Phase 9).** This playbook assumes Phases 1–9 of the local build are complete: SPIRE workload identity, Keycloak with TOTP+recovery codes, SpiceDB + AuthZEN façade, OpenBao with two-instance Transit auto-unseal, Istio Ambient (PERMISSIVE), the BFF + api-auth library + outbound-secrets pattern, the full observability stack (Loki/Tempo/Prometheus/Wazuh), Teleport CE with GitHub OAuth, and the Hello World end-to-end checkpoint. Phase 10 (Proposal Forge + Project Tracker integration) follows the same per-app pattern in the cloud destination — repeat the steps once per app rather than restarting from Phase 1. If your local cluster is in an earlier state, complete the missing phases locally first; this playbook is not a shortcut.
+
 This is the playbook for moving the SecForge platform from your local Docker Desktop Kubernetes cluster to a single self-hosted server — either a VPS (Hetzner, OVH, DigitalOcean Droplet, Linode, etc.) or a homelab box you control.
 
 This is the **cheapest production-realistic destination**. Sustained ~$30-100/month depending on the server. Acceptable for early customers / pilots / personal use. Not appropriate for compliance-bound workloads (HIPAA, PCI, etc.) without significant additional hardening.

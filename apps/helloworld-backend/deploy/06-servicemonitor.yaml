@@ -1,0 +1,32 @@
+# helloworld-backend ServiceMonitor — Prometheus scrape config.
+#
+# /metrics is served on the same port (:8080) as the API by the stdlib
+# promhttp.Handler() registered alongside /api/me etc. The egress
+# NetworkPolicy in 05-networkpolicy.yaml allows the OTel collector
+# but Prometheus scrapes via the inverse — observability → app — which
+# requires the existing observability-allowed-egress + an explicit
+# ingress allow. The BFF's pattern uses `release: kps` to match the
+# kube-prometheus-stack discovery selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: helloworld-backend
+  namespace: app
+  labels:
+    release: kps
+    app.kubernetes.io/name: helloworld-backend
+    app.kubernetes.io/part-of: helloworld
+    secforge.platform/component: helloworld-backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helloworld-backend
+  namespaceSelector:
+    matchNames:
+      - app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http

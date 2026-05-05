@@ -36,7 +36,7 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **CUI (Controlled Unclassified Information).** US government data that's sensitive but not classified. CMMC controls govern its handling.
 
-**DPoP (Demonstrating Proof-of-Possession).** A way of binding an OAuth access token to a specific cryptographic key, so a stolen token alone is useless without the key.
+**DPoP (Demonstrating Proof-of-Possession).** A way of binding an OAuth access token to a specific cryptographic key, so a stolen token alone is useless without the key. Each request carries a `DPoP` header with a fresh proof JWT covering the request's HTTP method (`htm`) and target URI (`htu`); the server verifies the proof signs against the key the token was bound to.
 
 **Docker Desktop.** A desktop application that runs Docker (and optionally a small Kubernetes cluster) on Windows or Mac. Our Local Edition uses Docker Desktop's built-in Kubernetes.
 
@@ -56,7 +56,11 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **IRSA (IAM Roles for Service Accounts).** AWS's mechanism for letting Kubernetes workloads assume IAM roles without static credentials.
 
+**JWKS (JSON Web Key Set).** A JSON document listing the public keys an issuer uses to sign JWTs. Verifiers fetch the JWKS from the issuer's well-known endpoint and look up the right key by `kid`. Keycloak publishes its JWKS at `/realms/<realm>/protocol/openid-connect/certs`.
+
 **JWT (JSON Web Token).** A signed, self-contained token containing claims (e.g., "this user is Jason, role is admin, expires in 5 minutes"). Pronounced "jot."
+
+**kid (Key ID).** A header field in a JWT that names which signing key was used. Verifiers use it to look up the right public key in the issuer's JWKS without trial-and-error. Keycloak indexes its JWKS by a DER-PKIX SHA-256 base64url shape; clients minting JWTs against Keycloak (e.g., `private_key_jwt`) must use the same shape.
 
 **Keycloak.** The Identity Provider we're using. Open-source, written in Java, Apache 2.0 licensed.
 
@@ -67,6 +71,8 @@ If a term is used anywhere in this project's documentation and you don't know wh
 **kubectl.** The command-line tool for talking to Kubernetes.
 
 **MFA (Multi-Factor Authentication).** Authentication using more than one factor (something you know, something you have, something you are). Passkeys count as MFA on their own because they combine "have" (the device) with "are" or "know" (biometric or PIN).
+
+**mTLS (mutual TLS).** A TLS handshake where both sides present and verify a certificate, not just the server. The platform's Istio Ambient mesh uses mTLS between every workload — each pod has a SPIFFE-issued cert and only talks to pods that present a valid platform-issued cert.
 
 **MinIO.** An open-source S3-compatible object storage server. Our Local Edition uses MinIO instead of AWS S3 for audit logs, backups, and session recordings.
 
@@ -100,6 +106,10 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **Realm (Keycloak).** A namespace within Keycloak. Each tenant in our system gets its own realm so their identity data and signing keys are cryptographically isolated.
 
+**Tenant.** A logically isolated customer of the platform. In Keycloak, one realm per tenant. In Postgres, every multi-tenant table carries a `tenant_id` and an RLS policy that prevents cross-tenant reads. In SpiceDB, the tenant is the top-level object in the three-tier ReBAC schema.
+
+**Trust domain (SPIFFE).** The administrative scope of a SPIRE deployment, identified by its DNS-style root (e.g., `secforge.local`). Workloads in the same trust domain share one CA. Cross-domain trust requires explicit federation.
+
 **RFC.** A formal technical specification (Request for Comments). RFC 9700 is the current OAuth 2.0 best-practices document.
 
 **SAML.** An older single sign-on protocol, still required by many enterprise customers.
@@ -110,7 +120,9 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **SOC 2.** A widely-used compliance framework, especially in B2B SaaS. We're targeting SOC 2 Type 2 readiness.
 
-**SPIFFE / SPIRE.** SPIFFE is a standard for workload identity ("this container is running version X of service Y in environment Z"). SPIRE is the implementation we use.
+**SPIFFE / SPIRE.** SPIFFE is a standard for workload identity ("this container is running version X of service Y in environment Z"). SPIRE is the implementation we use. Each workload's identity is a **SPIFFE-ID** of the form `spiffe://<trust-domain>/...`; the platform's trust domain is `spiffe://secforge.local`.
+
+**SPIFFE-ID.** The URI-shaped name SPIRE assigns to a workload — e.g., `spiffe://secforge.local/ns/app/sa/helloworld-backend`. Used as the `sub` of JWT-SVIDs and as the X.509-SVID's URI SAN. AuthorizationPolicies, OpenBao auth/jwt roles, and SpiceDB writers all reference SPIFFE-IDs to identify workloads.
 
 **SpiceDB.** Our authorization engine. Open-source implementation of Google's Zanzibar paper.
 

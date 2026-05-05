@@ -1,0 +1,53 @@
+# Istio Ambient AuthorizationPolicy — only the BFF can reach the backend.
+#
+# **Trust domain note (pre-Phase-7c):** Istio Ambient ztunnel uses its
+# own internal CA with trust domain `cluster.local`, NOT the SPIRE-managed
+# `secforge.local` documented elsewhere in this repo. AuthorizationPolicies
+# match against the trust domain ztunnel actually uses for the connection,
+# so we use `cluster.local` here. Phase 7c (SPIRE-as-CA cutover) flips
+# the cluster-wide trust domain to `secforge.local`; at that point this
+# file gets updated and an ADR records the migration.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-helloworld-backend
+  namespace: app
+  labels:
+    app.kubernetes.io/name: helloworld-backend
+    secforge.platform/component: helloworld-backend
+    app.kubernetes.io/part-of: helloworld
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helloworld-backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/app/sa/helloworld-bff"
+---
+# Separate ALLOW policy for Prometheus scrape (port 8080 unrestricted from
+# observability ns — matches the existing `allow-prometheus-to-authzen-metrics`
+# pattern in app ns). Istio AuthZ ALLOW rules are additive.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-to-helloworld-backend-metrics
+  namespace: app
+  labels:
+    app.kubernetes.io/name: helloworld-backend
+    app.kubernetes.io/part-of: helloworld
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helloworld-backend
+  action: ALLOW
+  rules:
+    # No `from:` restriction — source is non-ambient (observability ns has
+    # no istio.io/dataplane-mode label) so ztunnel sees no SPIFFE identity
+    # for the source. Match by destination port only, mirroring the
+    # existing `allow-prometheus-to-authzen-metrics` pattern.
+    - to:
+        - operation:
+            ports: ["8080"]

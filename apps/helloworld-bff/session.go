@@ -20,7 +20,7 @@ const (
 	loginKeyPrefix       = "bff:login:"
 	refreshLockSuffix    = ":refresh-lock"
 	idleTTL              = 30 * time.Minute
-	loginTTL             = 5 * time.Minute
+	loginTTL             = 15 * time.Minute
 	refreshLockTTL       = 5 * time.Second
 	refreshLockWaitTotal = 4 * time.Second
 	refreshLockPoll      = 50 * time.Millisecond
@@ -148,6 +148,13 @@ func (s *sessionStore) del(ctx context.Context, sid string) error {
 
 // sessionTTL caps idle TTL at refresh_exp.
 func sessionTTL(sv sessionV1) time.Duration {
+	// RefreshExp == 0 means Keycloak issued an offline refresh token
+	// (refresh_expires_in: 0 in the token response — offline tokens
+	// don't expire by themselves). Don't treat that as "already expired";
+	// fall back to the idle TTL so the session lives a normal lifetime.
+	if sv.RefreshExp == 0 {
+		return idleTTL
+	}
 	maxRemain := time.Until(time.Unix(sv.RefreshExp, 0))
 	if maxRemain < 0 {
 		return 1 * time.Second // expire immediately

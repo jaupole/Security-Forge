@@ -18,8 +18,18 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0010](./0010-istio-ambient-vs-sidecar.md) | Istio Ambient mode (not sidecar); SPIRE as external CA deferred | Accepted (with deferral) |
 | [0011](./0011-bff-single-replica-local.md) | BFF runs as a single replica in the local edition | Accepted (local-only scope) |
 | [0012](./0012-token-exchange-feasibility.md) | Token-exchange feasibility decision | Accepted — NO-GO (audience-at-login fallback) |
-| [0013](./0013-outbound-secrets-no-env.md) | Outbound secrets — no `.env`; OpenBao via SPIFFE-JWT | Planned (Phase 6b-2) |
-| [0014](./0014-api-auth-library-design.md) | API auth library design | Planned (Phase 6b-1, may be deleted if redundant with 0012) |
+| [0013](./0013-outbound-secrets-no-env.md) | Outbound secrets — no `.env`; OpenBao via SPIFFE-JWT | Accepted |
+| [0014](./0014-api-auth-library-design.md) | API auth library design | Accepted |
+| [0015](./0015-secret-distribution-pattern.md) | Secret distribution pattern (VSO vs direct-API) | Accepted |
+| [0016](./0016-token-and-credential-lifetimes.md) | Token and credential lifetimes | Accepted |
+| [0017](./0017-session-expiry-semantics.md) | Session expiry semantics (idle / max / refresh) | Accepted |
+| [0018](./0018-multi-tenancy-rls-strategy.md) | Multi-tenancy + Postgres RLS strategy | Accepted |
+| [0019](./0019-secret-distribution-interface.md) | Secret distribution interface | Accepted |
+| [0020](./0020-openbao-backup-and-dr.md) | OpenBao backup and disaster recovery | Accepted |
+| [0021](./0021-git-initialization-and-commit-signing.md) | Git initialization + signed-commit policy | Accepted |
+| [0022](./0022-kcadm-admin-long-lived-credential.md) | kcadm-admin long-lived credential carve-out (90-day rotation) | Accepted |
+| [0023](./0023-spicedb-datastore-uri-rotation-pattern.md) | SpiceDB datastore_uri rotation pattern (Path B — refresher CronJob) | Accepted |
+| [0024](./0024-teleport-community-edition-local.md) | Teleport Community Edition for local; GitHub OAuth pivot | Accepted (amended 2026-05-03) |
 
 ## Template
 

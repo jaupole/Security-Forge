@@ -47,6 +47,8 @@ The token expires in 1h, can't be renewed past `max_ttl=1h`. Use it to fix what'
 
 ## Generate a new root token via recovery keys
 
+> ⚠️ **Known gap on OpenBao 2.5.3 + Transit auto-unseal (local edition).** The post-Phase-7 audit observed `bao operator generate-root -init` returning `405 unsupported operation` against this configuration. The Transit-auto-unsealed branch may not expose the generate-root endpoint the way the Shamir-sealed branch does. **The [Kubernetes auth break-glass](#kubernetes-auth-break-glass) above is the canonical local-edition recovery path**; this section is retained as the cloud-edition + Shamir-sealed reference and as a fallback to attempt if the break-glass path is also unavailable. If you hit the 405, file an operator-backlog entry and prefer the rebuild path or the break-glass token.
+
 Use this when the OpenBao initial root has been revoked AND your OIDC admin path is also broken (so you can't get *any* admin via the normal flows). You'll need 3 of the 5 **recovery keys** stored offline at Phase 5.3 Checkpoint 2.
 
 Recovery keys are NOT unseal keys; they only let you mint a new root token on an *already-unsealed* OpenBao. The main OpenBao must be unsealed (which the auto-unseal flow handles).

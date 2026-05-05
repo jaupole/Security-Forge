@@ -173,8 +173,14 @@ spec:
             # mirror the SPIRE-managed identity name explicitly.
             - name: BFF_WORKLOAD_ID
               value: "spiffe://secforge.local/ns/app/sa/helloworld-bff"
-            # Backend/frontend are wired in Phase 9. Until then /api/* and
-            # /* return 502 with `{"error":"no_(backend|frontend)_configured"}`.
+            # Phase 9.6 — backend + frontend wired. Both services live in
+            # the `app` namespace alongside the BFF. The BFF's existing
+            # proxyToBackend / proxyToFrontend (proxy.go) handles routing
+            # once these are non-empty.
+            - name: BFF_BACKEND_URL
+              value: "http://helloworld-backend.app.svc.cluster.local:8080"
+            - name: BFF_FRONTEND_URL
+              value: "http://helloworld-frontend.app.svc.cluster.local:8080"
           ports:
             - name: http
               containerPort: 3000
