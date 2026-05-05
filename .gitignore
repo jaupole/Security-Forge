@@ -45,7 +45,11 @@ Thumbs.db
 # === BUILD / GENERATED ARTIFACTS ===
 # Go binaries (named after their containing dir)
 apps/helloworld-bff/helloworld-bff
+apps/helloworld-backend/helloworld-backend
 apps/authzen-facade/authzen-facade
+# Windows-built Go output (any service compiled on a Windows host)
+*.exe
+*.exe~
 **/vendor/
 !infrastructure/wazuh/vendor/
 !apps/lib/
