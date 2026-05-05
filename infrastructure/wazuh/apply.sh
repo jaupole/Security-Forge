@@ -39,11 +39,22 @@ kubectl apply -f "$HERE/02-networkpolicies.yaml"
 # downstream env-var lookups match.
 # Wazuh enforces password complexity (Error 5007 if violated): length 8–64,
 # at least 1 upper / 1 lower / 1 digit / 1 special from .*+?=!&|<>(){}[]
-# Generate 32-char passwords with guaranteed coverage of all four classes.
+#
+# We deliberately exclude `|` and `&` from the special-char set even though
+# Wazuh would accept them. Reason: the image's /etc/cont-init.d/1-config-filebeat
+# uses sed with `|` as the delimiter to substitute INDEXER_PASSWORD into
+# /etc/filebeat/filebeat.yml — `s|password:.*|password: '$INDEXER_PASSWORD'|g`.
+# A `|` inside the password breaks the sed expression syntactically; with `set -e`
+# at the top of the cont-init script, the substitution aborts and the SSL
+# directives never get uncommented, so filebeat → indexer fails with x509
+# (no ssl.certificate_authorities) and empty password (operator-backlog #23).
+# `&` is a sed-replacement metacharacter (the whole match) that would also
+# corrupt the substituted value. Keeping `.*+?=!` still satisfies Wazuh's
+# "≥1 special" rule and is sed-safe.
 gen_pw() {
     python3 - <<'PY'
 import secrets, string
-specials = ".*+?=!&|"
+specials = ".*+?=!"
 alphabet = string.ascii_letters + string.digits + specials
 while True:
     pw = "".join(secrets.choice(alphabet) for _ in range(32))
