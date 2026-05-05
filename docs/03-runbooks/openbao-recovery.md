@@ -203,3 +203,61 @@ gunzip < /backup/openbao-seal-DATE.tar.gz | \
 ```
 
 For local edition this is optional — your unseal keys + Transit token can rebuild from scratch — but the snapshot saves the fresh-restart-of-everything cost.
+
+---
+
+## Restore Prometheus metrics-scrape auth
+
+**Symptom:** Wazuh dashboard noise of rule `100001` (chart catch-all "Application error detected" at level 10) firing every ~30s with `data.request.path=sys/metrics`, `operation=read`, `error="permission denied"`. Source IP is the `prometheus-kps-prometheus-0` pod. Grafana OpenBao panels (Raft state, lease counters, unseal status) go empty. Consistent with backlog item #26 (closed 2026-05-05).
+
+**Root cause class — periodic-token renew-on-USE pattern can lock out:** Phase 7d Item 4 mints a `period=720h` token bound to `metrics-policy` and writes it to K8s Secret `openbao/openbao-metrics-token`. Periodic tokens auto-refresh their TTL on every successful USE — but if scrapes start failing (network blip, OpenBao restart causing TLS handshake mismatch, NetworkPolicy drift, listener flip), USE doesn't happen, the period decrements untouched, and once it ages out the token is dead. Prometheus keeps re-presenting the same dead token, every denial generates an audit event, and the Wazuh ingest pipeline amplifies the spam.
+
+**Why `bao token lookup-self` against the metrics token is NOT a useful liveness check:** the metrics token is minted with `-no-default-policy`, so it can't read `auth/token/lookup-self` even when fresh. Always lookup-by-id from an admin token's perspective:
+
+```bash
+NEW_TOKEN=$(kubectl get secret -n openbao openbao-metrics-token -o jsonpath='{.data.token}' | base64 -d)
+kubectl exec -n openbao openbao-0 -c openbao -- \
+    env BAO_SKIP_VERIFY=1 BAO_TOKEN="$BAO_TOKEN" \
+    bao token lookup "$NEW_TOKEN"
+```
+
+**Recovery — re-run the bootstrap script (idempotent):**
+
+```bash
+# 1. Get an admin token (interactive OIDC + TOTP).
+kubectl port-forward -n openbao svc/openbao 8200:8200 &
+BAO_SKIP_VERIFY=1 BAO_ADDR=https://127.0.0.1:8200 \
+    bao login -method=oidc role=admin
+
+# 2. Re-mint the metrics token + overwrite the K8s Secret.
+BAO_TOKEN=$(bao print token) \
+    bash infrastructure/openbao/configure-metrics-auth.sh
+```
+
+The script rotates the metrics token, rewrites the Secret, and the Prometheus pod picks up the new token from its mounted-Secret file on its next scrape (~30-60s) without a restart — kubelet auto-reconciles the projected Secret and Prometheus reads the bearer token file per scrape.
+
+**Verify:**
+
+```bash
+# (a) audit log shows successful scrapes (error: null on response events)
+kubectl logs -n openbao openbao-0 -c openbao --tail=50 \
+    | grep '"path":"sys/metrics"' | tail -4
+
+# (b) Prometheus has openbao metrics
+kubectl port-forward -n observability svc/kps-prometheus 9090:9090 &
+curl -s 'http://localhost:9090/api/v1/query?query=vault_core_unsealed' | jq
+
+# (c) Wazuh stops generating data.error events on sys/metrics
+WPW=$(kubectl get secret -n wazuh wazuh-indexer-creds -o jsonpath='{.data.password}' | base64 -d)
+TS=$(date -u -d '120 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+kubectl exec -n wazuh wazuh-indexer-0 -- curl -sk -u "admin:$WPW" \
+    -H 'Content-Type: application/json' \
+    "https://localhost:9200/wazuh-alerts-4.x-*/_search?size=0" \
+    -d "{\"query\":{\"bool\":{\"must\":[{\"range\":{\"@timestamp\":{\"gte\":\"$TS\"}}},{\"match_phrase\":{\"data.request.path\":\"sys/metrics\"}},{\"exists\":{\"field\":\"data.error\"}}]}},\"track_total_hits\":true}" \
+    | jq '.hits.total'
+# Expected: total.value = 0
+```
+
+**If the policy itself is missing or detached** (rarer than token expiry — confirm with `bao policy read metrics-policy` and `bao token lookup <token>`'s `policies` field), the same script reloads the policy idempotently.
+
+**If the ServiceMonitor wiring drifts** (gotcha: `bearerTokenSecret` is resolved by Prometheus Operator in the SAME namespace as the ServiceMonitor, NOT the Prometheus pod's namespace — the metrics-token Secret MUST live in `openbao` ns, not `observability`), inspect `kubectl get servicemonitor -n openbao openbao -o yaml` and re-apply `infrastructure/openbao/09-servicemonitor.yaml`.
