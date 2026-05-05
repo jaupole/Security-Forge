@@ -122,7 +122,7 @@ kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 
 The init container appends these to the agent image's default `ossec.conf`. Verified loaded at runtime: `kubectl exec -n wazuh-agent ds/wazuh-agent -c wazuh-agent -- tail /var/ossec/etc/ossec.conf` shows the localfile blocks at the bottom.
 
-**Status:** end-to-end pipeline live as of 2026-05-05 (operator-backlog #17 + #18 closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously.
+**Status:** **agent → manager** pipeline live as of 2026-05-05 (operator-backlog #17 + #18 closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously; alerts.log shows real OpenBao + Keycloak events firing rules. **manager → indexer** pipeline is NOT live — filebeat → indexer x509 + missing-ssl-config gap (operator-backlog #23, opened 2026-05-05). `wazuh-alerts-*` indices don't exist on the indexer, so events aren't queryable in Discover yet. Until #23 closes, treat Wazuh as collected-but-not-searchable.
 
 **Manager-side decoders + rules (operator-backlog #18 closeout, 2026-05-05).** The agent's `<localfile log_format="syslog">` blocks emit kubelet-wrapped pod-log lines (`<RFC3339-TS> stdout F {...json...}`); the manager's syslog pre-decoder strips the kubelet wrapper, then a custom JSON_Decoder parses the trailing JSON into named fields. Rules then match those fields and surface alerts at level ≥ 3 (Wazuh's archive-and-display threshold).
 
@@ -219,6 +219,76 @@ When source-side log forwarding is wired (deferred — see above), a manual flus
 echo "<134>$(date +'%b %d %T') test-source: phase-7.2 verification ping" | \
     nc -w1 wazuh-manager.wazuh.svc.cluster.local 1514
 # Then in Wazuh dashboard → Events → Last 15 min: should show under "test-source"
+```
+
+### End-to-end verification recipe (real-event ingestion probe)
+
+The runbook's earlier "Verify ingestion end-to-end (after deploy)" block under § "Log forwarding from Keycloak + OpenBao" uses `wazuh-logtest` for a **synthetic** rule-firing check. That confirms the manager parses + matches; it does NOT confirm the agent → manager → indexer pipeline carries real events to the indexer. This recipe is the canonical "is the SIEM actually getting events" probe — run it before declaring SIEM coverage healthy:
+
+```bash
+# 1. Snapshot the start time (UTC; events emitted before this are filtered out).
+TS_BEFORE=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo "$TS_BEFORE"
+
+# 2. Trigger Keycloak audit events (1 well-known fetch + 3 failed logins → LOGIN_ERROR).
+curl -sk -o /dev/null -w 'HTTP %{http_code}\n' \
+    https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration
+for i in 1 2 3; do
+    curl -sk -o /dev/null -w 'HTTP %{http_code}\n' \
+        -X POST https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/token \
+        -d "grant_type=password&client_id=helloworld-bff&username=wrong-user&password=wrong-pw-$i"
+done
+
+# 3. Trigger an OpenBao audit event (read + write).
+SA_JWT=$(kubectl exec -n openbao openbao-0 -c openbao -- cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+ADMIN_TOKEN=$(kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 \
+    bao write -format=json auth/kubernetes/login role=admin-break-glass jwt="$SA_JWT" \
+    | jq -r '.auth.client_token')
+kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ADMIN_TOKEN" \
+    bao kv get secret/spicedb/preshared-key   # read
+kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ADMIN_TOKEN" \
+    bao kv put secret/test/wazuh-verify ts="$TS_BEFORE" trigger=verify-recipe   # write
+
+# 4. Wait for the agent → manager → indexer pipeline to flush.
+sleep 30
+
+# 5. Query the indexer for secforge-custom rule hits since TS_BEFORE.
+WAZUH_PW=$(kubectl get secret -n wazuh wazuh-indexer-creds -o jsonpath='{.data.password}' | base64 -d)
+kubectl exec -n wazuh wazuh-indexer-0 -c wazuh-indexer -- curl -sk -u "admin:$WAZUH_PW" \
+    "https://localhost:9200/wazuh-alerts-*/_search?pretty" \
+    -H 'Content-Type: application/json' \
+    -d "{
+      \"query\":{\"bool\":{\"must\":[
+        {\"range\":{\"@timestamp\":{\"gte\":\"$TS_BEFORE\"}}},
+        {\"range\":{\"rule.id\":{\"gte\":100200,\"lte\":100299}}}
+      ]}},
+      \"size\":5,
+      \"_source\":[\"@timestamp\",\"rule.id\",\"rule.description\",
+                   \"data.openbao.actor\",\"data.openbao.op\",\"data.openbao.path\",
+                   \"data.keycloak.loggerName\",\"agent.name\"]
+    }" | jq '.hits | {total: .total.value, ids: [.hits[]._source["rule.id"]] | unique}'
+# Expected: total >= 2; ids include at least one OpenBao rule (100200-100209) and
+# one Keycloak rule (100220-100229) within the TS_BEFORE..now window.
+```
+
+**Diagnostic decision tree** (when step 5 returns `total: 0`):
+
+```
+Is `wazuh-alerts-*` index present at all?
+    kubectl exec -n wazuh wazuh-indexer-0 -c wazuh-indexer -- \
+        curl -sk -u admin:$WAZUH_PW https://localhost:9200/_cat/indices?v | grep wazuh-alerts
+  ├─ No: filebeat → indexer is broken. Check:
+  │      kubectl exec -n wazuh wazuh-manager-0 -c wazuh-manager -- \
+  │          /usr/share/filebeat/bin/filebeat -c /etc/filebeat/filebeat.yml test output
+  │      Common failure: x509 (see § Troubleshooting), empty admin password,
+  │      missing ssl.* config block in /etc/filebeat/filebeat.yml output.elasticsearch.
+  │      (See operator-backlog #23 for the active instance of this gap.)
+  └─ Yes: pipeline OK; either (a) rule didn't match real event shape, or (b) agent
+         didn't see the source log. Check:
+            kubectl exec -n wazuh wazuh-manager-0 -- \
+                tail -50 /var/ossec/logs/alerts/alerts.log
+         If alerts ARE there, your indexer-side query syntax is the issue.
+         If NOT, drop to wazuh-logtest with a representative line from the
+         pod log to confirm the rule pattern matches.
 ```
 
 ### Rotate the chart-managed credential Secrets
