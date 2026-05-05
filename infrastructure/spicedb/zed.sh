@@ -9,7 +9,7 @@
 set -euo pipefail
 NS=spicedb
 
-PSK=$(kubectl get secret -n "$NS" spicedb-config -o jsonpath='{.data.preshared_key}' | base64 -d)
+PSK=$(kubectl get secret -n "$NS" spicedb-config-vso -o jsonpath='{.data.preshared_key}' | base64 -d)
 
 # Use a cached pod that we keep around for repeated invocations would
 # be nicer, but exec'ing each time is more idempotent for IaC use.

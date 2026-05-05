@@ -14,8 +14,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-# Pull the PSK out of the spicedb-config Secret (created by apply.sh).
-PSK=$(kubectl get secret -n "$NS" spicedb-config -o jsonpath='{.data.preshared_key}' | base64 -d)
+# Pull the PSK out of the VSO-rendered spicedb-config-vso Secret (per
+# ADR-0023; the original spicedb-config Secret was retired when VSO
+# took over rendering of preshared_key + datastore_uri at Phase 7d.2.c).
+PSK=$(kubectl get secret -n "$NS" spicedb-config-vso -o jsonpath='{.data.preshared_key}' | base64 -d)
 
 # Run zed write-schema as a one-shot pod inside the cluster. We use
 # the same authzed/zed image as the validator tests; zed talks to

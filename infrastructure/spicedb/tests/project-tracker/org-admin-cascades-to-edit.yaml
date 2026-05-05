@@ -1,0 +1,123 @@
+# Validator: an organization admin cascades to view/edit/delete/
+# manage_budget on EVERY project under that org, plus pursuit edit/
+# promote, bl_request edit/submit, and opp_watch_query edit — without
+# any direct role on the resource.
+#
+# This is the project_tracker analogue of the platform's
+# tenant-admin-cascades test — it exercises the full cascade across
+# every per-app resource type and is the one that goes silently wrong
+# if a permission expression's `+ organization->admin` clause is
+# mistyped (e.g. wrong relation name).
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+  definition organization {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition project_tracker/project {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission delete = owner + organization->admin
+      permission manage_budget = owner + organization->admin
+  }
+  definition project_tracker/pursuit {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission promote = owner + organization->admin
+  }
+  definition project_tracker/task {
+      relation parent_project: project_tracker/project
+      relation parent_pursuit: project_tracker/pursuit
+      relation owner: user
+      relation assignee: user
+      permission view = owner + assignee + parent_project->view + parent_pursuit->view
+      permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
+      permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
+  }
+  definition project_tracker/bl_request {
+      relation organization: organization
+      relation primary_pm: user
+      relation responsible: user
+      permission view = primary_pm + responsible + organization->member
+      permission edit = primary_pm + responsible + organization->admin
+      permission submit = primary_pm + organization->admin
+  }
+  definition project_tracker/opp_watch_query {
+      relation organization: organization
+      permission view = organization->member
+      permission edit = organization->admin
+  }
+
+# Bob is an org admin (and, per the day-one pattern in the audit doc,
+# also an org member — the schema's `organization->member` walks the
+# member relation directly, so admins must be granted member explicitly
+# to also satisfy view-style permissions). He gets cascade across every
+# per-project resource under the org, on TWO separate projects to
+# exercise the all-projects property (not just the one with a direct
+# grant).
+relationships: |
+  organization:aecom-bd-jason#admin@user:bob
+  organization:aecom-bd-jason#member@user:bob
+  project_tracker/project:1#organization@organization:aecom-bd-jason
+  project_tracker/project:2#organization@organization:aecom-bd-jason
+  project_tracker/pursuit:1#organization@organization:aecom-bd-jason
+  project_tracker/bl_request:1#organization@organization:aecom-bd-jason
+  project_tracker/bl_request:1#primary_pm@user:jason
+  project_tracker/opp_watch_query:1#organization@organization:aecom-bd-jason
+
+assertions:
+  assertTrue:
+    # Cascade reaches edit/delete/manage_budget on every project in the org.
+    - project_tracker/project:1#view@user:bob
+    - project_tracker/project:1#edit@user:bob
+    - project_tracker/project:1#delete@user:bob
+    - project_tracker/project:1#manage_budget@user:bob
+    - project_tracker/project:2#view@user:bob
+    - project_tracker/project:2#edit@user:bob
+    - project_tracker/project:2#delete@user:bob
+    - project_tracker/project:2#manage_budget@user:bob
+    # Pursuit cascade.
+    - project_tracker/pursuit:1#view@user:bob
+    - project_tracker/pursuit:1#edit@user:bob
+    - project_tracker/pursuit:1#promote@user:bob
+    # bl_request cascade — note `submit` requires `primary_pm + organization->admin`,
+    # which the audit-doc schema spells as a union; org-admin alone satisfies it.
+    - project_tracker/bl_request:1#view@user:bob
+    - project_tracker/bl_request:1#edit@user:bob
+    - project_tracker/bl_request:1#submit@user:bob
+    # opp_watch_query — only org admins can edit (the comment-anchored intent).
+    - project_tracker/opp_watch_query:1#view@user:bob
+    - project_tracker/opp_watch_query:1#edit@user:bob

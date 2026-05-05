@@ -1,0 +1,89 @@
+# Validator: an organization member can VIEW any project under that org
+# via the organization->member cascade — but cannot edit/delete/manage_budget
+# unless given a direct role.
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+  definition organization {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition project_tracker/project {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission delete = owner + organization->admin
+      permission manage_budget = owner + organization->admin
+  }
+  definition project_tracker/pursuit {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission promote = owner + organization->admin
+  }
+  definition project_tracker/task {
+      relation parent_project: project_tracker/project
+      relation parent_pursuit: project_tracker/pursuit
+      relation owner: user
+      relation assignee: user
+      permission view = owner + assignee + parent_project->view + parent_pursuit->view
+      permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
+      permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
+  }
+  definition project_tracker/bl_request {
+      relation organization: organization
+      relation primary_pm: user
+      relation responsible: user
+      permission view = primary_pm + responsible + organization->member
+      permission edit = primary_pm + responsible + organization->admin
+      permission submit = primary_pm + organization->admin
+  }
+  definition project_tracker/opp_watch_query {
+      relation organization: organization
+      permission view = organization->member
+      permission edit = organization->admin
+  }
+
+# Alice is a plain organization member (not admin); project:1 belongs to
+# the org. She gets `view` from the cascade but nothing more.
+relationships: |
+  organization:aecom-bd-jason#member@user:alice
+  project_tracker/project:1#organization@organization:aecom-bd-jason
+
+assertions:
+  assertTrue:
+    - project_tracker/project:1#view@user:alice
+  assertFalse:
+    - project_tracker/project:1#edit@user:alice
+    - project_tracker/project:1#delete@user:alice
+    - project_tracker/project:1#manage_budget@user:alice

@@ -1,0 +1,136 @@
+# Validator: a task with a parent_project relation inherits view/edit
+# from that project's permissions. So the project's viewers also view
+# the task; the project's editors also edit/complete the task.
+#
+# Exercises the per-task arrow-traversal `parent_project->view` /
+# `parent_project->edit` (and the equivalent for parent_pursuit, omitted
+# here — same shape).
+
+schema: |
+  definition user {}
+  definition tenant {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition app {
+      relation tenant: tenant
+      relation admin: user
+      relation user: user
+      permission administer = admin + tenant->admin
+      permission use = admin + user + tenant->member
+  }
+  definition document {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission edit = owner + editor + app->administer
+      permission view = owner + editor + viewer + app->administer + app->use
+      permission delete = owner + app->administer
+  }
+  definition organization {
+      relation admin: user
+      relation member: user
+      permission administer = admin
+      permission view = admin + member
+  }
+  definition project_tracker/project {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission delete = owner + organization->admin
+      permission manage_budget = owner + organization->admin
+  }
+  definition project_tracker/pursuit {
+      relation organization: organization
+      relation owner: user
+      relation editor: user
+      relation viewer: user
+      permission view = viewer + editor + owner + organization->member
+      permission edit = editor + owner + organization->admin
+      permission promote = owner + organization->admin
+  }
+  definition project_tracker/task {
+      relation parent_project: project_tracker/project
+      relation parent_pursuit: project_tracker/pursuit
+      relation owner: user
+      relation assignee: user
+      permission view = owner + assignee + parent_project->view + parent_pursuit->view
+      permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
+      permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
+  }
+  definition project_tracker/bl_request {
+      relation organization: organization
+      relation primary_pm: user
+      relation responsible: user
+      permission view = primary_pm + responsible + organization->member
+      permission edit = primary_pm + responsible + organization->admin
+      permission submit = primary_pm + organization->admin
+  }
+  definition project_tracker/opp_watch_query {
+      relation organization: organization
+      permission view = organization->member
+      permission edit = organization->admin
+  }
+
+# Topology: org has admin bob + member alice; project:1 has direct
+# editor charlie + direct viewer dora + owner jason; task:t1 has
+# parent_project=project:1 and assignee eve.
+#
+# Expected cascade for task:t1:
+#   - jason (project owner)        → view + edit + complete (via parent_project)
+#   - charlie (project editor)     → view + edit + complete (via parent_project)
+#   - dora (project viewer)        → view only (parent_project's `edit` doesn't include viewer)
+#   - alice (org member)           → view only (cascades through project's view)
+#   - bob (org admin)              → view + edit + complete (cascades through project's edit)
+#   - eve (task assignee)          → view + edit + complete (direct grant)
+#   - mallory (no relation)        → no permissions
+relationships: |
+  organization:aecom-bd-jason#admin@user:bob
+  organization:aecom-bd-jason#member@user:bob
+  organization:aecom-bd-jason#member@user:alice
+  project_tracker/project:1#organization@organization:aecom-bd-jason
+  project_tracker/project:1#owner@user:jason
+  project_tracker/project:1#editor@user:charlie
+  project_tracker/project:1#viewer@user:dora
+  project_tracker/task:t1#parent_project@project_tracker/project:1
+  project_tracker/task:t1#assignee@user:eve
+
+assertions:
+  assertTrue:
+    # Project owner inherits to task.
+    - project_tracker/task:t1#view@user:jason
+    - project_tracker/task:t1#edit@user:jason
+    - project_tracker/task:t1#complete@user:jason
+    # Project editor inherits to task.
+    - project_tracker/task:t1#view@user:charlie
+    - project_tracker/task:t1#edit@user:charlie
+    - project_tracker/task:t1#complete@user:charlie
+    # Project viewer inherits view only.
+    - project_tracker/task:t1#view@user:dora
+    # Org admin cascades through project's edit.
+    - project_tracker/task:t1#view@user:bob
+    - project_tracker/task:t1#edit@user:bob
+    - project_tracker/task:t1#complete@user:bob
+    # Org member cascades through project's view.
+    - project_tracker/task:t1#view@user:alice
+    # Task assignee gets direct grant.
+    - project_tracker/task:t1#view@user:eve
+    - project_tracker/task:t1#edit@user:eve
+    - project_tracker/task:t1#complete@user:eve
+  assertFalse:
+    # Project viewer does NOT inherit edit/complete.
+    - project_tracker/task:t1#edit@user:dora
+    - project_tracker/task:t1#complete@user:dora
+    # Org member does NOT inherit edit/complete (project's edit is admin-only).
+    - project_tracker/task:t1#edit@user:alice
+    - project_tracker/task:t1#complete@user:alice
+    # Outsider gets nothing.
+    - project_tracker/task:t1#view@user:mallory
+    - project_tracker/task:t1#edit@user:mallory
+    - project_tracker/task:t1#complete@user:mallory

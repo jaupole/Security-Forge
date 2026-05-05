@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Validate the four assertion-test files against SpiceDB's `zed validate`.
+# Validate every assertion-test YAML against SpiceDB's `zed validate`.
 #
 # We don't have `zed` installed locally; instead we run validate inside
 # a one-shot Job using the official zed image. This exercises the
 # parsed schema and the assertions without requiring a running SpiceDB
 # (validate is a pure function of the file contents).
 #
-# Re-run after any change to schema.zed or to a test file.
+# Layout:
+#   ./<test>.yaml                 — platform-level tests
+#   ./<app>/<test>.yaml           — per-app tests (project-tracker/, etc.)
+#
+# Re-run after any change to schema.zed or to any test file.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,8 +22,13 @@ red()   { printf '\033[31m  ✗ %s\033[0m\n' "$*" >&2; FAILED=1; }
 
 FAILED=0
 
-for testfile in "$HERE"/*.yaml; do
-    name=$(basename "$testfile")
+# Top-level + one level of per-app subdirectories. nullglob keeps the loop
+# silent if a layer is empty.
+shopt -s nullglob
+for testfile in "$HERE"/*.yaml "$HERE"/*/*.yaml; do
+    # Display the path relative to this dir so per-app tests show their
+    # subdir prefix in the output.
+    name=${testfile#"$HERE"/}
     # Run zed validate against the file. validate exits non-zero on any
     # assertion failure or schema parse error and prints to stderr.
     if docker run --rm -i "$ZED_IMAGE" validate /dev/stdin <"$testfile" >/tmp/zed-validate.out 2>&1; then

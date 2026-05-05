@@ -9,7 +9,7 @@
 set -euo pipefail
 NS=spicedb
 POD=zed-check-runner
-PSK=$(kubectl get secret -n "$NS" spicedb-config -o jsonpath='{.data.preshared_key}' | base64 -d)
+PSK=$(kubectl get secret -n "$NS" spicedb-config-vso -o jsonpath='{.data.preshared_key}' | base64 -d)
 
 green() { printf '\033[32m  ✓ %s\033[0m\n' "$*"; }
 red()   { printf '\033[31m  ✗ %s\033[0m\n' "$*" >&2; FAILED=1; }

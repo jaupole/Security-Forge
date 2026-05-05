@@ -68,3 +68,82 @@ definition document {
     permission view   = owner + editor + viewer + app->administer + app->use
     permission delete = owner + app->administer
 }
+
+// ─── Per-app domain types — Phase 10 onwards ─────────────────────────
+// Each integrated app gets its own namespace prefix (`<app>/<type>`)
+// so resource definitions for one app cannot accidentally satisfy
+// permission checks on another. Cross-app sharing is explicit (a tuple
+// targets one definition).
+//
+// `organization` is a sibling of tier-1 `tenant` with the same admin /
+// member shape. We add it as a separate type rather than reusing
+// `tenant` directly because the per-app audit docs (e.g. project-tracker.md
+// § "Permissions model") use `organization` as the domain term and the
+// audit-doc-paste should remain verbatim. Phase-9 helloworld tuples
+// reference `tenant:helloworld`; per-app tuples reference
+// `organization:<scope>` (e.g. `organization:aecom-bd-jason` for
+// Project Tracker). The two type spaces do not collide.
+
+definition organization {
+    relation admin:  user
+    relation member: user
+
+    permission administer = admin
+    permission view       = admin + member
+}
+
+// ─── Project Tracker (Phase 10.1) ────────────────────────────────────
+// Source of truth: docs/01-architecture/apps/project-tracker.md
+// § "Permissions model — SpiceDB translation".
+
+definition project_tracker/project {
+    relation organization: organization
+    relation owner: user           // the PM
+    relation editor: user
+    relation viewer: user
+
+    permission view = viewer + editor + owner + organization->member
+    permission edit = editor + owner + organization->admin
+    permission delete = owner + organization->admin
+    permission manage_budget = owner + organization->admin
+}
+
+definition project_tracker/pursuit {
+    relation organization: organization
+    relation owner: user
+    relation editor: user
+    relation viewer: user
+
+    permission view = viewer + editor + owner + organization->member
+    permission edit = editor + owner + organization->admin
+    permission promote = owner + organization->admin   // pursuit → won → spawn project
+}
+
+definition project_tracker/task {
+    relation parent_project: project_tracker/project
+    relation parent_pursuit: project_tracker/pursuit
+    relation owner: user
+    relation assignee: user
+
+    // A task inherits view/edit from whichever parent set the relation.
+    permission view = owner + assignee + parent_project->view + parent_pursuit->view
+    permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
+    permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
+}
+
+definition project_tracker/bl_request {
+    relation organization: organization
+    relation primary_pm: user
+    relation responsible: user
+
+    permission view = primary_pm + responsible + organization->member
+    permission edit = primary_pm + responsible + organization->admin
+    permission submit = primary_pm + organization->admin
+}
+
+definition project_tracker/opp_watch_query {
+    relation organization: organization
+
+    permission view = organization->member
+    permission edit = organization->admin   // only admins tune the SAM.gov queries
+}

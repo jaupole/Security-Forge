@@ -7,7 +7,7 @@ set -euo pipefail
 NS=spicedb
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PSK=$(kubectl get secret -n "$NS" spicedb-config -o jsonpath='{.data.preshared_key}' | base64 -d)
+PSK=$(kubectl get secret -n "$NS" spicedb-config-vso -o jsonpath='{.data.preshared_key}' | base64 -d)
 
 # Copy the seed YAML into a one-shot pod and run `zed import`.
 # `--schema-definition-prefix` left blank so definition names match the
