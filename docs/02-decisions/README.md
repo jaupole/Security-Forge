@@ -30,6 +30,7 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0022](./0022-kcadm-admin-long-lived-credential.md) | kcadm-admin long-lived credential carve-out (90-day rotation) | Accepted |
 | [0023](./0023-spicedb-datastore-uri-rotation-pattern.md) | SpiceDB datastore_uri rotation pattern (Path B — refresher CronJob) | Accepted |
 | [0024](./0024-teleport-community-edition-local.md) | Teleport Community Edition for local; GitHub OAuth pivot | Accepted (amended 2026-05-03) |
+| [0025](./0025-jwt-auth-role-token-ttl-rule.md) | JWT auth role `token_ttl` MUST exceed dynamic-credential `default_ttl` | Accepted |
 
 ## Template
 

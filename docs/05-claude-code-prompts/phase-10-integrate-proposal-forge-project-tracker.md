@@ -189,6 +189,7 @@ After cutover:
   - The `apps/lib/errreport/` `ScrubbingReporter` is wired into the app's error path (mirror [apps/helloworld-bff/errreport.go](../../apps/helloworld-bff/errreport.go))
   - Verify `git log -p -- .env .env.*` for the app's history shows every value that was ever committed; **rotate every credential whose value appears anywhere in history** per ADR-0013 § Pre-migration checklist
   - Run `bash infrastructure/secrets-guardrails/verify/run-all.sh` from the platform repo; expect 9/9 PASS
+  - **If the app mints dynamic database credentials, verify the JWT auth role's `token_ttl > database role default_ttl` per [ADR-0025](../02-decisions/0025-jwt-auth-role-token-ttl-rule.md).** The Phase 9 retrospective documents the SpiceDB orphan-lease incident this rule prevents — short `token_ttl` revokes child credential leases regardless of their own `default_ttl`. Default to `default_ttl=1h, token_ttl=90m` for first-class apps that fetch on demand via `apps/lib/secrets/`; widen `default_ttl` (and bump `token_ttl` to match) only for off-the-shelf workloads that hold credentials in-memory across the cron-refresh interval.
 
 ## Phase 10.{N}.6 — Containerize, sign, deploy
 
@@ -210,6 +211,11 @@ Deploy:
   - Ingress: {APP_HOST} (pf.secforge.local for Proposal Forge, pt.secforge.local for Project Tracker)
   - mkcert cert via cert-manager
   - All images Cosign-signed; Kyverno verification in Audit (will flip to Enforce alongside the Phase 6.7 carry-in)
+
+BFF Keycloak-client correctness checks (carried over from [Phase 9 retrospective](./phase-09-retrospective.md) — the helloworld-bff skeleton hit all three of these and they will resurface in the Phase-3 skeleton clones if not verified):
+  - **Verify `oidc-sub-mapper` is present on the new BFF Keycloak client.** Without it, access tokens for the BFF have no `sub` claim and SpiceDB `CheckPermission` fails on regex validation of an empty subject. The Phase-3 skeleton clients (`project-tracker-bff`, `proposal-forge-bff`, `pm-bff`) inherit the same defect that helloworld-bff did. Add the mapper via `kcadm` in the bootstrap step or amend `infrastructure/keycloak/realms/bootstrap-bff-clients.sh` to apply it for all four clients at once.
+  - **Verify `oidc-audience-mapper` is added directly on the BFF client (NOT via client-scope binding).** Binding a client scope that adds the audience silently failed against `private_key_jwt`-authenticating clients on Keycloak 26.3.3 in our setup. The working pattern is a per-client direct mapper targeting the corresponding `{APP}-api` audience.
+  - **BFF must mint DPoP proofs using the public URL (`inboundHTU(r)`), never the in-cluster upstream URL.** The backend's `canonicalHTU` reconstructs from `X-Forwarded-Proto`/`X-Forwarded-Host`/`X-Forwarded-Port`, so the two MUST match or every request fails `htu_mismatch`. New BFFs cloned from `apps/helloworld-bff/` inherit the correct behavior; do not regress it. The lesson generalizes: anywhere a BFF and its backend independently canonicalize a URL, they must canonicalize identically.
 
 ## Phase 10.{N}.7 — Observability wiring
 
