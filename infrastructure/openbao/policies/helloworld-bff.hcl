@@ -3,6 +3,8 @@
 #
 # Capabilities:
 #   - read the BFF's own private_key_jwt PEM at startup (Phase 6.6 / 6.8)
+#   - read outbound-integration secrets under secret/data/apps/helloworld-bff/<integration>
+#     (operator-backlog #13 closeout 2026-05-05: Valkey AUTH password)
 #   - read static config under secret/data/apps/helloworld/<key>
 #   - mint dynamic Postgres credentials via database/creds/helloworld-app-readwrite
 #   - encrypt + decrypt via Transit (PII at rest in the app DB)
@@ -22,6 +24,18 @@ path "secret/data/apps/helloworld/+" {
   capabilities = ["read"]
 }
 path "secret/metadata/apps/helloworld/+" {
+  capabilities = ["read", "list"]
+}
+
+# Outbound integrations — apps/lib/secrets/ Client builds paths as
+# `secret/data/apps/<AppName>/<integration>` per ADR-0013 § 1. The BFF's
+# AppName is "helloworld-bff"; the only integration today is "valkey"
+# (closeout of operator-backlog #13). Pattern is `+` not `*` so each
+# integration is one path segment — same shape as the helloworld block above.
+path "secret/data/apps/helloworld-bff/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/helloworld-bff/+" {
   capabilities = ["read", "list"]
 }
 

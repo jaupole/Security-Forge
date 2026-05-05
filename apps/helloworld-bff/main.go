@@ -38,7 +38,7 @@ type cfg struct {
 	KCIssuer       string // Keycloak realm issuer URL
 	KCClientID     string // OIDC client_id
 	ValkeyAddr     string // host:port for Valkey (Redis-compatible)
-	ValkeyPassword string // optional; from BFF_VALKEY_PASSWORD env
+	ValkeyPassword string // fetched at startup from OpenBao at apps/<bff>/valkey:password
 	ValkeyDB       int    // logical DB; default 0
 	OpenBaoAddr    string // OpenBao API base, e.g. https://openbao.openbao.svc.cluster.local:8200
 	OpenBaoRole    string // jwt-auth role (e.g. helloworld-bff)
@@ -59,7 +59,9 @@ func loadCfg() (cfg, error) {
 	c.KCIssuer = mustEnv("BFF_KEYCLOAK_ISSUER")
 	c.KCClientID = mustEnv("BFF_KEYCLOAK_CLIENT_ID")
 	c.ValkeyAddr = mustEnv("BFF_VALKEY_ADDR")
-	c.ValkeyPassword = os.Getenv("BFF_VALKEY_PASSWORD")
+	// ValkeyPassword is intentionally NOT loaded from an env var.
+	// Per ADR-0013 (no env-borne credentials) it's fetched from OpenBao
+	// at startup; see main() after newOutboundSecretsClient is constructed.
 	c.OpenBaoAddr = mustEnv("BFF_OPENBAO_ADDR")
 	c.OpenBaoRole = getenv("BFF_OPENBAO_ROLE", "helloworld-bff")
 	c.OpenBaoSVIDIn = getenv("BFF_OPENBAO_SVID_PATH", "/shared/openbao.jwt")
@@ -122,6 +124,44 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Phase 6b-2 commit 5: outbound-secrets Client (ADR-0013 § 5). Reuses
+	// the same OpenBaoBootstrapper as the private_key_jwt path; the
+	// templated OpenBao policy authorizes reads from
+	// `secret/data/apps/helloworld-bff/*` for this app's role.
+	//
+	// Constructed BEFORE the session store because the Valkey AUTH
+	// password is fetched from OpenBao via this client (operator-backlog
+	// #13 closeout, 2026-05-05).
+	osc, err := newOutboundSecretsClient(bootstrap, "helloworld-bff")
+	if err != nil {
+		log.Error("outbound secrets client init failed", "err", err)
+		os.Exit(1)
+	}
+	log.Info("outbound-secrets client ready", "app", "helloworld-bff", "hardened", true)
+
+	// Operator-backlog #13 (closed 2026-05-05): fetch the Valkey AUTH
+	// password from OpenBao at apps/helloworld-bff/valkey:password.
+	// Replaces the prior BFF_VALKEY_PASSWORD env var + K8s Secret +
+	// secforge.local/legacy-secret-env annotation.
+	//
+	// The Secret returned by GetField is consumed via Use here so its
+	// in-memory residency is bounded to this scope; the redis client
+	// stores its own immutable-string copy of the password thereafter
+	// (the same boundary every redis-go consumer accepts).
+	valkeyPwSecret, err := osc.client.GetField(ctx, "valkey", "password")
+	if err != nil {
+		log.Error("openbao fetch valkey password failed", "path", "apps/helloworld-bff/valkey", "err", err)
+		os.Exit(1)
+	}
+	if err := valkeyPwSecret.Use(func(b []byte) error {
+		c.ValkeyPassword = string(b)
+		return nil
+	}); err != nil {
+		log.Error("valkey password unwrap failed", "err", err)
+		os.Exit(1)
+	}
+	log.Info("valkey password loaded from openbao", "path", "apps/helloworld-bff/valkey")
+
 	sess, err := newSessionStore(ctx, c)
 	if err != nil {
 		log.Error("session store init failed", "err", err)
@@ -141,17 +181,6 @@ func main() {
 		"audiences", os.Getenv("BFF_AUDIENCE_LIST"),
 		"backend_audience", apiAuth.backendAudience,
 		"workload_id", apiAuth.workloadID)
-
-	// Phase 6b-2 commit 5: outbound-secrets Client (ADR-0013 § 5). Reuses
-	// the same OpenBaoBootstrapper as the private_key_jwt path; the
-	// templated OpenBao policy authorizes reads from
-	// `secret/data/apps/helloworld-bff/*` for this app's role.
-	osc, err := newOutboundSecretsClient(bootstrap, "helloworld-bff")
-	if err != nil {
-		log.Error("outbound secrets client init failed", "err", err)
-		os.Exit(1)
-	}
-	log.Info("outbound-secrets client ready", "app", "helloworld-bff", "hardened", true)
 
 	// Phase 6b-2 commit 5: errreport ScrubbingReporter wired into a
 	// no-op sink (ADR-0013 § 6). Production code paths invoke errReporter()
