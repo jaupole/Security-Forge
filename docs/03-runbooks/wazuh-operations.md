@@ -52,9 +52,9 @@ OIDC federation against Keycloak is **not yet wired** — see `Deferred componen
 
 The Phase 7.2 deploy intentionally omits four pieces. Each has a clear "when to revisit" criterion.
 
-### 1. Wazuh Agent DaemonSet — Phase 7d Item 5 (2026-05-02): hardening shipped, key persistence deferred
+### 1. Wazuh Agent DaemonSet — Phase 7d Item 5 (2026-05-02): hardening shipped; key persistence closed 2026-05-05 (operator-backlog #17)
 
-**Status:** infrastructure shipped (separate ns `wazuh-agent` with PSS=privileged), agent registers with manager + connects, but `/var/ossec/etc/client.keys` doesn't persist across pod restarts → enrollment-loop quirk prevents stable steady-state. The hardening work (Item 5's substantive ask) is complete; the persistence wiring is a known limitation tracked as a focused follow-up.
+**Status:** infrastructure shipped (separate ns `wazuh-agent` with PSS=privileged), agent registers with manager + connects. **`/var/ossec/etc/client.keys` persistence resolved 2026-05-05** via `bootstrap-agent-key.sh` (pre-register agent on manager → extract key → persist as K8s Secret `wazuh-agent/wazuh-agent-key`) + DaemonSet init-container injection (the etc-overlay init copies the Secret content into `/var/ossec/etc/client.keys` at every pod start, so the agent uses the pre-registered key directly and never auto-enrolls). Verified: kill the agent pod, watch the new pod come back with the SAME agent ID (010) and Active state in `agent_control -l`; manager logs show zero re-enrollment events.
 
 **What's in `infrastructure/wazuh-agent/`:**
 
@@ -70,31 +70,34 @@ The Phase 7.2 deploy intentionally omits four pieces. Each has a clear "when to 
 - **Auditd integration:** would need `AUDIT_READ` (not in the baseline-allowed set; we excluded it).
 - **Active-response:** disabled (would need root + more capabilities; not used on local-edition).
 
-**Known issue: enrollment key persistence.** `/var/ossec/etc/` is mounted as an EmptyDir, so the agent's `client.keys` is wiped on pod restart. The agent's auto-enrollment then races against the manager's existing-name registration:
+**Resolved persistence flow (operator-backlog #17 closeout, 2026-05-05).** `/var/ossec/etc/` is still an EmptyDir, but `client.keys` no longer comes from auto-enrollment. The init container copies the K8s Secret content into the EmptyDir, so:
 
-1. Pod restart → empty `client.keys` → agentd auto-enrolls → manager creates new agent ID with the same node name.
-2. Agent's local enrollment-response handling doesn't reliably persist the key to `client.keys` (image's init quirk).
-3. Subsequent re-enrollment fails with `Duplicate agent name` (manager's `<purge>yes</purge>` is gated by `<after_registration_time>1h</after_registration_time>`).
+1. Pod restart → init container copies pre-registered key from K8s Secret → `wazuh-control start` sees a valid `client.keys` and connects to the manager directly (no enrollment exchange).
+2. Manager's `agent_control -l` shows the same agent ID (`010 desktop-control-plane`) every time.
+3. `wazuh-logcollector` stays running across restarts; Phase 7d Item 6 pod-log events flow continuously.
 
-Effect: manager `agent_control -l` shows the agent as `Active`, but `wazuh-logcollector` doesn't reach steady state, and Phase 7d Item 6 pod-log events from Keycloak/OpenBao don't flow reliably until the operator intervenes.
-
-**Recovery (manual):**
+**Bootstrap (one-time, idempotent re-runs land a fresh ID + key):**
 
 ```bash
-# Remove the duplicate agent ID from the manager's keys file:
-kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/manage_agents <<< $'r\n<id>\ny\nq\n'
-# Restart the agent so it re-enrolls cleanly:
+bash infrastructure/wazuh-agent/bootstrap-agent-key.sh
 kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 ```
 
-**Permanent fix (Phase 7d.5 follow-up — separate from this Item 5 closure):**
+The script registers `desktop-control-plane` with the manager, extracts the agent key, and writes the K8s Secret. Re-running registers a NEW ID + key (clean slate); existing pods pick it up on the next rollout.
 
-- Pre-register the agent on the manager with a known name + extract the key once
-- Persist as a K8s Secret in `wazuh-agent` ns
-- Mount the Secret as `/var/ossec/etc/client.keys` via subPath (overrides the EmptyDir for that one file)
-- DaemonSet's `spec.template.spec.containers[0].env.WAZUH_REGISTRATION_*` removed (agent uses pre-registered key, no auto-enroll)
+**Recovery from a duplicate-agent state (only needed if Bootstrap was skipped and an auto-enrollment loop already happened):**
 
-Approximately 30–60 min of focused work. Tracked separately so the Item 5 hardening surface ships clean.
+```bash
+# Remove duplicate registrations of `desktop-control-plane` from the manager,
+# then re-bootstrap:
+kubectl exec -n wazuh wazuh-manager-0 -- /var/ossec/bin/manage_agents -l \
+    | awk '/Name: desktop-control-plane,/ { print $2 }' | tr -d ','
+# (For each ID printed, remove with `manage_agents -r <id>` — pipe `y\n` for confirmation.)
+bash infrastructure/wazuh-agent/bootstrap-agent-key.sh
+kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
+```
+
+**Multi-node note:** the bootstrap script registers ONE agent (Docker Desktop's single node). Multi-node clusters need a per-node agent name + key — out of scope for local-edition.
 
 ### 2. Log forwarding from Keycloak + OpenBao — Phase 7d Item 6 (2026-05-02): config in place, blocked by Item 5 stability
 
@@ -119,9 +122,46 @@ Approximately 30–60 min of focused work. Tracked separately so the Item 5 hard
 
 The init container appends these to the agent image's default `ossec.conf`. Verified loaded at runtime: `kubectl exec -n wazuh-agent ds/wazuh-agent -c wazuh-agent -- tail /var/ossec/etc/ossec.conf` shows the localfile blocks at the bottom.
 
-**Status:** the config is correct and in-place, but events don't reach the manager + indexer reliably until the Item 5 enrollment-loop quirk is fixed (see § 1 above). Once `client.keys` persists, `wazuh-logcollector` stays running and the localfile tailing kicks in.
+**Status:** end-to-end pipeline live as of 2026-05-05 (operator-backlog #17 + #18 closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously.
 
-**Custom decoders for the JSON formats** (originally planned manager-side at `/var/ossec/etc/decoders/local_decoder.xml`) are NOT in this commit — they're tracked as a Phase 7d.6 follow-up; until decoders land, raw JSON events ship as `wazuh-alerts` entries with `data.*` fields but without parsed Wazuh field mappings (search by `agent.labels.source: keycloak` to find them).
+**Manager-side decoders + rules (operator-backlog #18 closeout, 2026-05-05).** The agent's `<localfile log_format="syslog">` blocks emit kubelet-wrapped pod-log lines (`<RFC3339-TS> stdout F {...json...}`); the manager's syslog pre-decoder strips the kubelet wrapper, then a custom JSON_Decoder parses the trailing JSON into named fields. Rules then match those fields and surface alerts at level ≥ 3 (Wazuh's archive-and-display threshold).
+
+- **Decoder:** `infrastructure/wazuh/03-decoders-configmap.yaml` → mounts at `/var/ossec/etc/decoders/local_decoder.xml`. Patched in via `infrastructure/wazuh/04-manager-decoders-patch.sh`.
+- **Rules:** `infrastructure/wazuh/04-rules-configmap.yaml` → mounts at `/var/ossec/etc/rules/secforge_local_rules.xml`. Patched in via `infrastructure/wazuh/05-manager-rules-patch.sh`. Rule range 100200–100299; non-overlapping with the chart-shipped 100001–100099 application-error range. Rule shapes:
+  - **OpenBao** (sentinel: `auth.display_name` + `request.path` exist): 100200 base @ level 3, 100201 auth/policy denial @ level 8, 100202/100204/100205 sensitive-write on `sys/`/`auth/jwt/`/`transit/keys/` @ level 6, 100203 brute-force correlation @ level 14.
+  - **Keycloak** (sentinel: `loggerName` starts with `org.keycloak`): 100220 base @ level 3, 100221 WARN @ level 5, 100222 ERROR @ level 10, 100224 FATAL @ level 12, 100223 audit-listener (`org.keycloak.events`) @ level 5.
+
+**Wazuh rule-schema gotchas hit during the cutover (preserve here so future-you doesn't rediscover):**
+1. `<field name="type">`, `<field name="level">`, `<field name="request.operation">`, `<field name="request.path">` are all reserved tag names in Wazuh's rule schema — analysisd rejects with `5107: Syntax error on tag '<name>'`. Anchor on uniquely-named decoded fields (`auth.display_name`, `loggerName`) instead, and use `<match>` (substring) for severity-style discriminators.
+2. Wazuh's classic `<regex>` does NOT support `(A|B)` capture groups in child-rule contexts. Either split the rule per alternative (one `<match>` per case) or use `<regex type="pcre2">`.
+3. `wazuh-logtest` (interactive: `kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/wazuh-logtest`) is the right tool for verifying a rule fires before relying on the dashboard — it shows Phase 1 pre-decoding, Phase 2 decoded fields, Phase 3 rule match, and the alert that would be generated.
+
+**Verify ingestion end-to-end (after deploy):**
+
+```bash
+# 1. Manager has the decoder + rules.
+kubectl exec -n wazuh wazuh-manager-0 -- ls -la \
+    /var/ossec/etc/decoders/local_decoder.xml \
+    /var/ossec/etc/rules/secforge_local_rules.xml
+kubectl exec -n wazuh wazuh-manager-0 -- bash -c \
+    'grep "Total rules enabled" /var/ossec/logs/ossec.log | tail -1'
+# Expected: 8473 (chart-shipped 8462 + 11 secforge rules); a different
+# count means the rule file failed to load — check the next grep.
+kubectl exec -n wazuh wazuh-manager-0 -- bash -c \
+    'grep -E "Error loading the rules|Syntax error" /var/ossec/logs/ossec.log | tail -3'
+
+# 2. Sanity-check rule firing without leaving the manager.
+kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/wazuh-logtest <<'JSON'
+{"time":"2026-05-05T13:00:00Z","type":"request","auth":{"display_name":"jason"},"request":{"operation":"read","path":"secret/data/foo"}}
+JSON
+# Expected: rule 100200 fires at level 3 with description
+# "OpenBao audit: actor=jason op=read path=secret/data/foo".
+
+# 3. End-to-end (operator hits Keycloak + OpenBao, alerts land in dashboard).
+curl -sk https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration >/dev/null
+kubectl exec -n openbao openbao-0 -- bao kv get secret/foo 2>/dev/null
+# Then in Wazuh dashboard, Discover view: filter `rule.id: 100200 OR rule.id: 100220`.
+```
 
 ### 3. OIDC federation with Keycloak — deferred (medium follow-up)
 

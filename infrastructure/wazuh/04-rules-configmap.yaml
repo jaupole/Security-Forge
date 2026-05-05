@@ -1,0 +1,154 @@
+# Phase 7d.6 (operator-backlog #18 closeout) — manager-side rules that
+# match the JSON shapes coming through the kubelet-pod-log decoder
+# (see 03-decoders-configmap.yaml) and surface them in the Wazuh
+# dashboard at a non-zero rule level so the events are archived /
+# alerted on (Wazuh skips level=0 events).
+#
+# Rule ID range: 100200-100299 (sibling to the chart-shipped
+# local_rules.xml's 100001-100099 application-error range; non-
+# overlapping).
+#
+# Mounted at /var/ossec/etc/rules/secforge_local_rules.xml by
+# 05-manager-rules-patch.sh; the manager's <ruleset><rule_dir>etc/rules
+# block auto-loads any .xml in that directory at startup.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-local-rules
+  namespace: wazuh
+  labels:
+    secforge.platform/component: wazuh-manager
+data:
+  secforge_local_rules.xml: |
+    <!-- Phase 7d.6 — JSON-shape rules for OpenBao + Keycloak pod logs.
+         The kubelet-pod-log decoder (local_decoder.xml) JSON_Decoder-
+         flattens incoming JSON; rules below match decoded fields and
+         tag canonical actor/target/event-class semantics in the
+         description string + rule group. -->
+
+    <group name="secforge,">
+
+      <!-- ====================================================== -->
+      <!-- OpenBao audit events                                   -->
+      <!-- Sentinels: type ∈ {request,response} AND auth fields   -->
+      <!-- exist. JSON_Decoder lands fields directly (no `data.`  -->
+      <!-- prefix at decoder level; the indexer applies the       -->
+      <!-- prefix in stored alerts).                              -->
+      <!-- ====================================================== -->
+
+      <!-- Base: any OpenBao audit event lands at level 3 (visible
+           in dashboard, archived). The OpenBao audit shape uniquely
+           has nested auth.display_name + request.path; we anchor on
+           those because Wazuh's rule schema reserves bare-name tags
+           like `<field name="type">` for internal use.
+           actor / target / op / path are in the description so the
+           event is human-readable in the discover view without
+           dropping into raw JSON. -->
+      <rule id="100200" level="3">
+        <decoded_as>json</decoded_as>
+        <field name="auth.display_name">\.+</field>
+        <field name="request.path">\.+</field>
+        <description>OpenBao audit: actor=$(auth.display_name) op=$(request.operation) path=$(request.path)</description>
+        <group>openbao,audit,</group>
+      </rule>
+
+      <!-- Auth/policy denial (response side carries the error). -->
+      <rule id="100201" level="8">
+        <if_sid>100200</if_sid>
+        <field name="response.error">\.+</field>
+        <description>OpenBao auth/policy error: actor=$(auth.display_name) path=$(request.path) error=$(response.error)</description>
+        <group>openbao,audit,authentication_failed,</group>
+      </rule>
+
+      <!-- Path-specific mutations under sys/, auth/jwt/, transit/keys/.
+           One rule per top-level path; each uses a single <match>
+           substring (Wazuh's classic <regex> rejects child-rule
+           regex constructs in our setup, and `<field name="request.*">`
+           tags collide with reserved schema names). The dashboard
+           query `rule.groups: openbao_sensitive_write` then surfaces
+           any of these for review; per-operation discrimination
+           (create vs delete) is a downstream rule the operator can
+           refine once they confirm baseline ingestion is healthy. -->
+      <rule id="100202" level="6">
+        <if_sid>100200</if_sid>
+        <match>"path":"sys/</match>
+        <description>OpenBao mutation on sys/: actor=$(auth.display_name)</description>
+        <group>openbao,audit,sensitive_write,</group>
+      </rule>
+      <rule id="100204" level="6">
+        <if_sid>100200</if_sid>
+        <match>"path":"auth/jwt/</match>
+        <description>OpenBao mutation on auth/jwt/: actor=$(auth.display_name)</description>
+        <group>openbao,audit,sensitive_write,</group>
+      </rule>
+      <rule id="100205" level="6">
+        <if_sid>100200</if_sid>
+        <match>"path":"transit/keys/</match>
+        <description>OpenBao mutation on transit/keys/: actor=$(auth.display_name)</description>
+        <group>openbao,audit,sensitive_write,</group>
+      </rule>
+
+      <!-- Correlation: 5+ OpenBao auth/policy errors in 2 min. -->
+      <rule id="100203" level="14" frequency="5" timeframe="120">
+        <if_matched_sid>100201</if_matched_sid>
+        <description>OpenBao: 5+ auth/policy errors in 2 min — possible brute force or principal misconfiguration</description>
+        <group>openbao,audit,brute_force,</group>
+      </rule>
+
+      <!-- ====================================================== -->
+      <!-- Keycloak JBoss logger + audit events                   -->
+      <!-- Sentinel: loggerName starts with org.keycloak.         -->
+      <!-- The audit-listener output (when enabled via Keycloak   -->
+      <!-- SPI) lands on loggerName = org.keycloak.events.        -->
+      <!-- ====================================================== -->
+
+      <!-- Base: any Keycloak JSON log lands at level 3. We anchor on
+           loggerName (non-reserved) and use a regex against the raw
+           log content to discriminate severity, because Wazuh's rule
+           schema reserves `<field name="level">`. -->
+      <rule id="100220" level="3">
+        <decoded_as>json</decoded_as>
+        <field name="loggerName">^org\.keycloak</field>
+        <description>Keycloak: $(loggerName) — $(message)</description>
+        <group>keycloak,audit,</group>
+      </rule>
+
+      <!-- Severity discriminated via <match> (plain substring) — Wazuh's
+           classic <regex> rejects `(A|B)` capture groups in child-rule
+           contexts and the schema reserves `<field name="level">`. Each
+           severity gets its own rule. -->
+      <rule id="100221" level="5">
+        <if_sid>100220</if_sid>
+        <match>"level":"WARN"</match>
+        <description>Keycloak warning: $(loggerName) — $(message)</description>
+        <group>keycloak,audit,</group>
+      </rule>
+
+      <rule id="100222" level="10">
+        <if_sid>100220</if_sid>
+        <match>"level":"ERROR"</match>
+        <description>Keycloak error: $(loggerName) — $(message)</description>
+        <group>keycloak,audit,application_error,</group>
+      </rule>
+
+      <rule id="100224" level="12">
+        <if_sid>100220</if_sid>
+        <match>"level":"FATAL"</match>
+        <description>Keycloak fatal: $(loggerName) — $(message)</description>
+        <group>keycloak,audit,application_error,</group>
+      </rule>
+
+      <!-- Audit-event-listener output (org.keycloak.events) — fires
+           when Keycloak's `jboss-logging` event listener is enabled
+           on the realm. Default disabled; enable per-realm via
+           `kcadm update events/config -r <realm> -s eventsListeners='["jboss-logging"]'`.
+           Until then, only org.keycloak.* runtime logs match 100220. -->
+      <rule id="100223" level="5">
+        <if_sid>100220</if_sid>
+        <field name="loggerName">^org\.keycloak\.events$</field>
+        <description>Keycloak audit event: $(message)</description>
+        <group>keycloak,audit,authentication,</group>
+      </rule>
+
+    </group>
