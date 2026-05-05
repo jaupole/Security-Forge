@@ -1,0 +1,99 @@
+apiVersion: v1
+items:
+- apiVersion: security.istio.io/v1
+  kind: AuthorizationPolicy
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"security.istio.io/v1","kind":"AuthorizationPolicy","metadata":{"annotations":{},"labels":{"secforge.platform/component":"authzen-facade"},"name":"allow-app-to-authzen-facade","namespace":"app"},"spec":{"action":"ALLOW","rules":[{"from":[{"source":{"namespaces":["app"]}}],"to":[{"operation":{"ports":["8080"]}}]}],"selector":{"matchLabels":{"app.kubernetes.io/name":"authzen-facade"}}}}
+    creationTimestamp: "2026-04-30T00:52:41Z"
+    generation: 1
+    labels:
+      secforge.platform/component: authzen-facade
+    name: allow-app-to-authzen-facade
+    namespace: app
+    resourceVersion: "271842"
+    uid: d7a014cb-d095-43e3-a6b8-86e539fd801b
+  spec:
+    action: ALLOW
+    rules:
+    - from:
+      - source:
+          namespaces:
+          - app
+      to:
+      - operation:
+          ports:
+          - "8080"
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: authzen-facade
+  status:
+    conditions:
+    - lastTransitionTime: "2026-04-30T00:52:41.646868789Z"
+      message: attached to ztunnel
+      observedGeneration: "1"
+      reason: Accepted
+      status: "True"
+      type: ZtunnelAccepted
+- apiVersion: security.istio.io/v1
+  kind: AuthorizationPolicy
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"security.istio.io/v1","kind":"AuthorizationPolicy","metadata":{"annotations":{},"labels":{"secforge.platform/component":"authzen-facade"},"name":"allow-prometheus-to-authzen-metrics","namespace":"app"},"spec":{"action":"ALLOW","rules":[{"to":[{"operation":{"ports":["8080"]}}]}],"selector":{"matchLabels":{"app.kubernetes.io/name":"authzen-facade"}}}}
+    creationTimestamp: "2026-05-01T12:52:24Z"
+    generation: 1
+    labels:
+      secforge.platform/component: authzen-facade
+    name: allow-prometheus-to-authzen-metrics
+    namespace: app
+    resourceVersion: "665254"
+    uid: c8998555-5941-46c1-8ee0-1607ab6377b9
+  spec:
+    action: ALLOW
+    rules:
+    - to:
+      - operation:
+          ports:
+          - "8080"
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: authzen-facade
+  status:
+    conditions:
+    - lastTransitionTime: "2026-05-01T12:52:24.639044082Z"
+      message: attached to ztunnel
+      observedGeneration: "1"
+      reason: Accepted
+      status: "True"
+      type: ZtunnelAccepted
+- apiVersion: security.istio.io/v1
+  kind: AuthorizationPolicy
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"security.istio.io/v1","kind":"AuthorizationPolicy","metadata":{"annotations":{},"labels":{"secforge.platform/component":"istio-authz"},"name":"default-deny","namespace":"app"},"spec":{"selector":{"matchLabels":{"secforge.platform/mesh-authz":"enforce"}}}}
+    creationTimestamp: "2026-04-30T00:52:41Z"
+    generation: 2
+    labels:
+      secforge.platform/component: istio-authz
+    name: default-deny
+    namespace: app
+    resourceVersion: "273158"
+    uid: df99b4b5-3c63-4075-b4ee-e1633da3123b
+  spec:
+    selector:
+      matchLabels:
+        secforge.platform/mesh-authz: enforce
+  status:
+    conditions:
+    - lastTransitionTime: "2026-04-30T00:56:28.124475261Z"
+      message: attached to ztunnel
+      observedGeneration: "2"
+      reason: Accepted
+      status: "True"
+      type: ZtunnelAccepted
+kind: List
+metadata:
+  resourceVersion: ""

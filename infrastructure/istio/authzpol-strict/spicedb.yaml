@@ -1,0 +1,61 @@
+# Phase 7c (DRAFT, not applied) — `spicedb` namespace AuthZ policies
+# under STRICT (Style A: ns is mesh-enrolled in the same window).
+
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: spicedb
+spec: {}
+
+---
+# AuthZEN façade is the only legitimate caller of SpiceDB on its gRPC
+# port — SpiceDB-specific quirks (tuple shape, schema) are isolated
+# behind the façade per ADR-0015.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-authzen-facade-to-spicedb
+  namespace: spicedb
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spicedb
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "secforge.local/ns/app/sa/authzen-facade"
+      to:
+        - operation:
+            ports: ["50051"]
+
+---
+# spicedb-datastore-refresher CronJob in spicedb ns connects to
+# OpenBao to mint dynamic Postgres creds for SpiceDB. The refresher's
+# SPIFFE-ID is `secforge.local/ns/spicedb/sa/spicedb-datastore-refresher`.
+# Outbound to openbao is policy-handled in openbao.yaml; this rule
+# only governs inbound (the refresher receives nothing inbound).
+# Documented for clarity — no rule needed here.
+
+---
+# Prometheus scrapes SpiceDB on its metrics port.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-to-spicedb-metrics
+  namespace: spicedb
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: spicedb
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["observability"]
+      to:
+        - operation:
+            ports: ["9090"]
+            paths: ["/metrics"]

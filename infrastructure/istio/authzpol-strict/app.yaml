@@ -1,0 +1,151 @@
+# Phase 7c (DRAFT, not applied) — `app` namespace AuthorizationPolicies
+# under the SPIRE trust domain (`secforge.local`).
+#
+# Replaces (at cutover-time) the `cluster.local`-trust-domain set in
+# infrastructure/istio/06-authz-default-deny.yaml. Keep both files until
+# the cutover lands; remove 06-authz-default-deny.yaml in the same commit
+# that flips PLAN.md Phase 7c to ✅.
+#
+# Trust-domain boundary: every <principals> entry below uses
+# `secforge.local/...` not `cluster.local/...`. Istio's URI matching
+# accepts both prefix forms; the SPIRE-as-CA cutover changes which one
+# the mesh issues, and the policies must match the issued one.
+
+# ─── default-deny ────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: app
+spec:
+  {}
+  # Empty spec → action defaults to ALLOW with an empty rule set →
+  # effective deny for every inbound request not matched by another
+  # ALLOW policy. Same shape as the chart-shipped pattern.
+
+---
+# ─── allow-app-to-authzen-facade ─────────────────────────────────────
+# Any in-mesh `app` workload may call the AuthZEN façade on its API port.
+# Returning Phase-10 BFFs (project-tracker-bff, proposal-forge-bff,
+# pm-bff) reach the façade via this rule the same way helloworld-bff did.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-app-to-authzen-facade
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authzen-facade
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "secforge.local/ns/app/sa/*"
+      to:
+        - operation:
+            ports: ["8080"]
+
+---
+# ─── allow-prometheus-to-authzen-metrics ──────────────────────────────
+# Prometheus is NOT in the mesh today. It scrapes via Service VIP at
+# Pod-IP:9091. Allow on source.namespaces=observability — the
+# kube-prometheus-stack pods are scoped to that ns. Under STRICT this
+# admits via the namespace-scoped trust path; if Prometheus is
+# mesh-enrolled later, swap to source.principals matching its SA.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-to-authzen-metrics
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authzen-facade
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["observability"]
+      to:
+        - operation:
+            ports: ["9091"]
+            paths: ["/metrics"]
+
+---
+# ─── allow-bff-to-secforge-app-db ────────────────────────────────────
+# Phase 10 BFFs and backends mint dynamic Postgres creds via OpenBao,
+# then connect to secforge-app-db-1 on 5432. Under STRICT, the DB pod
+# is mesh-enrolled (via app ns ambient label) — so callers must present
+# a SPIFFE-ID. Allow any in-mesh `app` workload (BFFs + backends; the
+# templated SPIFFE-ID list grows per Phase-10 cutover but the trust
+# domain + ns part is stable).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-secforge-app-db
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: secforge-app-db
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "secforge.local/ns/app/sa/*"
+      to:
+        - operation:
+            ports: ["5432"]
+
+---
+# ─── allow-openbao-to-secforge-app-db ────────────────────────────────
+# OpenBao mints dynamic Postgres credentials by connecting to the DB on
+# 5432 with its admin role. Under Style A (mesh-enroll openbao ns),
+# openbao gets a SPIFFE-ID via SPIRE — this rule allows that path.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-openbao-to-secforge-app-db
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: secforge-app-db
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "secforge.local/ns/openbao/sa/openbao"
+      to:
+        - operation:
+            ports: ["5432"]
+
+---
+# ─── allow-ingress-nginx-to-bff ──────────────────────────────────────
+# External traffic enters via ingress-nginx, which is NOT mesh-enrolled
+# in either Style A or Style B (ingress-nginx is its own attack-surface
+# pod and we don't want ztunnel intercepting its traffic). Under STRICT,
+# ingress-nginx → BFF must be admitted via source.namespaces. The cost:
+# no SPIFFE attestation on this hop. Compensated by ingress-nginx's own
+# ACL plus the BFF's session/DPoP-binding in the application layer.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-nginx-to-bff
+  namespace: app
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: bff
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["ingress-nginx"]
+      to:
+        - operation:
+            ports: ["3000"]
