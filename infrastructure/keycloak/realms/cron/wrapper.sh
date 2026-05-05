@@ -27,6 +27,7 @@ log_err() {
 : "${BAO_ADDR:?BAO_ADDR env required}"
 : "${BAO_JWT_PATH:?BAO_JWT_PATH env required}"
 : "${BAO_ROLE:?BAO_ROLE env required}"
+: "${BAO_CACERT:?BAO_CACERT env required (path to mkcert CA bundle, mounted from openbao-ca-bundle Secret)}"
 
 if [ ! -r "$BAO_JWT_PATH" ]; then
     log_err "JWT-SVID not readable at $BAO_JWT_PATH (spiffe-helper init container failed?)"
@@ -39,14 +40,12 @@ if [ -z "$JWT" ]; then
     exit 1
 fi
 
-# Mint OpenBao token via auth/jwt/login. -k tolerated locally because
-# OpenBao's serving cert is mkcert-signed and alpine/k8s doesn't bundle
-# our local CA. The risk this papers over (bogus OpenBao impersonation)
-# is mitigated by NetworkPolicy + Istio Ambient L4 mTLS at the cluster
-# boundary; cloud-edition migration MUST replace -k with a CA bundle
-# mount once the trust domain is unified (Phase 7c → cloud).
+# Mint OpenBao token via auth/jwt/login. The mkcert CA is mounted at
+# $BAO_CACERT via the openbao-ca-bundle Secret (apply.sh copies it from
+# the cert-manager mkcert-ca-key-pair Secret). Same canonical pattern
+# as VSO's caCertSecretRef.
 LOGIN_BODY=$(printf '{"role":"%s","jwt":"%s"}' "$BAO_ROLE" "$JWT")
-RESP=$(curl -ksS -X POST -H 'Content-Type: application/json' \
+RESP=$(curl --cacert "$BAO_CACERT" -sS -X POST -H 'Content-Type: application/json' \
     -d "$LOGIN_BODY" "$BAO_ADDR/v1/auth/jwt/login" 2>&1)
 TOKEN=$(printf '%s' "$RESP" | jq -r '.auth.client_token // empty')
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then

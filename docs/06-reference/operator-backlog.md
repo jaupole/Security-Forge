@@ -4,7 +4,7 @@
 >
 > When you open a new backlog item, append a row here AND link the row from the closing phase block in PLAN.md. When you close one, mark it ✅ here AND remove the open reference from PLAN.md prose.
 >
-> Last updated: 2026-05-04 (post-Phase-9)
+> Last updated: 2026-05-04 (post-Phase-9 + Phase 10.1.1 audit)
 
 ## Legend
 
@@ -25,6 +25,7 @@
 | 15 | 2026-05-02 | 7c | Istio Ambient AuthZ-denial observability — original log-level finding closed; ztunnel emits per-policy + per-clause RBAC trace at `RUST_LOG=trace` | n/a | ✅ Closed 2026-05-03 | — |
 | 17 | 2026-05-02 | 7d.5 | Wazuh agent `client.keys` doesn't persist across pod restarts (enrollment-loop quirk) | ~30–60 min | ⬜ Open | Soft — gates Wazuh-agent event flow → SIEM is currently deployed-but-not-receiving |
 | 18 | 2026-05-02 | 7d.6 | Wazuh manager-side custom decoders for OpenBao + Keycloak JSON formats not loaded | ~1 hr | ⬜ Open | Soft — paired with #17 for end-to-end audit-event ingestion |
+| 19 | 2026-05-04 | 10.1.1 | MCP server reachability after Project Tracker moves to cluster — PT's Week-5 MCP server runs over stdio for Jason's local Claude Code → PT data; cluster deployment breaks the stdio model. Decide between (a) keep a local-only MCP shim that proxies to the cluster API, or (b) expose a bounded set of MCP-over-HTTP endpoints. Surface a small ADR. | small (decision) + medium (impl) | ⬜ Open | Soft — only blocks Week-5 PT work, not the Phase-10 cutover |
 
 ## Severity / blocker bar
 

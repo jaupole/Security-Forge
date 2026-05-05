@@ -33,7 +33,27 @@ for f in "$REALMS_DIR/rotate-bff-key.sh" \
     fi
 done
 
-# 2. Build the scripts ConfigMap from on-disk sources. `kubectl create
+# 2. Copy the mkcert CA into `app` ns as Secret `openbao-ca-bundle` so
+#    the rotator pod can verify OpenBao's serving cert (replaces an
+#    earlier `curl -ksS` pattern; see ADR — no slot yet — and the
+#    audit S1 fix). Same canonical pattern as
+#    infrastructure/vault-secrets-operator/apply.sh.
+green "==> copying mkcert CA into app as openbao-ca-bundle"
+CA_PEM=$(kubectl get secret -n cert-manager mkcert-ca-key-pair \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d)
+if [ -z "$CA_PEM" ]; then
+    red "could not read mkcert-ca-key-pair from cert-manager namespace"
+    exit 1
+fi
+kubectl create secret generic openbao-ca-bundle \
+    -n app \
+    --from-literal=ca.crt="$CA_PEM" \
+    --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n app label secret openbao-ca-bundle \
+    secforge.platform/component=bff-key-rotator \
+    --overwrite >/dev/null
+
+# 3. Build the scripts ConfigMap from on-disk sources. `kubectl create
 #    configmap --dry-run=client -o yaml | kubectl apply -f -` is the
 #    standard idempotent idiom for live-rebuilt ConfigMaps.
 green "==> building bff-key-rotator-scripts ConfigMap from on-disk sources"
@@ -45,7 +65,7 @@ kubectl create configmap bff-key-rotator-scripts \
     --dry-run=client -o yaml \
     | kubectl apply -f -
 
-# 3. Apply the manifest (RBAC, helper-conf ConfigMap, four CronJobs).
+# 4. Apply the manifest (RBAC, helper-conf ConfigMap, four CronJobs).
 green "==> applying 01-rotate-bff-key.yaml"
 kubectl apply -f "$HERE/01-rotate-bff-key.yaml"
 

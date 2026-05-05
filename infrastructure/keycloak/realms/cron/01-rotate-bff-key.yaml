@@ -285,6 +285,8 @@ spec:
                   value: "/shared/openbao.jwt"
                 - name: BAO_ROLE
                   value: "bff-key-rotator"
+                - name: BAO_CACERT
+                  value: "/etc/ssl/openbao/ca.crt"
               command: ["/bin/bash", "/scripts/wrapper.sh"]
               volumeMounts:
                 - name: scripts
@@ -292,6 +294,9 @@ spec:
                   readOnly: true
                 - name: shared
                   mountPath: /shared
+                  readOnly: true
+                - name: openbao-ca
+                  mountPath: /etc/ssl/openbao
                   readOnly: true
                 - name: tmp
                   mountPath: /tmp
@@ -310,6 +315,9 @@ spec:
                 defaultMode: 0755
             - name: shared
               emptyDir: {}
+            - name: openbao-ca
+              secret:
+                secretName: openbao-ca-bundle
             - name: tmp
               emptyDir: {}
 
@@ -394,10 +402,12 @@ spec:
                 - { name: BAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
                 - { name: BAO_JWT_PATH, value: "/shared/openbao.jwt" }
                 - { name: BAO_ROLE, value: "bff-key-rotator" }
+                - { name: BAO_CACERT, value: "/etc/ssl/openbao/ca.crt" }
               command: ["/bin/bash", "/scripts/wrapper.sh"]
               volumeMounts:
                 - { name: scripts, mountPath: /scripts, readOnly: true }
                 - { name: shared, mountPath: /shared, readOnly: true }
+                - { name: openbao-ca, mountPath: /etc/ssl/openbao, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
@@ -407,6 +417,7 @@ spec:
             - { name: helper-conf, configMap: { name: bff-key-rotator-spiffe-helper } }
             - { name: scripts, configMap: { name: bff-key-rotator-scripts, defaultMode: 0755 } }
             - { name: shared, emptyDir: {} }
+            - { name: openbao-ca, secret: { secretName: openbao-ca-bundle } }
             - { name: tmp, emptyDir: {} }
 
 ---
@@ -480,10 +491,12 @@ spec:
                 - { name: BAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
                 - { name: BAO_JWT_PATH, value: "/shared/openbao.jwt" }
                 - { name: BAO_ROLE, value: "bff-key-rotator" }
+                - { name: BAO_CACERT, value: "/etc/ssl/openbao/ca.crt" }
               command: ["/bin/bash", "/scripts/wrapper.sh"]
               volumeMounts:
                 - { name: scripts, mountPath: /scripts, readOnly: true }
                 - { name: shared, mountPath: /shared, readOnly: true }
+                - { name: openbao-ca, mountPath: /etc/ssl/openbao, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
@@ -493,6 +506,7 @@ spec:
             - { name: helper-conf, configMap: { name: bff-key-rotator-spiffe-helper } }
             - { name: scripts, configMap: { name: bff-key-rotator-scripts, defaultMode: 0755 } }
             - { name: shared, emptyDir: {} }
+            - { name: openbao-ca, secret: { secretName: openbao-ca-bundle } }
             - { name: tmp, emptyDir: {} }
 
 ---
@@ -566,10 +580,12 @@ spec:
                 - { name: BAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
                 - { name: BAO_JWT_PATH, value: "/shared/openbao.jwt" }
                 - { name: BAO_ROLE, value: "bff-key-rotator" }
+                - { name: BAO_CACERT, value: "/etc/ssl/openbao/ca.crt" }
               command: ["/bin/bash", "/scripts/wrapper.sh"]
               volumeMounts:
                 - { name: scripts, mountPath: /scripts, readOnly: true }
                 - { name: shared, mountPath: /shared, readOnly: true }
+                - { name: openbao-ca, mountPath: /etc/ssl/openbao, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
@@ -579,4 +595,5 @@ spec:
             - { name: helper-conf, configMap: { name: bff-key-rotator-spiffe-helper } }
             - { name: scripts, configMap: { name: bff-key-rotator-scripts, defaultMode: 0755 } }
             - { name: shared, emptyDir: {} }
+            - { name: openbao-ca, secret: { secretName: openbao-ca-bundle } }
             - { name: tmp, emptyDir: {} }

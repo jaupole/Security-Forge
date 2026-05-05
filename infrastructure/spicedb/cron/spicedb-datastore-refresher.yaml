@@ -82,6 +82,7 @@ data:
     : "${BAO_ADDR:?}"
     : "${BAO_JWT_PATH:?}"
     : "${BAO_ROLE:?}"
+    : "${BAO_CACERT:?path to mkcert CA bundle (mounted from openbao-ca-bundle Secret)}"
 
     log() {
         # log <severity> <step> [extra-jq-object-string]
@@ -116,9 +117,9 @@ data:
     JWT=$(cat "$BAO_JWT_PATH")
     [ -n "$JWT" ] || die preflight '{"reason":"JWT-SVID empty"}'
 
-    # Mint OpenBao token. -k tolerated locally (mkcert CA not bundled in
-    # alpine/k8s); cloud-edition migration MUST replace -k with a CA mount.
-    LOGIN_RESP=$(curl -ksS -X POST -H 'Content-Type: application/json' \
+    # Mint OpenBao token. The mkcert CA is mounted at $BAO_CACERT from
+    # the openbao-ca-bundle Secret (apply.sh copies it from cert-manager).
+    LOGIN_RESP=$(curl --cacert "$BAO_CACERT" -sS -X POST -H 'Content-Type: application/json' \
         -d "{\"role\":\"$BAO_ROLE\",\"jwt\":\"$JWT\"}" "$BAO_ADDR/v1/auth/jwt/login")
     BAO_TOKEN=$(printf '%s' "$LOGIN_RESP" | jq -r '.auth.client_token // empty')
     [ -n "$BAO_TOKEN" ] && [ "$BAO_TOKEN" != "null" ] || \
@@ -126,7 +127,7 @@ data:
     log info auth-jwt-login-success
 
     # Mint a fresh dynamic Postgres credential.
-    CRED_RESP=$(curl -ksS -H "X-Vault-Token: $BAO_TOKEN" \
+    CRED_RESP=$(curl --cacert "$BAO_CACERT" -sS -H "X-Vault-Token: $BAO_TOKEN" \
         "$BAO_ADDR/v1/database/creds/spicedb-readwrite")
     DYN_USER=$(printf '%s' "$CRED_RESP" | jq -r '.data.username // empty')
     DYN_PASS=$(printf '%s' "$CRED_RESP" | jq -r '.data.password // empty')
@@ -137,7 +138,7 @@ data:
     log info mint-cred-success "{\"username\":\"$DYN_USER\",\"lease_id\":\"$LEASE_ID\",\"lease_duration\":$LEASE_DUR}"
 
     # Read the static preshared_key.
-    PSK_RESP=$(curl -ksS -H "X-Vault-Token: $BAO_TOKEN" \
+    PSK_RESP=$(curl --cacert "$BAO_CACERT" -sS -H "X-Vault-Token: $BAO_TOKEN" \
         "$BAO_ADDR/v1/secret/data/spicedb/preshared-key")
     PSK=$(printf '%s' "$PSK_RESP" | jq -r '.data.data.preshared_key // empty')
     [ -n "$PSK" ] || die read-psk '{"reason":"empty preshared_key at secret/data/spicedb/preshared-key"}'
@@ -158,7 +159,7 @@ data:
         --arg src "phase-7d-spicedb-datastore-refresher" \
         --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{data:{datastore_uri:$dsn, preshared_key:$psk, source:$src, refreshed_at:$ts}}')
-    WRITE_RESP=$(curl -ksS -X POST -H "X-Vault-Token: $BAO_TOKEN" \
+    WRITE_RESP=$(curl --cacert "$BAO_CACERT" -sS -X POST -H "X-Vault-Token: $BAO_TOKEN" \
         -H 'Content-Type: application/json' \
         -d "$KV_BODY" "$BAO_ADDR/v1/secret/data/spicedb/config")
     NEW_VERSION=$(printf '%s' "$WRITE_RESP" | jq -r '.data.version // empty')
@@ -233,10 +234,12 @@ spec:
                 - { name: BAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
                 - { name: BAO_JWT_PATH, value: "/shared/openbao.jwt" }
                 - { name: BAO_ROLE, value: "spicedb-datastore-refresher" }
+                - { name: BAO_CACERT, value: "/etc/ssl/openbao/ca.crt" }
               command: ["/bin/bash", "/scripts/refresh.sh"]
               volumeMounts:
                 - { name: scripts, mountPath: /scripts, readOnly: true }
                 - { name: shared, mountPath: /shared, readOnly: true }
+                - { name: openbao-ca, mountPath: /etc/ssl/openbao, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
@@ -246,6 +249,7 @@ spec:
             - { name: helper-conf, configMap: { name: spicedb-datastore-refresher-spiffe-helper } }
             - { name: scripts, configMap: { name: spicedb-datastore-refresher-script, defaultMode: 0755 } }
             - { name: shared, emptyDir: {} }
+            - { name: openbao-ca, secret: { secretName: openbao-ca-bundle } }
             - { name: tmp, emptyDir: {} }
 
 # ─── NetworkPolicy: refresher pod → openbao API ─────────────────────────
