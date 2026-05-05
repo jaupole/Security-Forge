@@ -122,7 +122,7 @@ kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 
 The init container appends these to the agent image's default `ossec.conf`. Verified loaded at runtime: `kubectl exec -n wazuh-agent ds/wazuh-agent -c wazuh-agent -- tail /var/ossec/etc/ossec.conf` shows the localfile blocks at the bottom.
 
-**Status:** **agent → manager → indexer** pipeline live as of 2026-05-05 (operator-backlog #17, #18, #23 all closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously; alerts.log shows real OpenBao + Keycloak events firing rules. With #23 closed, filebeat → indexer ships the alerts to `wazuh-alerts-4.x-YYYY.MM.DD` daily indices; the dashboard's Discover view populates within ~30s of an event. **Caveat (operator-backlog #24, open):** the secforge custom rules (100200-100299) don't fire on real pod-log lines — events match the chart's generic rule 100001 instead — because the manager-side decoder doesn't strip the `stdout F ` middle prefix that the kubelet log wrapper inserts. Synthetic events via `wazuh-logtest` DO match (validated at #18). Real-event rule firing for OpenBao/Keycloak-specific descriptions is gated on #24.
+**Status:** **agent → manager → indexer with secforge custom rule firing on real pod-log lines** — fully live as of 2026-05-05 (operator-backlog #17, #18, #23, #24 all closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously; alerts.log shows real OpenBao + Keycloak events firing rules. With #23 closed, filebeat → indexer ships the alerts to `wazuh-alerts-4.x-YYYY.MM.DD` daily indices; the dashboard's Discover view populates within ~30s of an event. With #24 closed, the secforge custom rules (100200-100299) fire on the kubelet-wrapped JSON shape — see § "kubelet pod-log prefix handling" below for the syslog-pre-decoder quirk that bit us.
 
 **Manager-side decoders + rules (operator-backlog #18 closeout, 2026-05-05).** The agent's `<localfile log_format="syslog">` blocks emit kubelet-wrapped pod-log lines (`<RFC3339-TS> stdout F {...json...}`); the manager's syslog pre-decoder strips the kubelet wrapper, then a custom JSON_Decoder parses the trailing JSON into named fields. Rules then match those fields and surface alerts at level ≥ 3 (Wazuh's archive-and-display threshold).
 
@@ -134,7 +134,50 @@ The init container appends these to the agent image's default `ossec.conf`. Veri
 **Wazuh rule-schema gotchas hit during the cutover (preserve here so future-you doesn't rediscover):**
 1. `<field name="type">`, `<field name="level">`, `<field name="request.operation">`, `<field name="request.path">` are all reserved tag names in Wazuh's rule schema — analysisd rejects with `5107: Syntax error on tag '<name>'`. Anchor on uniquely-named decoded fields (`auth.display_name`, `loggerName`) instead, and use `<match>` (substring) for severity-style discriminators.
 2. Wazuh's classic `<regex>` does NOT support `(A|B)` capture groups in child-rule contexts. Either split the rule per alternative (one `<match>` per case) or use `<regex type="pcre2">`.
-3. `wazuh-logtest` (interactive: `kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/wazuh-logtest`) is the right tool for verifying a rule fires before relying on the dashboard — it shows Phase 1 pre-decoding, Phase 2 decoded fields, Phase 3 rule match, and the alert that would be generated.
+3. `wazuh-logtest` (interactive: `kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/wazuh-logtest`) is the right tool for verifying a rule fires before relying on the dashboard — it shows Phase 1 pre-decoding, Phase 2 decoded fields, Phase 3 rule match, and the alert that would be generated. **Important:** test BOTH the synthetic clean-JSON shape AND a real kubelet-wrapped line (`<RFC3339-TS> stdout F {"...":...}`) — the two go through different decoders and a rule that fires for one may not fire for the other (see § "kubelet pod-log prefix handling" below).
+
+**kubelet pod-log prefix handling (operator-backlog #24, closed 2026-05-05):**
+
+The wazuh-agent's `<localfile log_format="syslog">` blocks tail kubelet pod logs at `/host/var/log/pods/<ns>_<pod>_*/<container>/*.log`. Kubelet writes those files in this shape:
+
+```
+<RFC3339-timestamp> (stdout|stderr) (F|P) <payload>
+```
+
+Wazuh's syslog pre-decoder runs first and (counterintuitively) consumes BOTH the timestamp AND the `stdout` / `stderr` token — it treats `stdout`/`stderr` as the syslog HOSTNAME slot per RFC3164's `<TS> <HOSTNAME> <PROGRAM>: <MSG>` shape. So the message content reaching the decoders is **`F {"...":...}`** (full lines) or **`P {"...":...}`** (partial / continuation lines). It is NOT `{"...":...}` — the leading `F ` / `P ` is what bit us in #24.
+
+Three custom decoders in `infrastructure/wazuh/03-decoders-configmap.yaml` handle this:
+
+| Decoder name | Prematch | Notes |
+|---|---|---|
+| `json` (chart-shipped) | `^{"` | Synthetic clean JSON input. `wazuh-logtest` lines without the kubelet wrapper take this path. |
+| `json` (our `^F `) | `^F ` | Kubelet full-line shape. `offset="after_prematch"` aims `JSON_Decoder` at the `{` that follows the trailing space. |
+| `json` (our `^P `) | `^P ` | Kubelet continuation-line shape. Rare — only fires when a single stdout write exceeds kubelet's ~16 KiB buffer. |
+
+All three decoders are intentionally named `json` (NOT a unique custom name). Wazuh allows multiple decoders to share a name and tries them in order; rules in `04-rules-configmap.yaml` then key on `<decoded_as>json</decoded_as>` and fire identically regardless of which decoder did the JSON parse.
+
+**Why `<prematch>` is restricted:**
+
+- `<prematch>` uses Wazuh's OSRegex engine — NOT pcre2. The `type="pcre2"` attribute is only honored on `<regex>`.
+- OSRegex supports top-level `|` alternation but NOT grouped alternation `(F|P)`. analysisd rejects with `(1452): Syntax error on regex: '^stdout (F|P) '`.
+- OSRegex does NOT support POSIX character classes `[FP]`.
+- That's why we have two literal-prefix decoders (`^F ` / `^P `) instead of one combined regex.
+
+**If a rule fires for `wazuh-logtest` synthetic input but NOT for live pod-log events**, the breakage is almost certainly between this section and the rule — verify with this two-step test:
+
+```bash
+# Synthetic shape (chart-shipped json decoder path)
+kubectl exec -n wazuh wazuh-manager-0 -i -c wazuh-manager -- /var/ossec/bin/wazuh-logtest <<'JSON'
+{"time":"2026-05-05T20:38:16Z","type":"request","auth":{"display_name":"jason"},"request":{"operation":"read","path":"secret/data/foo"}}
+JSON
+
+# Real kubelet shape (our ^F decoder path) — note the literal `stdout F ` prefix
+kubectl exec -n wazuh wazuh-manager-0 -i -c wazuh-manager -- /var/ossec/bin/wazuh-logtest <<'JSON'
+2026-05-05T20:38:16.123456789Z stdout F {"time":"2026-05-05T20:38:16Z","type":"request","auth":{"display_name":"jason"},"request":{"operation":"read","path":"secret/data/foo"}}
+JSON
+```
+
+Both should land at Phase 3 `id: '100200'`. If only the first does, our `^F ` decoder isn't loaded — check `kubectl exec -n wazuh wazuh-manager-0 -- cat /var/ossec/etc/decoders/local_decoder.xml`.
 
 **Verify ingestion end-to-end (after deploy):**
 
@@ -263,11 +306,17 @@ kubectl exec -n wazuh wazuh-indexer-0 -c wazuh-indexer -- curl -sk -u "admin:$WA
       ]}},
       \"size\":5,
       \"_source\":[\"@timestamp\",\"rule.id\",\"rule.description\",
-                   \"data.openbao.actor\",\"data.openbao.op\",\"data.openbao.path\",
-                   \"data.keycloak.loggerName\",\"agent.name\"]
+                   \"data.auth.display_name\",\"data.request.operation\",\"data.request.path\",
+                   \"data.loggerName\",\"data.message\",\"agent.name\"]
     }" | jq '.hits | {total: .total.value, ids: [.hits[]._source["rule.id"]] | unique}'
-# Expected: total >= 2; ids include at least one OpenBao rule (100200-100209) and
-# one Keycloak rule (100220-100229) within the TS_BEFORE..now window.
+# Expected (post-#24 closeout, real-event coverage live):
+#   total >= 2; ids include at least one OpenBao rule (100200-100209) and
+#   one Keycloak rule (100220-100229) within the TS_BEFORE..now window.
+# This is the canonical "secforge-specific SIEM coverage live" closure
+# signal — narrower than "any wazuh-alerts hits" (which can be satisfied
+# by chart-shipped rule 100001 catching error keywords). If total > 0
+# but the rule.id range is wrong, see § "kubelet pod-log prefix handling"
+# above — almost always a decoder-path issue.
 ```
 
 **Diagnostic decision tree** (when step 5 returns `total: 0`):

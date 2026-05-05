@@ -30,27 +30,72 @@ metadata:
     secforge.platform/component: wazuh-manager
 data:
   local_decoder.xml: |
-    <!-- Phase 7d.6: kubelet pod-log wrapper decoder.
-         Strips the timestamp + stdout/stderr + P/F prefix; the
-         JSON_Decoder child decoder parses the JSON part into data.*
-         fields.
+    <!-- Phase 7d.6 (#18) + 2026-05-05 (#24): kubelet pod-log wrapper
+         decoder.
 
-         All <prematch>/<regex> on this file use type="pcre2" because
-         Wazuh's default sregex does not accept the \d{n} quantifier
-         syntax we need to match the kubelet RFC3339 timestamp shape. -->
-    <!-- Wazuh's syslog pre-decoder strips the kubelet wrapper
-         (`<timestamp> stdout|stderr P|F `) before this decoder sees
-         the content. The post-pre-decode line is just the trailing
-         JSON `{"...":...}`. Match on that and let JSON_Decoder
-         flatten the fields into data.*.
+         Kubelet writes pod logs in this shape:
+           <RFC3339-timestamp> (stdout|stderr) (F|P) <payload>
+         Wazuh's syslog pre-decoder treats the line as RFC3164-shaped
+         and consumes BOTH the timestamp AND the `stdout` / `stderr`
+         token (treating it as the hostname slot). So the content
+         reaching decoders for a real pod-log line is:
+           F {"...":...}    (full line, JSON payload)
+           P {"...":...}    (partial / continuation — multi-segment line)
+         For a synthetic / wazuh-logtest call with a clean JSON line,
+         the content is just `{"...":...}` (no kubelet wrapper).
 
-         The match is intentionally broad — any line whose post-
-         predecode content starts with a JSON object opener. Other
-         agents on this manager could conflict, but in this cluster
-         the only `<localfile>` JSON-tailing config is the wazuh-agent
-         DaemonSet's pod-log targets (Phase 7d Item 6), so the
-         broad match is operationally safe. -->
-    <decoder name="kubelet-pod-log">
-      <prematch>^{"</prematch>
-      <plugin_decoder>JSON_Decoder</plugin_decoder>
+         The original Phase 7d.6 decoder used `<prematch>^{"</prematch>`
+         which only matched the synthetic case — real pod-log lines
+         have the leading `F ` (or `P `) so the prematch never fired
+         and JSON_Decoder never engaged. operator-backlog #24 closeout
+         (2026-05-05) extends the file to handle both shapes.
+
+         Probe-based reverse-engineering:
+           prematch `stdout F `  → does NOT match (`stdout` already
+                                   stripped by the pre-decoder)
+           prematch `F `         → matches  → confirms content starts
+                                   with `F ` after pre-decoding
+           prematch `{"`         → does NOT match  → confirms `F ` is
+                                   actually present, not just a syslog
+                                   field artifact
+
+         Wazuh `<prematch>` uses OSRegex (the `type="pcre2"` attribute
+         is only honored on `<regex>`, not on `<prematch>`). OSRegex
+         supports top-level `|` alternation but NOT grouped alternation
+         like `(F|P)` — analysisd rejects with:
+           ERROR: (1452): Syntax error on regex: '^stdout (F|P) '
+         Likewise no POSIX character classes (`[FP]`). Sticking with
+         a literal `F ` prematch keeps the OSRegex feature surface
+         minimal. -->
+
+    <!-- Real kubelet-wrapped pod-log lines after syslog pre-decode:
+         the message content reaching the decoder is `F {"...":...}`
+         (full line) or `P {"...":...}` (partial continuation). Prematch
+         is anchored at the start of the message (`^F ` / `^P `); after
+         the match position there is exactly the opening brace `{` of
+         the JSON payload, so JSON_Decoder with `offset="after_prematch"`
+         starts parsing right at the JSON object.
+
+         Decoder name is `json` (NOT a unique custom name) on purpose:
+         Wazuh's runtime sets the event's `decoded_as` field to the
+         DECODER name, and the secforge rules in
+         `04-rules-configmap.yaml` use `<decoded_as>json</decoded_as>`
+         as a sentinel. The chart-shipped Wazuh ruleset already
+         declares a `json` decoder for unwrapped JSON input
+         (`/var/ossec/ruleset/decoders/0006-json_decoders.xml`); we
+         add two MORE decoders with the same name covering the
+         kubelet-wrapped shapes. Wazuh allows multiple decoders to
+         share a name — they are tried in order and act as alternative
+         entry points to the same downstream rule chain. Synthetic
+         clean JSON continues to flow through the chart's built-in
+         `json` decoder; kubelet-wrapped JSON now flows through these
+         two (operator-backlog #24 closeout 2026-05-05). All paths
+         emit `decoded_as=json` so the rules fire identically. -->
+    <decoder name="json">
+      <prematch>^F </prematch>
+      <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+    </decoder>
+    <decoder name="json">
+      <prematch>^P </prematch>
+      <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
     </decoder>
