@@ -179,6 +179,24 @@ JSON
 
 Both should land at Phase 3 `id: '100200'`. If only the first does, our `^F ` decoder isn't loaded — check `kubectl exec -n wazuh wazuh-manager-0 -- cat /var/ossec/etc/decoders/local_decoder.xml`.
 
+**Read-side auth/policy denial — rule 100206 (operator-backlog #27, closed 2026-05-05):**
+
+OpenBao audit events for *denied* requests don't carry `auth.display_name` — the audit shape on auth/policy failure emits only `auth.token_type`. That excludes them from rule 100200 (which sentinels on `auth.display_name`), so they fall through to chart's catch-all rule 100001 (`<match> ERROR </match>`, level 10, false-high — reads failing auth are diagnostic, not application-error severity).
+
+Rule 100206 fixes this by **parenting on 100001 directly via `<if_sid>100001</if_sid>`**. When 100001 matches AND the OpenBao read-denial pattern also matches (`request.operation=^read$`, `request.path` populated, top-level `error` populated), 100206 overrides at level 5. Stand-alone parenting on 100200 doesn't work because (a) failed events lack `auth.display_name`, and (b) Wazuh fires the highest-level rule when multiple match, so a stand-alone level-5 rule loses to 100001's level 10 every time.
+
+OSRegex gotcha (worth its own callout — bit us during #27): in `<field>` constraints, **`\.` means "any char"** and **bare `.` means "literal period"**. That inverts the PCRE convention. Use `\.+` for "any non-empty content"; use `\.+@\.+` for an email-shape match; use bare `.+` only when you actually want literal periods. The same convention applies in `<regex>` blocks. The `^read$` form (anchored literal) does work as expected — it's only the wildcards that flip.
+
+Verify with `wazuh-logtest`:
+
+```bash
+kubectl exec -n wazuh wazuh-manager-0 -i -c wazuh-manager -- /var/ossec/bin/wazuh-logtest <<'JSON'
+{"time":"2026-05-05T23:11:43Z","type":"response","auth":{"token_type":"default"},"request":{"operation":"read","path":"sys/metrics"},"error":"1 error occurred:\n\t* permission denied\n\n"}
+JSON
+```
+
+Expected: Phase 3 `id: '100206'` at level 5, description `OpenBao read denied: path=sys/metrics error=...`.
+
 **Verify ingestion end-to-end (after deploy):**
 
 ```bash
