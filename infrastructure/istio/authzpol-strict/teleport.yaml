@@ -52,7 +52,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/teleport/sa/teleport-proxy"
+              - "cluster.local/ns/teleport/sa/teleport-proxy"     # transition
+              - "secforge.local/ns/teleport/sa/teleport-proxy"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["3025"]

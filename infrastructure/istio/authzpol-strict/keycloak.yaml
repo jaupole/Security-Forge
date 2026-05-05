@@ -76,7 +76,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/app/sa/*"
+              - "cluster.local/ns/app/sa/*"     # transition
+              - "secforge.local/ns/app/sa/*"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["8080", "8443"]

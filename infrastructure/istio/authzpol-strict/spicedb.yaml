@@ -26,7 +26,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/app/sa/authzen-facade"
+              - "cluster.local/ns/app/sa/authzen-facade"     # transition
+              - "secforge.local/ns/app/sa/authzen-facade"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["50051"]

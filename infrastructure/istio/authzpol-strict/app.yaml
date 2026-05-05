@@ -12,16 +12,22 @@
 # the mesh issues, and the policies must match the issued one.
 
 # ─── default-deny ────────────────────────────────────────────────────
+# Preserves the Phase 6.3 opt-in pattern (selector matches pods that
+# explicitly carry `secforge.platform/mesh-authz: enforce`). Pods that
+# don't carry the label (e.g. CNPG postgres) rely on STRICT PeerAuth
+# at the L4 layer for transport-level protection rather than L7
+# default-deny here.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: default-deny
   namespace: app
+  labels:
+    secforge.platform/component: istio-authz
 spec:
-  {}
-  # Empty spec → action defaults to ALLOW with an empty rule set →
-  # effective deny for every inbound request not matched by another
-  # ALLOW policy. Same shape as the chart-shipped pattern.
+  selector:
+    matchLabels:
+      secforge.platform/mesh-authz: enforce
 
 ---
 # ─── allow-app-to-authzen-facade ─────────────────────────────────────
@@ -42,7 +48,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/app/sa/*"
+              - "cluster.local/ns/app/sa/*"     # transition: until Citadel SVIDs phase out
+              - "secforge.local/ns/app/sa/*"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["8080"]
@@ -95,7 +102,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/app/sa/*"
+              - "cluster.local/ns/app/sa/*"     # transition: until Citadel SVIDs phase out
+              - "secforge.local/ns/app/sa/*"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["5432"]
@@ -119,7 +127,8 @@ spec:
     - from:
         - source:
             principals:
-              - "secforge.local/ns/openbao/sa/openbao"
+              - "cluster.local/ns/openbao/sa/openbao"     # transition
+              - "secforge.local/ns/openbao/sa/openbao"   # post-SPIRE-as-CA
       to:
         - operation:
             ports: ["5432"]
