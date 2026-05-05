@@ -1,0 +1,46 @@
+# Allow postgres-operator (in `postgres-operator` ns) → secforge-app-db
+# pods (in `app` ns) on TCP 8000 — the CNPG instance-manager status
+# extraction endpoint (`/pg/status`).
+#
+# Without this rule, postgres-operator's reconciler logs
+# `Cannot extract Pod status: Get "https://<podIP>:8000/pg/status":
+#  i/o timeout` every ~12s and `Cluster.status.phase` never reaches
+# Healthy. Data plane (the openbao→cluster:5432 dynamic-cred path)
+# is unaffected — that traffic is allowed by `allow-openbao-to-
+# secforge-app-db` in `infrastructure/openbao/07-postgres-app-
+# ingress.yaml`.
+#
+# Why it surfaced 2026-04-29: the `app` ns has explicit per-target
+# ingress NetworkPolicies (default-deny via app-ns NetworkPolicy
+# defaults). The other CNPG-hosting namespaces (keycloak / spicedb /
+# teleport) don't have the same default-deny posture, so the
+# postgres-operator → :8000 reach was already permitted in those
+# namespaces and only `app` was blackholed.
+#
+# Mirrors the shape of `allow-openbao-to-secforge-app-db` (sibling
+# in the `app` ns) — same podSelector key, same ns-level source
+# match, only the source ns name and destination port differ.
+#
+# Operator-backlog #22 (closed 2026-05-05). Surfaced during 7c-1
+# cutover (commit c409913).
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-operator-to-secforge-app-db
+  namespace: app
+  labels:
+    secforge.platform/component: cloudnativepg
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: secforge-app-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres-operator
+      ports:
+        - protocol: TCP
+          port: 8000
