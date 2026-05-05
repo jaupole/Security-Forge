@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -227,7 +228,23 @@ func (c *Client) makeClientAssertion() (string, error) {
 	tok.Set(jwt.ExpirationKey, now.Add(60*time.Second))
 	tok.Set(jwt.JwtIDKey, randomID())
 
-	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.RS256, rsaKey))
+	// PS256 (RSASSA-PSS) + Keycloak-shaped kid header. Keycloak's
+	// helloworld-bff client is configured with
+	// `token.endpoint.auth.signing.alg=PS256` (per
+	// infrastructure/keycloak/realms/bootstrap-bff-clients.sh), and looks
+	// up the verifying key by `kid` matching the SHA-256 of the DER-PKIX
+	// public key (matches apps/lib/oidc/keycloak.go § KidFor). RS256 with
+	// no kid silently fails as `invalid_client_credentials`.
+	pubDER, err := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(pubDER)
+	kid := base64.RawURLEncoding.EncodeToString(sum[:])
+	hdrs := jws.NewHeaders()
+	_ = hdrs.Set(jws.KeyIDKey, kid)
+
+	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.PS256, rsaKey, jws.WithProtectedHeaders(hdrs)))
 	if err != nil {
 		return "", err
 	}

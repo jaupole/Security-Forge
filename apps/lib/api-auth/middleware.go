@@ -62,12 +62,21 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 func (m *Middleware) ValidateInbound(req *http.Request) (*Claims, error) {
 	now := m.now()
 
-	// Step 1: Authorization header present + Bearer prefix.
+	// Step 1: Authorization header present. Accept either `Bearer <jwt>`
+	// or `DPoP <jwt>` — RFC 9449 §7.1 requires the `DPoP` scheme for
+	// DPoP-bound access tokens, and the BFF (which is the only caller
+	// today) always uses DPoP-bound tokens. Validating the DPoP proof
+	// itself is step 9; here we only strip the scheme prefix.
 	auth := req.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
+	var rawJWT string
+	switch {
+	case strings.HasPrefix(auth, "DPoP "):
+		rawJWT = strings.TrimSpace(strings.TrimPrefix(auth, "DPoP "))
+	case strings.HasPrefix(auth, "Bearer "):
+		rawJWT = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	default:
 		return nil, ErrInvalidToken
 	}
-	rawJWT := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if rawJWT == "" {
 		return nil, ErrInvalidToken
 	}
@@ -124,18 +133,18 @@ func (m *Middleware) ValidateInbound(req *http.Request) (*Claims, error) {
 	// Step 10: DPoP parses as JWS with embedded jwk.
 	dpopMsg, err := jws.Parse([]byte(dpopRaw))
 	if err != nil || len(dpopMsg.Signatures()) == 0 {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 	dpopProtected := dpopMsg.Signatures()[0].ProtectedHeaders()
 	embeddedJWK := dpopProtected.JWK()
 	if embeddedJWK == nil {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 11: DPoP signature verifies with embedded jwk.
 	var dpopPayload []byte
 	if dpopPayload, err = jws.Verify([]byte(dpopRaw), jws.WithKey(dpopProtected.Algorithm(), embeddedJWK)); err != nil {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 	var dpopClaims struct {
 		HTM string `json:"htm"`
@@ -144,49 +153,49 @@ func (m *Middleware) ValidateInbound(req *http.Request) (*Claims, error) {
 		JTI string `json:"jti"`
 	}
 	if err := json.Unmarshal(dpopPayload, &dpopClaims); err != nil {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 12: htm matches request method.
 	if !strings.EqualFold(dpopClaims.HTM, req.Method) {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 13: htu matches canonicalized request URL.
 	if dpopClaims.HTU != canonicalHTU(req) {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 14: DPoP iat within ±60 s of now.
 	dpopIAT := time.Unix(dpopClaims.IAT, 0)
 	delta := now.Sub(dpopIAT)
 	if delta < -dpopAcceptWindow || delta > dpopAcceptWindow {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 15: jti not in replay cache (atomic insert; concurrent caller
 	// observes true).
 	if dpopClaims.JTI == "" {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 	seen, cacheErr := m.cfg.ReplayCache.SeenWithin(req.Context(), dpopClaims.JTI, replayCacheTTL)
 	if cacheErr != nil {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 	if seen {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 16: SHA-256 thumbprint of embedded jwk == access token's cnf.jkt
 	// (RFC 7638 thumbprint, per RFC 9449).
 	tp, err := embeddedJWK.Thumbprint(crypto.SHA256)
 	if err != nil {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 	dpopThumbprint := base64.RawURLEncoding.EncodeToString(tp)
 	cnfJKT, ok := readCnfJKT(parsed)
 	if !ok || cnfJKT != dpopThumbprint {
-		return nil, ErrDPoPMismatch
+		return nil, fmt.Errorf("%w: %s", ErrDPoPMismatch, dpopFailReason(req, dpopRaw, parsed, now))
 	}
 
 	// Step 17: insertion already happened atomically in step 15 (the
@@ -425,4 +434,63 @@ func audContains(aud []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// dpopFailReason returns a short string describing which DPoP-validation
+// step failed for a given (req, dpopRaw, parsed, now). Best-effort; only
+// used to enrich the wrapped ErrDPoPMismatch for log diagnostics.
+func dpopFailReason(req *http.Request, dpopRaw string, parsed jwt.Token, now time.Time) string {
+	if dpopRaw == "" {
+		return "no_dpop_header"
+	}
+	dpopMsg, err := jws.Parse([]byte(dpopRaw))
+	if err != nil || len(dpopMsg.Signatures()) == 0 {
+		return "parse_failed"
+	}
+	hdr := dpopMsg.Signatures()[0].ProtectedHeaders()
+	embeddedJWK := hdr.JWK()
+	if embeddedJWK == nil {
+		return "no_embedded_jwk"
+	}
+	dpopPayload, err := jws.Verify([]byte(dpopRaw), jws.WithKey(hdr.Algorithm(), embeddedJWK))
+	if err != nil {
+		return fmt.Sprintf("sig_verify_failed:%v", err)
+	}
+	var dc struct {
+		HTM string `json:"htm"`
+		HTU string `json:"htu"`
+		IAT int64  `json:"iat"`
+		JTI string `json:"jti"`
+	}
+	if err := json.Unmarshal(dpopPayload, &dc); err != nil {
+		return "claims_parse_failed"
+	}
+	if !strings.EqualFold(dc.HTM, req.Method) {
+		return fmt.Sprintf("htm_mismatch:proof=%s req=%s", dc.HTM, req.Method)
+	}
+	want := canonicalHTU(req)
+	if dc.HTU != want {
+		return fmt.Sprintf("htu_mismatch:proof=%s want=%s", dc.HTU, want)
+	}
+	dpopIAT := time.Unix(dc.IAT, 0)
+	delta := now.Sub(dpopIAT)
+	if delta < -dpopAcceptWindow || delta > dpopAcceptWindow {
+		return fmt.Sprintf("iat_skew:%v", delta)
+	}
+	if dc.JTI == "" {
+		return "jti_empty"
+	}
+	tp, err := embeddedJWK.Thumbprint(crypto.SHA256)
+	if err != nil {
+		return "thumbprint_failed"
+	}
+	dpopThumbprint := base64.RawURLEncoding.EncodeToString(tp)
+	cnfJKT, ok := readCnfJKT(parsed)
+	if !ok {
+		return "cnf_jkt_missing"
+	}
+	if cnfJKT != dpopThumbprint {
+		return fmt.Sprintf("jkt_mismatch:cnf=%s proof=%s", cnfJKT, dpopThumbprint)
+	}
+	return "unknown"
 }
