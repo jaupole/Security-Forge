@@ -56,8 +56,7 @@ When 6.2b lands and openbao + postgres-operator + ingress-nginx are in the mesh,
 
 | Workload | Reason |
 |---|---|
-| `secforge-app-db-*` (CNPG cluster) | Has non-mesh callers (OpenBao, CNPG operator). NetworkPolicy is the gate. |
-| `test-page` (Phase 1 leftover) | Demo-only, no security-sensitive function. NetworkPolicy is the gate. |
+| `secforge-app-db-*` (CNPG cluster) | Has non-mesh callers (OpenBao, CNPG operator, observability postgres-exporter). NetworkPolicy is the gate. Carries a workload-scoped PERMISSIVE PeerAuthentication override under STRICT (Phase 7c-1) — see § "PeerAuthentication STRICT in `app` (Phase 7c-1)" below. |
 
 ---
 

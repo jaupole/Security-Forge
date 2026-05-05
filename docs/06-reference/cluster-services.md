@@ -204,12 +204,11 @@ kubectl apply -f infrastructure/kyverno/policies/verify-signatures.yaml
 # ============================================================================
 # 1.8 — Verification
 # ============================================================================
-# (a) Test ingress + page
-kubectl apply -f infrastructure/verification/test-ingress.yaml
-kubectl -n app rollout status deploy/test-page
-
-# (b) Browser smoke test — should show green padlock
-echo "Open https://test.secforge.local in your browser"
+# (Phase 1's `test-page` smoke fixture was removed in Phase 7c-1 prep —
+#  it had non-mesh ingress-nginx callers that would have been denied at L4
+#  under the new app-ns STRICT PeerAuthentication. cert-manager wiring is
+#  verified instead by the production certs that pre-date 7c-1, e.g. the
+#  helloworld-bff-tls Certificate in `app`.)
 
 # (c) Cluster health
 kubectl get pods --all-namespaces

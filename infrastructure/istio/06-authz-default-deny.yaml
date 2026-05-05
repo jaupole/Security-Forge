@@ -23,11 +23,15 @@
 #   - helloworld-bff (Phase 6.8 — applied at deploy time)
 #
 # Workloads explicitly NOT opted in (relying on NetworkPolicy as the floor):
-#   - secforge-app-db (CNPG cluster) — has non-mesh openbao caller
-#   - test-page (Phase 1 leftover) — no security-sensitive function
+#   - secforge-app-db (CNPG cluster) — has non-mesh openbao + postgres-operator
+#     callers; Phase 7c-1 added a workload-scoped PERMISSIVE PeerAuthentication
+#     override (05-peer-auth-app-cnpg-permissive.yaml) so these callers stay
+#     reachable while the rest of `app` is STRICT mTLS. The override is removed
+#     in Phase 7c-2 once openbao + postgres-operator + observability join the
+#     mesh (operator-backlog #21).
 #
-# When 6.2b lands and openbao moves into the mesh, we revisit and broaden
-# the opt-in to cover Postgres and the rest of `app`.
+# When 7c-2 lands and the cross-boundary callers move into the mesh, we
+# revisit and broaden the opt-in to cover Postgres and the rest of `app`.
 
 # Default-deny — applies ONLY to workloads carrying the opt-in label.
 apiVersion: security.istio.io/v1
