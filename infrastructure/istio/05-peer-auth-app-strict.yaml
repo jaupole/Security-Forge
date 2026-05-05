@@ -1,0 +1,53 @@
+# Phase 7c-1 — namespace-scoped STRICT PeerAuthentication for `app`.
+#
+# Scope (deliberate):
+#   - STRICT applies ONLY to mesh-resident pods in the `app` namespace.
+#   - The mesh-wide default at infrastructure/istio/05-peer-auth.yaml STAYS
+#     PERMISSIVE; this resource is a per-namespace override that wins for
+#     pods in `app`.
+#   - Trust domain is unchanged (still `cluster.local`) — SPIRE-as-CA
+#     cutover is deferred to Phase 7c-2 (operator-backlog #21).
+#
+# Why this is safe today:
+#   - `app` is the only namespace with `istio.io/dataplane-mode: ambient`.
+#     Every pod in `app` participates in the mesh and can satisfy mTLS.
+#   - Cross-boundary callers from non-mesh namespaces (openbao,
+#     postgres-operator, observability, ingress-nginx) are addressed by:
+#       (a) a CNPG-specific workload-scoped PERMISSIVE override applied
+#           in 05-peer-auth-app-cnpg-permissive.yaml — covers
+#           openbao→cnpg, postgres-operator→cnpg, observability→cnpg
+#           (postgres-exporter scrape).
+#       (b) the test-page Phase-1 fixture being torn down (separate
+#           commit) — it was the only ingress-nginx → app path under STRICT.
+#       (c) Phase-9 helloworld is already torn down; Phase-10 BFFs will
+#           re-introduce ingress-nginx→app paths and will need explicit
+#           handling under STRICT (covered by Phase 10.{N}.6 AuthZPols).
+#
+# Verification (post-apply, 30s wait):
+#   - kubectl get pods -n app                          # all Ready
+#   - kubectl exec -n app deploy/authzen-facade -- curl -sf http://localhost:8080/readyz
+#   - kubectl get cluster.postgresql.cnpg.io -n app    # CNPG cluster healthy
+#   - kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 \
+#         bao read database/creds/spicedb-readwrite   # cross-boundary mint
+#   - LogQL (via Loki, with ztunnel at RUST_LOG=trace):
+#       {namespace="istio-system",pod=~"ztunnel-.*"} | json
+#         | scope="ztunnel::state" | message=~"deny policy.*"
+#     Expect ZERO deny-policy hits if every legitimate caller is covered.
+#
+# Rollback (if any verify check fails):
+#   kubectl delete -f infrastructure/istio/05-peer-auth-app-strict.yaml
+# That instantly returns the `app` namespace to the mesh-wide PERMISSIVE
+# default. The CNPG PERMISSIVE override is harmless even when STRICT is
+# absent (it just nests a redundant PERMISSIVE inside a PERMISSIVE).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: app
+  labels:
+    secforge.platform/component: istio-mtls
+    secforge.platform/edition: local
+    secforge.platform/phase: 7c-1
+spec:
+  mtls:
+    mode: STRICT

@@ -4,7 +4,7 @@
 >
 > When you open a new backlog item, append a row here AND link the row from the closing phase block in PLAN.md. When you close one, mark it ✅ here AND remove the open reference from PLAN.md prose.
 >
-> Last updated: 2026-05-05 (post-Phase-9 audit cleanup Part 1 — opened #20 for Wazuh-apid auto-recovery)
+> Last updated: 2026-05-05 (post-Phase-9 audit cleanup Part 2 — opened #21 for Phase 7c-2 SPIRE-as-CA + multi-ns + trust-domain-unification)
 
 ## Legend
 
@@ -27,6 +27,7 @@
 | 18 | 2026-05-02 | 7d.6 | Wazuh manager-side custom decoders for OpenBao + Keycloak JSON formats not loaded | ~1 hr | ✅ Closed 2026-05-05 | — |
 | 19 | 2026-05-04 | 10.1.1 | MCP server reachability after Project Tracker moves to cluster — PT's Week-5 MCP server runs over stdio for Jason's local Claude Code → PT data; cluster deployment breaks the stdio model. Decide between (a) keep a local-only MCP shim that proxies to the cluster API, or (b) expose a bounded set of MCP-over-HTTP endpoints. Surface a small ADR. | small (decision) + medium (impl) | ⬜ Open | Soft — only blocks Week-5 PT work, not the Phase-10 cutover |
 | 20 | 2026-05-05 | 9 (retro) | Wazuh-apid daemon stops after `wazuh-manager` pod restart and is not auto-recovered; Wazuh dashboard's "wait for dependencies" init then blocks indefinitely. Manual fix today: `kubectl exec -n wazuh wazuh-manager-0 -- /var/ossec/bin/wazuh-control restart`. Durable fix likely a sidecar/liveness/probe pattern that watches `wazuh-apid` PID. See `docs/05-claude-code-prompts/phase-09-retrospective.md` § "Wazuh-apid recovery (operational gotcha)". | medium (~2-4 hr) | ⬜ Open | Soft — only matters when manager pod restarts; Phase 10 cutover should NOT depend on Wazuh real-time event flow until this + #17/#18 are all clear |
+| 21 | 2026-05-05 | 7c-2 | Phase 7c-2 — SPIRE-as-CA cutover + multi-ns STRICT expansion + trust-domain unification cluster.local → secforge.local. Pre-req: validate the helm-values diff in `infrastructure/istio/authzpol-strict-7c2-draft/helm-values-spire-ca.draft.diff` against the upstream Istio + SPIRE compatibility matrix at https://istio.io/latest/docs/ops/integrations/spire/. Existing 7c-2 prep (AuthorizationPolicy templates, baseline capture, draft diff) parked at `infrastructure/istio/authzpol-strict-7c2-draft/`. Scope: (a) flip Istio to use SPIRE as external CA (disable Citadel), (b) ambient-enroll keycloak / spicedb / openbao / observability / teleport namespaces, (c) rewrite `app`-ns AuthorizationPolicy principals from `cluster.local/...` to `secforge.local/...`, (d) flip mesh-wide PeerAuthentication PERMISSIVE → STRICT staged ns-by-ns, (e) **removes the CNPG-PERMISSIVE workload-scoped override (`infrastructure/istio/05-peer-auth-app-cnpg-permissive.yaml`) introduced in 7c-1** once openbao + postgres-operator + observability are mesh-enrolled, (f) close the ADR-0010 deferral. ADR-0024 / operator-backlog cross-reference: removal of override is the 7c-2 closeout signal. | 1-2 day operator window | ⬜ Open | Soft for Phase 10 — apps go into STRICT in app ns on day one under cluster.local (already in force from 7c-1); trust-domain unification is a separate concern and does not gate Phase 10 |
 
 ## Severity / blocker bar
 

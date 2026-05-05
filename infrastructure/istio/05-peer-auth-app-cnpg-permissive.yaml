@@ -1,0 +1,63 @@
+# Phase 7c-1 — workload-scoped PERMISSIVE override for the CNPG cluster
+# in the `app` namespace.
+#
+# Why this exists (TEMPORARY — pending Phase 7c-2):
+#   The mesh-wide default is PERMISSIVE; Phase 7c-1 added a namespace-
+#   scoped STRICT for `app` (05-peer-auth-app-strict.yaml). STRICT denies
+#   plaintext from non-mesh peers at L4 BEFORE AuthorizationPolicy
+#   evaluates. Three legitimate cross-boundary callers into the CNPG
+#   Postgres pod come from non-mesh namespaces:
+#
+#     - openbao (mints dynamic Postgres credentials via its database
+#       secrets engine; every credential refresh — see ADR-0023 for
+#       SpiceDB-side, helloworld-app + Phase-10 apps for app-side).
+#     - postgres-operator (CNPG operator continuously reconciles the
+#       cluster + runs liveness/readiness probes against the pod).
+#     - observability (postgres-exporter scrape; if/when wired).
+#
+#   Until those three namespaces become ambient-mesh-enrolled (Phase
+#   7c-2 multi-ns expansion + cluster.local → secforge.local trust
+#   domain unification), STRICT in `app` would break every dynamic-
+#   credential mint, every CNPG operator reconciliation, and every
+#   metrics scrape into the DB pod.
+#
+#   This per-workload PeerAuthentication selects ONLY the CNPG cluster's
+#   pods (cnpg.io/cluster=secforge-app-db, verified unique to one pod
+#   in `app` ns and across the cluster — secforge-spicedb-db is in the
+#   `spicedb` ns and would not collide). It overrides the namespace-
+#   scoped STRICT to PERMISSIVE for those pods only, restoring the
+#   pre-7c-1 reachability for the listed cross-boundary callers while
+#   keeping STRICT in force for every other `app`-ns pod.
+#
+# Removal trigger (DO NOT keep this past 7c-2):
+#   This override is removed as part of Phase 7c-2 closeout, once
+#   openbao + postgres-operator + observability namespaces are mesh-
+#   enrolled and SPIRE-as-CA is the trust root. Removal is tracked as
+#   part of operator-backlog #21 (Phase 7c-2 scope) — see
+#   docs/06-reference/operator-backlog.md.
+#
+# Defense-in-depth:
+#   NetworkPolicy still gates these paths at L3-L4 today (see
+#   docs/03-runbooks/istio-authz.md "NetworkPolicy + AuthorizationPolicy
+#   interaction"). PERMISSIVE on the CNPG pod loses transport-layer
+#   attestation for those non-mesh callers, but does not remove the
+#   IP/port-level filtering. Re-attestation is what 7c-2 restores.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: secforge-app-db-permissive
+  namespace: app
+  labels:
+    secforge.platform/component: istio-mtls
+    secforge.platform/edition: local
+    secforge.platform/phase: 7c-1
+    secforge.platform/temporary: "yes"
+  annotations:
+    secforge.local/removal-trigger: "operator-backlog #21 — Phase 7c-2 (openbao + postgres-operator + observability ambient-enrolled)"
+    secforge.local/justification: "non-mesh callers from openbao (dynamic-cred mint), postgres-operator (CNPG reconciliation + probes), observability (postgres-exporter scrape)"
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: secforge-app-db
+  mtls:
+    mode: PERMISSIVE

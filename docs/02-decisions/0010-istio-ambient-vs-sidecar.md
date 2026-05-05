@@ -146,3 +146,14 @@ Revisit if any of these change:
 - [docs/01-architecture/07-service-mesh.md](../01-architecture/07-service-mesh.md)
 - [docs/01-architecture/06-workload-identity.md](../01-architecture/06-workload-identity.md)
 - [ADR-0005: SPIRE architecture (Local Edition)](./0005-spire-architecture-local.md)
+
+---
+
+## Amendment 2026-05-05 — Phase 7c-1 partial cutover (STRICT in `app` ns under cluster.local)
+
+Phase 7c-1 (operator option-A decision) landed a scope-limited slice of the Phase 7c work this ADR's "Deferred: SPIRE as Istio's CA" section was tracking:
+
+- **Done**: namespace-scoped `PeerAuthentication` STRICT in `app` ns (`infrastructure/istio/05-peer-auth-app-strict.yaml`). The mesh-wide default at `infrastructure/istio/05-peer-auth.yaml` stays PERMISSIVE for every other namespace. Trust domain unchanged — still `spiffe://cluster.local/ns/.../sa/...` on the wire. Workload-scoped PERMISSIVE override on the CNPG cluster (`infrastructure/istio/05-peer-auth-app-cnpg-permissive.yaml`) preserves non-mesh callers (openbao, postgres-operator, observability) for the duration.
+- **Still deferred** (now formally tracked as Phase 7c-2 / [operator-backlog #21](../06-reference/operator-backlog.md)): SPIRE-as-Istio-CA cutover, multi-ns ambient enrollment (keycloak, spicedb, openbao, observability), trust-domain unification cluster.local → secforge.local, and rewrite of `app`-ns AuthorizationPolicy `principals` from `cluster.local/...` to `secforge.local/...`.
+
+Status stays "Accepted (with deferral)" — 7c-1 narrows but does not close the deferral. Closing happens at 7c-2 alongside the trust-domain flip. This amendment exists so future readers know which slice landed when.

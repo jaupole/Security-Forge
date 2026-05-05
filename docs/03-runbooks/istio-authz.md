@@ -136,7 +136,7 @@ The output's `authorizationPolicies` array shows which policies are attached. If
 
 In `STRICT`, plaintext from non-mesh peers is denied at L4 by ztunnel **before** AuthorizationPolicy evaluates. STRICT is only safe once every legitimate source for every ambient destination is mesh-resident.
 
-Tightening to STRICT happens after 6.2b at the earliest.
+**As of Phase 7c-1 (2026-05-05) the `app` namespace is STRICT** under a namespace-scoped override at `infrastructure/istio/05-peer-auth-app-strict.yaml`. The mesh-wide default at `infrastructure/istio/05-peer-auth.yaml` stays PERMISSIVE for all other namespaces. See § "PeerAuthentication STRICT in `app` (Phase 7c-1)" below for the CNPG-specific workload override that this required and its 7c-2 removal trigger.
 
 ### 3. AuthorizationPolicy with empty rules denies
 
@@ -202,3 +202,58 @@ kubectl exec -n $NS $POD -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ADMIN_T
 ZP=$(kubectl get pod -n istio-system -l app=ztunnel -o jsonpath='{.items[0].metadata.name}')
 kubectl exec -n istio-system "$ZP" -- curl -s localhost:15000/config_dump | jq '.workloads[].authorizationPolicies' | sort -u
 ```
+
+---
+
+## PeerAuthentication STRICT in `app` (Phase 7c-1)
+
+Phase 7c-1 (2026-05-05) flipped the `app` namespace from the mesh-wide PERMISSIVE default to STRICT, scoped to that one namespace. The mesh-wide default stays PERMISSIVE for every other namespace; SPIRE-as-CA + multi-ns expansion + trust-domain unification are deferred to Phase 7c-2 (operator-backlog #21).
+
+### Resources applied
+
+| File | Kind / scope | Purpose |
+|---|---|---|
+| `infrastructure/istio/05-peer-auth-app-strict.yaml` | `PeerAuthentication` namespace-scoped (`namespace: app`, no selector) | Set `mtls.mode: STRICT` for all pods in `app`. |
+| `infrastructure/istio/05-peer-auth-app-cnpg-permissive.yaml` | `PeerAuthentication` workload-scoped (`namespace: app`, `selector.matchLabels.cnpg.io/cluster: secforge-app-db`) | Override the namespace STRICT back to PERMISSIVE for the CNPG Postgres pod only — keeps non-mesh callers reachable. |
+
+The mesh-wide `infrastructure/istio/05-peer-auth.yaml` (PERMISSIVE) is unchanged.
+
+### Why CNPG needs the workload-scoped PERMISSIVE override
+
+Three legitimate cross-boundary callers into the CNPG cluster come from non-mesh namespaces and would be denied at L4 under STRICT:
+
+- **`openbao` ns** — the database secrets engine mints dynamic Postgres credentials against `secforge-app-db` (the helloworld-app + Phase-10 app DB; see ADR-0023 for the SpiceDB-side analogue, which lives in a different ns and is unaffected).
+- **`postgres-operator` ns** — the CNPG operator continuously reconciles cluster state and runs liveness/readiness probes against the pod.
+- **`observability` ns** — postgres-exporter scrape (when wired).
+
+None of those namespaces are mesh-enrolled today. The PERMISSIVE override on the CNPG workload is the minimum-blast-radius way to keep STRICT for every other `app`-ns pod while preserving these paths.
+
+### Removal trigger
+
+This override is temporary. It is removed as part of **Phase 7c-2 closeout** ([operator-backlog #21](../06-reference/operator-backlog.md)) once `openbao` + `postgres-operator` + `observability` namespaces become ambient-mesh-enrolled (and therefore can satisfy mTLS as mesh peers). At that point the override file should be `git rm`'d and the namespace-scoped STRICT applies uniformly to every `app`-ns pod.
+
+### Defense in depth (still in force)
+
+NetworkPolicy continues to gate every CNPG path at L3-L4 — see § "NetworkPolicy + AuthorizationPolicy interaction" above. The PERMISSIVE override loses transport-layer attestation for those non-mesh callers but does not remove IP/port-level filtering. Re-attestation is what 7c-2 restores.
+
+### Diagnose a STRICT denial
+
+When ztunnel rejects a connection under STRICT (no mTLS handshake from a non-mesh source), the denial surfaces at TRACE level only — it is silent at DEBUG / INFO. To investigate:
+
+```bash
+# (a) Bump ztunnel to TRACE without a pod restart (per pod, all ds members):
+for p in $(kubectl get pods -n istio-system -l app=ztunnel -o name); do
+  kubectl exec -n istio-system "${p#pod/}" -- curl -s -X POST 'localhost:15000/logging?level=trace'
+done
+
+# (b) Tail the deny lines in Loki:
+#   {namespace="istio-system",pod=~"ztunnel-.*"} | json
+#     | scope="ztunnel::state" | message=~"deny policy.*"
+
+# (c) Drop back to info when done:
+for p in $(kubectl get pods -n istio-system -l app=ztunnel -o name); do
+  kubectl exec -n istio-system "${p#pod/}" -- curl -s -X POST 'localhost:15000/logging?level=info'
+done
+```
+
+The 2026-05-03 PLAN.md update in § Phase 7c documents this admin-port pattern in more detail. Don't leave ztunnel at TRACE indefinitely — it materially increases log volume into Loki.
