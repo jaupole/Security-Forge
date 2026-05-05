@@ -66,6 +66,13 @@ seal "transit" {
 }
 EOF
 )
+# Capture the previous block (if any) BEFORE we delete it. If the content
+# changed, any running main pods are pinned to the old token and will keep
+# 403'ing against transit/encrypt/unseal until they're rolled — the
+# StatefulSet's OnDelete updateStrategy doesn't restart them on its own
+# when the referenced Secret changes.
+OLD_SEAL_BLOCK=$(kubectl get secret -n "$NS" openbao-seal-block \
+    -o jsonpath='{.data.seal\.hcl}' 2>/dev/null | base64 -d 2>/dev/null || true)
 kubectl -n "$NS" delete secret openbao-seal-block --ignore-not-found >/dev/null
 kubectl -n "$NS" create secret generic openbao-seal-block \
     --from-literal=seal.hcl="${SEAL_HCL}" >/dev/null
@@ -74,7 +81,11 @@ kubectl -n "$NS" label secret openbao-seal-block \
     secforge.platform/component=openbao \
     secforge.platform/purpose=seal-config-with-token \
     --overwrite >/dev/null
-unset TRANSIT_TOKEN SEAL_HCL
+SEAL_BLOCK_CHANGED=false
+if [ -n "${OLD_SEAL_BLOCK:-}" ] && [ "${OLD_SEAL_BLOCK}" != "${SEAL_HCL}" ]; then
+    SEAL_BLOCK_CHANGED=true
+fi
+unset TRANSIT_TOKEN SEAL_HCL OLD_SEAL_BLOCK
 
 green "==> Helm install/upgrade openbao (main)"
 helm upgrade --install openbao openbao/openbao \
@@ -83,22 +94,57 @@ helm upgrade --install openbao openbao/openbao \
     --values "$HERE/04-openbao-values.yaml" \
     --timeout 5m
 
+# If the seal block changed (token rotation, etc.) and main pods exist,
+# force-roll them follower-first so they re-read the new block. Without
+# this the watchdog below would wait forever — the existing pods are stuck
+# on the old token and won't restart on their own under OnDelete.
+if [ "${SEAL_BLOCK_CHANGED:-false}" = "true" ]; then
+    green "==> Seal block changed — rolling existing main pods (followers first)"
+    for i in 2 1 0; do
+        if kubectl get pod -n "$NS" "openbao-$i" >/dev/null 2>&1; then
+            green "  deleting openbao-$i"
+            kubectl delete pod -n "$NS" "openbao-$i" --wait=false 2>/dev/null || true
+        fi
+    done
+fi
+
 green "==> Waiting for openbao-{0,1,2} pods (sealed→unsealed via Transit)"
+# Watchdog policy:
+#   - Per-pod baseline restartCount; only delta restarts (those occurring
+#     while WE are watching) count against the threshold. Pre-existing
+#     restarts from a stale seal block are not failures of THIS run.
+#   - Re-baseline if restartCount goes down (pod was recreated externally).
+#   - Overall 10-minute deadline as a backstop against silent stalls.
+WATCH_DEADLINE=$(($(date +%s) + 600))
 for i in 0 1 2; do
     until kubectl get pod -n "$NS" "openbao-$i" >/dev/null 2>&1; do
         sleep 2
     done
+    R_BASE=$(kubectl get pod -n "$NS" "openbao-$i" \
+        -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo 0)
+    R_BASE=${R_BASE:-0}
     until kubectl get pod -n "$NS" "openbao-$i" \
             -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null | grep -q true; do
-        R=$(kubectl get pod -n "$NS" "openbao-$i" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null)
-        P=$(kubectl get pod -n "$NS" "openbao-$i" -o jsonpath='{.status.phase}' 2>/dev/null)
-        echo "  openbao-$i: phase=$P restarts=$R"
-        sleep 5
-        if [ "${R:-0}" -ge 3 ]; then
-            red "openbao-$i has too many restarts; bailing"
+        R=$(kubectl get pod -n "$NS" "openbao-$i" \
+            -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo 0)
+        R=${R:-0}
+        # Pod was recreated externally — restartCount went backwards. Reset baseline.
+        [ "$R" -lt "$R_BASE" ] && R_BASE=$R
+        P=$(kubectl get pod -n "$NS" "openbao-$i" \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+        DELTA=$((R - R_BASE))
+        echo "  openbao-$i: phase=$P restarts=$R (+$DELTA since watch start)"
+        if [ "$(date +%s)" -ge "$WATCH_DEADLINE" ]; then
+            red "openbao-$i did not become Ready within 10 minutes; bailing"
             kubectl logs -n "$NS" "openbao-$i" --previous --tail=30 2>&1 | tail -20
             exit 1
         fi
+        if [ "$DELTA" -ge 3 ]; then
+            red "openbao-$i restarted $DELTA times since watch started; bailing"
+            kubectl logs -n "$NS" "openbao-$i" --previous --tail=30 2>&1 | tail -20
+            exit 1
+        fi
+        sleep 5
     done
     green "  openbao-$i Ready"
 done

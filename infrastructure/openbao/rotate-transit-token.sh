@@ -26,7 +26,6 @@ set -euo pipefail
 
 NS=openbao
 SEAL_POD=openbao-seal-0
-MAIN_PODS=(openbao-2 openbao-1 openbao-0)   # roll order: followers first
 
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -49,7 +48,7 @@ if ! echo "$seal_status" | grep -q '"sealed": false'; then
     red "the seal-OpenBao is already unsealed."
     exit 1
 fi
-green "==> 0/5 seal-OpenBao is up and unsealed"
+green "==> 0/4 seal-OpenBao is up and unsealed"
 
 # ──────────────────────────────────────────────────────────────────────
 # 1. Read seal-OpenBao initial root from stdin (no echo).
@@ -67,7 +66,7 @@ if [ -z "$SEAL_ROOT" ]; then
     red "Empty token. Aborting."
     exit 1
 fi
-green "==> 1/5 seal-OpenBao root accepted"
+green "==> 1/4 seal-OpenBao root accepted"
 
 # ──────────────────────────────────────────────────────────────────────
 # 2. Mint a fresh 24h Transit unseal token.
@@ -86,7 +85,7 @@ fi
 # Phase 7d Item 3: -period=720h matches init-seal.sh — periodic tokens
 # auto-renew on every use (= every main OpenBao transit-unseal call at
 # boot). 30-day idle ceiling vs the prior 24h. See ADR-0009.
-green "==> 2/5 fresh Transit token minted (period=720h, auto-renews on use)"
+green "==> 2/4 fresh Transit token minted (period=720h, auto-renews on use)"
 
 # ──────────────────────────────────────────────────────────────────────
 # 3. Patch the openbao-transit-token K8s Secret.
@@ -95,61 +94,30 @@ kubectl -n "$NS" patch secret openbao-transit-token \
     --type=merge \
     -p "{\"stringData\":{\"token\":\"$NEW_TOKEN\"}}" >/dev/null
 unset NEW_TOKEN
-green "==> 3/5 openbao-transit-token Secret patched"
+green "==> 3/4 openbao-transit-token Secret patched"
 
 # ──────────────────────────────────────────────────────────────────────
-# 4. Re-render the seal block via apply-main.sh.
-#    The watchdog inside apply-main.sh may "bail" reporting too many
-#    restarts on openbao-0 — that's a timeout, not a failure. The seal
-#    block has already been re-rendered; step 5 finishes recovery.
+# 4. Re-render the seal block + roll stale main pods + wait Ready.
+#    apply-main.sh detects the seal-block content change, force-rolls any
+#    existing main pods follower-first so they re-read the new token, and
+#    blocks until all 3 are Ready (per-pod restart-delta + 10 min deadline).
 # ──────────────────────────────────────────────────────────────────────
-yellow "==> 4/5 running apply-main.sh to re-render the seal block"
-yellow "    (if it bails reporting 'too many restarts on openbao-0', that's"
-yellow "     a benign timeout — step 5 below finishes the recovery)"
+green "==> 4/4 running apply-main.sh (re-renders seal block, rolls stale pods, waits Ready)"
 if ! bash "$HERE/apply-main.sh"; then
-    yellow "    apply-main.sh exited non-zero — proceeding to pod roll anyway"
-    yellow "    per the documented 2026-05-01 recovery sequence."
-fi
-
-# ──────────────────────────────────────────────────────────────────────
-# 5. Roll the main pods (OnDelete) so they pick up the new seal block.
-# ──────────────────────────────────────────────────────────────────────
-green "==> 5/5 rolling main OpenBao pods (followers first)"
-for pod in "${MAIN_PODS[@]}"; do
-    if kubectl get pod -n "$NS" "$pod" >/dev/null 2>&1; then
-        yellow "    deleting $pod"
-        kubectl delete pod -n "$NS" "$pod" --wait=true --timeout=120s || true
-    else
-        yellow "    $pod not present, skipping"
-    fi
-done
-
-# ──────────────────────────────────────────────────────────────────────
-# Verify — block until all 3 main pods are Ready, then exit.
-# ──────────────────────────────────────────────────────────────────────
-green ""
-green "Waiting for all 3 main OpenBao pods to reach Ready (timeout 180s)..."
-green ""
-
-if ! kubectl wait --for=condition=Ready pod \
-        -n "$NS" \
-        -l app.kubernetes.io/instance=openbao \
-        --timeout=180s 2>&1; then
     red ""
-    red "Timed out waiting for Ready. Current pod state:"
+    red "apply-main.sh failed. Current pod state:"
     kubectl get pod -n "$NS" -l app.kubernetes.io/instance=openbao >&2
     red ""
     red "Inspect logs: kubectl logs -n $NS openbao-0 -c openbao --tail=30"
     exit 1
 fi
-
 green ""
 green "All 3 main OpenBao pods are Ready."
 kubectl get pod -n "$NS" -l app.kubernetes.io/instance=openbao
 
 # ──────────────────────────────────────────────────────────────────────
-# 6. Post-recovery app cleanup — restart apps that crashlooped during
-#    the multi-day outage. Same logic as unseal-seal.sh step 3.
+# Post-recovery app cleanup — restart apps that crashlooped during
+# the multi-day outage. Same logic as unseal-seal.sh step 3.
 #
 #    In the multi-day-pause case, apps have been failing for >24h, not
 #    just minutes — they're definitely sitting on stale SVIDs by now.
