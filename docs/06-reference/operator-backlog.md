@@ -4,7 +4,7 @@
 >
 > When you open a new backlog item, append a row here AND link the row from the closing phase block in PLAN.md. When you close one, mark it ✅ here AND remove the open reference from PLAN.md prose.
 >
-> Last updated: 2026-05-05 (S3 audit cleanup — Wazuh #17 + #18 closed)
+> Last updated: 2026-05-05 (S3 + S4 audit cleanup — Wazuh #17 + #18 + Valkey-pw #13 all closed)
 
 ## Legend
 
@@ -20,7 +20,7 @@
 |---|--------|-------|-------|--------|--------|-----------|
 | 4 | 2026-04-30 | 7d.3 | OpenBao Transit unseal token TTL strategy — switch to `-period=720h` periodic tokens | small | ✅ Closed 2026-05-02 | — |
 | 12 | 2026-05-02 | 7b.2 | Promtail verify phase-2 — flip Loki `compactor.retention_enabled` and confirm dashboard panels populate | medium | ⬜ Open | No (panels stay empty until flipped; not blocking apps) |
-| 13 | 2026-05-02 | 7b | Migrate `BFF_VALKEY_PASSWORD` from K8s Secret env var to OpenBao via `apps/lib/secrets/`. Currently rides on `secforge.local/legacy-secret-env: OPS-MIGRATE-VALKEY-PW` annotation, expires 2026-07-31 | medium | ⬜ Open | Soft — escape-hatch annotation enforces an expiry deadline |
+| 13 | 2026-05-02 | 7b | Migrate `BFF_VALKEY_PASSWORD` from K8s Secret env var to OpenBao via `apps/lib/secrets/`. Currently rides on `secforge.local/legacy-secret-env: OPS-MIGRATE-VALKEY-PW` annotation, expires 2026-07-31 | medium | ✅ Closed 2026-05-05 | — |
 | 14 | 2026-05-02 | 7b.5 | Live verification of OTel scrubber sink — blocked on Docker Desktop containerd image-load quirk (`docker save \| ctr import` reports `total: 0.0 B`) | small | ⬜ Open | No (code change compiles + tests pass; live verify deferred) |
 | 15 | 2026-05-02 | 7c | Istio Ambient AuthZ-denial observability — original log-level finding closed; ztunnel emits per-policy + per-clause RBAC trace at `RUST_LOG=trace` | n/a | ✅ Closed 2026-05-03 | — |
 | 17 | 2026-05-02 | 7d.5 | Wazuh agent `client.keys` doesn't persist across pod restarts (enrollment-loop quirk) | ~30–60 min | ✅ Closed 2026-05-05 | — |
