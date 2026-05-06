@@ -208,7 +208,7 @@ You're reading it.
 
 Edit [`infrastructure/spicedb/schema.zed`](../../../infrastructure/spicedb/schema.zed) to add the five `project_tracker/*` definitions above. Add validator tests under `infrastructure/spicedb/tests/project-tracker/`. Apply via `zed schema write`; `zed validate` must pass.
 
-### 10.1.3 — Postgres schema migration
+### 10.1.3 — Postgres schema migration ✅ Complete 2026-05-05
 
 In `secforge-app-db`, create schema `project_tracker`. Take PT's [`prisma/schema.prisma`](file:///C:/Users/jaupo/Projects/Project%20Tracker/prisma/schema.prisma):
 
@@ -218,6 +218,45 @@ In `secforge-app-db`, create schema `project_tracker`. Take PT's [`prisma/schema
 4. Add Postgres RLS policies per the template above.
 5. Generate Prisma migration; apply against `secforge-app-db` using credentials minted via OpenBao (no DATABASE_URL with embedded password in any committed file).
 6. `pg_dump` from the local docker-compose `project_tracker` database → `psql` into `secforge-app-db.project_tracker.*`. Transform: add `tenant_id` to every row.
+
+**Closeout (2026-05-05):** Landed in two commits — PT-repo `69f42a7` (Prisma schema edits + Prisma-generated migration `20260505234638_10_1_3_secforge_integration`) and the platform-repo Phase 10.1.3 commit (this commit). All artifacts at [`apps/project-tracker/`](../../../apps/project-tracker/) — see the [README](../../../apps/project-tracker/README.md) for the file layout and the canonical "running the cutover" recipe. Tenant UUID pinned at [`apps/project-tracker/TENANT.md`](../../../apps/project-tracker/TENANT.md) (`833cc9ee-81b6-4e79-a4d7-e104fa37aa12`); never regenerate.
+
+**Deviations from the plan worth noting for Phase 11 (Proposal Forge):**
+
+- The original prompt's `SET LOCAL row_security = off;` to bypass RLS during import does NOT work for non-superusers — Postgres errors with "query would be affected by row-level security policy" instead of silently filtering. The 003-import.sh path uses `SET LOCAL app.tenant_id = '<UUID>';` instead, which engages RLS positively (every row's tenant_id matches the GUC, so WITH CHECK passes). Cleaner because it actually exercises the policy rather than circumventing it.
+- pg_dump 16.13 (running in PF's docker-compose) emits `\restrict` / `\unrestrict` directives at start and end of the dump that older psql 16.4 (cluster) chokes on with `invalid command \restrict`. 003-import.sh strips these via sed before applying.
+- pg_dump's preamble includes `SET row_security = off;` which is session-level (no LOCAL) and overrides the per-transaction `SET LOCAL app.tenant_id`. 003-import.sh strips this line too.
+- pg_dump emits `SELECT pg_catalog.setval('public.<seq>', ...)` calls for BIGSERIAL counters; sed retargets these to `project_tracker.<seq>`.
+- The migrate role needs `UPDATE` on sequences (not just `USAGE, SELECT`) because `setval()` is a sequence write. Added to apply.sh's grant step.
+- Tables created by the postgres superuser are owned by postgres; the migrate role needs explicit per-table `GRANT SELECT, INSERT, UPDATE, DELETE` (RLS scopes row visibility but doesn't substitute for table-level privileges). Added to apply.sh, with `ALTER DEFAULT PRIVILEGES` to auto-grant on future tables.
+- The `_prisma_migrations` table in the local DB is excluded from the dump (`--exclude-table=_prisma_migrations`) — the cluster doesn't track PT's local Prisma history; schema management in the cluster goes through `apps/project-tracker/migrations/00N-*.sql`.
+
+**Verification recorded by 004-verify.sh:**
+
+```
+TABLE                           LOCAL    CLUSTER STATUS
+people                              5          5 ✓
+projects                            3          3 ✓
+project_budget_lines                0          0 ✓
+tasks                               8          8 ✓
+pursuits                            3          3 ✓
+comms_log                           2          2 ✓
+opp_watch_tracks                    2          2 ✓
+opp_watch_queries                   0          0 ✓
+opp_watch_results                   0          0 ✓
+bl_requests                         0          0 ✓
+audit_logs                          0          0 ✓
+bl_request_contacts                 0          0 ✓
+bl_submissions                      0          0 ✓
+bl_submission_lines                 0          0 ✓
+TOTAL                              23         23
+
+✓ wrong tenant UUID → 0 rows (RLS filters all rows out)
+✓ AECOM UUID → 3 rows (matches source)
+✓ GUC unset → 0 rows (fail-closed when middleware forgets to set tenant_id)
+```
+
+**Note on data shape:** the PT seed data is sample-shaped (5 people, 3 projects, 3 pursuits, etc.) — PT had no real production data on the local docker-compose volume going into the migration (single-user app, ephemeral seeding pattern). The migration pipeline is therefore proven on synthetic-but-realistic data; Phase 11 (Proposal Forge) will exercise the same pipeline against real production data with potentially-trickier table shapes (PF's audit_logs JSONB column is the obvious risk surface).
 
 ### 10.1.4 — Wire BFF-injected identity (mostly additive, since nothing exists to strip)
 

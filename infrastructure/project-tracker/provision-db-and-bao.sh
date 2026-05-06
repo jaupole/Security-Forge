@@ -114,30 +114,73 @@ green "    schema project_tracker present (owner: app)"
 psql_postgres -c "GRANT USAGE ON SCHEMA project_tracker TO project_tracker_app;" 2>&1 | tail -1
 psql_postgres -c "GRANT CREATE ON SCHEMA project_tracker TO project_tracker_app;" 2>&1 | tail -1
 
-# ─── Section 2 — OpenBao DB roles ─────────────────────────────────────────
-green "==> OpenBao: update database/config/secforge-app allowed_roles"
+# ─── Section 2 — OpenBao DB engine + roles ────────────────────────────────
+# The `database/config/secforge-app` connection may or may not exist —
+# infrastructure/helloworld/teardown.sh deletes it when no non-helloworld
+# roles remain in allowed_roles. Re-establish it here if missing so PT
+# provisioning is self-contained and not order-dependent on helloworld.
 
-CURRENT_JSON=$(bao bao read -format=json database/config/secforge-app 2>/dev/null)
-CURRENT=$(echo "$CURRENT_JSON" | jq -r '.data.allowed_roles | join(",")')
-yellow "    current allowed_roles: $CURRENT"
+CONFIG_EXISTS=$(bao bao read database/config/secforge-app >/dev/null 2>&1 && echo y || echo n)
 
-NEW="$CURRENT"
-for role in project-tracker-readwrite project-tracker-migrate; do
-    if echo ",$NEW," | grep -q ",$role,"; then
-        green "    $role already in allowed_roles"
-    else
-        NEW="${NEW},${role}"
-        green "    appending $role"
-    fi
-done
+if [ "$CONFIG_EXISTS" = "n" ]; then
+    green "==> OpenBao: bootstrap database/config/secforge-app (was missing)"
+    yellow "    helloworld teardown removed the config; re-creating with PT roles"
 
-PG_USER=$(kubectl get secret -n "$NS_APP" secforge-app-db-app -o jsonpath='{.data.username}' | base64 -d)
-bao bao write database/config/secforge-app \
-    plugin_name=postgresql-database-plugin \
-    allowed_roles="$NEW" \
-    connection_url="postgresql://{{username}}:{{password}}@secforge-app-db-rw.app.svc.cluster.local:5432/secforge_app?sslmode=require" \
-    username="$PG_USER" 2>&1 | tail -1
-unset PG_USER
+    # Ensure the `app` Postgres user has CREATEROLE (idempotent).
+    # configure-engines.sh sets this initially; re-grant in case it was
+    # reset by a CNPG reconcile.
+    PG_USER_CHECK=$(kubectl get secret -n "$NS_APP" secforge-app-db-app -o jsonpath='{.data.username}' | base64 -d)
+    psql_postgres -c "ALTER USER \"$PG_USER_CHECK\" WITH CREATEROLE;" 2>&1 | tail -1
+
+    PG_USER=$(kubectl get secret -n "$NS_APP" secforge-app-db-app -o jsonpath='{.data.username}' | base64 -d)
+    PG_PASS=$(kubectl get secret -n "$NS_APP" secforge-app-db-app -o jsonpath='{.data.password}' | base64 -d)
+    bao bao write database/config/secforge-app \
+        plugin_name=postgresql-database-plugin \
+        allowed_roles="project-tracker-readwrite,project-tracker-migrate" \
+        connection_url="postgresql://{{username}}:{{password}}@secforge-app-db-rw.app.svc.cluster.local:5432/secforge_app?sslmode=require" \
+        username="$PG_USER" \
+        password="$PG_PASS" 2>&1 | tail -1
+    unset PG_USER PG_PASS
+
+    # NOTE — intentionally NOT calling `database/rotate-root/secforge-app`
+    # here. The configure-engines.sh path does that to make OpenBao the
+    # sole owner of the password. Doing it now would invalidate the
+    # CNPG-managed `secforge-app-db-app` Secret, which is fine for runtime
+    # but masks the helloworld lineage during a later re-install. If/when
+    # the operator wants to lock down the password lineage, run:
+    #     bao write -force database/rotate-root/secforge-app
+    # as a separate hardening step.
+
+    green "    bootstrap OK (config present, PT roles in allowed_roles)"
+else
+    green "==> OpenBao: update database/config/secforge-app allowed_roles"
+    CURRENT_JSON=$(bao bao read -format=json database/config/secforge-app 2>/dev/null)
+    CURRENT=$(echo "$CURRENT_JSON" | jq -r '.data.allowed_roles | join(",")')
+    yellow "    current allowed_roles: $CURRENT"
+
+    NEW="$CURRENT"
+    for role in project-tracker-readwrite project-tracker-migrate; do
+        if echo ",$NEW," | grep -q ",$role,"; then
+            green "    $role already in allowed_roles"
+        else
+            NEW="${NEW},${role}"
+            green "    appending $role"
+        fi
+    done
+
+    # Re-write database/config keeping plugin_name + connection_url unchanged.
+    # OpenBao doesn't allow partial updates here — must repeat the full config.
+    # Username comes from the CNPG-issued Secret (kept here because OpenBao's
+    # password is still the rotate-rooted one from Phase 5.7; passing only
+    # username preserves the existing stored password).
+    PG_USER=$(kubectl get secret -n "$NS_APP" secforge-app-db-app -o jsonpath='{.data.username}' | base64 -d)
+    bao bao write database/config/secforge-app \
+        plugin_name=postgresql-database-plugin \
+        allowed_roles="$NEW" \
+        connection_url="postgresql://{{username}}:{{password}}@secforge-app-db-rw.app.svc.cluster.local:5432/secforge_app?sslmode=require" \
+        username="$PG_USER" 2>&1 | tail -1
+    unset PG_USER
+fi
 
 green "==> OpenBao: database/roles/project-tracker-readwrite (runtime, 1h)"
 bao bao write database/roles/project-tracker-readwrite \
