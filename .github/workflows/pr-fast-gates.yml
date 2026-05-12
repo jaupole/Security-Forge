@@ -1,0 +1,93 @@
+# PR fast gates — runs on every pull_request, ≤30s budget per v2 §1 §gate-tiers.
+#
+# Copy this file to `.github/workflows/pr-fast-gates.yml` in each repo.
+# Tools are installed via .claude/scripts/install-verify.sh, which verifies
+# cosign keyless signatures or pinned SHA256s (see .claude/skills/tool-provenance).
+
+name: PR fast gates
+
+on:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: write   # for the gate report comment
+
+concurrency:
+  group: pr-fast-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fast-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for diff-scoped scans
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node (for npm-audit / Socket if present)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pinned scanners
+        run: ./.claude/scripts/install-verify.sh
+
+      - name: Verify tool pins match (drift check)
+        run: ./.claude/scripts/install-verify.sh --check
+
+      - name: Run PR-tier gates
+        id: gates
+        run: |
+          ./.claude/scripts/run-gates.sh \
+            --tier pr \
+            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            > gate-run.json
+          jq '{tier, gates_in_tier, summary: (.gate_results | map({gate, findings: (.findings|length // 0)}))}' gate-run.json
+
+      - name: Diagnose
+        id: diagnose
+        run: |
+          jq '.' gate-run.json | python3 .claude/scripts/diagnose.py > diagnose.json
+          jq '.summary' diagnose.json
+
+      - name: Drift check on diagnose unclassified rate
+        run: |
+          rate=$(jq -r '.summary.unclassified_rate' diagnose.json)
+          # Bash float compare via awk
+          fail=$(awk -v r="$rate" 'BEGIN { print (r+0 > 0.05) ? 1 : 0 }')
+          if [[ "$fail" -eq 1 ]]; then
+            echo "::warning::diagnose unclassified_rate=$rate exceeds 0.05 — catalog drift"
+          fi
+
+      - name: Block on auto-patch findings (LLM patcher would run here)
+        run: |
+          # In CI, the actual patcher subagent is invoked in a separate Claude
+          # Code workflow that has API credentials. Here we just block the
+          # merge if anything is unresolved.
+          auto=$(jq -r '.summary.by_routing["auto-patch"] // 0' diagnose.json)
+          human=$(jq -r '.summary.by_routing["human-review"] // 0' diagnose.json)
+          if [[ "$auto" -gt 0 || "$human" -gt 0 ]]; then
+            echo "::error::$auto auto-patchable + $human human-review findings — see diagnose.json"
+            cat diagnose.json
+            exit 1
+          fi
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-gate-results
+          path: |
+            gate-run.json
+            diagnose.json
+          retention-days: 14

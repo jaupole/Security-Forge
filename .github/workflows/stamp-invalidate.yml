@@ -1,0 +1,88 @@
+# Stamp invalidation on force-push or rebase (v2 §1.4).
+#
+# A previously-signed attestation is bound to a specific subject digest.
+# If the tree is rewritten (force-push, rebase, amend), the digest no longer
+# matches and the attestation is invalid. This workflow detects that and posts
+# a `stamp/invalid` check on the PR so the deploy pipeline can refuse to ship.
+#
+# Copy to `.github/workflows/stamp-invalidate.yml`.
+
+name: Stamp invalidation
+
+on:
+  push:
+    branches: ['**']    # all branches, including force-push
+  pull_request:
+    types: [synchronize, reopened]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read
+
+jobs:
+  check-stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect rewrite
+        id: detect
+        run: |
+          # If the push event is a force-push, GitHub marks it. Otherwise we
+          # compare the digest of the current tree against the most recent
+          # attestation, if one exists.
+          forced="${{ github.event.forced || 'false' }}"
+          echo "forced=$forced" >> "$GITHUB_OUTPUT"
+
+          # Always re-check the tree digest vs any present .attestation.json
+          # on the bundle. Real prod uses container-image digest comparison.
+          if [[ -f bundle.tar && -f bundle.tar.attestation.json ]]; then
+            current=$(sha256sum bundle.tar | awk '{print $1}')
+            attested=$(jq -r '.subject[0].digest.sha256' bundle.tar.attestation.json)
+            if [[ "$current" != "$attested" ]]; then
+              echo "digest_mismatch=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Post stamp/invalid check (red)
+        if: steps.detect.outputs.forced == 'true' || steps.detect.outputs.digest_mismatch == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const conclusion = 'failure';
+            const reason = ${{ toJSON(steps.detect.outputs) }};
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'stamp/invalid',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: 'Attestation invalidated by tree rewrite',
+                summary: 'Re-run the merge workflow to produce a fresh stamp before deploying.',
+                text: JSON.stringify(reason, null, 2),
+              },
+            });
+
+      - name: Post stamp/ok check (green)
+        if: steps.detect.outputs.forced != 'true' && steps.detect.outputs.digest_mismatch != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'stamp/invalid',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'success',
+              output: {
+                title: 'No tree rewrite detected',
+                summary: 'Attestation, if any, remains binding.',
+              },
+            });

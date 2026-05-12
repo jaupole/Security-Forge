@@ -1,0 +1,94 @@
+# Daily SBOM ranker (v2 §3 nightly cron).
+# Builds an SBOM, scores every transitive dep against OSV+EPSS+KEV, opens
+# (or updates) a triage issue for any new P0/P1 since yesterday.
+#
+# Copy to `.github/workflows/daily-sbom-rank.yml`.
+
+name: Daily SBOM rank
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # 05:17 UTC daily — staggered to avoid the top-of-hour rush
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  rank:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install pinned scanners (syft is required)
+        run: ./.claude/scripts/install-verify.sh syft
+
+      - name: Generate SBOM and rank
+        run: ./.claude/scripts/sbom-rank.sh dir:. --top 25
+
+      - name: Diff against yesterday's ranking
+        id: diff
+        run: |
+          today_p0=$(jq -r '.summary.by_priority.P0 // 0' .claude/state/sbom-ranked.json)
+          today_p1=$(jq -r '.summary.by_priority.P1 // 0' .claude/state/sbom-ranked.json)
+          echo "p0=$today_p0" >> "$GITHUB_OUTPUT"
+          echo "p1=$today_p1" >> "$GITHUB_OUTPUT"
+
+      - name: Open/update triage issue if P0/P1 present
+        if: steps.diff.outputs.p0 != '0' || steps.diff.outputs.p1 != '0'
+        uses: actions/github-script@v7
+        env:
+          P0: ${{ steps.diff.outputs.p0 }}
+          P1: ${{ steps.diff.outputs.p1 }}
+        with:
+          script: |
+            const fs = require('fs');
+            const ranked = JSON.parse(fs.readFileSync('.claude/state/sbom-ranked.json'));
+            const top = ranked.ranked.filter(r => r.priority === 'P0' || r.priority === 'P1').slice(0, 25);
+            const lines = top.map(r =>
+              `- [${r.priority}${r.kev ? ' KEV' : ''}] **${r.ecosystem}/${r.package}@${r.installed_version}** — ${r.vuln_id} (epss%=${r.epss_percentile.toFixed(2)})`
+            );
+            const body = [
+              `**SBOM rank** — ${process.env.P0} P0, ${process.env.P1} P1`,
+              ``,
+              `Generated ${ranked.generated_at} from ${ranked.package_count} packages.`,
+              ``,
+              ...lines,
+            ].join('\n');
+
+            const title = `SBOM rank: ${process.env.P0} P0 / ${process.env.P1} P1`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'sbom-rank',
+              state: 'open',
+              per_page: 1,
+            });
+            if (existing.data.length) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                title,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['sbom-rank', 'security'],
+              });
+            }
+
+      - name: Upload ranked JSON as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-ranked
+          path: .claude/state/sbom-ranked.json
+          retention-days: 30

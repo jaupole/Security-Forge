@@ -33,6 +33,10 @@ infrastructure/mkcert/*-key.pem
 # === PER-MACHINE / PER-USER STATE (not project state) ===
 .claude/settings.local.json
 .claude/projects/
+.claude/cache/
+.claude/sessions/
+.claude/state/
+.claude/*.lock
 .vscode/
 .idea/
 *.iml

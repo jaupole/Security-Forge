@@ -1,0 +1,80 @@
+# Merge-to-main: slow gates + stamp.
+# Fires on push-to-main. Produces the cosign-keyless attestation that the
+# deploy pipeline verifies before shipping.
+#
+# Copy to `.github/workflows/merge-slow-gates-and-stamp.yml`.
+
+name: Merge slow gates + stamp
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  id-token: write       # required for Sigstore keyless via OIDC
+  packages: write       # if attestation is attached to a GH-published artifact
+
+jobs:
+  slow-gates-and-stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - name: Install pinned scanners
+        run: ./.claude/scripts/install-verify.sh
+
+      - name: Run merge-tier gates (full SAST + full Trivy + license + tests)
+        id: gates
+        run: |
+          ./.claude/scripts/run-gates.sh --tier merge > gate-run.json
+          jq '{tier, gates_in_tier, summary: (.gate_results | map({gate, findings: (.findings|length // 0)}))}' gate-run.json
+
+      - name: Diagnose
+        run: |
+          jq '.' gate-run.json | python3 .claude/scripts/diagnose.py > diagnose.json
+          jq '.summary' diagnose.json
+
+      - name: Refuse to stamp if anything outstanding
+        run: |
+          auto=$(jq -r '.summary.by_routing["auto-patch"] // 0' diagnose.json)
+          human=$(jq -r '.summary.by_routing["human-review"] // 0' diagnose.json)
+          if [[ "$auto" -gt 0 || "$human" -gt 0 ]]; then
+            echo "::error::merge tier has unresolved findings — refusing to stamp"
+            exit 1
+          fi
+
+      - name: Build artifact bundle (source as tar)
+        id: bundle
+        run: |
+          bundle="$RUNNER_TEMP/bundle.tar"
+          git archive HEAD -o "$bundle"
+          digest=$(sha256sum "$bundle" | awk '{print $1}')
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp (cosign keyless via OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          ./.claude/scripts/stamp.sh "${{ steps.bundle.outputs.bundle }}" \
+            --from-gate-run gate-run.json \
+            --mode keyless
+
+      - name: Upload artifacts + attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-bundle
+          path: |
+            ${{ steps.bundle.outputs.bundle }}*
+            gate-run.json
+            diagnose.json
+          retention-days: 90
