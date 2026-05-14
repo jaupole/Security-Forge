@@ -35,6 +35,18 @@ spec:
                 - kube-system
                 - kube-public
                 - kube-node-lease
+          # CNPG-managed pods inject sidecars (barman-cloud) with their
+          # own resource budgets at admission via the operator. The
+          # mutate-default-resources policy doesn't catch these because
+          # the strategic-merge anchor on initContainers doesn't match
+          # operator-injected entries. Operator handles its own budget;
+          # exempt by the cnpg.io/cluster label which CNPG sets on every
+          # cluster instance pod. Discovered 2026-05-14 control rollout.
+          - resources:
+              selector:
+                matchExpressions:
+                  - key: cnpg.io/cluster
+                    operator: Exists
       validate:
         message: |
           Containers must declare both `resources.requests` and

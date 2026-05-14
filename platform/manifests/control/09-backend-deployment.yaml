@@ -55,39 +55,49 @@ spec:
           env:
             # Static config
             - { name: NODE_ENV, value: production }
-            - { name: PORT, value: "4000" }
-            - { name: LOG_LEVEL, value: info }
-            # OIDC — points at the public Keycloak hostname so JWT iss
-            # validation matches the token's iss claim.
-            - { name: OIDC_ISSUER, value: "https://auth.${DOMAIN}/realms/platform" }
-            - { name: OIDC_CLIENT_ID, value: control }
-            - { name: KEYCLOAK_BASE_URL, value: "https://auth.${DOMAIN}" }
+            - { name: API_PORT, value: "4000" }
+            - { name: API_HOST, value: "0.0.0.0" }
+            - { name: TRUST_PROXY, value: "1" }
+            - { name: PORTAL_ORIGIN, value: "https://control.${DOMAIN}" }
+            # Keycloak — config.ts wants KEYCLOAK_URL (the base; it builds
+            # /realms/<realm> internally), KEYCLOAK_REALM, and a SEPARATE
+            # admin-API client (NOT the OIDC user-login client).
+            - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
+            # TODO(phase-A2): create a dedicated control-admin Keycloak
+            # client with Service Accounts Roles enabled + realm-management
+            # role bindings, store its secret in OpenBao, render via VSO.
+            # Until then we reuse the OIDC client + its secret to satisfy
+            # the Zod validation. Admin-API calls (member create, role
+            # mgmt, etc.) will fail with 403 until the proper admin
+            # client + grants are in place.
+            - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
-            - { name: SPICEDB_USE_TLS, value: "true" }
-            # OpenBao Transit (apps/lib/secrets/ Client expects these).
-            - { name: TRANSIT_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
-            - { name: TRANSIT_KEY_NAME, value: pii-encryption }
-            # CNPG-rendered DATABASE_URL.
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: control-db-app
-                  key: uri
-            # OTLP exporter.
+            # CNPG-rendered DB credentials. The control-db-app Secret has
+            # discrete fields per CNPG convention; config.ts wants them
+            # as discrete env vars rather than a single URL.
+            - { name: PGHOST, valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+            - { name: PGPORT, valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+            - { name: PGUSER, valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+            # OTLP exporter (Wazuh / Tempo collection point).
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: control }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=control,deployment.environment=prod" }
           envFrom:
-            # Adds OIDC_CLIENT_SECRET, SPICEDB_PRESHARED_KEY, SESSION_KEY
-            # from the VSO-rendered Secret. Per CLAUDE.md: these env vars
-            # contain the word "SECRET"/"KEY" but Kyverno's app-ns env
-            # rule applies only to the `app` ns. Control lives in its own
-            # `control` ns. If we move this app to `app` later, the
-            # secrets need to flow via apps/lib/secrets/ instead.
+            # Adds OIDC_CLIENT_SECRET (used as KEYCLOAK_ADMIN_CLIENT_SECRET
+            # placeholder via the workaround below), SPICEDB_PRESHARED_KEY,
+            # SESSION_KEY from the VSO-rendered Secret.
             - secretRef:
                 name: control-app-secrets
+            # Map OIDC_CLIENT_SECRET → KEYCLOAK_ADMIN_CLIENT_SECRET via
+            # an additional Secret with that single key. Provisioned
+            # 2026-05-15 morning when we add the proper admin client.
+            - secretRef:
+                name: control-keycloak-admin
+                optional: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }
