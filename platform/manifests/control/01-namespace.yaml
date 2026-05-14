@@ -1,0 +1,15 @@
+# Control namespace — houses the control-plane API backend + portal SPA
+# Deployments behind a single Ingress (path-routing: / → portal, /api/* →
+# control). One CNPG cluster per ADR-0029. Tailnet-only access for now
+# (no public DNS record; operator's hosts file → tailnet IP).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: control
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -1,0 +1,58 @@
+# Postgres cluster for the control-plane API.
+#
+# Migrations 001-021 (incl. RLS at 019, audit-log hash chain at 020,
+# idempotency keys at 021) run from the `control` repo via the
+# migration Job in 07-migration-job.yaml. CNPG operator manages the
+# rest of the lifecycle: failover, WAL archiving, base backups via
+# barman-cloud plugin → MinIO.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: control-db
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      database: control
+      owner: control
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+      # RLS uses session-local GUCs (app.user_id, app.org_id). These
+      # are set via `SET LOCAL` in src/api/db-tx.ts and propagated by
+      # the txnContext() helper. No special postgresql.conf entries
+      # needed — `SET LOCAL` works on standard configs.
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin.
+  # ObjectStore CR lives in 08-objectstore.yaml; ScheduledBackup CR
+  # in 09-cnpg-scheduled-backup.yaml. Plugin install + operator
+  # wiring is in component 09h-cnpg-barman-plugin.sh.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true

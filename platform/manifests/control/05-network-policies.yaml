@@ -1,0 +1,234 @@
+# NetworkPolicies for the control namespace.
+#
+# Pattern matches the rest of the platform: default-deny on both
+# directions + minimal allow rules for what the workloads actually need.
+# Lesson from keycloak (2026-05-14 hardening): allow rules must use
+# `app.kubernetes.io/name` rather than `app=` so Jobs (migration,
+# backups) that don't carry the bare `app` label still match.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# Allow DNS resolution to kube-dns / CoreDNS. Every other egress rule
+# below relies on cluster-internal DNS first.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Intra-namespace traffic: portal → control-service (same-origin path
+# routing is at the ingress, but in-cluster smoke tests + health probes
+# also live in-ns), control pods → CNPG cluster pods (5432), migration
+# Job → CNPG cluster pods (5432), VSO consumer → in-ns rendered Secret
+# bookkeeping.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# Ingress-nginx → portal + control via the cluster ClusterIP Services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-control
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [control, portal] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 4000 }   # control API
+        - { protocol: TCP, port: 8080 }   # portal nginx
+
+---
+# Egress to Keycloak for OIDC discovery + JWKS fetch + (rare) admin API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-keycloak
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: control
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - { protocol: TCP, port: 8443 }
+
+---
+# Egress to SpiceDB for fully_consistent permission checks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-spicedb
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: control
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb
+      ports:
+        - { protocol: TCP, port: 50051 }
+
+---
+# Egress to OpenBao for Transit encrypt/decrypt + KV reads. VSO uses a
+# separate path (the SA token mount), but if/when the app starts using
+# `apps/lib/secrets/` directly (per ADR-0013 § 1) it goes here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-openbao
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: control
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - { protocol: TCP, port: 8200 }
+
+---
+# Egress to OTel collector for traces + metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-otel
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - { protocol: TCP, port: 4317 }   # gRPC OTLP
+        - { protocol: TCP, port: 4318 }   # HTTP OTLP
+
+---
+# CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
+# the control-db pod for reconciliation, probes, and barman metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-db
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: control-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [postgres-operator, cnpg-system]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 9187 }
+        - { protocol: TCP, port: 9090 }

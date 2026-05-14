@@ -1,0 +1,127 @@
+# Control API backend (Fastify + TS, distroless nodejs22).
+#
+# Image is built from the Ecosystem Control repo's Dockerfile and tagged
+# `ghcr.io/secforge/control:${CONTROL_TAG}`. Signed with the cluster's
+# cosign key before being importable into k3s.
+#
+# Listens on :4000. Reverse-proxied by ingress-nginx via the
+# control-service ClusterIP (11-services.yaml). Same-origin cookie
+# pattern: portal at /, /api/* → here, so the @fastify/secure-session
+# HttpOnly cookie flows on every request without cross-origin gymnastics.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: api
+    secforge.platform/component: control
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: control
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: control
+        app.kubernetes.io/component: api
+        secforge.platform/component: control
+        spiffe.io/spire-managed-identity: "true"
+    spec:
+      serviceAccountName: control
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/secforge/control:${CONTROL_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 4000, name: http, protocol: TCP }
+          env:
+            # Static config
+            - { name: NODE_ENV, value: production }
+            - { name: PORT, value: "4000" }
+            - { name: LOG_LEVEL, value: info }
+            # OIDC — points at the public Keycloak hostname so JWT iss
+            # validation matches the token's iss claim.
+            - { name: OIDC_ISSUER, value: "https://auth.${DOMAIN}/realms/platform" }
+            - { name: OIDC_CLIENT_ID, value: control }
+            - { name: KEYCLOAK_BASE_URL, value: "https://auth.${DOMAIN}" }
+            - { name: KEYCLOAK_REALM, value: platform }
+            # SpiceDB — in-cluster Service.
+            - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
+            - { name: SPICEDB_USE_TLS, value: "true" }
+            # OpenBao Transit (apps/lib/secrets/ Client expects these).
+            - { name: TRANSIT_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
+            - { name: TRANSIT_KEY_NAME, value: pii-encryption }
+            # CNPG-rendered DATABASE_URL.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: control-db-app
+                  key: uri
+            # OTLP exporter.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
+            - { name: OTEL_SERVICE_NAME, value: control }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=control,deployment.environment=prod" }
+          envFrom:
+            # Adds OIDC_CLIENT_SECRET, SPICEDB_PRESHARED_KEY, SESSION_KEY
+            # from the VSO-rendered Secret. Per CLAUDE.md: these env vars
+            # contain the word "SECRET"/"KEY" but Kyverno's app-ns env
+            # rule applies only to the `app` ns. Control lives in its own
+            # `control` ns. If we move this app to `app` later, the
+            # secrets need to flow via apps/lib/secrets/ instead.
+            - secretRef:
+                name: control-app-secrets
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 1,    memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Distroless nodejs22 needs /tmp writable for sourcemaps + V8
+            # cache; everything else stays read-only.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+      # Spread across nodes is moot on a single-node cluster, but the
+      # podAntiAffinity reads correctly once we add a second node.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: control
+              app.kubernetes.io/component: api

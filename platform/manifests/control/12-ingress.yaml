@@ -1,0 +1,75 @@
+# Ingress for the control plane — control.${DOMAIN}.
+#
+# TAILNET-ONLY. The hostname has no public DNS A/AAAA record (deliberately,
+# 2026-05-14 cleanup of wildcards). Operator reaches it via the local
+# hosts file:
+#   100.77.117.112  control.secforge.dev
+#
+# The wildcard cert `secforge-wildcard` (in cert-manager ns) covers
+# *.secforge.dev — Kubernetes Ingress can't cross-namespace reference a
+# TLS Secret directly, so cert-manager-secret-syncer (or a manual
+# CopySecret CR) keeps a copy in the control namespace named
+# `control-tls`. If you'd prefer per-host LE issuance instead, change
+# the cert-manager.io/cluster-issuer annotation back on.
+#
+# Path routing pattern: /api/* → control (backend API), everything else
+# → portal (static SPA + react-router fallback to index.html). The order
+# of rules matters — nginx-ingress chooses the longest matching prefix.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: control
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+  annotations:
+    # Use the wildcard cert. If you want per-host LE certs uncomment
+    # the cluster-issuer line and remove the secret-syncer dependency.
+    # cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Defense-in-depth: even with the SNAT-bypass bug on the existing
+    # whitelist annotation (every external request appears as
+    # 10.42.0.1), this annotation kicks in once nginx is flipped to
+    # hostNetwork mode (deferred). Until then the DNS-removal is the
+    # real gate.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.42.0.0/16,65.21.25.40/32"
+    # Rate limit — slightly stricter than keycloak (5 rps) because the
+    # control API has fewer legitimate burst patterns.
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    # CORS handled at the application layer (Fastify @fastify/cors).
+    # Setting it here would override the app's per-route policy.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - control.${DOMAIN}
+      secretName: control-tls
+  rules:
+    - host: control.${DOMAIN}
+      http:
+        paths:
+          # /api/* → control backend (Fastify on :4000). Listed FIRST
+          # so its Prefix match beats the catch-all below.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: control
+                port:
+                  number: 80
+          # Everything else → portal (nginx SPA on :8080). react-router
+          # handles client-side routing; the in-pod nginx.conf serves
+          # /index.html as the SPA fallback for unknown paths.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80

@@ -1,0 +1,87 @@
+# One-shot Job that applies migrations 001-021 to control-db.
+#
+# Run BEFORE the API Deployment so the schema (incl. RLS at 019, audit-log
+# hash chain at 020, idempotency keys at 021) is in place when the first
+# server.js starts answering requests.
+#
+# Re-runs are safe — migrate.ts is idempotent (records applied versions in
+# a schema_migrations table; re-applying a migration is a no-op).
+#
+# CNPG auto-renders the `control-db-app` Secret with:
+#   - username, password, dbname, host, port, jdbc-uri, uri, pgpass
+# We feed DATABASE_URL from the `uri` key directly (pg connection string).
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: control-db-migrate
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: db-migration
+spec:
+  # Don't auto-retry on app errors — a migration failure needs operator
+  # eyes, not blind re-runs.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400     # GC after 24h so the Job artefact persists for inspection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: control
+        secforge.platform/component: control
+        secforge.platform/role: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: control
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Wait for control-db to be Ready before starting the migration
+      # container. The CNPG operator marks Ready once the primary is
+      # accepting connections.
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                echo "waiting for control-db..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 128Mi }
+      containers:
+        - name: migrate
+          image: ghcr.io/secforge/control:${CONTROL_TAG}
+          imagePullPolicy: IfNotPresent
+          command: ["/nodejs/bin/node", "dist/db/migrate.js"]
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: control-db-app
+                  key: uri
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 256Mi }

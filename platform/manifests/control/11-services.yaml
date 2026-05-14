@@ -1,0 +1,38 @@
+# In-cluster Services for the control namespace.
+# ClusterIP-only — external access is via ingress-nginx (12-ingress.yaml).
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: api
+    secforge.platform/component: control
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: api
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+  namespace: control
+  labels:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: ui
+    secforge.platform/component: control
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: ui
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }

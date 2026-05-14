@@ -1,0 +1,44 @@
+# control — bound to spiffe://${SPIFFE_TRUST_DOMAIN}/ns/control/sa/control
+# via the JWT auth method's role.
+#
+# Capabilities:
+#   - read its Keycloak OIDC client_secret (issued by realm bootstrap)
+#   - read SpiceDB pre-shared key (rendered as a K8s Secret in spicedb ns
+#     but the API also has a path in case of cluster-internal direct fetch)
+#   - read session-signing key for @fastify/secure-session
+#   - read app-level config + outbound integration secrets under
+#     secret/data/apps/control/<key>
+#   - encrypt + decrypt via Transit (PII at rest in control DB — rule 38)
+#
+# NOTE: the K8s auth role binding `control-vso` (k8s SA → this policy)
+# lives in the openbao bootstrap script, NOT in a manifest. Re-running
+# the bootstrap on a fresh cluster re-creates the role; ongoing changes
+# go through `bao write auth/kubernetes/role/control-vso ...`.
+
+# Keycloak OIDC client_secret. Operator writes this once after creating
+# the `control` client in the platform realm.
+path "secret/data/keycloak/clients/control" {
+  capabilities = ["read"]
+}
+path "secret/metadata/keycloak/clients/control" {
+  capabilities = ["read"]
+}
+
+# App-level config (SpiceDB PSK, session-signing key, etc.) + future
+# outbound integrations follow the same `+` (one segment) pattern as
+# the BFF policy.
+path "secret/data/apps/control/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/control/+" {
+  capabilities = ["read", "list"]
+}
+
+# Field-level PII encryption — invitations, member emails, etc.
+# (Closes audit rule 38 once the .Encrypt() call sites land in code.)
+path "transit/encrypt/pii-encryption" {
+  capabilities = ["update"]
+}
+path "transit/decrypt/pii-encryption" {
+  capabilities = ["update"]
+}
