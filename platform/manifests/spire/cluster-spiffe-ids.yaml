@@ -1,0 +1,104 @@
+# ClusterSPIFFEID registrations for SecForge platform components.
+#
+# The Helm chart (platform/values/spire.yaml) defines a label-based default
+# registration: pods with `spiffe.io/spire-managed-identity: "true"` get an SVID.
+#
+# This file adds NAMESPACE-SCOPED registrations for the platform-component
+# namespaces — keycloak, spicedb, openbao, app, istio-system. In those
+# namespaces, every pod gets an identity automatically without the label.
+#
+# Reconciled by spire-controller-manager (chart's `watchClassless: true`).
+# Trust domain is templated by the controller via {{ .TrustDomain }} —
+# resolved from spire-server's chart-level config (= ${SPIFFE_TRUST_DOMAIN}).
+# This file therefore needs no envsubst rendering and is portable verbatim
+# from the local edition.
+#
+# See:
+#   - docs/01-architecture/06-workload-identity.md
+#   - docs/06-reference/spiffe-ids.md
+#   - ADR-0005
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-keycloak
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["keycloak"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-spicedb
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["spicedb"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-openbao
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["openbao"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-app
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["app"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-istio-system
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["istio-system"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false

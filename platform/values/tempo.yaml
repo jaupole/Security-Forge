@@ -1,0 +1,89 @@
+# Tempo single-binary — trace store backed by MinIO.
+#
+# Architecture: docs/01-architecture/08-observability.md (§Tempo + OTel)
+# Chart: grafana/tempo (single-binary, NOT tempo-distributed)
+#
+# Storage: traces in MinIO `tempo-traces`. Retention: 168h (7d), enforced
+# by Tempo's compactor.
+#
+# Schema gotcha: the chart's `tempo:` block holds Tempo binary config
+# (storage/receivers/server/extraEnv). K8s pod-spec stuff (podLabels /
+# persistence / serviceMonitor / ingress) lives at ROOT level. Don't
+# flatten — mis-indenting tempo-config under root makes it leak into pod-
+# template labels via the chart's podLabels rendering and breaks the
+# StatefulSet schema.
+
+tempo:
+  retention: 168h    # 7 days
+  reportingEnabled: false
+
+  # Tempo's config file uses ${ACCESS_KEY} / ${SECRET_KEY} substitution
+  # for S3 creds; without expand-env it reads the literal string.
+  extraArgs:
+    config.expand-env: true
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 2Gi   # Grafana search OOMed at 1Gi during local-edition load testing
+
+  storage:
+    trace:
+      backend: s3
+      s3:
+        bucket: tempo-traces
+        endpoint: minio.minio.svc.cluster.local:9000
+        access_key: ${ACCESS_KEY}      # injected via env from VSO-rendered Secret
+        secret_key: ${SECRET_KEY}
+        insecure: true                 # in-cluster MinIO is plaintext on the cluster fabric
+        forcepathstyle: true
+      pool:
+        max_workers: 100
+        queue_depth: 10000
+
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  # VSO-rendered Secret with ACCESS_KEY / SECRET_KEY env-shaped keys.
+  extraEnvFrom:
+    - secretRef:
+        name: tempo-minio-credentials
+        optional: false
+  extraEnv:
+    - name: ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: tempo-minio-credentials
+          key: ACCESS_KEY
+    - name: SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: tempo-minio-credentials
+          key: SECRET_KEY
+
+# ─── Root-level (StatefulSet pod-spec / chart-level) values ──────────
+
+# MinIO ingress NetworkPolicy gates on `minio-client: "true"` label.
+podLabels:
+  minio-client: "true"
+
+# Tempo is queried only in-cluster (Grafana datasource); no Ingress.
+ingress:
+  enabled: false
+
+persistence:
+  enabled: true
+  storageClassName: ${STORAGE_CLASS}
+  size: 10Gi
+  accessModes: [ReadWriteOnce]
+
+serviceMonitor:
+  enabled: false   # enable when kube-prometheus-stack lands in Phase 7-rest

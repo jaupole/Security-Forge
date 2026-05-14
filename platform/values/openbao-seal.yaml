@@ -1,0 +1,156 @@
+# Helm values for openbao-seal — production version of
+# infrastructure/openbao/03-openbao-seal-values.yaml.
+#
+# Differences from local: storageClass=${STORAGE_CLASS} (was hostpath).
+# All other domain-agnostic.
+
+global:
+  enabled: true
+  namespace: openbao
+  tlsDisable: false
+
+server:
+  image:
+    registry: docker.io
+    repository: openbao/openbao
+    tag: 2.5.3
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: false
+    name: openbao-seal
+
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+
+  ingress:
+    enabled: false
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+    publishNotReadyAddresses: false
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    mountPath: /openbao/data
+    storageClass: ${STORAGE_CLASS}
+    accessMode: ReadWriteOnce
+
+  ha:
+    enabled: false
+
+  standalone:
+    enabled: true
+    config: |
+      ui = false
+      listener "tcp" {
+        address       = "[::]:8200"
+        tls_cert_file = "/openbao/tls/openbao-seal-tls/tls.crt"
+        tls_key_file  = "/openbao/tls/openbao-seal-tls/tls.key"
+      }
+      storage "file" {
+        path = "/openbao/data"
+      }
+      api_addr = "https://openbao-seal.openbao.svc.cluster.local:8200"
+
+  extraEnvironmentVars:
+    BAO_ADDR: https://127.0.0.1:8200
+    BAO_API_ADDR: https://openbao-seal.openbao.svc.cluster.local:8200
+    BAO_CACERT: /openbao/tls/openbao-seal-tls/ca.crt
+    SKIP_CHOWN: "true"
+    SKIP_SETCAP: "true"
+
+  extraVolumes:
+    - type: secret
+      name: openbao-seal-tls
+      path: /openbao/tls
+
+  extraInitContainers:
+    - name: wait-for-spiffe-csi
+      image: docker.io/openbao/openbao:2.5.3
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 30); do
+            if [ -S /spiffe-workload-api/spire-agent.sock ]; then
+              echo "spire-agent.sock present; proceeding"
+              exit 0
+            fi
+            echo "waiting for spire-agent.sock (attempt $i/30)"
+            sleep 10
+          done
+          echo "ERROR: spire-agent.sock did not appear within 5 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: tmp
+      emptyDir: {}
+  volumeMounts:
+    - name: spiffe-workload-api
+      mountPath: /spiffe-workload-api
+      readOnly: true
+    - name: tmp
+      mountPath: /tmp
+
+  statefulSet:
+    securityContext:
+      pod:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+    extraLabels:
+      spiffe.io/spire-managed-identity: "true"
+      secforge.platform/component: openbao-seal
+
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+    port: 8200
+    scheme: HTTPS
+  livenessProbe:
+    enabled: false   # liveness on a sealed bao would kill it endlessly
+
+injector:
+  enabled: false
+csi:
+  enabled: false
+ui:
+  enabled: false

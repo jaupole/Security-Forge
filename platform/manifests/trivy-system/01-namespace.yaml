@@ -1,0 +1,15 @@
+# trivy-system namespace.
+#
+# PSA: privileged enforce. Trivy scan jobs run as root to mount + read
+# container images. The operator itself can be restricted, but the
+# transient scan pods need elevated access.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trivy-system
+  labels:
+    secforge.platform/component: trivy-operator
+    secforge.platform/policy-exempt: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

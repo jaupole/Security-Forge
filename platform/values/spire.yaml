@@ -1,0 +1,278 @@
+# SPIRE — SecForge production values (bare metal, single-node k3s)
+#
+# Chart:  spiffe/spire     0.28.4   (SPIRE 1.14.5)
+# CRDs:   spiffe/spire-crds 0.5.0   (installed separately, must come first)
+# Source: https://github.com/spiffe/helm-charts-hardened
+#
+# Differences from local edition (infrastructure/spire/values.yaml):
+#   - trustDomain:    secforge.local       -> ${SPIFFE_TRUST_DOMAIN} (= secforge.platform)
+#   - clusterName:    docker-desktop       -> ${SPIRE_CLUSTER_NAME}  (= secforge-prod)
+#   - caSubject CN:   secforge.local       -> ${SPIFFE_TRUST_DOMAIN}
+#   - storageClass:   null (hostpath)      -> ${STORAGE_CLASS} (= local-path on k3s)
+#   - upstream CA:    `spire-upstream-ca` Secret freshly generated for this trust domain
+#                     (see components/02-spire-bootstrap-ca.sh — runs once, irreversible)
+
+# ============================================================================
+# Global parameters — apply across spire-server, spire-agent, controller-manager
+# ============================================================================
+global:
+  k8s:
+    clusterDomain: cluster.local
+
+  spire:
+    trustDomain: ${SPIFFE_TRUST_DOMAIN}
+    clusterName: ${SPIRE_CLUSTER_NAME}
+    bundleConfigMap: spire-bundle
+
+    caSubject:
+      country: US
+      organization: SecForge
+      commonName: ${SPIFFE_TRUST_DOMAIN}
+
+    namespaces:
+      create: false
+
+    # Single-node k3s; production HA recommendations (3+ replicas, anti-affinity)
+    # would not satisfy on this substrate.
+    recommendations:
+      enabled: false
+
+    # strictMode would reject .local trust domains. .platform is non-public but
+    # not a reserved private TLD, so we still leave strict OFF for now. Revisit
+    # if/when the SPIRE chart adds a strictness mode that is .platform-aware.
+    strictMode: false
+
+  installAndUpgradeHooks:
+    enabled: false
+
+# ============================================================================
+# spire-server — StatefulSet, single replica, SQLite datastore
+# ============================================================================
+spire-server:
+  enabled: true
+  nameOverride: server
+  kind: statefulset
+  replicaCount: 1
+  namespaceOverride: spire
+
+  serviceAccount:
+    create: true
+    name: spire-server
+
+  auditLogEnabled: true
+  logFormat: json
+  logLevel: info
+
+  dataStore:
+    sql:
+      databaseType: sqlite3
+      file: /run/spire/data/datastore.sqlite3
+
+  persistence:
+    type: pvc
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: ${STORAGE_CLASS}
+
+  upstreamAuthority:
+    disk:
+      enabled: true
+      secret:
+        # Secret created by components/02-spire-bootstrap-ca.sh BEFORE running this install.
+        create: false
+        name: spire-upstream-ca
+
+  nodeAttestor:
+    k8sPSAT:
+      enabled: true
+      serviceAccountAllowList:
+        - spire:spire-agent
+      audience:
+        - spire-server
+    externalK8sPSAT:
+      enabled: false
+    awsIID:
+      enabled: false
+    joinToken:
+      enabled: false
+
+  controllerManager:
+    enabled: true
+    logLevel: info
+    logEncoding: json
+    className: ""
+    watchClassless: true
+
+    identities:
+      clusterSPIFFEIDs:
+        # Default registration — opt-in via label `spiffe.io/spire-managed-identity: "true"`.
+        # ADR-0005 §"Identity opt-in".
+        default:
+          enabled: true
+          spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+          podSelector:
+            matchLabels:
+              spiffe.io/spire-managed-identity: "true"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values: ["spire", "kube-system", "kube-public", "kube-node-lease"]
+          ttl: "1h"
+          jwtTTL: "5m"
+          fallback: true
+          autoPopulateDNSNames: false
+
+        # Re-enabled with the subchart below. The local edition's bug was
+        # disabling THIS while enabling the subchart — chicken-and-egg.
+        oidc-discovery-provider:
+          enabled: true
+        test-keys:
+          enabled: false
+        spike-keeper:
+          enabled: false
+        spike-nexus:
+          enabled: false
+        spike-bootstrap:
+          enabled: false
+        spike-pilot:
+          enabled: false
+
+  externalControllerManagers:
+    enabled: false
+
+  defaultX509SvidTTL: 1h
+  defaultJwtSvidTTL: 5m
+  caTTL: 24h
+  caKeyType: ec-p256
+
+  # Suppress chart's chown init container — see local-edition comment for the busybox dep concern.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+
+  service:
+    type: ClusterIP
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  federation:
+    enabled: false
+
+# ============================================================================
+# spire-agent — DaemonSet
+# ============================================================================
+spire-agent:
+  enabled: true
+  nameOverride: agent
+  namespaceOverride: spire
+
+  serviceAccount:
+    create: true
+    name: spire-agent
+
+  logLevel: info
+  logFormat: json
+
+  podSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+  nodeAttestor:
+    k8sPSAT:
+      enabled: true
+
+  workloadAttestors:
+    k8s:
+      enabled: true
+    unix:
+      enabled: true
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ============================================================================
+# SPIFFE CSI driver — DaemonSet
+# ============================================================================
+spiffe-csi-driver:
+  enabled: true
+  namespaceOverride: spire
+
+  # 64Mi limit (chart default + early-deploy guess) was too low — Go runtime
+  # + pollers + buffers OOM-killed the spiffe-csi-driver process every few
+  # minutes, breaking the CSI socket and cascading "MountVolume.SetUp failed
+  # for volume spiffe-workload-api" errors across every pod that mounts an
+  # SVID (Keycloak, OpenBao, future apps). Bumped 2026-05-08.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ============================================================================
+# OIDC discovery provider — exposes SPIRE's JWKS so OpenBao auth/jwt
+# can validate JWT-SVIDs. ClusterIP only (in-cluster consumption);
+# OpenBao reaches it at https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local.
+# Identity registration enabled above (controllerManager.identities.clusterSPIFFEIDs.oidc-discovery-provider).
+# ============================================================================
+spiffe-oidc-discovery-provider:
+  enabled: true
+  config:
+    acme:
+      tosAccepted: false
+    insecureScheme:
+      enabled: true
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  # Bumped 2026-05-08 alongside spiffe-csi-driver — same Go-runtime + buffers
+  # reasoning. 64Mi was tight; 256Mi gives headroom.
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Disabled subcharts
+tornjak-frontend:
+  enabled: false
+spike-keeper:
+  enabled: false
+spike-nexus:
+  enabled: false
+spike-pilot:
+  enabled: false
+upstream:
+  enabled: false

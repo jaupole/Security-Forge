@@ -1,0 +1,76 @@
+# Containers must declare runAsNonRoot=true.
+#
+# A container running as root inside its namespace is a CVE-impact
+# multiplier. Most workloads can run non-root with a minor Dockerfile
+# tweak (USER instruction).
+#
+# Promoted Audit → Enforce on 2026-05-14. Exempt namespaces below are
+# documented hard root-required exceptions due to upstream image or
+# kernel-feature constraints:
+#   - wazuh:       upstream image entrypoint runs as root and drops to
+#                  UID 999; volume-permissions initContainer also needs
+#                  root for chown of the PV mount.
+#   - trivy-system:trivy-wazuh-reporter CronJob has an
+#                  ensure-output-dir initContainer with hostPath +
+#                  DAC_OVERRIDE for the bridge-to-Wazuh archive dir.
+#                  trivy-operator itself runs as UID 10000 (compliant).
+#   - istio-system:istio-cni-node and ztunnel DaemonSets require
+#                  hostNetwork + root for CNI plugin chain + iptables
+#                  redirection (Ambient dataplane).
+#   - kyverno, kube-system, kube-public, kube-node-lease: system pods.
+#   - spire:       spire-agent DaemonSet needs hostPath + workload-API socket.
+#   - observability: node-exporter DaemonSet (hostNetwork + hostPID).
+#   - wazuh-agent: legacy DaemonSet ns (drained); host wazuh-agent is now
+#                  systemd-native.
+#   - velero:      node-agent DaemonSet (hostPath /var/lib/kubelet/pods).
+#   - ingress-nginx: nginx binds privileged ports (80/443) on the node IP.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-nonroot
+  annotations:
+    policies.kyverno.io/category: "Pod Security"
+    policies.kyverno.io/severity: medium
+spec:
+  background: true
+  validationFailureAction: Enforce
+  rules:
+    - name: require-non-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - spire
+                - observability
+                - wazuh
+                - wazuh-agent
+                - velero
+                - ingress-nginx
+                - istio-system
+                - trivy-system
+      validate:
+        message: |
+          Containers must run as non-root. Set
+            spec.securityContext.runAsNonRoot: true
+          OR
+            spec.containers[*].securityContext.runAsNonRoot: true
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              =(initContainers):
+                - securityContext:
+                    runAsNonRoot: true
+              containers:
+                - securityContext:
+                    runAsNonRoot: true

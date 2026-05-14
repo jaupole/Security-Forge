@@ -1,0 +1,79 @@
+# Pre-deploy DAST: OWASP ZAP baseline scan against the Keycloak public
+# ingress (auth.${DOMAIN}). Closes rule 69 of security-rules.md.
+#
+# Triggers:
+#   * pull_request to main          (catch regressions before merge)
+#   * schedule (03:30 UTC daily)    (regression check against production)
+#   * workflow_dispatch             (on-demand with optional URL override)
+#
+# Configuration:
+#   Set repo secret ADVISOR_STAGING_URL to the Keycloak ingress hostname,
+#   e.g. https://auth.secforge.dev. The workflow skips with a warning
+#   when unset.
+#
+# Notes specific to scanning Keycloak:
+#   * The public ingress has nginx rate limits (5 rps + burst 3, 20 conn).
+#     Baseline scan does ~50 requests so it fits within the burst.
+#   * /admin/* is tailnet-whitelisted (returns 403 from GitHub Actions
+#     runners) — ZAP will treat those as expected and not score them.
+#   * Don't enable AJAX spider (-j) here: Keycloak's login UI has heavy
+#     JS that pulls in massive spider trees. Baseline default is enough.
+
+name: DAST (ZAP baseline)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'platform/manifests/keycloak/**'
+      - 'infrastructure/keycloak/**'
+      - 'platform/values/keycloak/**'
+      - '.github/workflows/dast-zap-baseline.yml'
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Override target URL (otherwise uses ADVISOR_STAGING_URL secret)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout (for ZAP rules config)
+        uses: actions/checkout@v4
+
+      - name: Resolve target URL
+        id: target
+        env:
+          STAGING_URL: ${{ secrets.ADVISOR_STAGING_URL }}
+          OVERRIDE_URL: ${{ inputs.target_url }}
+        run: |
+          url="${OVERRIDE_URL:-$STAGING_URL}"
+          if [[ -z "$url" ]]; then
+            echo "::warning::ADVISOR_STAGING_URL not set and no override given — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: ZAP baseline scan
+        if: steps.target.outputs.skip == 'false'
+        uses: zaproxy/action-baseline@v0.13.0
+        with:
+          target: ${{ steps.target.outputs.url }}
+          # -I: warnings non-fatal (only HIGH/MEDIUM fail the run).
+          # -m 2: cap spider time at 2 minutes.
+          cmd_options: '-I -m 2'
+          issue_title: 'DAST: ZAP baseline findings (Security Forge / Keycloak)'
+          fail_action: true
+          allow_issue_writing: true

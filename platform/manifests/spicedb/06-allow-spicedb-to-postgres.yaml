@@ -1,0 +1,55 @@
+# Mirror of the keycloak/05-network-policies.yaml `allow-keycloak-to-postgres`
+# fix — same issue applies to any namespace with default-deny-ingress and a
+# co-located CNPG cluster. See keycloak/05-network-policies.yaml comments for
+# why this is needed. Applied to spicedb namespace as preventive measure.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spicedb-to-postgres
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: secforge-spicedb-db
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-spicedb-postgres
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: secforge-spicedb-db
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [postgres-operator, cnpg-system]
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9187
+    - protocol: TCP
+      port: 9090

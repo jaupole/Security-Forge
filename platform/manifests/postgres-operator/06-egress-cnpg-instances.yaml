@@ -1,0 +1,44 @@
+# Postgres operator egress to CNPG instance pods (any namespace).
+#
+# Phase C #4 hardening (Layer A). Layered on top of the egress baseline.
+#
+# The CNPG operator polls each instance pod's status endpoint
+# (HTTP :8000) to know primary state, replication lag, recovery
+# progress, etc. Without this allow, default-deny-egress + essentials
+# leaves the operator able to reach K8s API but NOT the instance pods,
+# producing "Instance Status Extraction Error: HTTP communication issue"
+# for every Cluster the operator manages.
+#
+# Discovered while running 09g-cnpg-restore-drill.sh — the restored
+# primary came up healthy but the operator couldn't see it.
+#
+# Cross-namespace allow: CNPG clusters live in keycloak, spicedb,
+# verify-restore, and any future app namespace. Match any-ns + the
+# CNPG-injected `cnpg.io/cluster` label.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-cnpg-instances
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchExpressions:
+              - key: cnpg.io/cluster
+                operator: Exists
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 5432
+          protocol: TCP

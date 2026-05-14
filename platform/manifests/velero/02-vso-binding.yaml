@@ -1,0 +1,77 @@
+# VSO binding for Velero MinIO credentials.
+#
+# Renders OpenBao secret/data/minio/velero/credentials into K8s Secret
+# `velero-minio-credentials` in velero ns with key `cloud` containing an
+# AWS-credentials INI block. Velero's chart consumes this Secret via
+# `credentials.existingSecret`.
+#
+# 09a-velero.sh:
+#   1. Provisions MinIO user `velero-user` with prefix-scoped policy
+#      (backups/velero/* in the `backups` bucket).
+#   2. Stages keys at OpenBao secret/minio/velero/credentials.
+#   3. Re-loads vso policy (already includes minio/velero path).
+#   4. Applies this binding.
+#   5. Creates K8s auth role velero-vso.
+#   6. Helm install Velero referencing the rendered Secret.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero-vso
+  namespace: velero
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: velero-vso
+  namespace: velero
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: velero-vso
+    serviceAccount: velero-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: velero-minio-credentials-vso
+  namespace: velero
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: velero-vso
+  mount: secret
+  type: kv-v2
+  path: minio/velero/credentials
+  refreshAfter: 60s
+  destination:
+    name: velero-minio-credentials
+    create: true
+    type: Opaque
+    # Velero reads creds from the AWS credentials file format. Render the
+    # KV access_key + secret_key into a single `cloud` key with the
+    # canonical INI shape.
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        cloud:
+          text: |
+            [default]
+            aws_access_key_id={{ .Secrets.access_key }}
+            aws_secret_access_key={{ .Secrets.secret_key }}

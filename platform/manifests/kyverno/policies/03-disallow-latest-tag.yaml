@@ -1,0 +1,37 @@
+# Block container images using `:latest` tag (or no tag).
+#
+# `latest` is mutable. Two problems:
+#   1. Reproducibility — what was deployed yesterday may differ today.
+#   2. Forensics — when an incident happens, you can't pin "what image
+#      was running when X happened" without digest.
+#
+# Production-class namespaces should pin to specific tags or digests.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/category: "Best Practices"
+    policies.kyverno.io/severity: medium
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: validate-image-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kube-public, kube-node-lease, kyverno]
+      validate:
+        message: "Container images must use a specific tag, not `:latest` or no tag."
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "!*:latest | !*"
+            containers:
+              - image: "!*:latest | !*"

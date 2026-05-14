@@ -1,0 +1,114 @@
+{{- if .Values.indexer.enabled }}
+{{- if and (gt (int .Values.indexer.replicas) 1) .Values.indexer.driftDetection.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "wazuh.fullname" . }}-indexer-drift-detection
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    component: indexer
+spec:
+  schedule: {{ .Values.indexer.driftDetection.schedule | quote }}
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "wazuh.fullname" . }}-cleanup
+          nodeSelector:
+            workload: wazuh
+          tolerations:
+            - key: workload
+              value: wazuh
+              effect: NoSchedule
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: drift-detection
+              image: "{{ .Values.global.initImages.kubectl.repository }}:{{ .Values.global.initImages.kubectl.tag }}"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  NS="{{ .Release.Namespace }}"
+                  INDEXER_POD="{{ include "wazuh.fullname" . }}-indexer-0"
+                  CERT_PATH="/usr/share/wazuh-indexer/config/certs"
+                  INDEXER_URL="https://localhost:9200"
+
+                  echo "[$(date)] === Wazuh Indexer Drift Detection ==="
+
+                  # Verify indexer-0 is reachable
+                  if ! kubectl get pod "$INDEXER_POD" -n "$NS" > /dev/null 2>&1; then
+                    echo "[$(date)] ERROR: $INDEXER_POD not found, skipping drift detection"
+                    exit 0
+                  fi
+
+                  # Re-apply index template for monitoring/statistics indices
+                  echo "[$(date)] Verifying index template wazuh-monitoring-replicas..."
+                  TEMPLATE_RESPONSE=$(kubectl exec "$INDEXER_POD" -n "$NS" -c wazuh-indexer -- \
+                    curl -s -k \
+                      --cert "$CERT_PATH/admin.pem" \
+                      --key "$CERT_PATH/admin-key.pem" \
+                      --cacert "$CERT_PATH/root-ca.pem" \
+                      -X PUT "$INDEXER_URL/_index_template/wazuh-monitoring-replicas" \
+                      -H 'Content-Type: application/json' \
+                      -d '{
+                        "index_patterns": ["wazuh-monitoring-*", "wazuh-statistics-*"],
+                        "priority": 1,
+                        "template": {
+                          "settings": {
+                            "number_of_replicas": 1
+                          }
+                        }
+                      }' 2>/dev/null)
+                  if echo "$TEMPLATE_RESPONSE" | grep -q '"acknowledged":true'; then
+                    echo "[$(date)] Index template OK (created or already exists)"
+                  else
+                    echo "[$(date)] WARNING: could not apply index template: $(echo "$TEMPLATE_RESPONSE" | head -c 200)"
+                  fi
+
+                  # Patch existing monitoring/statistics indices
+                  echo "[$(date)] Patching existing monitoring/statistics indices to replicas=1..."
+                  for idx_pattern in "wazuh-monitoring-*" "wazuh-statistics-*"; do
+                    PATCH_RESPONSE=$(kubectl exec "$INDEXER_POD" -n "$NS" -c wazuh-indexer -- \
+                      curl -s -k \
+                        --cert "$CERT_PATH/admin.pem" \
+                        --key "$CERT_PATH/admin-key.pem" \
+                        --cacert "$CERT_PATH/root-ca.pem" \
+                        -X PUT "$INDEXER_URL/$idx_pattern/_settings" \
+                        -H "Content-Type: application/json" \
+                        -d '{"index": {"number_of_replicas": 1}}' 2>/dev/null)
+                    if echo "$PATCH_RESPONSE" | grep -q '"type":"index_not_found_exception"'; then
+                      echo "[$(date)] $idx_pattern: no existing indices (OK)"
+                    elif echo "$PATCH_RESPONSE" | grep -q '"error"'; then
+                      echo "[$(date)] WARNING: patch failed for $idx_pattern: $(echo "$PATCH_RESPONSE" | head -c 200)"
+                    else
+                      echo "[$(date)] $idx_pattern: replicas=1 confirmed"
+                    fi
+                  done
+
+                  echo "[$(date)] === Drift detection complete ==="
+{{- end }}
+{{- end }}

@@ -1,0 +1,127 @@
+# OpenTelemetry Collector — DaemonSet that receives OTLP from in-cluster
+# producers (Keycloak now, BFF/AuthZEN/SpiceDB/Istio in Phase 7-rest)
+# and forwards traces to Tempo.
+#
+# Why DaemonSet: each node runs one collector; clients send to the local
+# node's collector via Service `internalTrafficPolicy: Local`. Avoids
+# cross-node OTLP hops, keeps locality.
+
+# Deployment mode — single-node k3s cluster. DaemonSet would buy us
+# per-node locality on a multi-node cluster, but here it just adds
+# hostPort defaults (which violate `baseline` PSA on the observability
+# namespace). One Deployment replica behind a ClusterIP Service is
+# functionally equivalent on a single node.
+mode: deployment
+replicaCount: 1
+fullnameOverride: otel-collector
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+# PSA `baseline` requires non-root + restricted capabilities for any
+# container that needs to satisfy stricter pod-level expectations.
+# Setting these here is defensive — the chart picks safe defaults in
+# Deployment mode but explicit > implicit.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch:
+      send_batch_size: 1024
+      timeout: 5s
+    # Drop trivial healthcheck spans so Tempo retention isn't bloated.
+    filter/healthchecks:
+      error_mode: ignore
+      traces:
+        span:
+          - 'attributes["http.target"] == "/healthz"'
+          - 'attributes["http.target"] == "/ready"'
+          - 'attributes["http.target"] == "/readyz"'
+          - 'attributes["http.target"] == "/metrics"'
+    memory_limiter:
+      check_interval: 5s
+      limit_percentage: 80
+      spike_limit_percentage: 20
+
+  exporters:
+    otlp/tempo:
+      endpoint: tempo.observability.svc.cluster.local:4317
+      tls:
+        insecure: true   # in-cluster Tempo speaks plaintext OTLP
+      sending_queue:
+        enabled: true
+        num_consumers: 4
+        queue_size: 1000
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, filter/healthchecks, batch]
+        exporters: [otlp/tempo]
+    telemetry:
+      logs:
+        level: info
+      metrics:
+        address: 0.0.0.0:8888
+
+ports:
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+
+service:
+  enabled: true
+  type: ClusterIP
+
+serviceMonitor:
+  enabled: false   # enable with kube-prometheus-stack in Phase 7-rest
+
+# Disable the chart's preset extra ports (jaeger, zipkin) — the chart
+# tries to enable hostPort on each in DaemonSet mode by default; we don't
+# need any of them, and switching mode to Deployment skips the hostPort
+# defaulting anyway.
+presets:
+  kubernetesAttributes:
+    enabled: false
+  hostMetrics:
+    enabled: false
+  kubeletMetrics:
+    enabled: false
+  logsCollection:
+    enabled: false

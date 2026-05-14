@@ -31,6 +31,11 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0023](./0023-spicedb-datastore-uri-rotation-pattern.md) | SpiceDB datastore_uri rotation pattern (Path B — refresher CronJob) | Accepted |
 | [0024](./0024-teleport-community-edition-local.md) | Teleport Community Edition for local; GitHub OAuth pivot | Accepted (amended 2026-05-03) |
 | [0025](./0025-jwt-auth-role-token-ttl-rule.md) | JWT auth role `token_ttl` MUST exceed dynamic-credential `default_ttl` | Accepted |
+| [0026](./0026-org-defined-custom-roles-rbac-layer.md) | Org-defined custom roles as an RBAC layer on SpiceDB ReBAC | Accepted |
+| [0027](./0027-multi-org-membership-and-hierarchy.md) | Multi-organization membership and no-cascade hierarchy | In progress (stub) |
+| [0028](./0028-approval-gated-cross-app-workflows.md) | Approval-gated cross-app workflows (pursuit→proposal, proposal→project) | In progress (stub) |
+| [0029](./0029-per-app-database-strategy.md) | Per-app database strategy — separate DBs with shared UUIDs from control plane | In progress (stub) |
+| [0030](./0030-custom-portal-as-sole-admin-ux.md) | Custom portal as sole admin UX; Keycloak default UI never shown to end users | In progress (stub) |
 
 ## Template
 

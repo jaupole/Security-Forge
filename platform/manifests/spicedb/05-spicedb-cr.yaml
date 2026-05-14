@@ -1,0 +1,101 @@
+# SpiceDBCluster — managed by the SpiceDB Operator.
+#
+# Production version of infrastructure/spicedb/04-spicedb-cr.yaml.
+# Differences:
+#   - secretName: spicedb-config-vso  ->  spicedb-config (legacy, pre-OpenBao
+#                                          name; will migrate to VSO in Phase 5)
+#   - edition label: local -> prod
+
+apiVersion: authzed.com/v1alpha1
+kind: SpiceDBCluster
+metadata:
+  name: spicedb
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb
+    app.kubernetes.io/component: authorization
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: spicedb
+    secforge.platform/edition: prod
+spec:
+  version: v1.51.1
+  channel: stable
+  secretName: spicedb-config
+
+  config:
+    datastoreEngine: postgres
+    replicas: 1
+    logLevel: info
+    logFormat: console-json
+    telemetryEndpoint: ""
+    otelProvider: "otlpgrpc"
+    otelEndpoint: "otel-collector.observability.svc.cluster.local:4317"
+    otelInsecure: "true"
+    otelSampleRatio: "1.0"
+    tlsSecretName: spicedb-grpc-tls
+    dispatchClusterEnabled: "true"
+    dispatchUpstreamCaPath: /tls/ca.crt
+    metricsEnabled: "true"
+    grpcReflectionEnabled: "true"
+
+  patches:
+    - kind: Deployment
+      patch:
+        spec:
+          template:
+            metadata:
+              labels:
+                spiffe.io/spire-managed-identity: "true"
+                secforge.platform/component: spicedb
+            spec:
+              serviceAccountName: spicedb
+              automountServiceAccountToken: true
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                fsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+                - name: spicedb
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    runAsNonRoot: true
+                    runAsUser: 65532
+                    capabilities:
+                      drop: ["ALL"]
+                    seccompProfile:
+                      type: RuntimeDefault
+                  volumeMounts:
+                    - name: spiffe-workload-api
+                      mountPath: /spiffe-workload-api
+                      readOnly: true
+              volumes:
+                - name: spiffe-workload-api
+                  csi:
+                    driver: csi.spiffe.io
+                    readOnly: true
+    - kind: Job
+      patch:
+        spec:
+          template:
+            spec:
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+                - name: migrate
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    runAsNonRoot: true
+                    runAsUser: 65532
+                    capabilities:
+                      drop: ["ALL"]
+                    seccompProfile:
+                      type: RuntimeDefault

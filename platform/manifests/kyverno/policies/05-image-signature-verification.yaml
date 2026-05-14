@@ -1,0 +1,83 @@
+# Image signature verification (cosign keyless via Sigstore Fulcio + Rekor).
+#
+# Verifies that images from vendors known to sign their releases via
+# GitHub Actions OIDC carry valid cosign signatures. The verification
+# checks the signature was produced by a GitHub Actions workflow in
+# the expected upstream repository, transparency-logged in Rekor.
+#
+# Status: **Audit mode**. Findings appear in ClusterPolicyReports and
+# admission events but are not blocked. After observing a clean week of
+# scans (no false positives from mirror-pulls or rotated keys), flip
+# validationFailureAction to Enforce.
+#
+# Verified vendors as of 2026-05-14 (via `cosign verify` on a sample
+# image from each registry):
+#   - ghcr.io/cloudnative-pg/*    — signed by GitHub Actions on
+#                                   github.com/cloudnative-pg/cloudnative-pg
+#   - ghcr.io/spiffe/*            — signed by GitHub Actions on
+#                                   github.com/spiffe/spire
+#
+# Adding more vendors:
+#   1. Verify a sample image on the host:
+#        cosign verify ghcr.io/<vendor>/<image>:<tag> \
+#          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#          --certificate-identity-regexp '^https://github.com/<vendor>/'
+#   2. If verification succeeds, append a new rule mirroring the
+#      CNPG/SPIFFE pattern below.
+#
+# References:
+#   - https://kyverno.io/docs/writing-policies/verify-images/sigstore/
+#   - https://docs.sigstore.dev/cosign/verifying/verify/
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  background: false                    # admission-time only; Rekor lookups
+                                       # are too slow to scan every pod
+  validationFailureAction: Audit       # flip to Enforce after observation
+  webhookConfiguration:
+    failurePolicy: Ignore              # don't block if Sigstore is unreachable
+  rules:
+    - name: verify-cloudnative-pg
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/cloudnative-pg/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/cloudnative-pg/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+    - name: verify-spiffe
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/spiffe/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/spiffe/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"

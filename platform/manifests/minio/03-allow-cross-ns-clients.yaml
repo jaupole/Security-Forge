@@ -1,0 +1,59 @@
+# Additive NetworkPolicy: allow cross-namespace clients to reach MinIO.
+#
+# The MinIO Helm chart installs a NetworkPolicy that only allows ingress
+# from pods labeled `minio-client=true` in the SAME namespace. Tempo (in
+# observability), Loki (Phase 7-rest), Teleport (Phase 8), Wazuh-archive,
+# etc. all live in different namespaces and need access.
+#
+# NPs are additive (UNION of allow rules), so this co-exists with the
+# chart's policy without removing same-namespace clients.
+#
+# Allowlist namespaces: observability, app, teleport, wazuh.
+# Add to the `from:` block when a new namespace needs MinIO access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cross-ns-minio-clients
+  namespace: minio
+  labels:
+    secforge.platform/component: minio
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+      release: minio
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [observability, app, teleport, wazuh, velero]
+          podSelector:
+            matchLabels:
+              minio-client: "true"
+      ports:
+        - port: 9000
+          protocol: TCP
+    # CNPG cluster pods write WAL + base backups to MinIO. They run in
+    # their app namespace (keycloak, spicedb, app, verify-restore, ...)
+    # and don't get the minio-client label automatically (the chart
+    # manages the pod template). Instead, allow any pod in the listed
+    # namespaces matching the cnpg.io/cluster label. `verify-restore` is
+    # the conventional ns for restore drills (see docs/03-runbooks for
+    # the procedure).
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [keycloak, spicedb, app, verify-restore]
+          podSelector:
+            matchExpressions:
+              - key: cnpg.io/cluster
+                operator: Exists
+      ports:
+        - port: 9000
+          protocol: TCP

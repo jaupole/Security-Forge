@@ -1,0 +1,53 @@
+# Layer A default-deny for namespaces that exist but hold no workloads.
+#
+# Pre-emptive hardening: if anyone (or anything) ever deploys into these
+# namespaces, they will be forced to declare ingress/egress allow rules
+# rather than getting open-network connectivity by default.
+#
+# Covered:
+#   - default        — the K8s default namespace, holds only the kubernetes
+#                      Service (which is host-network and unaffected by NPs).
+#                      Nothing should be deployed here; PSS=restricted is
+#                      enforced and the disallow-default-namespace Kyverno
+#                      policy also gates this.
+#   - signing-keys   — placeholder for cosign signing key Secrets.
+#   - image-builds   — placeholder for future image-build pipeline (kaniko/
+#                      buildkit Jobs).
+#
+# Applied 2026-05-14.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: default, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Ingress] }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-egress, namespace: default, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Egress] }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: signing-keys, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Ingress] }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-egress, namespace: signing-keys, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Egress] }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: image-builds, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Ingress] }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-egress, namespace: image-builds, labels: { secforge.platform/policy-tier: layer-a } }
+spec: { podSelector: {}, policyTypes: [Egress] }

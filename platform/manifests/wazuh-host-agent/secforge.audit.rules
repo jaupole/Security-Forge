@@ -1,0 +1,158 @@
+## SecForge curated auditd ruleset (component 10a).
+## Dropped at /etc/audit/rules.d/secforge.rules by 10a-auditd.sh, then loaded
+## via `augenrules --load && systemctl restart auditd`.
+##
+## Design: trim, not exhaustive. Each watched path / syscall is here because
+## a realistic attacker pattern touches it. Comments above each block explain
+## why. Do NOT bloat — auditd is loud enough already (50-200 events/sec on an
+## idle box). Adding noisy rules drowns the signal.
+##
+## Wazuh rules in the 80700-80799 range parse audit events natively.
+## Each `-k <key>` becomes the rule's `key` field in the dashboard, which is
+## how the manager-side custom rules in secforge_local_rules.xml correlate.
+
+## --- Buffer + failure mode ---
+
+## Increase backlog buffer so heavy bursts (package install, init scan) don't
+## drop events. Default 8192 is too small.
+-b 16384
+
+## On audit subsystem failure: just log. `2` would panic the kernel, which is
+## not what we want on a single-host install. We're not in a regulated env
+## that requires panic-on-audit-failure.
+-f 1
+
+## Don't audit ourselves — we'll never get out of recursion otherwise.
+-a never,exit -F arch=b32 -F path=/usr/sbin/auditd
+-a never,exit -F arch=b64 -F path=/usr/sbin/auditd
+
+## --- Identity / authentication changes ---
+## Real-world: attacker creates a new user, adds them to sudo group, modifies
+## sudoers. Watching the authoritative files catches this regardless of which
+## tool was used.
+-w /etc/passwd       -p wa -k identity
+-w /etc/shadow       -p wa -k identity
+-w /etc/group        -p wa -k identity
+-w /etc/gshadow      -p wa -k identity
+-w /etc/sudoers      -p wa -k identity
+-w /etc/sudoers.d/   -p wa -k identity
+
+## --- SSH config + authorized_keys ---
+## "Drop my key into authorized_keys" is the most common persistence
+## technique. Watch every authorized_keys location we know about.
+-w /etc/ssh/sshd_config       -p wa -k ssh_config
+-w /etc/ssh/sshd_config.d/    -p wa -k ssh_config
+-w /root/.ssh/authorized_keys -p wa -k ssh_authorized_keys
+## /home is recursive; auditd handles -w on directories by watching every
+## file under them. Noisy on shared hosts; on a single-operator box it's fine.
+-w /home/                     -p wa -k home_changes
+
+## --- Privileged binaries (suid/sgid abuse paths) ---
+## Watch the canonical locations for new suid/sgid binaries appearing.
+## Combined with `find / -perm -4000` baseline tracking elsewhere.
+-w /usr/bin/passwd         -p x -k privileged_exec
+-w /usr/bin/sudo           -p x -k privileged_exec
+-w /usr/bin/su             -p x -k privileged_exec
+-w /usr/bin/newgrp         -p x -k privileged_exec
+-w /usr/bin/chsh           -p x -k privileged_exec
+-w /usr/bin/chfn           -p x -k privileged_exec
+
+## --- Package manager invocations ---
+## "I got root, now I install my tools." apt + dpkg + snap binaries.
+## File watches here; paired with /var/log/dpkg.log + /var/log/apt/history.log
+## tailing in ossec.conf.
+-w /usr/bin/apt            -p x -k pkg_install
+-w /usr/bin/apt-get        -p x -k pkg_install
+-w /usr/bin/dpkg           -p x -k pkg_install
+-w /usr/bin/snap           -p x -k pkg_install
+
+## --- Kernel module load/unload ---
+## Loading a malicious kmod is a classic persistence + stealth technique.
+## init_module + finit_module + delete_module catch all the ways.
+-a always,exit -F arch=b64 -S init_module -S finit_module -S delete_module -k kernel_modules
+-a always,exit -F arch=b32 -S init_module -S finit_module -S delete_module -k kernel_modules
+-w /etc/modprobe.conf      -p wa -k kernel_modules
+-w /etc/modprobe.d/        -p wa -k kernel_modules
+-w /etc/modules            -p wa -k kernel_modules
+-w /etc/modules-load.d/    -p wa -k kernel_modules
+
+## --- Network configuration changes ---
+## Attacker adds a route to redirect traffic, opens a port via iptables/nft,
+## drops resolv.conf to point at a malicious DNS resolver.
+-w /etc/network/           -p wa -k network_config
+-w /etc/netplan/           -p wa -k network_config
+-w /etc/resolv.conf        -p wa -k network_config
+-w /etc/hosts              -p wa -k network_config
+-w /etc/hostname           -p wa -k network_config
+-w /etc/sysconfig/network  -p wa -k network_config
+-w /etc/iptables/          -p wa -k network_config
+-w /etc/nftables.conf      -p wa -k network_config
+
+## --- Cron / scheduled tasks (persistence) ---
+## "Add a cron job that re-establishes my reverse shell every 5 min" — this
+## is the bread-and-butter persistence method for opportunistic attackers.
+-w /etc/cron.allow         -p wa -k cron
+-w /etc/cron.deny          -p wa -k cron
+-w /etc/cron.d/            -p wa -k cron
+-w /etc/cron.daily/        -p wa -k cron
+-w /etc/cron.hourly/       -p wa -k cron
+-w /etc/cron.monthly/      -p wa -k cron
+-w /etc/cron.weekly/       -p wa -k cron
+-w /etc/crontab            -p wa -k cron
+-w /var/spool/cron/        -p wa -k cron
+-w /etc/anacrontab         -p wa -k cron
+
+## --- systemd unit files (persistence) ---
+## Newer attacker pattern: write a custom systemd unit that re-spawns the
+## payload on every boot. Less obvious than crontab to a casual reviewer.
+-w /etc/systemd/system/    -p wa -k systemd_units
+-w /usr/lib/systemd/system/ -p wa -k systemd_units
+-w /run/systemd/system/    -p wa -k systemd_units
+
+## --- /tmp + /var/tmp + /dev/shm execution ---
+## Attackers commonly drop and execute payloads in writable world-writable
+## directories. Audit execution from these paths specifically — not
+## creation (too noisy) but execution (high signal).
+## NOTE: catches some legitimate behaviour (apt occasionally execs from /tmp);
+## acceptable noise tradeoff.
+-a always,exit -F arch=b64 -S execve -F dir=/tmp -F success=1 -k tmp_exec
+-a always,exit -F arch=b64 -S execve -F dir=/var/tmp -F success=1 -k tmp_exec
+-a always,exit -F arch=b64 -S execve -F dir=/dev/shm -F success=1 -k tmp_exec
+
+## --- Clock manipulation ---
+## "Roll back the clock to make my expired cert valid" / "advance it to
+## bypass token expiry" / "obscure the timeline of my actions in logs".
+-a always,exit -F arch=b64 -S clock_settime -S settimeofday -S adjtimex -k time_change
+-a always,exit -F arch=b32 -S clock_settime -S settimeofday -S adjtimex -k time_change
+-w /etc/localtime          -p wa -k time_change
+
+## --- Mount events ---
+## Mounting a USB / external filesystem on a server is unusual. Mounting
+## a tmpfs over a sensitive path (e.g. /etc) to hide modifications is an
+## attacker technique.
+-a always,exit -F arch=b64 -S mount -S umount2 -k mounts
+-a always,exit -F arch=b32 -S mount -S umount -S umount2 -k mounts
+
+## --- Container runtime config ---
+## Attacker who broke into the host might modify the runtime config to
+## weaken pod-isolation defaults or add a registry mirror to a malicious one.
+-w /etc/containerd/        -p wa -k container_runtime
+-w /etc/docker/            -p wa -k container_runtime
+-w /etc/cni/               -p wa -k container_runtime
+-w /etc/rancher/k3s/       -p wa -k k3s_config
+
+## --- Audit subsystem itself (tamper detection) ---
+## "Step one of attacker post-exploitation: turn off auditing." Watch the
+## audit config files and the auditctl binary.
+-w /etc/audit/             -p wa -k audit_config
+-w /etc/audit/auditd.conf  -p wa -k audit_config
+-w /etc/audit/audit.rules  -p wa -k audit_config
+-w /etc/audit/rules.d/     -p wa -k audit_config
+-w /sbin/auditctl          -p x  -k audit_tools
+-w /sbin/auditd            -p x  -k audit_tools
+
+## --- Make the rules immutable until reboot ---
+## Has to be the LAST line. After this loads, rule changes require a reboot.
+## Comment out during initial tuning; uncomment when ruleset is stable.
+## (Left commented for safety — production hardening should uncomment.)
+##-e 2

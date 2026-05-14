@@ -1,0 +1,20 @@
+# Daily CNPG ScheduledBackup for the secforge-keycloak-db cluster.
+# Runs at 02:30 UTC (30 min after Velero so they don't compete for I/O).
+# Retention is enforced by the ObjectStore CR (08-objectstore.yaml, retentionPolicy: 30d).
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: secforge-keycloak-db-daily
+  namespace: keycloak
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: secforge-keycloak-db
+spec:
+  schedule: "0 30 2 * * *"          # CNPG uses 6-field cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: secforge-keycloak-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false                   # don't trigger on apply; first scheduled run takes it

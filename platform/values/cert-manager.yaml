@@ -1,0 +1,28 @@
+# cert-manager — TLS certificate lifecycle for Let's Encrypt + internal CAs.
+#
+# Chart: jetstack/cert-manager
+#
+# Currently in production with minimal customization (CRDs auto-installed).
+# We deliberately keep values lean — cert-manager has reasonable defaults
+# and the Cloudflare DNS-01 ACME plumbing lives in our ClusterIssuer
+# manifests, not in chart values.
+
+# Install cert-manager's CRDs as part of the helm release (otherwise
+# they have to be applied separately and tracked).
+crds:
+  enabled: true
+
+# Resources — cert-manager is light. Defaults are fine; explicit for clarity.
+resources:
+  requests: { cpu: 50m,  memory: 128Mi }
+  limits:   { cpu: 500m, memory: 256Mi }
+
+webhook:
+  resources:
+    requests: { cpu: 25m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+cainjector:
+  resources:
+    requests: { cpu: 25m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 256Mi }

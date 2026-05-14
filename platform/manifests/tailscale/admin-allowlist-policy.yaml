@@ -1,0 +1,87 @@
+# Kyverno ClusterPolicy — admin Ingresses must be tailnet-only.
+#
+# Applied by 10a-ingress-tailnet-split.sh as part of component 10.
+#
+# Catches the "I created a new admin Ingress and forgot the allowlist
+# annotation" mistake at admission time, before the Ingress is reachable
+# from the public internet.
+#
+# An Ingress is admin-shaped (and thus subject to this policy) if any of
+# its rules' hostnames starts with one of the admin-shaped prefixes below.
+# To make a "specific page" of an admin app public, give it a separate
+# Ingress with a non-admin-shaped hostname (e.g. status.secforge.dev).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: admin-ingress-must-be-tailnet-only
+  annotations:
+    policies.kyverno.io/title: Admin Ingresses must restrict source to Tailscale CGNAT
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Ingress
+    secforge.platform/component: tailscale
+    secforge.platform/origin: manifests/tailscale/admin-allowlist-policy.yaml
+    secforge.platform/rationale: |
+      Admin UIs (Wazuh, Grafana, OpenBao admin console, Keycloak admin
+      console, Prometheus, Alertmanager) must never be reachable from the
+      public internet. Component 10 (Tailscale) provides a stable
+      operator-only mesh; admin Ingresses set
+      nginx.ingress.kubernetes.io/whitelist-source-range to 100.64.0.0/10
+      (the Tailscale CGNAT range) so they only serve traffic sourced from
+      inside the tailnet. This policy enforces the annotation at
+      admission time so the rule can't be silently dropped during edits.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-tailnet-allowlist-on-admin-ingress
+      match:
+        any:
+          - resources:
+              kinds:
+                - Ingress
+      preconditions:
+        any:
+          # If ANY rule's host starts with one of these prefixes, the
+          # Ingress is admin-shaped. This is intentionally OR-ed across
+          # rules — a multi-rule Ingress where ONE rule is admin-shaped
+          # and another isn't would be wrong on its face (don't mix
+          # admin and public hostnames in a single Ingress resource).
+          - key: "{{ request.object.spec.rules[].host || `[]` | length(@) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: |
+          Admin Ingresses (hostnames starting with wazuh., grafana.,
+          openbao-admin., auth-admin., prometheus., alertmanager.,
+          argocd., kibana., or discover.) MUST set the annotation
+          nginx.ingress.kubernetes.io/whitelist-source-range to a value
+          that includes 100.64.0.0/10 (Tailscale CGNAT range).
+
+          Add to your Ingress metadata.annotations:
+            nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10"
+
+          To intentionally expose a specific page publicly, split it into
+          a separate Ingress with a non-admin-shaped hostname (e.g.
+          status.secforge.dev) — this policy will not match it.
+        deny:
+          conditions:
+            all:
+              # Hostname matches an admin-shaped prefix.
+              - key: "{{ request.object.spec.rules[0].host || '' }}"
+                operator: AnyIn
+                value:
+                  - "wazuh.*"
+                  - "grafana.*"
+                  - "openbao-admin.*"
+                  - "auth-admin.*"
+                  - "prometheus.*"
+                  - "alertmanager.*"
+                  - "argocd.*"
+                  - "kibana.*"
+                  - "discover.*"
+              # AND annotation is missing or doesn't include the CGNAT range.
+              - key: "{{ request.object.metadata.annotations.\"nginx.ingress.kubernetes.io/whitelist-source-range\" || '' }}"
+                operator: NotIn
+                value:
+                  - "*100.64.0.0/10*"

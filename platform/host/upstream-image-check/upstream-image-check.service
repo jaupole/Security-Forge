@@ -1,0 +1,14 @@
+[Unit]
+Description=Check upstream registries for new image digests on watched container images
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/upstream-image-check.sh
+# Stay sandboxed — needs network + read /etc + write /var/lib/upstream-image-check
+ProtectSystem=strict
+ReadWritePaths=/var/lib/upstream-image-check
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

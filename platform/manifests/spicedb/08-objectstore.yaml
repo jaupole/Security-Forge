@@ -1,0 +1,26 @@
+# Barman Cloud Plugin ObjectStore for secforge-spicedb-db.
+# See keycloak/08-objectstore.yaml for the full pattern explanation.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: minio-backup
+  namespace: spicedb
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: secforge-spicedb-db
+spec:
+  configuration:
+    destinationPath: s3://backups/cnpg/spicedb
+    endpointURL: http://minio.minio.svc.cluster.local:9000
+    s3Credentials:
+      accessKeyId:
+        name: cnpg-minio-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: cnpg-minio-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: "30d"

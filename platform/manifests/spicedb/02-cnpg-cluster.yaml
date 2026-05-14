@@ -1,0 +1,42 @@
+# Postgres cluster for SpiceDB. Production version of
+# infrastructure/cloudnativepg/clusters/spicedb-db.yaml.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secforge-spicedb-db
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: false
+  storage:
+    size: 5Gi
+    storageClass: ${STORAGE_CLASS}
+  bootstrap:
+    initdb:
+      database: spicedb
+      owner: spicedb
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  monitoring:
+    enablePodMonitor: false
+
+  # Postgres physical backups + WAL archiving via the Barman Cloud Plugin.
+  # See keycloak/02-cnpg-cluster.yaml for the full pattern explanation.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true

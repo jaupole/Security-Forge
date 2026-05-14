@@ -1,0 +1,33 @@
+# Public Ingress for main OpenBao at bao.${DOMAIN}.
+# TLS terminated at ingress-nginx with auto-issued Let's Encrypt cert.
+# Backend protocol is HTTPS because OpenBao serves TLS in the pod.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openbao
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao
+    secforge.platform/component: openbao
+  annotations:
+    cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bao.${DOMAIN}
+      secretName: openbao-public-tls
+  rules:
+    - host: bao.${DOMAIN}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openbao
+                port:
+                  number: 8200

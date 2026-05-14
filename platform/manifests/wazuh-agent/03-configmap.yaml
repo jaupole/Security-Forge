@@ -1,0 +1,103 @@
+# Phase 7d Item 5 + Item 6 — Wazuh agent ossec.conf SUPPLEMENTS.
+#
+# This ConfigMap holds an XML fragment APPENDED to the wazuh-agent
+# image's default ossec.conf by the customize-ossec-conf init
+# container (see 04-daemonset.yaml). Wazuh's parser tolerates
+# multiple top-level <ossec_config> blocks in a single file —
+# they're treated as additive.
+#
+# What this adds:
+#   - <syscheck> directories pointing at /host/etc, /host/usr/bin,
+#     /host/usr/sbin (FIM on host paths via hostPath mount).
+#   - <localfile> blocks (Phase 7d Item 6) tailing Keycloak +
+#     OpenBao pod logs from /host/var/log/pods/.
+#   - <wodle name="syscollector"> tweaked for the no-hostPID config
+#     (limited per-PID detail; sufficient for installed-software
+#     change detection).
+#
+# What this does NOT touch:
+#   - <client> block: image-side init substitutes WAZUH_MANAGER_SERVER
+#     env value; we keep that flow.
+#   - <client_buffer>, <logging>: image defaults are fine.
+#   - <rootcheck>: image defaults handle it (file-based scans only;
+#     we don't have the privilege for PID-based scans regardless).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-agent-ossec-conf
+  namespace: wazuh-agent
+  labels:
+    secforge.platform/component: wazuh-agent
+data:
+  ossec-supplements.xml: |
+
+    <ossec_config>
+
+      <!-- File integrity monitoring on host paths via hostPath mount. -->
+      <syscheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+        <scan_on_start>yes</scan_on_start>
+        <directories check_all="yes" realtime="yes">/host/etc</directories>
+        <directories check_all="yes">/host/usr/bin</directories>
+        <directories check_all="yes">/host/usr/sbin</directories>
+        <ignore>/host/etc/mtab</ignore>
+        <ignore>/host/etc/hosts.deny</ignore>
+        <ignore>/host/etc/random-seed</ignore>
+        <ignore>/host/etc/adjtime</ignore>
+        <skip_nfs>yes</skip_nfs>
+      </syscheck>
+
+      <!-- Phase 7d Item 6 — tail Keycloak + OpenBao pod logs from
+           /host/var/log/pods/<ns>_<pod>_<uid>/<container>/0.log
+           kubelet writes container logs with a wrapper:
+             <RFC3339-TS> (stdout|stderr) (P|F) <json-or-text-line>
+           Pure <log_format>json</log_format> can't parse this — each
+           line starts with the kubelet timestamp prefix, not '{'.
+           Use `syslog` format here (sends raw lines); the manager's
+           local_decoder.xml strips the kubelet wrapper and applies
+           JSON_Decoder to the trailing payload. See infrastructure/
+           wazuh/03-decoders-configmap.yaml. -->
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/host/var/log/pods/openbao_openbao-*/openbao/*.log</location>
+        <label key="source">openbao</label>
+      </localfile>
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/host/var/log/pods/keycloak_keycloak-0_*/keycloak/*.log</location>
+        <label key="source">keycloak</label>
+      </localfile>
+
+      <!-- Trivy Operator CVE findings — CronJob writes one JSON line per
+           HIGH/CRITICAL CVE to /var/log/trivy-wazuh/findings-*.jsonl every
+           6 hours. log_format=syslog sends raw lines to the manager;
+           the trivy decoder (prematch on {"source":"trivy") fires and
+           extracts fields as data.*. Rules use data.severity / data.cve_id.
+           only-future-events=no reads the full file from offset 0 on first
+           discovery so findings written before the agent restarts are not
+           silently skipped (log_format=json advances offsets without
+           shipping events in Wazuh 4.14.4). -->
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/host/var/log/trivy-wazuh/*.jsonl</location>
+        <only-future-events>no</only-future-events>
+      </localfile>
+
+      <!-- Inventory: packages, hardware, network. Works without
+           hostPID but per-PID detail is limited; sufficient for
+           change-detection on the host's installed software. -->
+      <wodle name="syscollector">
+        <disabled>no</disabled>
+        <interval>1h</interval>
+        <scan_on_start>yes</scan_on_start>
+        <hardware>yes</hardware>
+        <os>yes</os>
+        <network>yes</network>
+        <packages>yes</packages>
+        <ports all="no">yes</ports>
+        <processes>yes</processes>
+      </wodle>
+
+    </ossec_config>

@@ -1,0 +1,77 @@
+# Layer A ingress NetworkPolicy for the cert-manager namespace.
+#
+# Egress baseline (default-deny-egress + allow-egress-essentials + the
+# ACME/Cloudflare API egress rule) is applied separately. This file adds
+# the ingress side.
+#
+# Critical: the cert-manager-webhook receives admission webhook calls from
+# the kube-apiserver. On k3s the API server runs in the host's network
+# namespace, so admission calls into the cluster pod network arrive with
+# an opaque source IP (effectively the node). NetworkPolicy cannot match
+# the API server precisely, so the webhook port is opened to 0.0.0.0/0;
+# defense-in-depth comes from the mTLS check at the webhook itself (the
+# K8s API server presents a client cert signed by the cluster CA).
+#
+# Applied 2026-05-14.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: cert-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-webhook
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: cert-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: webhook
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 10250
+    - protocol: TCP
+      port: 9402
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-cert-manager-metrics
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: cert-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 9402

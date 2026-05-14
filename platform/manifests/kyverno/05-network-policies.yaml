@@ -1,0 +1,100 @@
+# Layer A ingress NetworkPolicy for the kyverno namespace.
+#
+# Egress baseline (default-deny-egress + allow-egress-essentials) is applied
+# separately. This file adds the ingress side.
+#
+# Critical: kyverno-admission-controller and kyverno-cleanup-controller
+# both receive admission webhook calls from the kube-apiserver. On k3s the
+# API server runs on the host network, so admission calls arrive with an
+# opaque source. The webhook port (9443) is opened to 0.0.0.0/0;
+# defense-in-depth comes from the mTLS check at the webhook itself.
+#
+# A blocked kyverno admission webhook would prevent ALL pod admission
+# cluster-wide (since the webhookFailurePolicy is Fail per HA config).
+# Get this wrong and the entire cluster becomes immutable. The 0.0.0.0/0
+# pattern is intentional.
+#
+# Applied 2026-05-14.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-admission-webhook
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: admission-controller
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 9443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-cleanup-webhook
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: cleanup-controller
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 9443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-kyverno-metrics
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 8000

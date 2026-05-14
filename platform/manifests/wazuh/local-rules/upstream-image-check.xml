@@ -1,0 +1,71 @@
+<!--
+  Rules for the upstream-image-check program. Distinct rule.id range
+  (100400-100499) and dedicated rule.groups (`update_required`,
+  `upstream_image`) so these alerts can be filtered on the Wazuh
+  dashboard separately from the operational noise.
+
+  Lives at /var/ossec/etc/rules/local_rules_upstream_image.xml on the
+  wazuh-manager pod. Source-of-truth in this repo; deploy via
+  platform/components/07l-wazuh-upstream-image-rules.sh.
+
+  Severity ladder:
+    100401 (level 10): NEW DIGEST AVAILABLE  -> alert, action required
+    100400 (level 3):  generic catch-all
+    100402 (level 2):  first observation, info only
+    100403 (level 6):  registry resolution failed
+    100404 (level 2):  weekly summary, info only
+-->
+<group name="upstream_image,">
+  <!-- Generic catch-all so other rules can chain via if_sid -->
+  <rule id="100400" level="3">
+    <decoded_as>upstream-image-check</decoded_as>
+    <description>upstream-image-check: $(action)</description>
+  </rule>
+
+  <!-- THE alert: new digest available, time to bump and re-run Trivy.
+       `system_admin_attention` is the meta-group for ALL "operator must
+       do something" alerts in SecForge — register a saved Dashboard
+       filtering on this group to get the Maintenance Required view. -->
+  <rule id="100401" level="10">
+    <if_sid>100400</if_sid>
+    <match>NEW DIGEST AVAILABLE</match>
+    <description>Update Required: $(image) has a newer upstream digest (was $(old_digest), now $(new_digest))</description>
+    <group>system_admin_attention,update_required,upstream_image,security_update,</group>
+    <mitre>
+      <id>T1195.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Registry resolution failure escalated to admin attention if it
+       persists. Single occurrence is operational; repeated suggests a
+       network or auth issue that needs a human. -->
+  <rule id="100405" level="8" frequency="3" timeframe="86400">
+    <if_matched_sid>100403</if_matched_sid>
+    <description>Operator Attention: upstream-image-check has failed registry lookup 3+ times in 24h ($(image))</description>
+    <group>system_admin_attention,upstream_image,operational,</group>
+  </rule>
+
+  <!-- First observation of an image — info only, no escalation -->
+  <rule id="100402" level="2">
+    <if_sid>100400</if_sid>
+    <match>first observation:</match>
+    <description>upstream-image-check: first observation of $(image)</description>
+    <group>upstream_image,info,</group>
+  </rule>
+
+  <!-- Registry lookup failure — needs investigation but not an attack -->
+  <rule id="100403" level="6">
+    <if_sid>100400</if_sid>
+    <match>could not resolve digest</match>
+    <description>upstream-image-check: registry lookup failed for $(image)</description>
+    <group>upstream_image,operational,</group>
+  </rule>
+
+  <!-- Weekly summary line, fires every run -->
+  <rule id="100404" level="2">
+    <if_sid>100400</if_sid>
+    <match>weekly check complete</match>
+    <description>upstream-image-check: weekly run complete ($(new_digest_count) updates available)</description>
+    <group>upstream_image,info,</group>
+  </rule>
+</group>

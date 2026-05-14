@@ -1,0 +1,53 @@
+# Essential egress allows shared by ALL cert-manager pods.
+#
+# Every pod (controller, cainjector, webhook) needs:
+#   - DNS resolution → coredns in kube-system (UDP/TCP 53)
+#   - K8s API access → both routes:
+#       * kubernetes Service ClusterIP (10.43.0.1:443) — normal in-cluster
+#       * host endpoint (65.21.25.40:6443) — k3s server, the actual TLS
+#         endpoint behind that ClusterIP. NPs evaluate against the post-
+#         DNAT destination on k3s, so we need both.
+#
+# Webhook also receives ingress from the apiserver, but that's an INGRESS
+# rule (lives in a separate file or namespace-level policy) — not relevant
+# here.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS to coredns in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Kubernetes API server: ClusterIP route (default svc) + host route.
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - port: 6443
+          protocol: TCP

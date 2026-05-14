@@ -1,0 +1,116 @@
+<!--
+  SecForge maintenance rules. Each rule family adds `system_admin_attention`
+  to its groups so the Maintenance Required dashboard catches it.
+
+  Rule ID ranges (per docs/06-reference/wazuh-rule-conventions.md):
+    100500-100599: OpenBao seal state
+    100600-100699: cert-manager certificate renewal
+    100700-100799: CloudNativePG cluster health
+    100800-100899: Velero backup status
+    100900-100999: Wazuh agent connectivity overrides
+
+  Lives at /var/ossec/etc/rules/local_rules_secforge_maintenance.xml on the
+  wazuh-manager pod. Source-of-truth in this repo; deploy via
+  platform/components/07m-wazuh-maintenance-rules.sh.
+
+  Pre-condition: the host wazuh-agent (006) must be tailing these pod log
+  paths. The 07m installer adds the necessary localfile blocks to ossec.conf
+  if not already present.
+-->
+
+<!-- ─── 100500: OpenBao seal state ────────────────────────────────── -->
+<group name="openbao,maintenance,">
+  <rule id="100500" level="3">
+    <match>vault is sealed|core: marked as sealed|core: post-seal sealing|seal configuration missing, but vault is initialized</match>
+    <description>OpenBao: sealed-state log line</description>
+    <group>openbao,</group>
+  </rule>
+
+  <rule id="100501" level="12">
+    <if_sid>100500</if_sid>
+    <description>OpenBao SEALED — operator must unseal openbao-seal-0 with 3 of 5 Shamir keys before main pods can auto-unseal</description>
+    <group>system_admin_attention,openbao,unseal_required,</group>
+    <mitre>
+      <id>T1486</id>
+    </mitre>
+  </rule>
+</group>
+
+<!-- ─── 100600: cert-manager renewal ──────────────────────────────── -->
+<group name="cert_manager,maintenance,">
+  <rule id="100600" level="3">
+    <match>cert-manager</match>
+    <description>cert-manager: log line</description>
+    <group>cert_manager,</group>
+  </rule>
+
+  <rule id="100601" level="10">
+    <if_sid>100600</if_sid>
+    <regex>failed to renew|Failed to renew|unable to renew|renewal failed|unable to fetch certificate</regex>
+    <description>cert-manager: certificate renewal/issuance FAILED</description>
+    <group>system_admin_attention,cert_manager,renewal_failed,</group>
+    <mitre>
+      <id>T1565.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Repeated failures = persistent issue, escalate further -->
+  <rule id="100602" level="12" frequency="3" timeframe="3600">
+    <if_matched_sid>100601</if_matched_sid>
+    <description>cert-manager: 3+ renewal failures in 1 hour — manual intervention required</description>
+    <group>system_admin_attention,cert_manager,renewal_failed,persistent,</group>
+  </rule>
+</group>
+
+<!-- ─── 100700: CloudNativePG cluster health ──────────────────────── -->
+<group name="cnpg,maintenance,">
+  <rule id="100700" level="3">
+    <match>cnpg|cloudnative-pg|postgres-operator</match>
+    <description>CNPG: operator log line</description>
+    <group>cnpg,</group>
+  </rule>
+
+  <rule id="100701" level="10">
+    <if_sid>100700</if_sid>
+    <regex>Cluster cannot proceed|reconciliation failed|cluster is degraded|cluster has issues|Cluster in failed state|primary instance.+failed|setting up the connection failed</regex>
+    <description>CNPG: cluster reconciliation/health failure</description>
+    <group>system_admin_attention,cnpg,cluster_degraded,</group>
+  </rule>
+</group>
+
+<!-- ─── 100800: Velero backup status ──────────────────────────────── -->
+<group name="velero,maintenance,">
+  <rule id="100800" level="3">
+    <match>velero</match>
+    <description>Velero: log line</description>
+    <group>velero,</group>
+  </rule>
+
+  <rule id="100801" level="10">
+    <if_sid>100800</if_sid>
+    <regex>backup failed|Backup completed with errors|backup completed with errors|PartiallyFailed|FailedValidation|level.+error.+backup</regex>
+    <description>Velero: backup failed or partially failed</description>
+    <group>system_admin_attention,velero,backup_failed,</group>
+  </rule>
+</group>
+
+<!-- ─── 100900: Wazuh agent connectivity ──────────────────────────── -->
+<group name="wazuh_agent,maintenance,">
+  <!-- Wazuh's built-in rule 503 fires when an agent goes from active to
+       disconnected. We escalate that into the maintenance dashboard so
+       a missing agent doesn't go unnoticed. Uses if_sid to chain off
+       the built-in rule rather than redefining it. -->
+  <rule id="100900" level="8">
+    <if_sid>503</if_sid>
+    <description>Wazuh agent disconnected — investigate within 24h to maintain coverage</description>
+    <group>system_admin_attention,wazuh_agent,connectivity_lost,</group>
+  </rule>
+
+  <!-- Escalation: same agent disconnects 3+ times in a day = persistent issue -->
+  <rule id="100901" level="12" frequency="3" timeframe="86400">
+    <if_matched_sid>100900</if_matched_sid>
+    <same_field>agent.id</same_field>
+    <description>Wazuh agent has disconnected 3+ times in 24h — link/host issue, not transient</description>
+    <group>system_admin_attention,wazuh_agent,connectivity_lost,persistent,</group>
+  </rule>
+</group>

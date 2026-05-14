@@ -1,0 +1,34 @@
+{{- if .Values.manager.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wazuh.fullname" . }}-manager
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.manager.selectorLabels" . | nindent 4 }}
+  {{- with .Values.manager.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "wazuh.manager.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: agents-events
+      port: 1514
+      targetPort: 1514
+      protocol: TCP
+    - name: agents-auth
+      port: 1515
+      targetPort: 1515
+      protocol: TCP
+    - name: cluster
+      port: 1516
+      targetPort: 1516
+      protocol: TCP
+    - name: api
+      port: 55000
+      targetPort: 55000
+      protocol: TCP
+{{- end }}

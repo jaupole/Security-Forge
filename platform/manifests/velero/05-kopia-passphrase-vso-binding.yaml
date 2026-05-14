@@ -1,0 +1,55 @@
+# VSO binding for Velero kopia repository passphrase.
+#
+# Renders OpenBao secret/data/platform/velero/kopia-passphrase directly
+# into K8s Secret `velero-repo-credentials` (the EXACT name Velero
+# v1.10+ hardcodes) with key `repository-password`.
+#
+# Why we own this Secret name (and not a -vso suffix): Velero has no
+# CLI/env flag to override the credentials Secret name — the chart
+# default `velero-repo-credentials` is what every uploader looks up.
+# So 09e-velero-rotate-passphrase.sh deletes the chart's
+# static-passw0rd Secret first, then VSO recreates it with the strong
+# passphrase from OpenBao.
+#
+# Lifecycle handled by 09e-velero-rotate-passphrase.sh:
+#   1. Generates a strong passphrase if not already in OpenBao.
+#   2. Stashes at OpenBao secret/data/platform/velero/kopia-passphrase.
+#   3. Re-loads vso.hcl policy.
+#   4. Deletes the chart-managed velero-repo-credentials Secret
+#      (containing static-passw0rd).
+#   5. Applies this binding — VSO renders new Secret with same name.
+#   6. Restarts the Velero Deployment to pick up the new password.
+#   7. Deletes existing BackupRepository CRs so Velero re-creates them
+#      with the new passphrase. Existing PV backups become unreadable
+#      (encrypted with old key).
+#
+# (cert-manager-vso K8s auth role is reused via velero-vso role —
+# defined in platform/manifests/openbao/auth/velero-vso-role.json.)
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: velero-repo-credentials
+  namespace: velero
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: velero-vso
+  mount: secret
+  type: kv-v2
+  path: platform/velero/kopia-passphrase
+  refreshAfter: 60s
+  destination:
+    name: velero-repo-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # Velero hardcodes this exact key name in its repo-credentials Secret.
+        repository-password:
+          text: '{{ .Secrets.passphrase }}'

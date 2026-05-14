@@ -1,0 +1,19 @@
+# Watched images for the weekly upstream-image-check timer.
+#
+# Format: <image_with_tag>
+# Lines starting with # are comments. Blank lines OK.
+#
+# When the weekly check finds a NEWER digest than what we last saw for
+# a tracked image, it writes a syslog line that wazuh-agent picks up:
+#   upstream-image-check: NEW DIGEST AVAILABLE for <image>
+#
+# Trigger to bump the image and re-run Trivy.
+#
+# These are images where we have known accepted-pending-upstream CVEs
+# (see docs/06-reference/trivy-baseline.md). Add new ones here as
+# Trivy flags them and we determine the latest is already deployed.
+
+ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+ghcr.io/cloudnative-pg/postgresql:16-bookworm
+ghcr.io/cloudnative-pg/cloudnative-pg:1.29.0
+registry.k8s.io/ingress-nginx/controller:v1.15.1

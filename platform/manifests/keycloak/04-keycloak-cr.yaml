@@ -1,0 +1,141 @@
+# Keycloak custom resource — managed by the Keycloak Operator.
+#
+# Production version of infrastructure/keycloak/04-keycloak-cr.yaml.
+# Differences:
+#   - hostname: auth.${DOMAIN} (was auth.secforge.local)
+#   - admin/public split removed (single host for now; admin gating is by
+#     Keycloak's own auth + the BFF pattern; we can re-add the split with
+#     Cloudflare Access or a network ACL later)
+#   - edition label: prod (was local)
+
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: identity-provider
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: keycloak
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  image: quay.io/keycloak/keycloak:26.3.3
+  startOptimized: false   # see local-edition note re: build-time features
+
+  db:
+    vendor: postgres
+    host: secforge-keycloak-db-rw.keycloak.svc
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: secforge-keycloak-db-app
+      key: username
+    passwordSecret:
+      name: secforge-keycloak-db-app
+      key: password
+
+  hostname:
+    hostname: https://auth.${DOMAIN}
+    strict: true
+
+  http:
+    httpEnabled: true
+  proxy:
+    headers: xforwarded
+
+  ingress:
+    enabled: false   # we manage our own Ingress
+
+  features:
+    enabled:
+      - recovery-codes
+      - dpop
+
+  truststores:
+    pg-ca:
+      secret:
+        name: secforge-keycloak-db-ca
+
+  additionalOptions:
+    - name: log-console-output
+      value: json
+    - name: log-level
+      value: INFO
+    - name: health-enabled
+      value: "true"
+    - name: metrics-enabled
+      value: "true"
+    # OpenTelemetry tracing → otel-collector in observability ns.
+    # Endpoint must be the OTLP HTTP base URL (Quarkus Keycloak doesn't
+    # support gRPC OTLP without extra config). The OTel collector forwards
+    # traces to Tempo via the cluster-internal pipeline.
+    - name: tracing-enabled
+      value: "true"
+    - name: tracing-endpoint
+      value: "http://otel-collector.observability.svc.cluster.local:4318"
+    - name: tracing-protocol
+      value: "http/protobuf"
+    - name: tracing-service-name
+      value: "keycloak"
+    - name: tracing-resource-attributes
+      value: "service.namespace=keycloak"
+    - name: db-url-properties
+      value: "?sslmode=require"
+    - name: spi-events-listener-jboss-logging-success-level
+      value: info
+    - name: spi-events-listener-jboss-logging-error-level
+      value: warn
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/name: keycloak
+          app.kubernetes.io/component: identity-provider
+          app.kubernetes.io/part-of: secforge-platform
+          secforge.platform/component: keycloak
+          spiffe.io/spire-managed-identity: "true"
+      spec:
+        serviceAccountName: keycloak
+        automountServiceAccountToken: true
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: keycloak
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false   # Quarkus build writes JARs at startup with startOptimized:false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop: ["ALL"]
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+              - name: spiffe-workload-api
+                mountPath: /spiffe-workload-api
+                readOnly: true
+              - name: tmp
+                mountPath: /tmp
+        volumes:
+          - name: spiffe-workload-api
+            csi:
+              driver: csi.spiffe.io
+              readOnly: true
+          - name: tmp
+            emptyDir: {}

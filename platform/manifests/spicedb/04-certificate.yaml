@@ -1,0 +1,49 @@
+# gRPC TLS for SpiceDB — internal service, never reachable externally,
+# self-signed Issuer is sufficient. Local edition used the mkcert ClusterIssuer
+# which doesn't exist in production; we use a namespace-scoped self-signed Issuer
+# instead. Caller verification still relies on PSK + (eventually) Istio mTLS.
+
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: spicedb-selfsigned
+  namespace: spicedb
+spec:
+  selfSigned: {}
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: spicedb-grpc-tls
+  namespace: spicedb
+  labels:
+    app.kubernetes.io/name: spicedb
+    secforge.platform/component: spicedb
+spec:
+  secretName: spicedb-grpc-tls
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: spicedb
+      secforge.platform/component: spicedb
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  commonName: spicedb.spicedb.svc.cluster.local
+  dnsNames:
+    - spicedb
+    - spicedb.spicedb
+    - spicedb.spicedb.svc
+    - spicedb.spicedb.svc.cluster.local
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: spicedb-selfsigned
+    kind: Issuer
+    group: cert-manager.io

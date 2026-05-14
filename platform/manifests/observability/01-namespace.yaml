@@ -1,0 +1,24 @@
+# observability namespace.
+#
+# PSA: privileged enforce, restricted audit + warn.
+#
+# Why privileged: kube-prometheus-stack's node-exporter DaemonSet requires
+# hostNetwork=true, hostPID=true, hostPath volumes (/proc, /sys, /),
+# hostPort 9100, and root. None of these fit `baseline` (let alone
+# `restricted`). DaemonSet is the only privileged-needing consumer here;
+# Tempo/Loki/Promtail/Grafana/OTel-collector/Prometheus all run fine
+# under stricter contexts.
+#
+# Audit + warn stay at restricted so violations from non-privileged pods
+# are still logged. A future tightening could move node-exporter into a
+# dedicated namespace with privileged enforce, leaving the rest of the
+# observability stack on baseline. Tracked as Phase 7-rest follow-up.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    secforge.platform/component: observability
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

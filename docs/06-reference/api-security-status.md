@@ -1,0 +1,120 @@
+# API Security Hardening Status
+
+Tracks the security-hardening tier each API in the SecForge ecosystem has reached.
+Update this file when promoting an API to a new tier or when adding a new API.
+
+Tiers are defined in [§Tier definitions](#tier-definitions) below. The status snapshot is
+the at-a-glance view; the per-API checklists are the detailed view.
+
+---
+
+## Status snapshot
+
+| API | Codebase | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|---|---|---|---|---|---|
+| `ecosystem-control` (control-plane API) | [Ecosystem Control/](../../../Ecosystem%20Control/) | ✅ 2026-05-09 | ⏳ partial (6/8) — see checklist | ⏸️ Phase 9 cutover | 🔁 ongoing |
+| `managerapp` BFF (Project Tracker) | [Project Tracker/server/](../../../Project%20Tracker/server/) | — not built | — | — | — |
+| `proposalapp` BFF (Proposal Forge) | [Proposal Forge/server/](../../../Proposal%20Forge/server/) | ⚠️ legacy auth, predates this matrix; full audit due at Phase 6 (PF migration) | — | — | — |
+| _(future)_ `invoiceapp` BFF | — | — | — | — | — |
+| _(future)_ `contactsapp` BFF | — | — | — | — | — |
+| _(future)_ `pmapp` BFF | — | — | — | — | — |
+
+**Legend:** ✅ done · ⏳ in progress · ⏸️ deferred to listed phase · 🔁 ongoing · ⚠️ needs audit · — not started
+
+**Rule:** No API moves to its first real user without Tier 1 + Tier 2 ✅. No API moves to Hetzner without Tier 3 ✅. Tier 4 is permanently ongoing.
+
+---
+
+## Tier definitions
+
+### Tier 1 — Baseline (must apply before any non-toy traffic)
+Items every API gets on day one. Roughly 30–60 min of work per API.
+
+1. JWT algorithm pinning (`RS256` only — never accept `alg: none` or HS variants on a public key)
+2. Audience claim narrowed to legitimate clients only (no Keycloak `account` client, no wildcards)
+3. Rate limiting (per-user when authenticated, per-IP otherwise; localhost allowlisted in dev only)
+4. Security headers via `@fastify/helmet` (or framework equivalent): X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS
+5. Custom error handler — no stack traces leaked to client; stable shape `{error, requestId}`; full detail logged server-side
+6. Health/readiness endpoints don't leak internal state (no "db unreachable" details in 503 body)
+7. Body size limit (default 256 KB) + connection/keep-alive timeouts
+8. Log redaction for `authorization`, `cookie`, `*.password`, `*.secret`, `*.token`, `*.access_token`, `*.refresh_token`
+
+### Tier 2 — Pre-customer (must complete before any external user touches the API)
+Items that gate "OK to invite real users." Done alongside Phase 2–3 of the ecosystem rollout.
+
+1. CSRF strategy decided + implemented for cookie-auth routes (bearer-only, double-submit, or `@fastify/csrf-protection`)
+2. Zod input validation on every route via Fastify `schema` option (params, query, body)
+3. Response serialization schemas (strip unknown fields; prevents accidental DB column leakage)
+4. SpiceDB authorization check on every org-scoped endpoint — JWT validates *who*, SpiceDB validates *what they can do*
+5. Postgres RLS on all org-scoped tables; auth middleware sets `SET LOCAL app.user_id` and `app.org_id` per transaction
+6. Append-only audit log for state-changing operations (`actor_user_id, action, target_id, request_id, timestamp, before, after, ip`)
+7. PII fields (invitation emails, contact data) encrypted via OpenBao Transit (per [encryption architecture memory](../../../Ecosystem%20Control/))
+8. Token revocation/introspection check on sensitive operations (role grants, billing, workflow approvals)
+
+### Tier 3 — Production cutover (Hetzner Phase 9)
+Items that promote dev-quality config to production-quality config.
+
+1. Secrets from OpenBao, not `.env` files
+2. mTLS on SpiceDB connection (drop `INSECURE_LOCALHOST_ALLOWED`)
+3. NetworkPolicy default-deny + explicit ingress/egress allowlist (per [egress filtering Layer A](../../../Ecosystem%20Control/))
+4. Keycloak brute-force protection enabled in production realm only (NOT local dev — login friction; see `feedback_local_dev_no_mfa.md`)
+5. Container hardening: distroless base, non-root UID, read-only rootfs, no shell
+6. Postgres `statement_timeout` set per session (e.g., 5 s)
+
+### Tier 4 — Ongoing (continuous, not a one-time checkbox)
+1. `pnpm audit` in CI on every PR; fail build on `high` or `critical`
+2. Dependency updates via Renovate/Dependabot (auto-merge patch, manual review minor)
+3. SBOM generation at container build (`syft`)
+4. Annual penetration test before any feature flagged "GA"
+
+---
+
+## Per-API checklists
+
+### `ecosystem-control` — control-plane API
+
+#### Tier 1 — ✅ complete (2026-05-09)
+- [x] JWT alg pinning (`RS256`) — [src/api/middleware/auth.ts](../../../Ecosystem%20Control/src/api/middleware/auth.ts)
+- [x] Audience narrowed: `ecosystem-control` + `ecosystem-portal` only (dropped `account`)
+- [x] `azp` (authorized party) check against allowlist — defense-in-depth alongside `aud`
+- [x] Audience self-mappers configured on both Keycloak clients (without these, the tightened audience check 401s every token)
+- [x] Rate limiting: 100/min global; per-user-sub when authenticated; 127.0.0.1 allowlisted in dev
+- [x] `@fastify/helmet` registered with defaults (CSP off — JSON API; CORP `same-site`)
+- [x] Custom error handler returning `{error, requestId}` with full detail logged via pino
+- [x] `/readyz` returns `{status: 'not_ready'}` only on failure (no `reason` field)
+- [x] `bodyLimit: 256 KB`; `connectionTimeout: 30 s`; `keepAliveTimeout: 5 s`
+- [x] Pino redaction: authorization, cookie, set-cookie, password, secret, token, access_token, refresh_token
+
+#### Tier 2 — ⏳ partial (6/8)
+- [x] **CSRF strategy decided 2026-05-09**: bearer-required for all state-changing endpoints (Authorization header is not auto-sent cross-origin). The session cookie carries *context* (`active_org_id`) only — it grants nothing on its own. CSRF risk reduced to "an attacker page can read no portal state and trigger no state changes via cookie alone." Re-evaluate if any endpoint ever drops the bearer requirement (e.g., a webhook).
+- [x] **Zod input schemas** on every route via `fastify-type-provider-zod` — `params`, `body`, `response` (orgs routes; `/me` has no input)
+- [x] **Response serialization schemas** — Zod schemas in `response: { 200: ... }` strip unknown fields automatically
+- [x] **SpiceDB authz check** on org-scoped endpoints — `GET /api/v1/orgs/:id` checks `organization:<id>#view` before any DB read; `POST /api/v1/orgs/switch` does the same. Helper in [src/api/lib/spicedb-check.ts](../../../Ecosystem%20Control/src/api/lib/spicedb-check.ts) uses `fully_consistent` mode (never a stale "yes")
+- [ ] **Postgres RLS** on `ecosystem_control` DB tables — transaction helper in place ([src/api/db-tx.ts](../../../Ecosystem%20Control/src/api/db-tx.ts) sets `app.user_id` + `app.org_id` per tx) but no RLS policies created yet; do alongside the next mutating endpoint
+- [x] **Audit log table** + write helper — migration 009; [src/api/lib/audit.ts](../../../Ecosystem%20Control/src/api/lib/audit.ts) writes inside the same transaction as the mutation (atomic). `audit_log` table has `REVOKE UPDATE, DELETE` for app role
+- [x] **Audit row written** on `POST /api/v1/orgs/switch` (action `org.switch`, before/after `activeOrgId`)
+- [ ] Transit encryption for `pending_invitations.invited_email` (table exists but no invitation endpoints yet)
+- [ ] Token introspection on role-grant + workflow-approval endpoints (no such endpoints yet)
+
+#### Tier 3 — ⏸️ deferred to Phase 9 (Hetzner cutover)
+
+#### Tier 4 — 🔁 ongoing (none of the four set up yet — first iteration: add `pnpm audit` to CI when CI exists)
+
+### `managerapp` BFF
+Not built. Tier 1 work happens at Phase 5 (managerapp integration) — apply this checklist before merging the BFF middleware PR.
+
+### `proposalapp` BFF — ⚠️ legacy
+Existing PF server has its own JWT auth from before this hardening matrix existed. Full audit + Tier 1 retrofit due at Phase 6 (PF migration to Keycloak). Do not assume any item is in place; verify each.
+
+---
+
+## Implementation log
+
+Append a one-line entry per change. Newest at the top.
+
+- **2026-05-09** — Members management endpoints (`GET /orgs/:id/members`, `PATCH /orgs/:id/members/:userId/status`, `POST/DELETE /orgs/:id/members/:userId/roles[/:roleId]`, `GET /orgs/:id/roles`). Each follows the locked Tier 2 pattern: Zod schemas in/out, SpiceDB CheckPermission gate (view for read, administer for mutate), 404-vs-403 distinction (don't leak existence to non-viewers), audit row in same tx as mutation, RLS-aware tx. Role assignment expands to SpiceDB via `syncOrgAdminRelation` helper — TOUCH/DELETE the org `administrator` tuple based on whether any of the user's role bundles include the org-level `administer` permission. Idempotent. App-level role expansion (per-org app instances) deferred to Phase 5. User display info resolved from Keycloak with 60s in-process LRU.
+- **2026-05-09** — Active org context propagation: `@fastify/secure-session` registered; `POST /orgs/switch` sets `ecosystem_session.active_org_id`; auth middleware reads cookie (cookie wins over JWT claim); SpiceDB still gates every org-scoped endpoint so the cookie is a hint not a grant. `SESSION_KEY` env var (32 bytes base64); dev key in `.env`, prod from OpenBao. Vite proxy in portal routes `/api/*` → API for same-origin cookies. CSRF strategy locked: bearer-required + cookie-as-context-only. Portal `OrgSwitcher` component built but only one membership in dev so renders as "Working in Demo Co" label.
+- **2026-05-09** — Test loop closed. `dev:seed-test-user` CLI seeds Keycloak user + DB membership + SpiceDB relationships idempotently; `dev:get-token` mints a token via password grant on `ecosystem-portal` (direct-grants flipped on locally for this — bootstrap script updated). Verified end-to-end with `alice` admin of `Demo Co`: `/me` returns membership; `GET /orgs/<id>` returns full payload (members + 8 roles) — proves SpiceDB authz check fires; `POST /orgs/switch` returns 200 + writes audit_log row with before/after `activeOrgId`. **Note:** the switch endpoint validates + audits intent only — propagating `active_org_id` into subsequent tokens is deferred to Phase 2 portal work (cleanest mechanism — cookie + custom claim vs. Keycloak user attribute + protocol mapper vs. token exchange — gets decided alongside OIDC flow).
+- **2026-05-09** — `ecosystem-control` Tier 2 partial (5/8). Added `GET /api/v1/orgs/:id` and `POST /api/v1/orgs/switch` with: Zod input + response schemas via `fastify-type-provider-zod` (Zod upgraded 3→4); SpiceDB `CheckPermission` authz before any DB read (`fully_consistent` mode); RLS-aware transaction helper (`SET LOCAL app.user_id`/`app.org_id` per tx); audit_log table (migration 009) with append-only enforcement; audit row written atomically with mutations. Also added: `azp` allowlist check, audience self-mappers in Keycloak (one-time fix; bootstrap-realm.sh updated for fresh installs), validation error handler returning `{error: 'invalid_request', details, requestId}`.
+- **2026-05-09** — `ecosystem-control` Tier 1 applied. JWT alg pinned `RS256`; audience tightened to `ecosystem-control` + `ecosystem-portal`; `@fastify/rate-limit` (100/min global, dev allowlist `127.0.0.1`); `@fastify/helmet` defaults; custom error handler with requestId; `/readyz` reason removed; `bodyLimit=256 KB`, `connectionTimeout=30 s`, `keepAliveTimeout=5 s`; pino redaction for auth/secret/token paths.
+- **2026-05-09** — `ecosystem-control` initial Phase 1 skeleton: Fastify + JWKS auth + `/healthz` + `/readyz` + `/api/v1/me`. Tier-tracking matrix created.

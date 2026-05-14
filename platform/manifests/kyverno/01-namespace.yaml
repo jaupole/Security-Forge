@@ -1,0 +1,16 @@
+# kyverno namespace.
+# Kyverno controllers are admission controllers — must run privileged
+# (they intercept resource creation cluster-wide). PSA: privileged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    # Exempt from Kyverno's own image-signature ClusterPolicy when we
+    # add it (chicken-and-egg: Kyverno can't run if it has to verify its
+    # own image signature via Kyverno).
+    secforge.platform/policy-exempt: "true"

@@ -1,0 +1,51 @@
+# Internal CA for OpenBao TLS chain.
+#
+# Both openbao-seal-tls and openbao-tls leaf certs are issued from the same CA
+# so the main OpenBao's `tls_ca_cert` (pointing at openbao-tls's ca.crt) can
+# validate the seal pod's cert during Transit auto-unseal.
+#
+# Pattern: selfSigned Issuer -> root CA Cert (isCA=true) -> CA Issuer ->
+# leaf certs (in 04-certificates.yaml).
+
+---
+# selfSigned Issuer — only used to bootstrap the root CA cert below.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-bootstrap-issuer
+  namespace: openbao
+spec:
+  selfSigned: {}
+
+---
+# Root CA cert (10-year validity). Stored in Secret openbao-ca.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-ca
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  isCA: true
+  commonName: SecForge OpenBao Internal CA
+  secretName: openbao-ca
+  duration: 87600h     # 10 years
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: openbao-bootstrap-issuer
+    kind: Issuer
+
+---
+# CA Issuer that signs all openbao leaf certs from the root CA above.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-ca-issuer
+  namespace: openbao
+spec:
+  ca:
+    secretName: openbao-ca

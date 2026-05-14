@@ -1,0 +1,25 @@
+# Mesh-wide PeerAuthentication.
+#
+# Phase 6 (current): PERMISSIVE.
+#   Reason — non-mesh callers still exist and legitimately need to reach
+#   ambient-labeled pods:
+#     - ingress-nginx (in ingress-nginx ns, not in the mesh) routes
+#       external HTTPS traffic to BFF / app pods.
+#     - openbao (openbao ns, not in the mesh) opens connections to in-mesh
+#       services (e.g., for dynamic Postgres credential minting).
+#     - kube probes (kubelet, on the host network) hit pod IPs directly.
+#   PERMISSIVE accepts mTLS when present (mesh peers) and plaintext when the
+#   source has no SVID (non-mesh peers). It is NOT "no mTLS"; it is "mTLS
+#   preferred, plaintext tolerated for migration."
+#
+# Tighten to STRICT once every legitimate caller is mesh-resident or has
+# explicit AuthorizationPolicy ALLOW (Phase 7c-1 in the local edition).
+
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: PERMISSIVE

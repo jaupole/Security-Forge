@@ -1,0 +1,45 @@
+# Promtail — DaemonSet log shipper. One pod per node tailing
+# /var/log/pods/* and forwarding to Loki.
+#
+# Production posture: simple JSON-extraction pipeline, no per-app
+# extraScrapeConfigs (the local edition's secrets-guardrails scrape is
+# tied to apps that haven't deployed yet — re-add when the `app` ns and
+# security-events-collector land).
+
+fullnameOverride: promtail
+
+config:
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+  snippets:
+    pipelineStages:
+      - cri: {}
+      - json:
+          expressions:
+            level: level
+            trace_id: trace_id
+            span_id: span_id
+            msg: msg
+      - labels:
+          level:
+          # trace_id intentionally NOT a label (high cardinality);
+          # leave it as a queryable structured field used by the Tempo
+          # → Loki correlation in grafana-datasources-extra.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kps
+
+# Single-node k3s: tolerate the control-plane node taint.
+tolerations:
+  - effect: NoSchedule
+    operator: Exists

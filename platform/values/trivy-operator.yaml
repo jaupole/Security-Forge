@@ -1,0 +1,69 @@
+# Trivy Operator — cluster-wide CVE + misconfig + exposed-secret scanning.
+#
+# Chart: aquasecurity/trivy-operator
+# Source: https://aquasecurity.github.io/helm-charts
+#
+# What it scans (per running workload):
+#   - VulnerabilityReport       — CVEs in container images
+#   - ConfigAuditReport         — workload yaml against best-practice checks
+#   - ExposedSecretReport       — leaked credentials in container filesystems
+#   - RbacAssessmentReport      — over-privileged ClusterRoles / RoleBindings
+#   - InfraAssessmentReport     — Node/Cluster security posture
+#
+# Reports land as CRs in each workload's namespace. Promtail can ship
+# them to Loki for Grafana viewing; PrometheusRule fires alerts for
+# critical CVEs (added in Phase C follow-up).
+
+# Single-replica controller (single-node cluster — HA wouldn't help).
+# Reduces base load + fits nicely in our resource budget.
+operator:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+  scanJobsConcurrentLimit: 5
+  scanJobsRetryDeleteAfterSeconds: 600
+  # What to scan + how often
+  vulnerabilityScannerEnabled: true
+  configAuditScannerEnabled: true
+  rbacAssessmentScannerEnabled: true
+  exposedSecretScannerEnabled: true
+  metricsVulnIdEnabled: true         # exposes CVE IDs in Prometheus metrics
+  # Re-scan interval; default 6h. Bumping to 12h cuts CPU at the cost of
+  # detection lag. 6h is fine.
+  scanJobTimeout: 5m
+  scanJobTTL: 30m
+
+# Skip Kubernetes infrastructure scanning at first — focus on workload
+# CVEs. Node-collector requires hostPath + privileged which complicates
+# the security posture; enable later if we want CIS-Kubernetes-Benchmark
+# style reports.
+nodeCollector:
+  enabled: false
+infraAssessmentScannerEnabled: false
+
+# Trivy itself
+trivy:
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits:   { cpu: 1,    memory: 2Gi }
+  # ImagePullSecrets — none for now; future: trust ghcr.io/secforge/* via
+  # a deploy-key Secret + trivy.imagePullSecrets reference.
+  imagePullSecrets: []
+  # Server mode would centralize the vulnerability DB cache; standalone
+  # is simpler at our scale (single node, modest workload count).
+  mode: Standalone
+  # Skip vulnerability scanning of certain registries that don't host
+  # CVE-relevant content (NONE for us — leave default).
+  ignoreUnfixed: false               # report CVEs even without fix
+  severity: "CRITICAL,HIGH,MEDIUM"   # Report C/H/M; skip LOW/UNKNOWN noise
+
+# Service Monitor for kube-prometheus-stack
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kps
+
+# Don't watch system namespaces (kyverno, kube-system) — too noisy +
+# we're not in control of their image versions anyway.
+excludeNamespaces: "kube-system,kube-public,kube-node-lease,kyverno"

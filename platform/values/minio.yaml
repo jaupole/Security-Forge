@@ -1,0 +1,85 @@
+# MinIO — S3-compatible object store for SecForge platform.
+#
+# Production (single-node bare-metal) consumers:
+#   - Tempo (tempo-traces bucket)
+#   - Loki  (loki-chunks bucket, Phase 7-rest)
+#   - Velero / CNPG (backups bucket — when off-box B2 isn't desired)
+#   - Teleport (teleport-recordings bucket — Phase 8)
+#   - Wazuh archive (wazuh-archive — Phase 7-rest)
+#
+# Buckets are NOT created by the chart's makeBucketJob (it doesn't expose
+# container-level securityContext, so it can't satisfy a `restricted` PSA
+# enforce label). Bucket creation is a separate Job we own; see
+# manifests/minio/02-bucket-bootstrap-job.yaml.
+#
+# Console + S3 API are NOT exposed via Ingress in production — admin access
+# goes through `kubectl port-forward` (no public surface to defend). All
+# in-cluster consumers use the ClusterIP Service.
+
+mode: standalone
+replicas: 1
+
+# Pre-created Secret with rootUser + rootPassword. Created by 07a-minio.sh
+# before the helm install, never committed.
+existingSecret: minio-root-credentials
+
+persistence:
+  enabled: true
+  # minio-local SC = no-provisioner, statically bound to /var/lib/minio
+  # (dedicated 250G partition). See:
+  #   platform/manifests/k3s/storageclass-minio-local.yaml
+  #   platform/manifests/minio/static-pv.yaml
+  # Apply via 00e-minio-storage.sh BEFORE this chart on fresh installs.
+  storageClass: minio-local
+  size: 50Gi  # request only; bound PV size is 200Gi (see static-pv.yaml)
+  accessMode: ReadWriteOnce
+
+resources:
+  requests: { cpu: 200m, memory: 256Mi }
+  limits:   { cpu: 1,    memory: 1Gi }
+
+securityContext:
+  enabled: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  runAsNonRoot: true
+
+containerSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  readOnlyRootFilesystem: false  # MinIO writes to /data; root FS RO via PSA
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 9000
+consoleService:
+  type: ClusterIP
+  port: 9001
+
+# No public ingress — internal only.
+ingress:
+  enabled: false
+consoleIngress:
+  enabled: false
+
+# Bucket auto-creation: DISABLED (see file header).
+buckets: []
+users: []
+policies: []
+svcaccts: []
+
+metrics:
+  serviceMonitor:
+    enabled: false   # enable in Phase 7-rest when kube-prometheus-stack lands
+
+# In-cluster only; no anonymous external access.
+networkPolicy:
+  enabled: true
+  allowExternal: false

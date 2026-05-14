@@ -1,0 +1,115 @@
+# k3s API audit policy.
+#
+# Captures who-did-what at the Kubernetes API level. Three tiers:
+#   - None: noisy/uninteresting (events, healthchecks, leader-election leases)
+#   - Metadata: read events (Get, List, Watch) — capture who/when/what but NOT body
+#   - RequestResponse: writes (Create/Update/Patch/Delete) — capture full request + response
+#
+# Apply:
+#   1. Save to /etc/rancher/k3s/audit-policy.yaml on the host.
+#   2. Edit k3s.service ExecStart args:
+#        --kube-apiserver-arg=audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
+#        --kube-apiserver-arg=audit-log-path=/var/log/k3s-audit.log
+#        --kube-apiserver-arg=audit-log-maxage=30
+#        --kube-apiserver-arg=audit-log-maxbackup=10
+#        --kube-apiserver-arg=audit-log-maxsize=100
+#   3. systemctl daemon-reload && systemctl restart k3s
+#   4. Wazuh agent picks up /var/log/k3s-audit.log via <localfile>.
+#
+# Reference: https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/
+
+apiVersion: audit.k8s.io/v1
+kind: Policy
+
+# Don't log token reviews — auth flow is high volume + boring.
+omitStages:
+  - RequestReceived
+
+rules:
+  # ─── Drop high-noise / low-value events ─────────────────────────────
+  - level: None
+    users: ["system:serviceaccount:kube-system:cnpg-cloudnative-pg"]
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/metrics", "/version"]
+  - level: None
+    nonResourceURLs:
+      - "/healthz*"
+      - "/livez*"
+      - "/readyz*"
+      - "/version"
+      - "/metrics*"
+      - "/apis"
+      - "/api"
+      - "/api/*"
+      - "/apis/*"
+      - "/openapi/*"
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events"]                     # K8s events flood
+      - group: "coordination.k8s.io"
+        resources: ["leases"]                     # leader election spam
+      - group: "authentication.k8s.io"
+        resources: ["tokenreviews"]
+      - group: "authorization.k8s.io"
+        resources: ["selfsubjectaccessreviews", "selfsubjectrulesreviews"]
+  - level: None
+    users: ["system:kube-scheduler", "system:kube-controller-manager", "system:cluster-autoscaler"]
+    verbs: ["get", "list", "watch"]
+  - level: None
+    users: ["kubelet", "system:nodes", "system:node:secforge-prod"]
+    verbs: ["get", "list", "watch"]
+
+  # ─── Secrets + ConfigMaps: ALWAYS RequestResponse ───────────────────
+  # Highest-value audit: who read/wrote which Secret/CM (may contain creds).
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+      - group: "secrets.hashicorp.com"
+        resources: ["*"]                          # VSO-rendered Secrets
+      - group: "rbac.authorization.k8s.io"
+        resources: ["*"]                          # roles/bindings — privilege model
+
+  # ─── Workload writes: Metadata + log request body ───────────────────
+  # Catch deployment/statefulset/cluster CR changes — what got changed,
+  # by whom. Skip the response body to keep volume manageable.
+  - level: Request
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+    resources:
+      - group: ""
+        resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "serviceaccounts"]
+      - group: "apps"
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - group: "batch"
+        resources: ["jobs", "cronjobs"]
+      - group: "networking.k8s.io"
+        resources: ["networkpolicies", "ingresses"]
+      - group: "policy"
+        resources: ["poddisruptionbudgets"]
+      - group: "postgresql.cnpg.io"
+        resources: ["*"]
+      - group: "k8s.keycloak.org"
+        resources: ["*"]
+      - group: "authzed.com"
+        resources: ["*"]
+      - group: "secrets-store.csi.x-k8s.io"
+        resources: ["*"]
+      - group: "cert-manager.io"
+        resources: ["*"]
+      - group: "velero.io"
+        resources: ["*"]
+
+  # ─── Reads of sensitive resources: Metadata only ────────────────────
+  - level: Metadata
+    verbs: ["get", "list", "watch"]
+    resources:
+      - group: ""
+        resources: ["secrets", "serviceaccounts/token"]
+      - group: "rbac.authorization.k8s.io"
+        resources: ["*"]
+
+  # ─── Catch-all: Metadata for everything else ────────────────────────
+  # Captures who/when/what on every other API call without body content.
+  - level: Metadata
+    omitStages:
+      - RequestReceived

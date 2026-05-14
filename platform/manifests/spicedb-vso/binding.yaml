@@ -1,0 +1,70 @@
+# VSO binding for SpiceDB — Phase 6.10b Step 3.
+# See ADR-0015 and docs/05-claude-code-prompts/phase-06.10b-vso-and-secret-cleanup.md.
+#
+# Three resources:
+#   1. ServiceAccount `spicedb-vso` — the identity VSO uses to authenticate
+#      to OpenBao on behalf of secret consumers in this namespace.
+#      Distinct from the `spicedb` SA that the SpiceDB pod itself runs
+#      as, so VSO's authorization scope and SpiceDB's runtime SA can be
+#      reasoned about separately.
+#   2. VaultAuth `default` — references the cross-ns VaultConnection
+#      `vault-secrets-operator/openbao` and the local SA above.
+#   3. VaultStaticSecret `spicedb-config-vso` — renders K8s Secret
+#      `spicedb-config-vso` from OpenBao path `secret/data/spicedb/config`
+#      (PSK + datastore URI). Replaces the legacy `spicedb-config` Secret
+#      in Step 4.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spicedb-vso
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: default
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: spicedb-vso
+    serviceAccount: spicedb-vso
+    # Audience matches K8s API server issuer; both sides must agree.
+    # Symmetric value lives in configure-openbao-role.sh's `audience=`
+    # arg for role spicedb-vso. Don't change one without the other.
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: spicedb-config-vso
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: default
+  mount: secret
+  type: kv-v2
+  path: spicedb/config
+  refreshAfter: 60s
+  destination:
+    name: spicedb-config-vso
+    create: true
+    # Default Opaque type matches what SpiceDB Operator expects for
+    # `spec.secretName`. Keys at the OpenBao path (preshared_key +
+    # datastore_uri) become keys in the rendered Secret 1:1.
+    type: Opaque

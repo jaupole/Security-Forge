@@ -1,0 +1,30 @@
+# Default-deny egress for the cert-manager namespace.
+#
+# Phase C #4 hardening: every pod in cert-manager (controller, cainjector,
+# webhook) gets zero egress unless an additive allow-policy explicitly
+# permits a destination. Allows are layered in:
+#   - 07-egress-essentials.yaml — DNS (coredns) + K8s API (allows all pods)
+#   - 08-egress-acme-controller.yaml — public 443 for ACME challenges
+#                                       (controller pod ONLY)
+#
+# Without this default-deny, NetworkPolicy semantics would leave egress
+# unrestricted for any pod NOT selected by an existing allow-list NP —
+# i.e., wide-open data exfiltration vector.
+#
+# Apply order matters in NetworkPolicy: the union of allows from ALL
+# matching NPs applies. Default-deny + targeted allows = intended behavior.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  # No egress rules → zero egress allowed for any pod (until an
+  # additive allow-policy lifts specific destinations).

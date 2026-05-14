@@ -1,0 +1,46 @@
+{{- if or .Values.indexer.enabled .Values.manager.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "wazuh.fullname" . }}-certs-generator
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "wazuh.fullname" . }}-certs-generator
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "wazuh.fullname" . }}-certs-generator
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "wazuh.fullname" . }}-certs-generator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "wazuh.fullname" . }}-certs-generator
+    namespace: {{ .Release.Namespace }}
+{{- end }}

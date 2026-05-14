@@ -1,0 +1,188 @@
+# SecForge platform PrometheusRules — early-warning detection.
+#
+# Each rule fires WELL before the cascade-failure point so we get a chance
+# to react. Rules land in the kube-prometheus-stack Prometheus via the
+# `release: kps` label selector.
+#
+# Notification: these alerts currently fire into Alertmanager's `null`
+# receiver (chart default). Visible in:
+#   - Alertmanager UI:  kubectl -n observability port-forward svc/kps-alertmanager 9093:9093
+#   - Grafana → Alerting → Alert rules
+# Real notification (email / Discord / Wazuh-relay) is Phase-7-rest TODO.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: secforge-platform-alerts
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+    release: kps
+spec:
+  groups:
+    - name: container-resource-pressure
+      interval: 30s
+      rules:
+        # Fires well BEFORE OOMKill — gives us a chance to bump the limit
+        # or investigate a real leak.
+        - alert: ContainerMemoryNearLimit
+          expr: |
+            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+             / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
+            > 0.80
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container memory >80% of limit ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
+            description: |
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has been
+              using more than 80% of its memory limit for >10 minutes. Likely OOM is approaching unless
+              the limit is raised or workload changes.
+              Current value: {{ $value | humanizePercentage }}
+
+        - alert: ContainerMemoryAtLimit
+          expr: |
+            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+             / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
+            > 0.95
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Container at memory limit ({{ $labels.namespace }}/{{ $labels.pod }})"
+            description: |
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} is at
+              >95% of its memory limit. OOMKill imminent.
+
+    - name: container-stability
+      interval: 30s
+      rules:
+        # Catches the spire-csi-driver scenario at restart 3-4 instead of 23.
+        - alert: ContainerRestartingTooOften
+          expr: |
+            increase(kube_pod_container_status_restarts_total[15m]) > 3
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container restarting frequently ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
+            description: |
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has
+              restarted {{ $value }} times in the last 15 minutes. Investigate before it becomes a
+              cascade failure.
+
+        - alert: ContainerOOMKilled
+          expr: |
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container OOMKilled ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
+            description: |
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} was
+              OOMKilled. Check if memory limit needs to be raised, or if there is a memory leak.
+
+        - alert: PodCrashLoopBackOff
+          expr: |
+            max by (namespace, pod) (kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}) == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod in CrashLoopBackOff ({{ $labels.namespace }}/{{ $labels.pod }})"
+
+    - name: node-resource-health
+      interval: 60s
+      rules:
+        # Kernel mount table saturation — direct read from /proc/sys/fs/mount-max.
+        # Exposed via node-exporter textfile collector by /usr/local/sbin/mount-count-exporter.sh
+        # (cron every 60s → /var/lib/node_exporter/textfile_collector/mount_count.prom).
+        # At 60% of 1M = 600,000 mounts, fire warning. fs.mount-max exhaustion at 100k
+        # brought down SPIFFE CSI driver and cascaded to Keycloak (2026-05-09 incident).
+        - alert: NodeMountTableSaturation
+          expr: |
+            node_mount_count / node_mount_max_limit > 0.60
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kernel mount table >60% full ({{ $value | humanizePercentage }})"
+            description: |
+              The kernel mount table on {{ $labels.instance }} is {{ $value | humanizePercentage }} full.
+              At 100%, the SPIFFE CSI driver will fail with ENOSPC, causing stuck-terminating pods.
+              Current count: {{ with printf "node_mount_count{instance='%s'}" $labels.instance | query }}{{ . | first | value | humanize }}{{ end }} /
+              Limit: {{ with printf "node_mount_max_limit{instance='%s'}" $labels.instance | query }}{{ . | first | value | humanize }}{{ end }}.
+              Check for leaked tmpfs mounts: wc -l /proc/mounts | sort -rn | head -20
+
+        - alert: NodeMountTableCritical
+          expr: |
+            node_mount_count / node_mount_max_limit > 0.85
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kernel mount table >85% full — SPIFFE CSI failure imminent"
+            description: |
+              Mount table is critically full. SPIFFE CSI driver will crash imminently.
+              Immediate action: sysctl -w fs.mount-max=1048576 if not already at 1M.
+              Then investigate leaked mounts via: awk '{print $3}' /proc/mounts | sort | uniq -c | sort -rn
+
+        - alert: NodeMemoryHigh
+          expr: |
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node memory >85% used"
+
+        - alert: NodeDiskSpaceLow
+          expr: |
+            (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Filesystem <15% free ({{ $labels.mountpoint }})"
+
+    - name: platform-services
+      interval: 60s
+      rules:
+        # Specifically watch SPIFFE CSI driver since it was the culprit.
+        - alert: SpiffeCsiDriverNotReady
+          expr: |
+            sum(kube_pod_container_status_ready{namespace="spire",container="spiffe-csi-driver"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SPIFFE CSI driver pod not ready"
+            description: |
+              spire-spiffe-csi-driver is not ready. Pods needing SVIDs cannot mount the
+              spiffe-workload-api volume. Cascading failures expected if this persists.
+
+        - alert: KeycloakDown
+          expr: |
+            sum(kube_pod_container_status_ready{namespace="keycloak",container="keycloak"}) == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Keycloak not ready"
+            description: |
+              Keycloak pod is not ready. ALL OIDC logins (OpenBao, Grafana, Wazuh) are
+              broken until this recovers.
+
+        - alert: OpenBaoDown
+          expr: |
+            sum(kube_pod_container_status_ready{namespace="openbao",pod=~"openbao-[0-9]+",container="openbao"}) < 1
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "All OpenBao replicas down"
+            description: |
+              No OpenBao replica is ready. Secret access and platform identity are
+              broken until at least one replica recovers.

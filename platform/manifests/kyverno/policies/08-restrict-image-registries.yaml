@@ -1,0 +1,66 @@
+# Restrict images to an explicit registry allowlist. Any pod that
+# references an image NOT on the list is rejected at admission.
+#
+# Closes a slice of checklist-auditor rule 71 plus general supply-chain
+# defense-in-depth. A compromised CI step or operator typo that pulls
+# `docker.io/randomuser/legitimate-looking:tag` is blocked before
+# anything runs. Combined with `disallow-latest-tag` (policy 03), every
+# image must come from a known registry AND be pinned to a non-latest tag.
+#
+# How to update the allowlist:
+#   1. Identify the new image (e.g. ghcr.io/new-vendor/some-tool:v1.2.3)
+#   2. Add the registry+org prefix as a pattern (e.g. "ghcr.io/new-vendor/*")
+#      to the image pattern string below, separated by " | ".
+#   3. Apply.
+#
+# Kyverno pattern semantics: the " | " inside the image string is OR.
+# An image must match one of the listed patterns to be admitted.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: "Restrict image registries to approved list"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  background: true
+  validationFailureAction: Enforce
+  webhookConfiguration:
+    failurePolicy: Fail
+  rules:
+    - name: validate-container-images
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kyverno]
+      validate:
+        message: >-
+          Image registry not on the SecForge approved list. Allowed
+          registry+org prefixes:
+          ghcr.io/{authzed,cloudnative-pg,spiffe},
+          quay.io/{brancz,jetstack,keycloak,kiwigrid,minio,prometheus,prometheus-operator},
+          reg.kyverno.io/*,
+          registry.k8s.io/*,
+          mirror.gcr.io/*,
+          rancher/*,
+          velero/*,
+          wazuh/*,
+          otel/*,
+          public.ecr.aws/*,
+          hashicorp/*,
+          localhost/secforge/*.
+          To approve a new registry, edit
+          platform/manifests/kyverno/policies/08-restrict-image-registries.yaml.
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/* | rancher/* | velero/* | wazuh/* | otel/* | public.ecr.aws/* | hashicorp/* | localhost/secforge/* | docker.io/library/* | library/* | docker.io/istio/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | docker.io/rclone/* | docker.io/alpine/* | alpine/* | cgr.dev/chainguard/*"
+            containers:
+              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/* | rancher/* | velero/* | wazuh/* | otel/* | public.ecr.aws/* | hashicorp/* | localhost/secforge/* | docker.io/library/* | library/* | docker.io/istio/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | docker.io/rclone/* | docker.io/alpine/* | alpine/* | cgr.dev/chainguard/*"

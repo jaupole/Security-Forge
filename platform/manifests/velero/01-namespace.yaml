@@ -1,0 +1,16 @@
+# velero namespace.
+#
+# PSA: privileged enforce. Velero's node-agent DaemonSet (kopia) needs
+# hostPath access to /var/lib/kubelet/pods to read pod volume contents
+# during backup, AND runs as root. baseline disallows hostPath volumes;
+# only privileged accepts them. Audit + warn at restricted so the
+# server Deployment (not the DaemonSet) is still policy-flagged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    secforge.platform/component: velero
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

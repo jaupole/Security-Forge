@@ -1,0 +1,67 @@
+# VSO binding for CNPG MinIO backup credentials in keycloak ns.
+#
+# Renders OpenBao secret/data/minio/cnpg/credentials into K8s Secret
+# `cnpg-minio-credentials` in keycloak ns with two keys:
+#   ACCESS_KEY_ID, ACCESS_SECRET_KEY
+# (matching CNPG's barmanObjectStore.s3Credentials.accessKeyId/secretAccessKey
+# secretRef expectations).
+#
+# Same VSO consumer ServiceAccount + role pattern as the other consumers.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cnpg-vso
+  namespace: keycloak
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: cnpg-vso
+  namespace: keycloak
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: cnpg-keycloak-vso
+    serviceAccount: cnpg-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: keycloak
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: cnpg-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 60s
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

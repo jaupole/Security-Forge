@@ -1,0 +1,74 @@
+# Egress for cert-manager controller — public Internet, narrow ports.
+#
+# The controller talks to:
+#   - acme-v02.api.letsencrypt.org (Let's Encrypt prod ACME directory) :443
+#   - acme-staging-v02.api.letsencrypt.org (staging) :443
+#   - r10.o.lencr.org / r11.o.lencr.org (OCSP) :80 + :443
+#   - api.cloudflare.com (DNS-01 challenge API) :443
+#   - Cloudflare authoritative nameservers (DNS-01 propagation self-check)
+#     :53 UDP + TCP — cert-manager queries the authoritative NS directly
+#     to confirm the TXT record is visible BEFORE telling Let's Encrypt
+#     to validate. Without this allow, every DNS-01 issuance hangs in
+#     "Pending" forever even though the LE side is fine.
+#
+# NetworkPolicy doesn't support FQDN-based egress (k3s ships kube-router,
+# not Cilium with its CIDR-by-FQDN). So the realistic shape is "public
+# IPs on 53/80/443 only" with private ranges + the host's own public IP
+# excepted. This still bounds the blast radius:
+#   - No internal service can be exfil'd to (RFC1918 / cluster CIDR blocked)
+#   - No port-scan / lateral via cert-manager's creds
+#   - Compromised cert-manager can hit *some* public endpoint, but only on
+#     web + DNS ports — not e.g. SSH out to a C2.
+#
+# Targets ONLY the controller pod (component=controller). cainjector +
+# webhook don't need external access; they stay essentials-only.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-acme-controller
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: cert-manager
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # RFC1918 private ranges — covers cluster pod/service CIDRs
+              # (k3s defaults: pods 10.42.0.0/16, services 10.43.0.0/16).
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              # Link-local (incl. cloud metadata 169.254.169.254 — not
+              # relevant on bare metal but baseline hygiene).
+              - 169.254.0.0/16
+              # CGNAT — used by some cloud providers for hidden infra.
+              - 100.64.0.0/10
+              # Loopback (would never reach via NetworkPolicy anyway, but
+              # explicit is better).
+              - 127.0.0.0/8
+              # Multicast / reserved.
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+              # Host's own public IP — prevents pod→host hairpin via the
+              # public IP. The K8s-API allow already covers the only
+              # legitimate host-IP path (via 07-egress-essentials.yaml).
+              - 65.21.25.40/32
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP

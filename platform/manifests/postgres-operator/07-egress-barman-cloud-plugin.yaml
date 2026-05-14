@@ -1,0 +1,40 @@
+# CNPG operator egress to the Barman Cloud Plugin (cnpg-system:9090).
+#
+# The Barman Cloud Plugin runs in cnpg-system and exposes a gRPC+mTLS
+# endpoint on port 9090. The CNPG operator discovers the plugin via a
+# Service labelled cnpg.io/pluginName in its own namespace (postgres-operator)
+# and then connects to the resolved ClusterIP in cnpg-system.
+#
+# Without this allow, default-deny-egress + essentials blocks port 9090
+# entirely, and the operator logs:
+#   "connection refused: dial tcp <ClusterIP>:9090"
+# causing both clusters to enter:
+#   "Cluster cannot proceed to reconciliation due to an error while
+#    interacting with plugins"
+#
+# The ExternalName Service barman-cloud in postgres-operator resolves to
+# barman-cloud.cnpg-system.svc.cluster.local whose ClusterIP is in cnpg-system.
+# NetworkPolicy evaluates after DNAT, so destination = cnpg-system pod IP.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-barman-cloud-plugin
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - port: 9090
+          protocol: TCP

@@ -1,0 +1,27 @@
+# Forbid running anything in the `default` namespace.
+#
+# The default ns is for ad-hoc / human kubectl experiments. Any
+# production workload should land in a named, policy-scoped namespace
+# (created via the app-namespace template).
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-default-namespace
+  annotations:
+    policies.kyverno.io/category: "Multi-Tenancy"
+    policies.kyverno.io/severity: medium
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: validate-namespace
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, DaemonSet, Job, CronJob, Pod]
+      validate:
+        message: "Running in the `default` namespace is forbidden — use a named namespace."
+        pattern:
+          metadata:
+            namespace: "!default"

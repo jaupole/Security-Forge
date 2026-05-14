@@ -1,0 +1,261 @@
+# Helm values for the main OpenBao release — production version of
+# infrastructure/openbao/04-openbao-values.yaml.
+#
+# Differences from local:
+#   - storageClass: ${STORAGE_CLASS} (was hostpath)
+#   - hostAliases removed (production DNS resolves real hostnames; no need
+#     for the local-edition workaround pointing auth.* at ingress-nginx IP)
+#   - telemetry: unauthenticated_metrics_access = true (simpler bootstrap;
+#     tighten in Phase 7 with a bearer-token-gated Prometheus scrape)
+#   - 3-replica Raft preserved (per user request to preserve patterns)
+
+global:
+  enabled: true
+  namespace: openbao
+  tlsDisable: false
+
+server:
+  image:
+    registry: docker.io
+    repository: openbao/openbao
+    tag: 2.5.3
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: false
+    name: openbao
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+  ingress:
+    enabled: false
+
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    mountPath: /openbao/data
+    storageClass: ${STORAGE_CLASS}
+    accessMode: ReadWriteOnce
+
+  ha:
+    enabled: true
+    replicas: 3
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address            = "[::]:8200"
+          cluster_address    = "[::]:8201"
+          tls_cert_file      = "/openbao/tls/openbao-tls/tls.crt"
+          tls_key_file       = "/openbao/tls/openbao-tls/tls.key"
+          tls_client_ca_file = "/openbao/tls/openbao-tls/ca.crt"
+
+          telemetry {
+            unauthenticated_metrics_access = true
+          }
+        }
+
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname          = true
+        }
+
+        storage "raft" {
+          path = "/openbao/data"
+          retry_join {
+            leader_api_addr     = "https://openbao-0.openbao-internal:8200"
+            leader_ca_cert_file = "/openbao/tls/openbao-tls/ca.crt"
+          }
+          retry_join {
+            leader_api_addr     = "https://openbao-1.openbao-internal:8200"
+            leader_ca_cert_file = "/openbao/tls/openbao-tls/ca.crt"
+          }
+          retry_join {
+            leader_api_addr     = "https://openbao-2.openbao-internal:8200"
+            leader_ca_cert_file = "/openbao/tls/openbao-tls/ca.crt"
+          }
+        }
+
+        # NOTE: seal "transit" {} block is rendered into the
+        # openbao-seal-block Secret by the bootstrap-main script and
+        # mounted into each pod (see extraArgs below). Keeps the Transit
+        # token out of any ConfigMap.
+
+        audit {
+          type        = "file"
+          path        = "stdout/"
+          description = "audit log to STDOUT (collected by Phase 7 log stack)"
+          options = {
+            file_path     = "/dev/stdout"
+            log_raw       = "false"
+            hmac_accessor = "true"
+            mode          = "0600"
+            format        = "json"
+          }
+        }
+
+  extraEnvironmentVars:
+    BAO_ADDR: https://127.0.0.1:8200
+    BAO_API_ADDR: https://$(POD_IP):8200
+    BAO_CACERT: /openbao/tls/openbao-tls/ca.crt
+    SKIP_CHOWN: "true"
+    SKIP_SETCAP: "true"
+
+  # Pod-cluster routing fix for ingress-nginx hairpin: auth.secforge.dev
+  # resolves to the host's public IP, which pods can't reach (NAT hairpin).
+  # Override DNS to point at the ingress-nginx-controller ClusterIP service,
+  # which now routes to a real pod IP (post-hostNetwork-removal).
+  # If ingress-nginx is reinstalled and the ClusterIP changes, update this.
+  hostAliases:
+    - ip: "10.43.119.237"   # ingress-nginx-controller ClusterIP
+      hostnames:
+        - auth.secforge.dev
+        - bao.secforge.dev
+
+  extraVolumes:
+    - type: secret
+      name: openbao-tls
+      path: /openbao/tls
+    - type: secret
+      name: openbao-seal-block
+      path: /openbao/userconfig/seal-block
+
+  extraArgs: "-config=/openbao/userconfig/seal-block/openbao-seal-block/seal.hcl"
+
+  extraInitContainers:
+    - name: wait-for-seal-unsealed
+      image: docker.io/openbao/openbao:2.5.3
+      env:
+        - name: BAO_ADDR
+          value: "https://openbao-seal.openbao.svc.cluster.local:8200"
+        - name: BAO_CACERT
+          value: /openbao/tls/openbao-tls/ca.crt
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 60); do
+            if STATUS=$(bao status -format=json 2>/dev/null) \
+               && echo "$STATUS" | grep -q '"sealed":[[:space:]]*false'; then
+              echo "openbao-seal is unsealed; proceeding"
+              exit 0
+            fi
+            echo "waiting for openbao-seal to be unsealed (attempt $i/60)"
+            sleep 10
+          done
+          echo "ERROR: openbao-seal did not unseal within 10 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: userconfig-openbao-tls
+          mountPath: /openbao/tls/openbao-tls
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+    - name: wait-for-spiffe-csi
+      image: docker.io/openbao/openbao:2.5.3
+      command:
+        - sh
+        - -c
+        - |
+          for i in $(seq 1 30); do
+            if [ -S /spiffe-workload-api/spire-agent.sock ]; then
+              echo "spire-agent.sock present; proceeding"
+              exit 0
+            fi
+            echo "waiting for spire-agent.sock (attempt $i/30)"
+            sleep 10
+          done
+          echo "ERROR: spire-agent.sock did not appear within 5 minutes" >&2
+          exit 1
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits:   { cpu: 50m, memory: 32Mi }
+
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: tmp
+      emptyDir: {}
+  volumeMounts:
+    - name: spiffe-workload-api
+      mountPath: /spiffe-workload-api
+      readOnly: true
+    - name: tmp
+      mountPath: /tmp
+
+  statefulSet:
+    securityContext:
+      pod:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+    extraLabels:
+      spiffe.io/spire-managed-identity: "true"
+      secforge.platform/component: openbao
+
+  affinity: ""
+
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204&perfstandbyok=true
+    port: 8200
+    scheme: HTTPS
+  livenessProbe:
+    enabled: false
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+
+injector:
+  enabled: false
+csi:
+  enabled: false

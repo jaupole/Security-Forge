@@ -1,0 +1,92 @@
+# SecForge fail2ban configuration (component 10b).
+# Dropped at /etc/fail2ban/jail.local by 10b-fail2ban.sh.
+#
+# jail.local OVERRIDES jail.conf; do not edit jail.conf (apt upgrades replace it).
+#
+# Wazuh consumes /var/log/fail2ban.log via the agent's <localfile> block, so
+# both failed-attempt cascades AND the resulting bans appear in the dashboard.
+
+[DEFAULT]
+
+# Network ranges that are NEVER banned.
+# 100.64.0.0/10 is the Tailscale CGNAT range — anything sourced from inside
+# your tailnet is trusted. Once component 10b-sshd-lockdown.sh runs, the
+# only way to reach sshd at all is via the tailnet, so this list is
+# effectively belt-and-braces.
+# RFC1918 + loopback retained for emergency local console use (Hetzner
+# rescue mode, KVM access).
+ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+# Default bantime / findtime / maxretry — overridden per-jail below.
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+# Use systemd journal instead of syslog files where possible. fail2ban can
+# read directly from journald, which is more reliable than tailing log files.
+backend  = systemd
+
+# Send ban notifications to the auth log — Wazuh decodes these as alerts.
+banaction = iptables-multiport
+# protocol/iptables-multiport is the default; explicit for clarity.
+
+# Email destination — disabled. Wazuh alerts go to the operator via the
+# Phase 7b Alertmanager → Slack/email channel; fail2ban-side email would
+# duplicate that signal.
+destemail = root@localhost
+sender    = fail2ban@localhost
+mta       = sendmail
+action    = %(action_)s
+
+
+# ---------------------------------------------------------------------------
+# sshd — the only jail that's MANDATORY for a public-facing host
+# ---------------------------------------------------------------------------
+[sshd]
+enabled  = true
+mode     = aggressive
+port     = ssh
+backend  = systemd
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+# `aggressive` mode catches: failed logins, invalid users, malformed
+# connections, key-only-but-tried-password attempts. The default `normal`
+# mode misses several scanner patterns.
+
+
+# ---------------------------------------------------------------------------
+# recidive — escalating ban for repeat offenders
+# ---------------------------------------------------------------------------
+# Watches fail2ban.log itself. If the same IP gets banned 3+ times in 24h
+# across ANY jail, recidive applies a 1-week ban. Catches the slow-and-low
+# scanner patterns where each individual jail's bantime expires before the
+# attacker tries again.
+[recidive]
+enabled  = true
+logpath  = /var/log/fail2ban.log
+maxretry = 3
+findtime = 1d
+bantime  = 1w
+
+
+# ---------------------------------------------------------------------------
+# Future jails — placeholders, disabled until the corresponding service is
+# public-facing. When enabling, also add a matching <localfile> block to
+# /var/ossec/etc/ossec.conf so Wazuh sees both the attempts and the bans.
+# ---------------------------------------------------------------------------
+
+#[nginx-http-auth]
+# enabled = true
+# port    = http,https
+# logpath = /var/log/nginx/error.log
+
+#[nginx-botsearch]
+# enabled = true
+# port    = http,https
+# logpath = /var/log/nginx/access.log
+
+#[postfix]
+# enabled = true
+# port    = smtp,465,submission
+# logpath = %(postfix_log)s

@@ -1,0 +1,62 @@
+# Velero PV backup exclusions.
+#
+# Velero's `defaultVolumesToFsBackup: true` (set in values/velero.yaml)
+# opts every pod-mounted PV into kopia file-system backup. That's the
+# right default for "I don't know which PVs need backing up." But for
+# specific workloads we know that PV-level backup is wasteful or
+# RECURSIVE:
+#
+#   - minio: Velero writes its own backups INTO MinIO. If we PV-back-up
+#     MinIO's `export` volume, each subsequent Velero backup includes
+#     the previous backup. Exponential growth.
+#   - cnpg pods: CNPG's own Barman backup ships physical base + WAL to
+#     MinIO already. PV backup would double-store the same data.
+#   - loki / tempo / prometheus: large data dirs that are recoverable by
+#     replay (they re-pull from persistent backends or restart fresh).
+#     Their data is observability — losing it is acceptable.
+#   - wazuh-indexer: large; indices are derivable from filebeat replay
+#     of the manager's alerts.json. PV backup would inflate Velero
+#     storage by GBs without a recovery benefit.
+#
+# Exclusion is per-pod via the annotation
+# `backup.velero.io/backup-volumes-excludes=<comma-separated-volume-names>`.
+# We can't directly annotate the operator-managed pods, so we use:
+#   - Patch on the controller (StatefulSet/Deployment/etc) to add to its
+#     pod template.
+#
+# This manifest is informational + a script. The actual annotations are
+# applied by 09a-velero.sh's verify-step or run via 09c-velero-tune.sh.
+#
+# Pod template patches (apply via `kubectl patch`):
+#
+#   minio Deployment:
+#     spec.template.metadata.annotations.backup.velero.io/backup-volumes-excludes=export
+#
+#   secforge-keycloak-db CNPG Cluster (uses managed.podMetadata):
+#     spec.managed.podMetadata.annotations.backup.velero.io/backup-volumes-excludes=pgdata
+#
+#   secforge-spicedb-db CNPG Cluster:
+#     same shape as keycloak
+#
+#   wazuh-indexer-0 (StatefulSet):
+#     spec.template.metadata.annotations.backup.velero.io/backup-volumes-excludes=wazuh-indexer-data
+#
+#   wazuh-manager-0 (StatefulSet):
+#     spec.template.metadata.annotations.backup.velero.io/backup-volumes-excludes=wazuh-manager-data
+#     (~11G is queue/vd/feed CVE cache, upstream-derivable; ~3G is alert
+#      archives, also shipped to MinIO wazuh-archive bucket)
+#
+#   loki, tempo, prometheus, grafana (KPS-managed) — TODO when we want
+#     to optimize observability backups.
+---
+# This is a stub — see comments above. Real annotations are added by
+# 09c-velero-tune.sh because they require resource-specific patch syntax.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velero-pv-exclusions-doc
+  namespace: velero
+data:
+  README.md: |
+    See manifests/velero/04-pv-backup-exclusions.yaml for the rationale
+    and annotation list. Apply via components/09c-velero-tune.sh.

@@ -1,0 +1,9 @@
+{{- if .Values.agent.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "wazuh.fullname" . }}-agent
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.agent.selectorLabels" . | nindent 4 }}
+{{- end }}

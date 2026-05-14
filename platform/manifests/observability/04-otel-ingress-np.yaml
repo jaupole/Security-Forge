@@ -1,0 +1,30 @@
+# Allow OTLP ingress (4317/4318) to otel-collector pods from the
+# trace-emitting namespaces. Cluster-wide tracing fan-in deliberately
+# does NOT use a wildcard — the allow list grows per-component as new
+# tracing producers come online.
+#
+# Today (Phase 7-Tempo): keycloak only (Wazuh false-positive fix).
+# Phase 7-rest will add: app, spicedb, istio-system.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-otlp-ingress-to-otel-collector
+  namespace: observability
+  labels:
+    secforge.platform/component: otel-collector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opentelemetry-collector
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318

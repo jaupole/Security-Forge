@@ -1,0 +1,185 @@
+{{- if .Values.indexer.enabled }}
+{{- if .Values.indexer.watchdog.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "wazuh.fullname" . }}-watchdog
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    component: watchdog
+spec:
+  schedule: {{ .Values.indexer.watchdog.schedule | quote }}
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "wazuh.fullname" . }}-cleanup
+          nodeSelector:
+            workload: wazuh
+          tolerations:
+            - key: workload
+              value: wazuh
+              effect: NoSchedule
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: watchdog
+              image: "{{ .Values.global.initImages.kubectl.repository }}:{{ .Values.global.initImages.kubectl.tag }}"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -u
+
+                  NS="{{ .Release.Namespace }}"
+                  INDEXER_POD="{{ include "wazuh.fullname" . }}-indexer-0"
+                  CERT_PATH="/usr/share/wazuh-indexer/config/certs"
+                  THRESHOLD={{ .Values.indexer.watchdog.stuckThresholdSeconds }}
+                  FIXED_PODS=0
+                  FIXED_INDICES=0
+
+                  echo "[$(date -u +%H:%M:%SZ)] === Wazuh Watchdog — namespace=$NS threshold=${THRESHOLD}s ==="
+
+                  # =========================================================
+                  # FASE 1: Pods con race condition real de containerd
+                  # Síntoma: init containers OK pero containerID vacío (containerd
+                  # nunca creó el main container). Distinto de arranque normal
+                  # donde containerID existe pero started=false (startup probe
+                  # pendiente — OpenSearch tarda 3-5min en arrancar).
+                  # Fix: force-delete — StatefulSet recrea el pod limpiamente.
+                  # =========================================================
+                  echo "[$(date -u +%H:%M:%SZ)] Fase 1: buscando pods stuck en PodInitializing..."
+
+                  POD_NAMES=$(kubectl get pods -n "$NS" \
+                    -l "app.kubernetes.io/instance={{ .Release.Name }}" \
+                    --field-selector=status.phase=Pending \
+                    -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+
+                  for POD_NAME in $POD_NAMES; do
+                    # ¿El último init container completó con exitCode=0?
+                    INIT_EXIT=$(kubectl get pod "$POD_NAME" -n "$NS" \
+                      -o jsonpath='{.status.initContainerStatuses[-1:].state.terminated.exitCode}' \
+                      2>/dev/null || echo "")
+                    [ "$INIT_EXIT" != "0" ] && continue
+
+                    # ¿El main container aún NO ha arrancado (started=true)?
+                    STARTED=$(kubectl get pod "$POD_NAME" -n "$NS" \
+                      -o jsonpath='{.status.containerStatuses[0].started}' \
+                      2>/dev/null || echo "")
+                    [ "$STARTED" = "true" ] && continue
+
+                    # ¿containerd creó el container? (containerID no vacío = OpenSearch arrancando normalmente)
+                    # Si containerID existe, el container SÍ fue creado — solo está esperando startup probe.
+                    # Solo intervenimos cuando containerID está vacío: race condition real de containerd.
+                    CONTAINER_ID=$(kubectl get pod "$POD_NAME" -n "$NS" \
+                      -o jsonpath='{.status.containerStatuses[0].containerID}' \
+                      2>/dev/null || echo "")
+                    [ -n "$CONTAINER_ID" ] && continue
+
+                    # ¿Cuánto lleva en este estado?
+                    START_TIME=$(kubectl get pod "$POD_NAME" -n "$NS" \
+                      -o jsonpath='{.metadata.creationTimestamp}' \
+                      2>/dev/null || echo "")
+                    [ -z "$START_TIME" ] && continue
+
+                    START_EPOCH=$(date -d "$START_TIME" +%s 2>/dev/null || echo 0)
+                    NOW=$(date +%s)
+                    AGE=$((NOW - START_EPOCH))
+
+                    echo "  $POD_NAME: init_done=YES started=NO age=${AGE}s"
+
+                    if [ "$AGE" -gt "$THRESHOLD" ]; then
+                      echo "  STUCK: age ${AGE}s > threshold ${THRESHOLD}s — eliminando..."
+                      if kubectl delete pod "$POD_NAME" -n "$NS" --grace-period=0 --force 2>/dev/null; then
+                        echo "  OK: $POD_NAME eliminado — StatefulSet lo recrea"
+                        FIXED_PODS=$((FIXED_PODS + 1))
+                      else
+                        echo "  ERROR: no se pudo eliminar $POD_NAME"
+                      fi
+                    else
+                      echo "  OK: age ${AGE}s < threshold — dentro del margen de arranque normal"
+                    fi
+                  done
+
+                  echo "[$(date -u +%H:%M:%SZ)] Fase 1 completada: $FIXED_PODS pods corregidos"
+
+                  # =========================================================
+                  # FASE 2: Shards UNASSIGNED por NODE_LEFT
+                  # Ocurre en indices wazuh-monitoring-* / wazuh-statistics-*
+                  # con 0 réplicas cuando un indexer se reinicia durante upgrade.
+                  # Los datos ya se perdieron (NODE_LEFT). Solo hay que eliminar
+                  # el índice para que OpenSearch lo recree automáticamente.
+                  # NUNCA tocar wazuh-alerts-* ni ningún otro índice.
+                  # =========================================================
+                  echo "[$(date -u +%H:%M:%SZ)] Fase 2: buscando shards UNASSIGNED por NODE_LEFT..."
+
+                  INDEXER_READY=$(kubectl get pod "$INDEXER_POD" -n "$NS" \
+                    -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+
+                  if [ "$INDEXER_READY" != "true" ]; then
+                    echo "  $INDEXER_POD no está Ready — saltando Fase 2"
+                  else
+                    UNASSIGNED=$(kubectl exec "$INDEXER_POD" -n "$NS" -c wazuh-indexer -- \
+                      curl -s -k \
+                        --cert "$CERT_PATH/admin.pem" \
+                        --key "$CERT_PATH/admin-key.pem" \
+                        --cacert "$CERT_PATH/root-ca.pem" \
+                        'https://localhost:9200/_cat/shards?h=index,prirep,state,unassigned.reason&s=state' \
+                      2>/dev/null | grep "UNASSIGNED" | grep "NODE_LEFT" || true)
+
+                    if [ -z "$UNASSIGNED" ]; then
+                      echo "  Sin shards UNASSIGNED por NODE_LEFT — cluster saludable"
+                    else
+                      echo "$UNASSIGNED" | while read -r line; do
+                        INDEX_NAME=$(echo "$line" | awk '{print $1}')
+                        # Solo limpiar índices de monitoreo/estadísticas — NO alertas
+                        case "$INDEX_NAME" in
+                          wazuh-monitoring-*|wazuh-statistics-*)
+                            echo "  Eliminando $INDEX_NAME (shard primario perdido por NODE_LEFT)..."
+                            RESULT=$(kubectl exec "$INDEXER_POD" -n "$NS" -c wazuh-indexer -- \
+                              curl -s -k -X DELETE \
+                                --cert "$CERT_PATH/admin.pem" \
+                                --key "$CERT_PATH/admin-key.pem" \
+                                --cacert "$CERT_PATH/root-ca.pem" \
+                                "https://localhost:9200/$INDEX_NAME" 2>/dev/null || echo "error")
+                            if echo "$RESULT" | grep -q '"acknowledged":true'; then
+                              echo "  OK: $INDEX_NAME eliminado (se recrea automáticamente)"
+                              FIXED_INDICES=$((FIXED_INDICES + 1))
+                            else
+                              echo "  ERROR al eliminar $INDEX_NAME: $(echo "$RESULT" | head -c 150)"
+                            fi
+                            ;;
+                          *)
+                            echo "  SKIP: $INDEX_NAME — no es monitoring/statistics, requiere revisión manual"
+                            ;;
+                        esac
+                      done
+                    fi
+                  fi
+
+                  echo "[$(date -u +%H:%M:%SZ)] Fase 2 completada: $FIXED_INDICES índices corregidos"
+                  echo "[$(date -u +%H:%M:%SZ)] === Watchdog finalizado OK ==="
+{{- end }}
+{{- end }}

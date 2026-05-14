@@ -1,0 +1,29 @@
+# Barman Cloud Plugin ObjectStore for secforge-keycloak-db.
+# Replaces the deprecated inline barmanObjectStore config in 02-cnpg-cluster.yaml.
+# Retention policy is enforced by the plugin (not the cluster spec).
+# Credentials are rendered into cnpg-minio-credentials by the VSO binding in
+# 06-cnpg-vso-binding.yaml.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: minio-backup
+  namespace: keycloak
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: secforge-keycloak-db
+spec:
+  configuration:
+    destinationPath: s3://backups/cnpg/keycloak
+    endpointURL: http://minio.minio.svc.cluster.local:9000
+    s3Credentials:
+      accessKeyId:
+        name: cnpg-minio-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: cnpg-minio-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: "30d"

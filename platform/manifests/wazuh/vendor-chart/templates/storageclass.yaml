@@ -1,0 +1,17 @@
+{{- if .Values.storageClass.create }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storageClass.name }}
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+provisioner: {{ .Values.storageClass.provisioner }}
+parameters:
+  type: {{ .Values.storageClass.type }}
+  {{- if .Values.storageClass.encrypted }}
+  encrypted: "true"
+  {{- end }}
+reclaimPolicy: {{ .Values.storageClass.reclaimPolicy }}
+volumeBindingMode: {{ .Values.storageClass.volumeBindingMode }}
+allowVolumeExpansion: {{ .Values.storageClass.allowVolumeExpansion }}
+{{- end }}

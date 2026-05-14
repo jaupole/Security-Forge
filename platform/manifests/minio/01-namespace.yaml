@@ -1,0 +1,12 @@
+# minio namespace — restricted PSA. The MinIO chart's pod runs as
+# non-root with all-caps-dropped + RuntimeDefault seccomp (see values.yaml),
+# satisfying restricted enforce.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+  labels:
+    secforge.platform/component: minio
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

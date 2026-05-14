@@ -1,0 +1,38 @@
+# StorageClass for Wazuh PVs pinned to /var/lib/wazuh (dedicated 100G partition).
+#
+# Why a separate StorageClass:
+#   The host has a dedicated 100G xfs partition at /var/lib/wazuh (per the
+#   original layout in project_baremetal_deployment memory). The default
+#   k3s `local-path` SC dynamically provisions under
+#   /var/lib/rancher/k3s/storage, which lives on the 100G rancher partition.
+#   Pre-migration, wazuh PVs landed on rancher (the manager's 15G of CVE
+#   feed + alert archive + queue) and the dedicated wazuh partition sat at
+#   <1% used. This SC + companion static PVs (see static-pvs.yaml) repoint
+#   wazuh data onto its intended partition.
+#
+# No-provisioner / static-only:
+#   The wazuh data is small and known. Static PVs are simpler than
+#   running a second local-path-provisioner instance, and they preserve
+#   the architectural contract "wazuh data lives at /var/lib/wazuh".
+#
+# WaitForFirstConsumer:
+#   Matches the default `local-path` SC semantics. Avoids racy binding
+#   when PVCs are created before pods on a single-node cluster.
+#
+# Retain:
+#   PV reclaim policy = Retain so accidental PVC deletion does not nuke
+#   the data dir. PV cleanup is an operator decision, not automatic.
+#
+# Companion files:
+#   platform/manifests/wazuh/static-pvs.yaml  — the actual PV objects
+#   platform/components/00d-wazuh-storage.sh   — idempotent installer
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: wazuh-local
+  annotations:
+    secforge.platform/purpose: "Static PVs on /var/lib/wazuh; no dynamic provisioner."
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: false

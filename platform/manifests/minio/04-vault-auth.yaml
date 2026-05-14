@@ -1,0 +1,36 @@
+# minio-vso ServiceAccount + VaultAuth — same pattern as
+# cert-manager-vso, velero-vso, etc.
+#
+# The OpenBao Kubernetes auth role `minio-vso` is created by
+# 09f-minio-sse-encryption.sh (binds this SA to the `vso` policy).
+# Without that role, the VaultAuth health check fails.
+#
+# This manifest only creates the K8s side; the OpenBao side is
+# script-managed because it requires a privileged token to write.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio-vso
+  namespace: minio
+  labels:
+    secforge.platform/component: vault-secrets-operator
+automountServiceAccountToken: true
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: minio-vso
+  namespace: minio
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  method: kubernetes
+  mount: kubernetes
+  vaultConnectionRef: vault-secrets-operator/openbao
+  kubernetes:
+    role: minio-vso
+    serviceAccount: minio-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local

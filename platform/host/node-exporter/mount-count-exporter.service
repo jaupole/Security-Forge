@@ -1,0 +1,7 @@
+[Unit]
+Description=Export kernel mount table count to node-exporter textfile collector
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mount-count-exporter.sh

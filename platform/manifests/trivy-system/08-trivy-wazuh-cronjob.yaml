@@ -1,0 +1,146 @@
+# Trivy → Wazuh CronJob.
+#
+# Runs every 6 hours. Reads VulnerabilityReport CRDs (already populated by
+# Trivy Operator) and writes one NDJSON line per HIGH/CRITICAL CVE to
+# /var/log/trivy-wazuh/findings-<timestamp>.jsonl on the host.
+#
+# The Wazuh agent DaemonSet (04-daemonset.yaml) mounts that hostPath and
+# ships each new file to the Wazuh manager via a localfile block in
+# ossec-supplements.xml. Each run creates a new file so Wazuh reads all
+# findings fresh (new files are read from offset 0).
+#
+# Output format (one JSON object per line):
+#   {"source":"trivy","ts":"...","namespace":"...","resource":"...","image":"...",
+#    "cve_id":"CVE-XXXX-XXXXX","severity":"CRITICAL","cvss_score":9.8,
+#    "title":"...","pkg_name":"...","installed_version":"...","fixed_version":"..."}
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trivy-wazuh-reporter
+  namespace: trivy-system
+  labels:
+    secforge.platform/component: trivy-wazuh
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            secforge.platform/component: trivy-wazuh
+        spec:
+          serviceAccountName: trivy-wazuh-reporter
+          restartPolicy: OnFailure
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: ensure-output-dir
+              # Was busybox:1.36 (docker.io/library/...) which fails the
+              # restrict-image-registries Kyverno allowlist. mirror.gcr.io
+              # is Google's content-addressable mirror of Docker Hub —
+              # same image bytes, allowed registry. Switched 2026-05-14.
+              image: mirror.gcr.io/library/busybox:1.36
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                  add: ["DAC_OVERRIDE"]
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  mkdir -p /output
+                  chmod 777 /output
+                  # Clean up findings older than 7 days to cap disk usage.
+                  find /output -name "findings-*.jsonl" -mtime +7 -delete 2>/dev/null || true
+              volumeMounts:
+                - name: output
+                  mountPath: /output
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits:   { cpu: 50m, memory: 32Mi }
+          containers:
+            - name: reporter
+              image: alpine/k8s:1.31.2
+              securityContext:
+                runAsUser: 65534
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  # ISO timestamp for the JSON "ts" field (machine-readable).
+                  TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  # Traditional syslog timestamp for the line prefix so Wazuh's
+                  # syslog predecoder correctly extracts program_name=trivy-cve.
+                  # RFC3339+Z format is NOT recognised by the predecoder (4.14.4).
+                  SYSLOG_TS=$(date -u +"%b %e %H:%M:%S")
+                  HOST=$(hostname)
+                  OUTFILE="/output/findings-$(date -u +%Y%m%d-%H%M).jsonl"
+
+                  # Touch the empty file BEFORE writing so Wazuh logcollector
+                  # discovers it at offset=0. Without this, logcollector jumps
+                  # to EOF on first discovery (only-future-events=no is ignored
+                  # for non-empty files in Wazuh 4.14.4). The wait must exceed
+                  # logcollector.reload_interval (default 64s) so the glob-scan
+                  # cycle fires while the file is still empty.
+                  touch "$OUTFILE"
+                  echo "Waiting 90s for Wazuh logcollector to anchor at offset=0..."
+                  sleep 90
+
+                  echo "Fetching VulnerabilityReports at $TS..."
+                  COUNT=$(kubectl get vulnerabilityreports -A -o json | \
+                    jq -r --arg ts "$TS" --arg syslog_ts "$SYSLOG_TS" --arg host "$HOST" '
+                      .items[] |
+                      . as $item |
+                      (
+                        ($item.report.artifact.registry.server // "") +
+                        (if ($item.report.artifact.registry.server // "") != "" then "/" else "" end) +
+                        ($item.report.artifact.repository // "") +
+                        (if ($item.report.artifact.tag // "") != "" then ":" else "" end) +
+                        ($item.report.artifact.tag // "")
+                      ) as $image |
+                      $item.report.vulnerabilities[]? |
+                      select(.severity == "HIGH" or .severity == "CRITICAL") |
+                      select(.vulnerabilityID != null and .vulnerabilityID != "") |
+                      {
+                        source: "trivy",
+                        ts: $ts,
+                        namespace: $item.metadata.namespace,
+                        resource: $item.metadata.name,
+                        image: $image,
+                        cve_id: .vulnerabilityID,
+                        severity: .severity,
+                        cvss_score: (.score // 0),
+                        title: (.title // "")[:200],
+                        pkg_name: (.resource // ""),
+                        installed_version: (.installedVersion // ""),
+                        fixed_version: (.fixedVersion // "")
+                      } | @json |
+                      "\($syslog_ts) \($host) trivy-cve: \(.)"
+                    ' | tee "$OUTFILE" | wc -l)
+
+                  echo "Wrote $COUNT HIGH/CRITICAL CVE findings to $OUTFILE"
+              volumeMounts:
+                - name: output
+                  mountPath: /output
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+          volumes:
+            - name: output
+              hostPath:
+                path: /var/log/trivy-wazuh
+                type: DirectoryOrCreate

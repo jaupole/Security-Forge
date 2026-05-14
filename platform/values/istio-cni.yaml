@@ -1,0 +1,26 @@
+# istio/cni — Ambient profile.
+# Installs the CNI plugin chain entry that redirects ambient-labeled pod
+# traffic into ztunnel. Required for Ambient mode.
+#
+# k3s uses non-default CNI paths — overrides below. Default Istio paths
+# (/opt/cni/bin and /etc/cni/net.d) are wrong for k3s; istio-cni would
+# install its binary to the right place but fail to find k3s's existing
+# CNI config (flannel) and end up unhealthy with "no networks found".
+
+profile: ambient
+
+cni:
+  ambient:
+    enabled: true
+  cniBinDir: /var/lib/rancher/k3s/data/cni
+  cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
+  chained: true
+  repair:
+    enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

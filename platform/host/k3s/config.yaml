@@ -1,0 +1,20 @@
+# k3s config — read automatically from /etc/rancher/k3s/config.yaml on
+# k3s start. Cleaner than editing the systemd unit's ExecStart args.
+#
+# This file should be installed at /etc/rancher/k3s/config.yaml on the host.
+#
+# Existing flags (from install): --disable traefik (set by installer at
+# k3s install time). Don't restate those here — they're already on
+# ExecStart in the systemd unit.
+
+# ─── kube-apiserver audit logging ─────────────────────────────────────
+# Routes audit events through the API server's filter chain (defined in
+# /etc/rancher/k3s/audit-policy.yaml) and writes JSON-Lines to
+# /var/log/k3s-audit.log. Wazuh agent picks that up via <localfile>.
+kube-apiserver-arg:
+  - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+  - "audit-log-path=/var/log/k3s-audit.log"
+  - "audit-log-maxage=30"             # keep audit log entries 30 days
+  - "audit-log-maxbackup=10"          # rotate, keep 10 backups
+  - "audit-log-maxsize=100"           # 100 MB per file before rotation
+  - "audit-log-format=json"           # one JSON object per line

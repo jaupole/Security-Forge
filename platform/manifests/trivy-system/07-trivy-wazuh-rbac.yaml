@@ -1,0 +1,41 @@
+# Trivy → Wazuh reporter: RBAC for the CronJob that reads VulnerabilityReports
+# and writes NDJSON findings to /var/log/trivy-wazuh/ for the Wazuh agent to ship.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-wazuh-reporter
+  namespace: trivy-system
+  labels:
+    secforge.platform/component: trivy-wazuh
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trivy-wazuh-reporter
+  labels:
+    secforge.platform/component: trivy-wazuh
+rules:
+  - apiGroups: ["aquasecurity.github.io"]
+    resources:
+      - vulnerabilityreports
+      - configauditreports
+      - exposedsecretreports
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trivy-wazuh-reporter
+  labels:
+    secforge.platform/component: trivy-wazuh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: trivy-wazuh-reporter
+subjects:
+  - kind: ServiceAccount
+    name: trivy-wazuh-reporter
+    namespace: trivy-system

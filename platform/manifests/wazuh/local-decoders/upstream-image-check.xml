@@ -1,0 +1,44 @@
+<!--
+  Decoder for the upstream-image-check syslog program tag.
+  Logged by /usr/local/sbin/upstream-image-check.sh on the host via
+  `logger -t upstream-image-check ...`.
+
+  Lives at /var/ossec/etc/decoders/local_decoder_upstream_image.xml
+  on the wazuh-manager pod. Source-of-truth in this repo; deploy
+  via platform/components/07l-wazuh-upstream-image-rules.sh.
+-->
+<decoder name="upstream-image-check">
+  <program_name>^upstream-image-check$</program_name>
+</decoder>
+
+<!-- "NEW DIGEST AVAILABLE for <image> (was <old>, now <new>)" -->
+<decoder name="upstream-image-check-new-digest">
+  <parent>upstream-image-check</parent>
+  <prematch>NEW DIGEST AVAILABLE for </prematch>
+  <regex offset="after_prematch">^(\S+) \(was (\S+), now (\S+)\)</regex>
+  <order>image,old_digest,new_digest</order>
+</decoder>
+
+<!-- "first observation: <image> -> <digest>" — first time we see an image -->
+<decoder name="upstream-image-check-first-observation">
+  <parent>upstream-image-check</parent>
+  <prematch>first observation: </prematch>
+  <regex offset="after_prematch">^(\S+) -> (\S+)</regex>
+  <order>image,digest</order>
+</decoder>
+
+<!-- "could not resolve digest for <image>" -->
+<decoder name="upstream-image-check-resolve-failed">
+  <parent>upstream-image-check</parent>
+  <prematch>could not resolve digest for </prematch>
+  <regex offset="after_prematch">^(\S+)</regex>
+  <order>image</order>
+</decoder>
+
+<!-- "weekly check complete: N images have new upstream digests" -->
+<decoder name="upstream-image-check-summary">
+  <parent>upstream-image-check</parent>
+  <prematch>weekly check complete</prematch>
+  <regex>(\d+) images have new upstream digests</regex>
+  <order>new_digest_count</order>
+</decoder>

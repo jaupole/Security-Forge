@@ -1,0 +1,41 @@
+# Patterns to ignore when building packages.
+.git
+.gitignore
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.orig
+# IDE
+.idea/
+.vscode/
+*.iml
+# CI
+.github/
+.gitlab-ci.yml
+.circleci/
+# Documentation source
+docs/
+# Testing
+tests/
+ci/
+# Project context (internal use only)
+CLAUDE.md
+.claude/
+# Unrelated files
+*.jsx
+*.plugin
+VAULT_*.md
+README_VAULT_*.md
+# Credentials (never ship in helm package)
+vault-root-token*.json
+*.json
+# Environment-specific values (contain cluster-specific configs and passwords)
+values-*.yaml
+# Operational docs (internal)
+SECURITY_AUDIT_REPORT.txt
+TEST-PLAN-*.md
+# Cluster manifests (not part of the chart)
+NodePool-wazuh.yaml
+# Scripts (internal tooling)
+scripts/

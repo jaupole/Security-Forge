@@ -18,23 +18,32 @@
       "Bash(helm lint:*)",
       "Bash(helm template:*)",
       "Bash(helm install:*)",
-      "Bash(helm upgrade:*)",
       "Bash(kubectl get:*)",
       "Bash(kubectl describe:*)",
       "Bash(kubectl logs:*)",
       "Bash(kubectl apply:*)",
       "Bash(kubectl create:*)",
-      "Bash(kubectl exec:*)",
       "Bash(docker ps:*)",
       "Bash(docker images:*)"
     ],
+    "_comment_kubectl_exec_helm_upgrade": "kubectl exec and helm upgrade are NOT in the allow-list — they're cluster-admin-equivalent (exec into any pod, deploy any chart). Approve per-call so each invocation is explicit. Flagged by checklist-auditor rule 99 (2026-05-14).",
     "deny": [
-      "Bash(kubectl delete namespace:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(kubectl replace:*)",
+      "Bash(kubectl patch:*)",
+      "Bash(helm uninstall:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
       "Bash(rm -rf:*)",
+      "Bash(dd if=:*)",
+      "Bash(mkfs:*)",
       "Bash(curl * | sh)",
-      "Bash(wget * | sh)"
+      "Bash(wget * | sh)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | bash)"
     ],
-    "_comment_deny": "Even locally, namespace deletion and untrusted-script-execution require explicit confirmation"
+    "_comment_deny": "Destructive operations always require per-call approval. Updated 2026-05-14 per checklist-auditor rules 99/100 — added kubectl delete (all forms), kubectl patch/replace, helm uninstall, force pushes, hard resets, and the curl|sh family."
   },
   "context": {
     "_comment_context": "Files Claude Code should always have in context",

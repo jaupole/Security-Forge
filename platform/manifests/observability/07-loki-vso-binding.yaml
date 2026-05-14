@@ -1,0 +1,71 @@
+# VSO binding for Loki MinIO credentials.
+#
+# Same shape as the Tempo binding. 07f-loki.sh:
+#   1. Provisions a scoped MinIO user `loki-user` with bucket-only access
+#      to loki-chunks.
+#   2. Stages the keys at OpenBao secret/data/minio/loki/credentials.
+#   3. Applies this binding.
+#   4. Creates K8s auth role loki-vso bound to the vso policy.
+#   5. Helm install Loki.
+#
+# The rendered K8s Secret `loki-minio-credentials` exposes
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (Loki's S3 client picks these
+# env-var names directly).
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loki-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: loki-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: loki-vso
+    serviceAccount: loki-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: loki-minio-credentials-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: loki-vso
+  mount: secret
+  type: kv-v2
+  path: minio/loki/credentials
+  refreshAfter: 60s
+  destination:
+    name: loki-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        AWS_ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        AWS_SECRET_ACCESS_KEY:
+          text: '{{ .Secrets.secret_key }}'

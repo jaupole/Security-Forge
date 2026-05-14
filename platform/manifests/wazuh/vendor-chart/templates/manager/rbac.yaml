@@ -1,0 +1,10 @@
+{{- if .Values.manager.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "wazuh.fullname" . }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.manager.selectorLabels" . | nindent 4 }}
+{{- end }}

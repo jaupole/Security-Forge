@@ -1,0 +1,46 @@
+# Layer A ingress NetworkPolicy for the velero namespace.
+#
+# Egress baseline (default-deny-egress + allow-egress-essentials + allow-egress-to-minio)
+# is applied separately by platform/lib/apply-egress-baseline.sh.
+# This file adds the ingress side.
+#
+# Applied 2026-05-14.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: velero
+  labels:
+    secforge.platform/component: velero
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-velero-metrics
+  namespace: velero
+  labels:
+    secforge.platform/component: velero
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 8085

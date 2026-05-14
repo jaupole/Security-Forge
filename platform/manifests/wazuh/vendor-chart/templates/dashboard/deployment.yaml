@@ -1,0 +1,260 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wazuh.fullname" . }}-dashboard
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+    {{- include "wazuh.dashboard.selectorLabels" . | nindent 4 }}
+  {{- if .Values.reloader.enabled }}
+  annotations:
+    reloader.stakater.com/auto: "true"
+  {{- end }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      {{- include "wazuh.dashboard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "wazuh.labels" . | nindent 8 }}
+        {{- include "wazuh.dashboard.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dashboard/configmap.yaml") . | sha256sum }}
+        {{- if .Values.dashboard.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.dashboard.metrics.port | quote }}
+        prometheus.io/path: {{ .Values.dashboard.metrics.path | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: default
+      {{- include "wazuh.dnsConfig" . | nindent 6 }}
+      priorityClassName: {{ include "wazuh.fullname" . }}-critical
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.dashboard.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dashboard.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dashboard.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-dependencies
+          image: "{{ .Values.global.initImages.busybox.repository }}:{{ .Values.global.initImages.busybox.tag }}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for dependencies to be ready..."
+              MAX_ATTEMPTS=120
+              INDEXER_HOST="{{ include "wazuh.fullname" . }}-indexer.{{ .Release.Namespace }}.svc.cluster.local"
+              MANAGER_HOST="{{ include "wazuh.fullname" . }}-manager.{{ .Release.Namespace }}.svc.cluster.local"
+
+              # Wait for indexer:9200
+              echo "Checking indexer on $INDEXER_HOST:9200..."
+              ATTEMPT=0
+              while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+                if nc -zw2 $INDEXER_HOST 9200 2>/dev/null; then
+                  echo "Indexer is ready!"
+                  break
+                fi
+                ATTEMPT=$((ATTEMPT + 1))
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Indexer not ready, retrying in 5s..."
+                sleep 5
+              done
+              if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                echo "ERROR: Indexer did not become ready"
+                exit 1
+              fi
+
+              # Wait for manager:55000 (API port)
+              echo "Checking manager API on $MANAGER_HOST:55000..."
+              ATTEMPT=0
+              while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+                if nc -zw2 $MANAGER_HOST 55000 2>/dev/null; then
+                  echo "Manager API is ready!"
+                  exit 0
+                fi
+                ATTEMPT=$((ATTEMPT + 1))
+                echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Manager not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "ERROR: Manager did not become ready"
+              exit 1
+        - name: inject-credentials
+          image: "{{ .Values.global.initImages.busybox.repository }}:{{ .Values.global.initImages.busybox.tag }}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cp /config-template/opensearch_dashboards.yml /config/opensearch_dashboards.yml
+              sed -i "s|__KIBANA_PASSWORD__|${KIBANA_PASSWORD}|g" /config/opensearch_dashboards.yml
+              # Replace indexer FQDN with ClusterIP from auto-injected env var (zero DNS)
+              if [ -n "$WAZUH_INDEXER_SERVICE_HOST" ]; then
+                sed -i "s|__INDEXER_HOST__|${WAZUH_INDEXER_SERVICE_HOST}|g" /config/opensearch_dashboards.yml
+              fi
+              # Pre-create wazuh.yml with group-readable permissions (fsGroup=1000 ensures dashboard user can read)
+              mkdir -p /wazuh-config
+              {
+                echo 'hosts:'
+                echo '  - default:'
+                printf '      url: "%s"\n' "$WAZUH_API_URL"
+                echo '      port: 55000'
+                printf '      username: "%s"\n' "$API_USERNAME"
+                printf '      password: "%s"\n' "$API_PASSWORD"
+                echo "      run_as: false  # SecForge: dashboard calls API as wazuh-wui (run_as=true breaks under OIDC because OIDC subject is not a Wazuh API user)"
+              } > /wazuh-config/wazuh.yml
+              chmod 640 /wazuh-config/wazuh.yml
+          env:
+            - name: KIBANA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.dashboardSecretName" . }}
+                  key: password
+            - name: WAZUH_API_URL
+              value: "https://{{ include "wazuh.fullname" . }}-manager-0.{{ include "wazuh.manager.fqdn" . }}"
+            - name: API_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.apiSecretName" . }}
+                  key: username
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.apiSecretName" . }}
+                  key: password
+          volumeMounts:
+            - name: dashboard-config-template
+              mountPath: /config-template
+              readOnly: true
+            - name: dashboard-config
+              mountPath: /config
+            - name: wazuh-app-config
+              mountPath: /wazuh-config
+      containers:
+        - name: wazuh-dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: dashboard
+              containerPort: 5601
+              protocol: TCP
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: INDEXER_URL
+              value: "https://{{ include "wazuh.indexer.fqdn" . }}:9200"
+            - name: INDEXER_USERNAME
+              value: "kibanaserver"
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.dashboardSecretName" . }}
+                  key: password
+            - name: DASHBOARD_USERNAME
+              value: "kibanaserver"
+            - name: DASHBOARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.dashboardSecretName" . }}
+                  key: password
+            - name: WAZUH_API_URL
+              value: "https://{{ include "wazuh.fullname" . }}-manager-0.{{ include "wazuh.manager.fqdn" . }}"
+            - name: API_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.apiSecretName" . }}
+                  key: username
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wazuh.apiSecretName" . }}
+                  key: password
+            - name: SERVER_SSL_ENABLED
+              value: {{ (.Values.dashboard.ssl).enabled | default false | quote }}
+          startupProbe:
+            tcpSocket:
+              port: dashboard
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: dashboard
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dashboard
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          volumeMounts:
+            - name: dashboard-config
+              mountPath: /usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
+              subPath: opensearch_dashboards.yml
+              readOnly: true
+            - name: dashboard-certs
+              mountPath: /usr/share/wazuh-dashboard/certs
+              readOnly: true
+            - name: wazuh-app-config
+              mountPath: /usr/share/wazuh-dashboard/data/wazuh/config
+      volumes:
+        - name: dashboard-config-template
+          configMap:
+            name: {{ include "wazuh.fullname" . }}-dashboard-config
+        - name: dashboard-config
+          emptyDir: {}
+        - name: dashboard-certs
+          secret:
+            secretName: {{ include "wazuh.fullname" . }}-dashboard-certs
+        - name: wazuh-app-config
+          emptyDir: {}
+{{- end }}

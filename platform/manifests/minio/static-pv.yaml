@@ -1,0 +1,52 @@
+# Static PV for MinIO, pinned to /var/lib/minio.
+#
+# Bound to the PVC `minio` in the `minio` namespace (the name the
+# minio Helm chart's Deployment expects). The PVC references this PV
+# explicitly via `volumeName` and storageClassName=minio-local.
+#
+# Pre-conditions:
+#   1. /var/lib/minio is a separate xfs partition (vg0-minio, 250G,
+#      created by 00-host-bootstrap.sh).
+#   2. The target dir exists with the correct uid/gid/mode:
+#        /var/lib/minio/data  →  0:1000 (root:ops/minio group)
+#                                mode 2777 (setgid)
+#      The MinIO container runs UID 1000 (matches the host's `ops` user).
+#      Setgid ensures child files inherit gid 1000.
+#   3. The minio-local StorageClass exists (storageclass-minio-local.yaml).
+#
+# Capacity:
+#   200Gi (was 50Gi; bumped because the host partition has 250G to spare
+#   and MinIO holds Velero kopia backups + Loki chunks + Tempo traces +
+#   Wazuh archives that grow over the 30d / 90d retention windows).
+#
+# Lifecycle:
+#   Reclaim policy = Retain. Deleting the PVC leaves the PV in `Released`
+#   state with all object data intact on disk. THIS IS YOUR BACKUP REPO —
+#   never automate PV deletion here.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: minio-data-static
+  labels:
+    secforge.platform/minio-volume: data
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: minio-local
+  volumeMode: Filesystem
+  local:
+    path: /var/lib/minio/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: Exists
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: minio
+    name: minio

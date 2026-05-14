@@ -1,0 +1,245 @@
+<!--
+  Wazuh agent configuration for the bare-metal host (component 10).
+  Rendered by 10-wazuh-host-agent.sh via envsubst from globals.env values.
+  Substituted variables: ${WAZUH_MANAGER_HOST}, ${WAZUH_MANAGER_PORT}, ${HOSTNAME}.
+
+  Lives at /var/ossec/etc/ossec.conf on the host after install.
+  See platform/manifests/wazuh-host-agent/README.md for design rationale.
+-->
+<ossec_config>
+
+  <client>
+    <server>
+      <address>${WAZUH_MANAGER_HOST}</address>
+      <port>${WAZUH_MANAGER_PORT}</port>
+      <protocol>tcp</protocol>
+    </server>
+    <config-profile>ubuntu, ubuntu24, ubuntu24.04</config-profile>
+    <notify_time>10</notify_time>
+    <time-reconnect>60</time-reconnect>
+    <auto_restart>yes</auto_restart>
+    <crypto_method>aes</crypto_method>
+
+    <!-- Enrollment port is the NodePort for 1515 (WAZUH_ENROLLMENT_PORT).
+         Without this, the agent defaults to port 1515 which is the internal
+         cluster port — unreachable from the host. If the key in client.keys
+         is invalidated, re-enrollment goes to the correct NodePort. -->
+    <enrollment>
+      <enabled>yes</enabled>
+      <manager_address>${WAZUH_MANAGER_HOST}</manager_address>
+      <port>${WAZUH_ENROLLMENT_PORT}</port>
+      <agent_name>${HOSTNAME}</agent_name>
+      <auto_method>yes</auto_method>
+    </enrollment>
+  </client>
+
+  <client_buffer>
+    <disabled>no</disabled>
+    <queue_size>5000</queue_size>
+    <events_per_second>500</events_per_second>
+  </client_buffer>
+
+  <!-- File Integrity Monitoring on host paths.
+       Realtime watch on /etc (catches sudoers/shadow/passwd edits as they
+       happen); scheduled scans every 12h on the binary directories. -->
+  <syscheck>
+    <disabled>no</disabled>
+    <frequency>43200</frequency>
+    <scan_on_start>yes</scan_on_start>
+    <alert_new_files>yes</alert_new_files>
+
+    <directories check_all="yes" realtime="yes">/etc</directories>
+    <directories check_all="yes" realtime="yes">/root</directories>
+    <directories check_all="yes">/usr/bin</directories>
+    <directories check_all="yes">/usr/sbin</directories>
+    <directories check_all="yes">/usr/lib</directories>
+    <directories check_all="yes">/boot</directories>
+
+    <!-- Noisy or expected-to-change paths under monitored roots. -->
+    <ignore>/etc/mtab</ignore>
+    <ignore>/etc/hosts.deny</ignore>
+    <ignore>/etc/random-seed</ignore>
+    <ignore>/etc/adjtime</ignore>
+    <ignore>/etc/cups/printers.conf</ignore>
+    <ignore>/etc/lvm/cache</ignore>
+    <ignore type="sregex">.log$|.swp$</ignore>
+
+    <skip_nfs>yes</skip_nfs>
+    <skip_dev>yes</skip_dev>
+    <skip_proc>yes</skip_proc>
+    <skip_sys>yes</skip_sys>
+
+    <process_priority>10</process_priority>
+    <max_eps>50</max_eps>
+
+    <whodata>
+      <network>no</network>
+    </whodata>
+  </syscheck>
+
+  <!-- Rootkit / hidden-file / hidden-process detection.
+       Default trojan + rootkit signatures plus heuristic checks. -->
+  <rootcheck>
+    <disabled>no</disabled>
+    <check_files>yes</check_files>
+    <check_trojans>yes</check_trojans>
+    <check_dev>yes</check_dev>
+    <check_sys>yes</check_sys>
+    <check_pids>yes</check_pids>
+    <check_ports>yes</check_ports>
+    <check_if>yes</check_if>
+    <frequency>43200</frequency>
+    <rootkit_files>etc/shared/rootkit_files.txt</rootkit_files>
+    <rootkit_trojans>etc/shared/rootkit_trojans.txt</rootkit_trojans>
+    <skip_nfs>yes</skip_nfs>
+  </rootcheck>
+
+  <!-- System inventory: hardware, OS, network interfaces+protocols,
+       installed packages, processes, listening ports. The native install
+       sees the host's real namespaces, so all sub-modules return real data. -->
+  <wodle name="syscollector">
+    <disabled>no</disabled>
+    <interval>1h</interval>
+    <scan_on_start>yes</scan_on_start>
+    <hardware>yes</hardware>
+    <os>yes</os>
+    <network>yes</network>
+    <packages>yes</packages>
+    <ports all="yes">yes</ports>
+    <processes>yes</processes>
+    <hotfixes>yes</hotfixes>
+  </wodle>
+
+  <!-- Configuration assessment (CIS-style benchmarks).
+       Scans on agent start (so the first dashboard view has data) then
+       every 12h. Define accepted-as-baseline failures in
+       docs/06-reference/wazuh-sca-baseline.md after the first scan. -->
+  <sca>
+    <enabled>yes</enabled>
+    <scan_on_start>yes</scan_on_start>
+    <interval>12h</interval>
+    <skip_nfs>yes</skip_nfs>
+  </sca>
+
+  <!-- Vulnerability detection is handled server-side (manager) in Wazuh
+       4.8+. The agent-side `vulnerability-detection` wodle does not exist
+       in 4.8+ — including it causes wazuh-modulesd to log an error and
+       skip startup of the block. Do not add this block here; configure
+       vulnerability detection in the manager's ossec.conf instead. -->
+
+  <!-- =========================================================
+       Logcollector — host log streams (Linux baseline)
+       ========================================================= -->
+
+  <!-- Auth events: sshd, sudo, su, pam, systemd-logind.
+       Default Wazuh ruleset (5500-5750 range) fires on these. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/auth.log</location>
+  </localfile>
+
+  <!-- General-purpose syslog: cron, systemd unit failures, kernel msgs. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/syslog</location>
+  </localfile>
+
+  <!-- Native journald support (Wazuh 4.7+). Picks up units that don't
+       write to /var/log/syslog (most modern systemd units). -->
+  <localfile>
+    <log_format>journald</log_format>
+    <location>journald</location>
+  </localfile>
+
+  <!-- Package manager: apt installs/removals, dpkg state changes.
+       High-signal — "someone got root and is installing tools" is the
+       common pattern this catches. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/dpkg.log</location>
+  </localfile>
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/apt/history.log</location>
+  </localfile>
+
+  <!-- Linux audit subsystem (10a-auditd.sh installs auditd + ruleset).
+       Wazuh's 80700-80799 default rules parse these and emit structured
+       alerts on execve / file-write / module-load / etc. -->
+  <localfile>
+    <log_format>audit</log_format>
+    <location>/var/log/audit/audit.log</location>
+  </localfile>
+
+  <!-- k3s API-server audit log. k3s writes one JSON object per line here
+       (audit policy: platform/host/k3s/audit-policy.yaml; file created by
+       00-host-bootstrap.sh).
+
+       MUST be log_format=syslog, NOT json. RequestResponse-level audit
+       events (Secrets/ConfigMaps/RBAC per audit-policy.yaml) embed a full
+       K8s object body, and every object's metadata.managedFields.fieldsV1
+       uses a literal "." as a key (Server-Side Apply field tracking).
+       Wazuh's JSON_Decoder passes that "." through verbatim as a field
+       name; OpenSearch then rejects the whole document with
+       mapper_parsing_exception ("field name cannot contain only the
+       character [.]") — silently dropping every RequestResponse audit
+       event (~75% of audit volume).
+
+       log_format=syslog alone is NOT sufficient — the manager's analysisd
+       content-sniffs the message body and auto-runs JSON_Decoder whenever
+       the body starts with '{'. So we additionally <out_format> the line
+       with syslog program tag "k3s-audit:" and pair it with a manager-side
+       parent decoder (platform/manifests/wazuh/local-decoders/k3s-audit.xml)
+       that CLAIMS the message via <program_name>, blocking the built-in
+       JSON parser from firing. Rules 100xxx still fire because they match
+       on full_log text (none use structured fields).
+
+       If queryable audit fields are wanted later, add a *scoped* child
+       decoder under the k3s-audit parent that extracts only safe field
+       names via <regex offset="after_prematch"> — do not switch this back
+       to json. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/k3s-audit.log</location>
+    <out_format>$(timestamp) $(hostname) k3s-audit: $(log)</out_format>
+    <label key="source">k3s-audit</label>
+  </localfile>
+
+  <!-- fail2ban events (10b-fail2ban.sh installs + configures). Wazuh sees
+       both the failed-attempt cascade AND the resulting bans. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/fail2ban.log</location>
+  </localfile>
+
+  <!-- =========================================================
+       Logcollector — pod log streams (kubelet writes here on every node)
+       ========================================================= -->
+
+  <!-- OpenBao audit + operational events. Manager-side decoder
+       (Phase 7d operator-backlog #18) strips the kubelet wrapper. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/pods/openbao_openbao-*/openbao/*.log</location>
+    <label key="source">openbao</label>
+  </localfile>
+
+  <!-- Keycloak event listener output (jboss-logging structured JSON
+       inside the kubelet wrapper). Same decoder pipeline as openbao. -->
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/log/pods/keycloak_keycloak-0_*/keycloak/*.log</location>
+    <label key="source">keycloak</label>
+  </localfile>
+
+  <!-- Active response will be wired here when component 10c lands.
+       For now: rely on fail2ban for SSH, manual review for cluster events. -->
+  <active-response>
+    <disabled>yes</disabled>
+  </active-response>
+
+  <logging>
+    <log_format>plain</log_format>
+  </logging>
+
+</ossec_config>

@@ -1,0 +1,33 @@
+<!--
+  k3s API server audit log decoder.
+
+  Companion to platform/manifests/wazuh-host-agent/ossec.conf.template's
+  k3s-audit <localfile> block, which uses <out_format> to tag each line
+  with syslog program name "k3s-audit".
+
+  Purpose: CLAIM the message via <program_name> match so Wazuh's built-in
+  JSON_Decoder does NOT auto-fire on it. The audit log body starts with
+  '{' (k3s emits JSON-Lines) — without this decoder, analysisd's
+  content-sniffing JSON parser explodes every event into data.* fields.
+  RequestResponse events embed Server-Side Apply field tracking in
+  metadata.managedFields.fieldsV1, which uses a literal "." as an object
+  key. After flattening that lands as a field named "." in the alert,
+  and OpenSearch rejects the document with
+  mapper_parsing_exception: field name cannot contain only the character [.]
+  silently dropping the alert before it indexes.
+
+  This decoder has NO regex or order — it deliberately extracts nothing.
+  Rules 100600 / 100800 / etc. still fire because they use <match>/<regex>
+  against full_log text, which is preserved verbatim regardless of decoder.
+
+  If structured audit fields are wanted later (queryable verb/user/resource),
+  add a SCOPED child decoder here that extracts ONLY safe keys with explicit
+  <regex offset="after_prematch"> — do not switch to plugin_decoder JSON.
+
+  Lives at /var/ossec/etc/decoders/local_decoder_k3s_audit.xml on the
+  wazuh-manager pod. Source-of-truth in this repo; deploy via
+  platform/components/07n-wazuh-k3s-audit-decoder.sh.
+-->
+<decoder name="k3s-audit">
+  <program_name>^k3s-audit$</program_name>
+</decoder>

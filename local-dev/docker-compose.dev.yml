@@ -1,0 +1,61 @@
+# Local-dev compose for the SecForge ecosystem.
+#
+# Phase 0 of the ecosystem plan (see project memory
+# `project_ecosystem_identity_plan.md`) — only Keycloak runs in
+# Docker. SpiceDB is a native binary; Postgres is your existing
+# local install; apps are native Node/Vite.
+#
+# Bring it up:
+#   docker compose -f local-dev/docker-compose.dev.yml up -d
+#
+# Then bootstrap the realm + clients:
+#   bash ./local-dev/bootstrap-realm.sh
+#
+# Tear down (preserves data via the volume):
+#   docker compose -f local-dev/docker-compose.dev.yml down
+#
+# Wipe (deletes the realm — run only if you want to start over):
+#   docker compose -f local-dev/docker-compose.dev.yml down -v
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: secforge-keycloak-dev
+    # In start-dev mode Keycloak listens on 0.0.0.0:8080, accepts any
+    # Host header, no TLS — exactly what we need for `*.localhost`
+    # access from native React/Node apps. Setting --hostname or
+    # --hostname-strict in dev mode causes Keycloak to exit on boot
+    # in some 26.x builds; both stay omitted.
+    command:
+      - start-dev
+      - --features=organization
+      - --health-enabled=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_LOG_LEVEL: INFO
+    ports:
+      # http://auth.localhost:8080 → here (apps + bootstrap-realm.sh).
+      # Hosts file must point auth.localhost at 127.0.0.1.
+      - "8080:8080"
+      # Management port — /health/ready, /metrics. Docker healthcheck
+      # below curls /health/ready against this.
+      - "9000:9000"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    # Use Keycloak's built-in /opt/keycloak/bin/kc.sh probe; runs in
+    # the same container so we don't depend on host networking.
+    healthcheck:
+      test:
+        - CMD
+        - /opt/keycloak/bin/kc.sh
+        - show-config
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  keycloak-data:
+    name: secforge-keycloak-dev-data

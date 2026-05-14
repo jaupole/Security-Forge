@@ -1,0 +1,14 @@
+# istio/ztunnel — Ambient L4 dataplane.
+# DaemonSet on every node. Uses Citadel-issued SVIDs. SPIRE integration
+# deferred (operator-backlog #21).
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+logLevel: info
+logAsJson: true

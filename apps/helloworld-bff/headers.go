@@ -40,6 +40,14 @@ func withSecurityHeaders(c cfg, next http.Handler) http.Handler {
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		// Cross-Origin-Embedder-Policy completes the trio for cross-origin
+		// isolation (window.crossOriginIsolated === true), enabling
+		// SharedArrayBuffer and high-resolution timers under tighter
+		// embedding rules. Added 2026-05-14 per checklist-auditor rule 23.
+		// `require-corp` requires every cross-origin subresource to opt in
+		// via CORP or CORS. The BFF serves no cross-origin resources, so
+		// this is effectively free.
+		h.Set("Cross-Origin-Embedder-Policy", "require-corp")
 		h.Set("Content-Security-Policy",
 			"default-src 'none'; "+
 				"script-src 'self' 'nonce-"+nonce+"' 'strict-dynamic'; "+

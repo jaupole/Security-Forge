@@ -1,0 +1,26 @@
+# CloudNativePG operator — production values for SecForge bare metal.
+#
+# Operator runs in `postgres-operator` namespace. Cluster CRs live in the
+# consuming namespaces (keycloak, spicedb, openbao, app) — see
+# infrastructure/cloudnativepg/clusters/*.yaml; for production those will
+# eventually move under platform/manifests/cloudnativepg/.
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 200Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+monitoring:
+  podMonitorEnabled: false   # enabled in Phase 7 (observability) component
+  grafanaDashboard:
+    create: false
+
+config:
+  data:
+    INHERITED_ANNOTATIONS: "secforge.platform/*"
+    INHERITED_LABELS: "secforge.platform/*"

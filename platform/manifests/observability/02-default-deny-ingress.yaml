@@ -1,0 +1,75 @@
+# Default-deny ingress for observability namespace. Subsequent allow
+# policies whitelist specific flows (Tempo from OTel collector / Grafana,
+# OTel collector from app/keycloak/spicedb/istio-system, etc.).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow intra-observability scrape / pod-to-pod (Prometheus → Tempo,
+# Grafana → Tempo/Loki, etc.). Coarse-grained but contained to the ns.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-observability
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+---
+# Allow kubelet probes (k3s kubelet hits pod IPs from the host network).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 3000     # Grafana
+        - protocol: TCP
+          port: 9090     # Prometheus
+        - protocol: TCP
+          port: 9093     # Alertmanager
+        - protocol: TCP
+          port: 9100     # node-exporter
+        - protocol: TCP
+          port: 8080     # kube-state-metrics
+        - protocol: TCP
+          port: 3100     # Loki HTTP
+        - protocol: TCP
+          port: 9095     # Loki gRPC
+        - protocol: TCP
+          port: 3200     # Tempo HTTP
+        - protocol: TCP
+          port: 4317     # Tempo / OTel OTLP gRPC
+        - protocol: TCP
+          port: 4318     # OTel OTLP HTTP
+        - protocol: TCP
+          port: 8888     # otel-collector metrics

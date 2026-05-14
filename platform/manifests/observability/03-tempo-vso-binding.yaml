@@ -1,0 +1,72 @@
+# VSO binding for Tempo MinIO credentials (Phase 7-Tempo).
+#
+# Renders OpenBao secret/data/minio/tempo/credentials into the K8s Secret
+# `tempo-minio-credentials` in observability ns. Tempo's chart consumes
+# it via extraEnvFrom (see values/tempo.yaml).
+#
+# The 07b-tempo.sh component:
+#   1. Provisions a scoped MinIO user `tempo-user` with bucket-only access
+#      to tempo-traces.
+#   2. Stages the access keys at OpenBao secret/minio/tempo/credentials.
+#   3. Applies this binding (creates the SA + VaultAuth + VaultStaticSecret).
+#   4. Creates the OpenBao K8s auth role tempo-vso bound to the SA + vso policy.
+#   5. Waits for VSO to render the K8s Secret.
+#   6. helm install Tempo.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tempo-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: tempo-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: tempo-vso
+    serviceAccount: tempo-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: tempo-minio-credentials-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: tempo-vso
+  mount: secret
+  type: kv-v2
+  path: minio/tempo/credentials
+  refreshAfter: 60s
+  destination:
+    name: tempo-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

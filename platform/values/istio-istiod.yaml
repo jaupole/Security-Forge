@@ -1,0 +1,45 @@
+# istio/istiod — Ambient profile.
+#
+# Trust domain notes:
+#   - Mesh uses built-in Citadel CA, cluster.local trust domain.
+#   - Coexists with SPIRE (which handles workload identity for app-to-OpenBao
+#     auth via secforge.platform). Mesh mTLS is purely internal between
+#     ambient-labeled pods.
+#   - SPIRE-as-CA integration deferred (operator-backlog #21 in local edition).
+#
+# Tracing is configured to expect otel-collector in `observability` namespace.
+# That namespace doesn't exist until Phase 7. Tracing is configured but the
+# collector endpoint isn't reachable until Phase 7 deploys; istiod logs will
+# show retries until then. Harmless.
+
+profile: ambient
+
+meshConfig:
+  accessLogFile: /dev/stdout
+  accessLogEncoding: JSON
+  enableTracing: true
+  defaultProviders:
+    tracing:
+      - opentelemetry
+  extensionProviders:
+    - name: opentelemetry
+      opentelemetry:
+        service: otel-collector.observability.svc.cluster.local
+        port: 4317
+
+pilot:
+  replicaCount: 1
+  autoscaleEnabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    PILOT_ENABLE_AMBIENT: "true"
+
+global:
+  proxy:
+    autoInject: disabled

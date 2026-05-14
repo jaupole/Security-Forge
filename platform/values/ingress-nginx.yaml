@@ -1,0 +1,80 @@
+# ingress-nginx — single ingress controller fronting all SecForge HTTPS.
+#
+# Chart: ingress-nginx/ingress-nginx
+#
+# Bare-metal, single-node mode: hostPort exposes :80/:443 on the host
+# directly while the pod runs in cluster network. Switched away from
+# hostNetwork=true after we hit the in-cluster hairpin issue (pods
+# couldn't reach the public hostname when the controller used the host's
+# external IP). With hostPort + ClusterIP the in-cluster path works AND
+# the host still serves on :80/:443.
+#
+# Reference: gap discovered during Phase 5 (memory file's
+# "ingress topology change required" entry).
+
+controller:
+  hostNetwork: false
+  hostPort:
+    enabled: true
+    ports:
+      http: 80
+      https: 443
+  publishService:
+    enabled: false
+  # Make `kubectl get ingress` show the public IP in ADDRESS column
+  # (since we're not using a LoadBalancer Service).
+  extraArgs:
+    publish-status-address: 65.21.25.40
+  service:
+    type: ClusterIP
+  # DNS resolution for the controller pod — default ClusterFirst is the
+  # right choice; explicit for documentation.
+  dnsPolicy: ClusterFirst
+  # ─── Default security headers on every response ────────────────────
+  # Added 2026-05-14 after ZAP baseline flagged security headers missing
+  # on 503/error pages.
+  #
+  # IMPORTANT: `add-headers` is applied with more_set_headers, which
+  # REPLACES the header on EVERY response — it does NOT defer to the
+  # upstream app. So this set may contain ONLY headers that are safe to
+  # force identically on every app.
+  #
+  # Content-Security-Policy is deliberately NOT here: forcing
+  # `default-src 'self'` clobbered the Wazuh / OpenSearch dashboard,
+  # which needs `script-src 'unsafe-eval'` to boot its webpack bundle
+  # (it threw EvalError and rendered "Something went wrong"). Each app
+  # owns its own CSP. There is no per-Ingress override either —
+  # snippet annotations are disabled cluster-wide (see PLAN.md), so a
+  # global CSP here would have no escape hatch.
+  config:
+    add-headers: ingress-nginx/secforge-default-headers
+    # Hide nginx version + variant.
+    server-tokens: "false"
+    # Defense-in-depth: HSTS at controller level too (overlaps per-ingress).
+    hsts: "true"
+    hsts-include-subdomains: "true"
+    hsts-max-age: "63072000"
+    hsts-preload: "true"
+    # SSL termination defaults.
+    ssl-protocols: "TLSv1.3 TLSv1.2"
+    ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
+    enable-ocsp: "true"
+
+# ConfigMap consumed by controller.config.add-headers above. nginx merges
+# these into every response.
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: secforge-default-headers
+      namespace: ingress-nginx
+    data:
+      # No Content-Security-Policy / X-Frame-Options here on purpose —
+      # more_set_headers would clobber each app's own (often nonce-based)
+      # policy. Apps set those themselves. See the comment on
+      # controller.config.add-headers above.
+      Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+      Referrer-Policy: "strict-origin-when-cross-origin"
+      X-Content-Type-Options: "nosniff"
+      X-Frame-Options: "DENY"
+      Cross-Origin-Opener-Policy: "same-origin"

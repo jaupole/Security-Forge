@@ -1,0 +1,107 @@
+# NetworkPolicies for openbao-seal.
+#
+# Strategy:
+#   - default-deny ingress for the openbao namespace (also covers the
+#     main openbao below; written here because seal must come up first).
+#   - allow-main-openbao-to-seal: ingress from main openbao pods on 8200.
+#   - allow-operator-debug-to-seal: ingress from a `role=openbao-debug`
+#     labeled pod (used by unseal-seal.sh and recovery scripts).
+#   - egress: DNS only; the seal-OpenBao has no other outbound deps.
+#
+# We do NOT add an ingress rule for the cluster operator's port-forward
+# path — kubectl port-forward speaks to the apiserver, which then
+# tunnels to the pod via the kubelet, not via the in-cluster network.
+# NetworkPolicy doesn't apply to kubelet-originated traffic; port-
+# forward works regardless.
+
+# ──────────────────────────────────────────────────────────────────────
+# default-deny ingress in the openbao namespace.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow main openbao → openbao-seal:8200 (Transit unseal calls).
+# Until the main openbao is deployed (Phase 5.3), this rule has no
+# matching source — that's fine; allow rules are additive on top of
+# default-deny.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-main-openbao-to-seal
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-seal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao-seal
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Allow operator debug pods (label `role=openbao-debug`) → seal:8200.
+# Used by unseal-seal.sh and one-shot init/admin pods.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-operator-debug-to-seal
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-seal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao-seal
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: openbao-debug
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Egress for openbao-seal — DNS only.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-seal-egress
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-seal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao-seal
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -1,0 +1,15 @@
+# cert-manager namespace.
+#
+# PSA: privileged enforce. cert-manager's controller manages CRD resources
+# cluster-wide; some of its components need elevated capabilities for
+# the webhook + DNS-01 challenge solver. Audit + warn at restricted.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    secforge.platform/component: cert-manager
+    secforge.platform/policy-exempt: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

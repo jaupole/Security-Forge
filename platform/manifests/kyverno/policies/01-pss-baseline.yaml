@@ -1,0 +1,115 @@
+# Pod Security Standards — Baseline.
+#
+# Enforces baseline-level constraints cluster-wide except for namespaces
+# with `secforge.platform/policy-exempt: "true"` (kyverno itself, plus
+# specific platform namespaces that need privileged: spire, observability,
+# wazuh-agent legacy, velero).
+#
+# Background: namespace-level PSS labels (pod-security.kubernetes.io/...)
+# audit + warn but don't ENFORCE if a namespace's enforce label is missing
+# or weaker. Kyverno makes the policy uniform regardless of how the
+# namespace was created.
+#
+# Validation failure mode: Audit initially. Flip to Enforce after one
+# week of clean policy reports.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: pss-baseline
+  annotations:
+    policies.kyverno.io/title: "Pod Security Standards — Baseline"
+    policies.kyverno.io/category: "Pod Security"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: "Pod"
+spec:
+  background: true
+  validationFailureAction: Audit         # flip to Enforce after soak
+  rules:
+    - name: baseline-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - spire
+                - observability
+                - wazuh-agent
+                - velero
+                - ingress-nginx
+                - cert-manager
+              selector:
+                matchLabels:
+                  secforge.platform/policy-exempt: "true"
+      validate:
+        message: "Pods must not use host namespaces (hostNetwork, hostPID, hostIPC)."
+        pattern:
+          spec:
+            =(hostNetwork): false
+            =(hostPID): false
+            =(hostIPC): false
+
+    - name: baseline-host-ports
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - spire
+                - observability
+                - wazuh-agent
+                - velero
+                - ingress-nginx
+                - cert-manager
+      validate:
+        message: "Pods must not use hostPort."
+        pattern:
+          spec:
+            =(containers):
+              - =(ports):
+                  - X(hostPort): 0
+            =(initContainers):
+              - =(ports):
+                  - X(hostPort): 0
+
+    - name: baseline-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - spire
+                - observability
+                - wazuh-agent
+                - velero
+      validate:
+        message: "Pods must not run privileged containers."
+        pattern:
+          spec:
+            =(containers):
+              - =(securityContext):
+                  =(privileged): false
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): false

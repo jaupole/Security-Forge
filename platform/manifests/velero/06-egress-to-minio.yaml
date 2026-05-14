@@ -1,0 +1,39 @@
+# Velero egress to in-cluster MinIO (S3-compatible backup target).
+#
+# Phase C #4 hardening (Layer A). Layered on top of the egress baseline
+# (default-deny + DNS + K8s API).
+#
+# Velero workloads needing MinIO:
+#   - velero controller (Deployment) — uploads K8s resource backups
+#   - node-agent (DaemonSet) — uploads kopia PV backup blobs
+#   - kopia maintenance Jobs (auto-spawned, varying labels) — read/write
+#     repository metadata + run gc
+#
+# All target MinIO Service in the minio namespace on port 9000.
+# podSelector: {} makes this apply to ALL pods in velero ns, which is
+# intentional — every pod that runs in the velero ns is part of the
+# backup pipeline and needs S3 access.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: velero
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - port: 9000
+          protocol: TCP

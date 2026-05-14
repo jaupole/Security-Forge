@@ -1,0 +1,61 @@
+# Require explicit CPU + memory requests AND limits on all containers.
+#
+# Without this, a misbehaving pod can starve the node (no limit) or
+# get OOMKilled erratically (no request). Hit us today with the SPIRE
+# CSI driver — its 64Mi limit was wrong, but we wouldn't have spotted
+# it in code review without an explicit-limit policy.
+#
+# Validation: Enforce. Promoted from Audit live on the cluster; this
+# file was lagging until 2026-05-14 sync. The companion
+# `mutate-default-resources` policy injects safe defaults at admission
+# time so that pods missing requests/limits get them auto-filled
+# rather than rejected outright.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/category: "Best Practices"
+    policies.kyverno.io/severity: medium
+spec:
+  background: true
+  validationFailureAction: Enforce
+  rules:
+    - name: require-cpu-memory-requests-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+      validate:
+        message: |
+          Containers must declare both `resources.requests` and
+          `resources.limits` for CPU and memory. This prevents a single
+          pod from starving the node (no limits) or being OOMKilled
+          erratically (no requests).
+        pattern:
+          spec:
+            =(initContainers):
+              - resources:
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+            containers:
+              - resources:
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"

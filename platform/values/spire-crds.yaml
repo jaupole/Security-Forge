@@ -1,0 +1,7 @@
+# SPIRE CRDs chart — installs ClusterSPIFFEID, ClusterFederatedTrustDomain,
+# ControllerManagerConfig CRDs ahead of the main spire chart.
+#
+# Chart: spiffe/spire-crds 0.5.0
+# Source: https://github.com/spiffe/helm-charts-hardened
+#
+# No values to override — chart is plain CRD install.

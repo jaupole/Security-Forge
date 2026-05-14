@@ -1,0 +1,155 @@
+# Loki single-binary — log store backed by MinIO.
+#
+# Storage: chunks + index in MinIO `loki-chunks`. Retention: 30d (per the
+# bare-metal plan; bumped from local edition's 14d because we have 1 TB).
+#
+# Authentication: no UI; queries arrive via Grafana datasource over the
+# in-cluster Service. NetworkPolicy restricts to observability ns.
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false   # single-tenant
+  schemaConfig:
+    configs:
+      - from: 2026-01-01
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  storage:
+    type: s3
+    bucketNames:
+      chunks: loki-chunks
+      ruler: loki-chunks
+      admin: loki-chunks
+    s3:
+      endpoint: minio.minio.svc.cluster.local:9000
+      region: us-east-1
+      s3ForcePathStyle: true
+      insecure: true   # in-cluster MinIO is plaintext on the cluster fabric
+      # access_key_id + secret_access_key come from the rendered Secret
+      # `loki-minio-credentials` via extraEnvFrom.
+
+  limits_config:
+    retention_period: 720h     # 30 days (bare-metal plan)
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    max_query_length: 721h
+    split_queries_by_interval: 15m
+
+  # See local-edition note: enabling the compactor's retention requires a
+  # delete_requests.gz object that doesn't exist on a fresh bucket; the
+  # compactor blocks indefinitely. Off → TSDB index expiry handles
+  # baseline cleanup; revisit once the bucket has had at least one delete
+  # request.
+  compactor:
+    working_directory: /var/loki/compactor
+    retention_enabled: false
+
+  commonConfig:
+    replication_factor: 1
+    path_prefix: /var/loki
+
+  rulerConfig:
+    storage:
+      type: local
+      local:
+        directory: /var/loki/rules
+
+singleBinary:
+  replicas: 1
+
+  # MinIO chart NP gates on `minio-client: "true"` label.
+  podLabels:
+    minio-client: "true"
+
+  # The chart's 1s readiness timeout is tighter than Loki's actual cold
+  # start; bumping prevents spurious NotReady.
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 30
+    timeoutSeconds: 5
+    periodSeconds: 10
+    failureThreshold: 5
+
+  persistence:
+    enabled: true
+    storageClass: ${STORAGE_CLASS}
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+  extraEnvFrom:
+    - secretRef:
+        name: loki-minio-credentials
+        optional: false
+
+# Internal-only; Grafana queries via in-cluster Service.
+gateway:
+  enabled: false
+
+# Single-binary, replicas=1 → memberlist trivially joins itself but DNS
+# must resolve before Ready. Publish not-ready endpoints to break the
+# cycle.
+memberlist:
+  service:
+    publishNotReadyAddresses: true
+
+# Sidecar (kiwigrid/k8s-sidecar) loads Loki ruler rules from labelled
+# ConfigMaps. Default chart leaves resources empty — Kyverno mutate-default
+# fills in 64Mi limit which is too tight for the watcher process and triggers
+# repeated OOMKill (observed 2026-05-14: 24× restarts in 108m + 8 "system
+# OOM" Wazuh alerts/hr from cgroup pressure). 256Mi limit comfortable headroom.
+sidecar:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# We use the platform's MinIO; disable the chart's bundled one.
+minio:
+  enabled: false
+
+# Disable bundled cache (memcached) — overkill for 1 replica + 1TB local.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+# Single-binary mode → these per-component replicas must be 0.
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+test:
+  enabled: false
+
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps
+  lokiCanary:
+    enabled: false

@@ -1,0 +1,286 @@
+// SecForge ecosystem authorization schema.
+//
+// Source of truth for the multi-app ecosystem (proposalapp, managerapp,
+// future invoiceapp / contactsapp / pmapp) — see plan
+// `crispy-sunset.md` § 2 and project memory
+// `project_ecosystem_identity_plan.md`.
+//
+// This is the **target** schema for the ecosystem rollout. The
+// existing schema.zed (Phase 9 helloworld baseline) stays in place
+// while Phase 0–4 of the ecosystem plan stands up. Once Phase 5
+// (managerapp integration) lands, this schema replaces schema.zed
+// (helloworld is deprecated).
+//
+// ## Three-layer authorization model (recap)
+//
+//   Layer 1 — Atomic permission catalog (THIS file)
+//             Owned by the platform. Fixed verbs that can be
+//             checked: view, edit, view_finance, approve, etc.
+//
+//   Layer 2 — Org-defined named role bundles
+//             (Postgres `org_roles` table in ecosystem_control DB)
+//             Org admins compose atomic permissions into roles
+//             ("Senior Manager", "QA Reviewer"). Assignment expands
+//             into the relationships defined here.
+//
+//   Layer 3 — App-admin per-role surface config
+//             (Postgres `org_role_app_config` table)
+//             For a given app, hide/lock pages or sections per role.
+//             Page + section in scope for first release; per-field
+//             redaction deferred to Phase 7+.
+//
+// ## Org hierarchy semantics  (REVISED 2026-05-13 — system-role cascade)
+//
+//   `organization` has an optional `parent` relation. Which tiers
+//   cascade is now scoped by SYSTEM ROLE — not all admin tiers leak
+//   to sub-orgs:
+//
+//     Organizational Administrator (relation `administrator`)
+//       → administer + view CASCADE through parent chain
+//     Administrator (relation `local_administrator`)
+//       → administer + view on THIS org only — no cascade
+//     Executive (relation `executive`)
+//       → view CASCADES (read-only across the tree)
+//     Member (relation `member`)
+//       → view on THIS org only — no cascade
+//     Platform (ecosystem) administrator
+//       → administer + view on EVERY org (super-admin)
+//
+//   The split is implemented with a `cascading_*` permission that only
+//   names the cascading tiers, plus a top-level permission that
+//   unions the cascading set with the local-only tier. Without the
+//   split, `parent->administer` would transitively pull the parent's
+//   `local_administrator` into the child — i.e. a plain Administrator
+//   would silently get admin on every sub-org. The split closes that.
+//
+//   The reversal of the original Phase 0 plan §1.1 ("no role cascade —
+//   sub-orgs independent") was deliberate: enterprise hierarchy
+//   expectations want OAs to manage the whole subtree. The 2026-05-13
+//   revision narrows the cascade to the right tiers.
+//
+// ## Authoritative permissions catalog
+//
+//   The list of atomic permissions org admins compose into role
+//   bundles is documented in plan §2.1 "Atomic permission catalog".
+//   When extending: add the relation + permission here, AND extend
+//   the catalog table in `Ecosystem Control` so the role-builder UI
+//   exposes it.
+
+definition user {}
+
+// ─── Platform ───────────────────────────────────────────────────────────
+// Singleton platform-level scope. The `administrator` relation grants
+// ecosystem-wide super-admin rights: see/manage every organization,
+// create top-level orgs, modify or deactivate any org regardless of
+// per-org membership.
+//
+// Only ONE `platform` object is expected to exist at runtime, with id
+// "ecosystem" (see `appObjectId`-style constant in the API). Grant via
+// `pnpm cli dev:grant-ecosystem-admin --username <user>`.
+
+definition platform {
+    relation administrator: user
+
+    permission administer = administrator
+}
+
+// ─── Organization ───────────────────────────────────────────────────────
+// The customer boundary. A user can be a member of multiple
+// organizations (multi-org membership, plan §1.1). The current
+// "active" org is selected via portal and travels in the JWT as
+// `active_org_id`; BFFs trust ONLY that claim, never an org id from
+// request body.
+
+definition organization {
+    relation parent: organization              // hierarchy — admin roles CASCADE
+    relation platform: platform                // back-link to platform — lets ecosystem-admin cascade
+    // System-role relations (set from organization_memberships.system_role):
+    relation administrator: user               // Organizational Administrator: cascades through sub-orgs
+    relation local_administrator: user         // Administrator: admin of THIS org only, no cascade
+    relation executive: user                   // Executive: cascading read-only across org tree
+    // Sub-admin "split" relations (set from job-role bundles):
+    relation member_manager: user              // can invite/suspend/assign-roles to members
+    relation position_manager: user            // can create/edit/delete role bundles
+    relation member: user                      // belongs to this org
+    relation app: app                          // org has activated this app
+
+    // NB: SpiceDB's .zed parser requires each permission expression on a
+    // single line (Phase-0 bug we already hit once — keep them flat).
+    //
+    // `cascading_administer` carries ONLY OA (administrator) through the
+    // parent chain. The top-level `administer` then unions that chain
+    // with the local-only `local_administrator` so the Administrator
+    // tier gets admin on THIS org but not on sub-orgs.
+    permission cascading_administer = administrator + parent->cascading_administer + platform->administer
+    permission administer = local_administrator + cascading_administer
+    // `cascading_view` carries OA + Executive — both are tree-wide read
+    // tiers. Local admins and plain members see only their own org.
+    permission cascading_view = administrator + executive + parent->cascading_view + platform->administer
+    permission view = local_administrator + member + cascading_view
+    permission create_sub_org = administer
+    // delete_org is intentionally narrower than administer: only the
+    // cascading Organizational Administrator tier (or platform admin)
+    // can deactivate an org. Plain Administrators (local_administrator)
+    // can edit but not delete — a parent-org OA, ancestor OA, or the
+    // platform layer must approve.
+    permission delete_org = administrator + parent->delete_org + platform->administer
+    permission cascading_manage_members = administrator + parent->cascading_manage_members + platform->administer
+    permission manage_members = local_administrator + member_manager + cascading_manage_members
+    permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
+    permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+}
+
+// ─── App ────────────────────────────────────────────────────────────────
+// A product instance scoped to one organization. The same product
+// (proposalapp) gets one `app:proposalapp:<orgId>` per activated org.
+//
+// Note: the relation/permission shape is wider than schema.zed's
+// because tenant-defined role bundles need to be expanded into ALL
+// the granular relations the bundles cover. Adding a new atomic
+// permission (e.g., a future `view_audit_log`) takes:
+//   1. Add `relation auditor: user` here
+//   2. Add `permission view_audit_log = auditor + administer` here
+//   3. Add `view_audit_log` to the catalog seed in ecosystem_control
+//   4. Existing role bundles unaffected; org admins can add it.
+
+definition app {
+    relation organization: organization
+
+    // Identity-bearing relations that role bundles map onto.
+    relation administrator: user               // app-level admin (configures surfaces per role)
+    relation creator: user
+    relation editor: user
+    relation viewer: user
+    relation commenter: user
+    relation approver: user
+    relation finance: user                     // sees financial data (cost rates, margins)
+    relation exporter: user
+    relation inviter: user
+    relation invite_approver: user
+    relation workflow_approver: user
+
+    // Cascading permissions: org admins (direct or inherited via parent
+    // chain) implicitly have everything on every app in the org;
+    // app admins inherit all per-app perms.
+    // NOTE: refs use `organization->administer` (the cascading
+    // permission) not `->administrator` (only direct relation), so
+    // sub-org apps inherit parent admin rights.
+    permission administer       = administrator + organization->administer
+    permission create           = creator + administer
+    permission view             = viewer + editor + commenter + approver + finance + administer + organization->administer
+    permission edit             = editor + administer
+    permission comment          = commenter + approver + edit            // approver implies commenter
+    permission approve          = approver + administer
+    permission view_finance     = finance + administer
+    permission export           = exporter + administer
+    permission invite           = inviter + administer
+    permission approve_invite   = invite_approver + administer
+    permission approve_workflow = workflow_approver + administer
+}
+
+// ─── Resource ───────────────────────────────────────────────────────────
+// Per-app domain types extend `resource` for shared semantics, then
+// add their own relations/permissions in app-specific definitions.
+// (See `proposalapp/proposal`, `managerapp/project`, etc. below.)
+
+definition resource {
+    relation app: app
+    relation owner: user
+    relation editor: user
+    relation viewer: user
+    relation commenter: user
+    relation approver: user
+
+    permission administer = owner + app->administer
+    permission edit       = owner + editor + app->administer
+    permission view       = owner + editor + viewer + commenter + approver + app->view
+    permission comment    = commenter + approver + edit
+    permission approve    = approver + administer
+    permission delete     = owner + app->administer
+}
+
+// ─── Cross-app workflow promotions ──────────────────────────────────────
+// "Promote" actions are workflow REQUESTS that an initiator submits
+// and an approver confirms. The destination resource is created only
+// after the workflow's `complete` permission is satisfied (i.e., all
+// required approvers have approved). State + audit trail live in
+// ecosystem_control's `pending_workflows` + `workflow_approvals`
+// tables; SpiceDB enforces the gate.
+
+definition workflow_promote_pursuit_to_proposal {
+    relation source_pursuit: resource           // in managerapp
+    relation initiator: user
+    relation approver: user                     // approve_workflow on proposalapp
+
+    permission initiate = initiator & source_pursuit->edit
+    permission complete = approver & initiate   // both required
+}
+
+definition workflow_promote_proposal_to_project {
+    relation source_proposal: resource          // in proposalapp
+    relation initiator: user
+    relation manager_approver: user             // approve_workflow on managerapp + manager bundle
+    relation finance_approver: user             // approve_workflow on managerapp + finance perm
+
+    permission initiate = initiator & source_proposal->edit
+    permission complete = manager_approver & finance_approver & initiate
+}
+
+// ─── Per-app domain types — proposalapp (Proposal Forge) ────────────────
+// Migration plan: the existing PF JWT/role model collapses into
+// these. See plan §3.2 for the role mapping table.
+
+definition proposalapp/proposal {
+    relation app: app
+    relation owner: user
+    relation editor: user
+    relation reviewer: user                     // PF "REVIEWER" project-role
+    relation viewer: user
+
+    permission view   = owner + editor + reviewer + viewer + app->view
+    permission edit   = owner + editor + app->administer
+    permission review = owner + editor + reviewer + app->administer  // can comment + approve
+    permission approve = reviewer + app->administer
+    permission delete = owner + app->administer
+}
+
+// ─── Per-app domain types — managerapp (Project Tracker) ────────────────
+// Names match existing schema.zed `project_tracker/*` definitions
+// for continuity; this re-declares them in the ecosystem schema.
+// Migration switches the `organization` back-pointer from the legacy
+// `organization` definition (helloworld) to the ecosystem
+// `organization` (this file).
+
+definition managerapp/project {
+    relation app: app
+    relation owner: user                        // the PM
+    relation editor: user
+    relation viewer: user
+
+    permission view   = viewer + editor + owner + app->view
+    permission edit   = editor + owner + app->administer
+    permission delete = owner + app->administer
+    permission manage_budget = owner + app->administer
+}
+
+definition managerapp/pursuit {
+    relation app: app
+    relation owner: user
+    relation editor: user
+    relation viewer: user
+
+    permission view    = viewer + editor + owner + app->view
+    permission edit    = editor + owner + app->administer
+    permission promote = owner + app->administer  // pursuit → proposal (workflow gate)
+}
+
+definition managerapp/task {
+    relation parent_project: managerapp/project
+    relation parent_pursuit: managerapp/pursuit
+    relation owner: user
+    relation assignee: user
+
+    permission view = owner + assignee + parent_project->view + parent_pursuit->view
+    permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
+    permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
+}

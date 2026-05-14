@@ -1,0 +1,61 @@
+# VSO binding for CNPG MinIO backup credentials in spicedb ns.
+# (Same shape as keycloak/06-cnpg-vso-binding.yaml; separate file so each
+# cluster ns owns its rendered Secret.)
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cnpg-vso
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: cnpg-vso
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: cnpg-spicedb-vso
+    serviceAccount: cnpg-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: spicedb
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: cnpg-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 60s
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

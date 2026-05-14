@@ -1,0 +1,124 @@
+# Layer A NetworkPolicies for the postgres-operator (CNPG) namespace.
+#
+# Holds the cnpg-cloudnative-pg operator pod. The operator:
+#   - Receives admission webhook calls from kube-apiserver (port 9443/8443
+#     depending on chart version)
+#   - Reconciles CNPG Cluster CRs by talking to the K8s API
+#   - Connects to PostgreSQL clusters across namespaces (keycloak, spicedb,
+#     app, ecosystem, verify-restore) for status checks + readiness
+#
+# Applied 2026-05-14.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  - to:
+    - ipBlock:
+        cidr: 10.43.0.1/32
+    ports:
+    - protocol: TCP
+      port: 443
+  - to:
+    - ipBlock:
+        cidr: 65.21.25.40/32
+    ports:
+    - protocol: TCP
+      port: 6443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-cnpg-cluster-pods
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - namespaceSelector:
+        matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [keycloak, spicedb, verify-restore, app, ecosystem, cnpg-system]
+    ports:
+    - protocol: TCP
+      port: 5432  # postgres
+    - protocol: TCP
+      port: 8000  # cnpg-managed metrics
+    - protocol: TCP
+      port: 9187  # postgres_exporter
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-cnpg-webhook
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 9443
+    - protocol: TCP
+      port: 8443

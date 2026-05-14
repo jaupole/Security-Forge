@@ -1,0 +1,82 @@
+# Kyverno — Kubernetes admission policy engine.
+#
+# Chart: kyverno/kyverno
+# Source: https://kyverno.github.io/kyverno
+#
+# What it does in our stack:
+#   - Enforces Pod Security Standards (PSS) at admission via ClusterPolicy
+#     (vs. relying solely on namespace labels which only audit, not enforce
+#     hard at create-time)
+#   - Enforces image signature verification (cosign) when we have signed
+#     images flowing through the platform
+#   - Enforces resource limits (no unbounded pods)
+#   - Disallows :latest tags in production-class namespaces
+#   - Future hook: outbound-secret guardrails, mutating policies for app
+#     namespace defaults
+#
+# We deploy in HA mode (3 replicas of the admission/policy controllers)
+# even on single-node so that admission stays responsive during pod
+# rolls. Webhooks are failurePolicy=Fail by default — we don't want a
+# Kyverno outage to allow bypass.
+
+admissionController:
+  replicas: 3                       # HA across pod restarts
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 512Mi }
+  # Webhook failurePolicy: Fail — admission must succeed or the request
+  # is denied. Otherwise a misconfigured webhook lets bad pods through.
+  webhookFailurePolicy: Fail
+
+backgroundController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+cleanupController:
+  replicas: 1
+  resources:
+    requests: { cpu: 25m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+reportsController:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# Don't deploy Kyverno's own UI (Kyverno Reports app) — we view policies
+# via kubectl + Wazuh integration instead.
+features:
+  policyExceptions:
+    enabled: true                   # let us write PolicyException CRs
+    namespace: ""                   # any namespace can hold exceptions
+  # Allow validate.failureAction: Audit (warn) AND Enforce (block).
+  # We'll start most policies in Audit mode; flip to Enforce after one
+  # week of clean reports.
+
+# Resource filters: tell Kyverno's webhook to skip these resource types
+# (cuts admission load + avoids policy loops on Kyverno's own resources).
+# Chart 3.8.0+ expects a YAML LIST, not a multi-line string.
+config:
+  resourceFilters:
+    - "[Event,*,*]"
+    - "[*/*,kube-system,*]"
+    - "[*/*,kube-public,*]"
+    - "[*/*,kube-node-lease,*]"
+    - "[Node,*,*]"
+    - "[APIService,*,*]"
+    - "[TokenReview,*,*]"
+    - "[SubjectAccessReview,*,*]"
+    - "[SelfSubjectAccessReview,*,*]"
+    - "[Binding,*,*]"
+    - "[ReplicaSet,*,*]"
+    - "[AdmissionReport,*,*]"
+    - "[ClusterAdmissionReport,*,*]"
+    - "[BackgroundScanReport,*,*]"
+    - "[ClusterBackgroundScanReport,*,*]"
+    - "[ClusterRole,*,*]"
+    - "[ClusterRoleBinding,*,*]"
+    - "[Role,*,*]"
+    - "[RoleBinding,*,*]"

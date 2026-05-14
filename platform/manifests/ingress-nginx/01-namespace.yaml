@@ -1,0 +1,15 @@
+# ingress-nginx namespace.
+#
+# PSA: privileged enforce. The controller binds to host ports 80/443,
+# which is privileged-tier behavior. Audit + warn at restricted to flag
+# any non-controller pod in this ns.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    secforge.platform/component: ingress-nginx
+    secforge.platform/policy-exempt: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -1,0 +1,36 @@
+# Intra-namespace egress for SPIRE.
+#
+# Phase C #4 hardening (Layer A). Layered on top of the egress baseline
+# (default-deny + DNS + K8s API).
+#
+# SPIRE component egress flows:
+#   - spire-agent → spire-server:8081 (agent registration + SVID issuance)
+#   - spire-server → spire-server (HA replication; single-replica today
+#     but the chart's intra-StatefulSet allow is harmless)
+#   - spire-spiffe-oidc-discovery-provider → spire-server:8081 (its own
+#     SVID, fetched via spiffe-helper init)
+#   - spire-spiffe-csi-driver → spire-agent (Workload API via UDS — this
+#     is a host UDS, no NP relevance, but listed for completeness)
+#
+# All cross-pod TCP traffic stays in-ns. Allow any-pod → any-pod within
+# the spire namespace. Egress to OTHER namespaces (e.g., emitting JWT-SVID
+# tokens to apps) happens via the SPIRE Workload API host socket, NOT
+# K8s networking — so no cross-ns egress allow needed.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-intra-spire
+  namespace: spire
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spire

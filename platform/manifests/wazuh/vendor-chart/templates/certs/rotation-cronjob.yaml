@@ -1,0 +1,168 @@
+{{- if or .Values.indexer.enabled .Values.manager.enabled }}
+{{- if .Values.certs.rotation.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "wazuh.fullname" . }}-cert-rotation
+  labels:
+    {{- include "wazuh.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.certs.rotation.schedule | quote }}
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "wazuh.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ include "wazuh.fullname" . }}-certs-generator
+          restartPolicy: OnFailure
+          {{- include "wazuh.dnsConfig" . | nindent 10 }}
+          {{- with .Values.indexer.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.indexer.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: cert-rotation
+              image: "{{ .Values.global.initImages.kubectl.repository }}:{{ .Values.global.initImages.kubectl.tag }}"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  FULLNAME="{{ include "wazuh.fullname" . }}"
+                  NAMESPACE="{{ .Release.Namespace }}"
+                  RENEW_BEFORE={{ .Values.certs.rotation.renewBeforeDays }}
+                  CERTS_DIR="/tmp/certs"
+                  mkdir -p "$CERTS_DIR"
+
+                  echo "=== Certificate Rotation Check ==="
+
+                  # Extract current root CA cert from secret
+                  kubectl get secret "${FULLNAME}-indexer-certs" -n "$NAMESPACE" \
+                    -o jsonpath='{.data.root-ca\.pem}' | base64 -d > "$CERTS_DIR/current-root-ca.pem"
+
+                  # Check expiration
+                  EXPIRY=$(openssl x509 -enddate -noout -in "$CERTS_DIR/current-root-ca.pem" | cut -d= -f2)
+                  EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$EXPIRY" +%s 2>/dev/null)
+                  NOW_EPOCH=$(date +%s)
+                  DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+
+                  echo "Root CA expires: $EXPIRY"
+                  echo "Days remaining: $DAYS_LEFT"
+                  echo "Renewal threshold: $RENEW_BEFORE days"
+
+                  if [ "$DAYS_LEFT" -gt "$RENEW_BEFORE" ]; then
+                    echo "✓ Certificates are still valid. No rotation needed."
+                    exit 0
+                  fi
+
+                  echo "⚠ Certificates expire in $DAYS_LEFT days. Rotating..."
+
+                  # Delete existing cert secrets so the certs-generator job can recreate them
+                  kubectl delete secret "${FULLNAME}-indexer-certs" -n "$NAMESPACE" --ignore-not-found
+                  kubectl delete secret "${FULLNAME}-dashboard-certs" -n "$NAMESPACE" --ignore-not-found
+                  kubectl delete secret "${FULLNAME}-filebeat-certs" -n "$NAMESPACE" --ignore-not-found
+
+                  echo "Old certificates deleted. Run 'helm upgrade' to regenerate via pre-install hook."
+                  echo "Or delete and recreate the certs-generator job manually:"
+                  echo "  kubectl delete job ${FULLNAME}-certs-generator -n $NAMESPACE"
+
+                  # Generate new certs inline (same logic as certs/job.yaml)
+                  echo "=== Generating new Root CA ==="
+                  openssl genrsa -out "$CERTS_DIR/root-ca-key.pem" {{ .Values.certs.keySize }}
+                  openssl req -new -x509 -sha256 -key "$CERTS_DIR/root-ca-key.pem" \
+                    -out "$CERTS_DIR/root-ca.pem" -days {{ .Values.certs.rootCaDays }} \
+                    -subj "/C={{ .Values.certs.subject.country }}/L={{ .Values.certs.subject.locality }}/O={{ .Values.certs.subject.organization }}/CN=Wazuh Root CA"
+
+                  generate_cert() {
+                    local name=$1
+                    local cn=$2
+                    local san=$3
+                    echo "=== Generating cert: $name ==="
+                    openssl genrsa -out "$CERTS_DIR/${name}-key.pem" {{ .Values.certs.keySize }}
+                    cat > "$CERTS_DIR/${name}.cnf" <<CNFEOF
+                  [req]
+                  distinguished_name = req_dn
+                  req_extensions = v3_req
+                  prompt = no
+                  [req_dn]
+                  C = {{ .Values.certs.subject.country }}
+                  L = {{ .Values.certs.subject.locality }}
+                  O = {{ .Values.certs.subject.organization }}
+                  CN = ${cn}
+                  [v3_req]
+                  subjectAltName = ${san}
+                  CNFEOF
+                    cat > "$CERTS_DIR/${name}-ext.cnf" <<EXTEOF
+                  subjectAltName = ${san}
+                  EXTEOF
+                    openssl req -new -key "$CERTS_DIR/${name}-key.pem" \
+                      -out "$CERTS_DIR/${name}.csr" -config "$CERTS_DIR/${name}.cnf"
+                    openssl x509 -req -in "$CERTS_DIR/${name}.csr" \
+                      -CA "$CERTS_DIR/root-ca.pem" -CAkey "$CERTS_DIR/root-ca-key.pem" \
+                      -CAcreateserial -out "$CERTS_DIR/${name}.pem" \
+                      -days {{ .Values.certs.leafCertDays }} -sha256 \
+                      -extfile "$CERTS_DIR/${name}-ext.cnf"
+                  }
+
+                  INDEXER_SAN="DNS:${FULLNAME}-indexer,DNS:${FULLNAME}-indexer.${NAMESPACE}.svc,DNS:${FULLNAME}-indexer.${NAMESPACE}.svc.cluster.local,DNS:localhost,IP:127.0.0.1"
+                  for i in $(seq 0 {{ sub (int .Values.indexer.replicas) 1 }}); do
+                    INDEXER_SAN="${INDEXER_SAN},DNS:${FULLNAME}-indexer-${i}.${FULLNAME}-indexer.${NAMESPACE}.svc.cluster.local"
+                  done
+
+                  generate_cert "admin" "admin" "DNS:admin"
+                  generate_cert "indexer" "${FULLNAME}-indexer" "$INDEXER_SAN"
+                  generate_cert "dashboard" "${FULLNAME}-dashboard" \
+                    "DNS:${FULLNAME}-dashboard,DNS:${FULLNAME}-dashboard.${NAMESPACE}.svc,DNS:${FULLNAME}-dashboard.${NAMESPACE}.svc.cluster.local,DNS:localhost,IP:127.0.0.1"
+                  generate_cert "filebeat" "${FULLNAME}-manager" \
+                    "DNS:${FULLNAME}-manager,DNS:${FULLNAME}-manager.${NAMESPACE}.svc,DNS:${FULLNAME}-manager.${NAMESPACE}.svc.cluster.local,DNS:localhost,IP:127.0.0.1"
+
+                  echo "=== Creating new Kubernetes Secrets ==="
+                  kubectl create secret generic "${FULLNAME}-indexer-certs" -n "$NAMESPACE" \
+                    --from-file=root-ca.pem="$CERTS_DIR/root-ca.pem" \
+                    --from-file=indexer.pem="$CERTS_DIR/indexer.pem" \
+                    --from-file=indexer-key.pem="$CERTS_DIR/indexer-key.pem" \
+                    --from-file=admin.pem="$CERTS_DIR/admin.pem" \
+                    --from-file=admin-key.pem="$CERTS_DIR/admin-key.pem"
+                  kubectl create secret generic "${FULLNAME}-dashboard-certs" -n "$NAMESPACE" \
+                    --from-file=root-ca.pem="$CERTS_DIR/root-ca.pem" \
+                    --from-file=dashboard.pem="$CERTS_DIR/dashboard.pem" \
+                    --from-file=dashboard-key.pem="$CERTS_DIR/dashboard-key.pem"
+                  kubectl create secret generic "${FULLNAME}-filebeat-certs" -n "$NAMESPACE" \
+                    --from-file=root-ca.pem="$CERTS_DIR/root-ca.pem" \
+                    --from-file=filebeat.pem="$CERTS_DIR/filebeat.pem" \
+                    --from-file=filebeat-key.pem="$CERTS_DIR/filebeat-key.pem"
+
+                  echo "=== Certificates rotated. Restarting pods ==="
+                  kubectl rollout restart statefulset "${FULLNAME}-indexer" -n "$NAMESPACE"
+                  kubectl rollout restart statefulset "${FULLNAME}-manager" -n "$NAMESPACE"
+                  kubectl rollout restart deployment "${FULLNAME}-dashboard" -n "$NAMESPACE"
+                  echo "=== Rotation complete ==="
+{{- end }}
+{{- end }}

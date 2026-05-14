@@ -1,0 +1,51 @@
+# VSO binding for MinIO SSE-S3 master key.
+#
+# Renders OpenBao secret/data/platform/minio/sse-master-key into K8s
+# Secret `minio-kms-creds` in minio ns with key `MINIO_KMS_SECRET_KEY`
+# (the exact env var name MinIO reads at startup).
+#
+# Format MinIO expects: `<key-name>:<base64-of-32-byte-key>`
+# Shape: `secforge-minio-key:<44-char-base64>` (real value generated
+# by the bootstrap script; rendered into the K8s Secret by VSO below).
+#
+# Provisioned by 09f-minio-sse-encryption.sh:
+#   1. Generates 32-byte random master key on first run, stashes in
+#      OpenBao at platform/minio/sse-master-key (passphrase + key-name fields).
+#   2. Re-loads vso.hcl policy.
+#   3. Applies this binding.
+#   4. Patches MinIO Deployment with envFrom: minio-kms-creds.
+#   5. After MinIO restarts, runs `mc encrypt set sse-s3 local/backups`
+#      so all FUTURE object PUTs to the bucket get auto-encrypted.
+#   6. Triggers fresh CNPG Backup CRs to write encrypted copies.
+#
+# (cert-manager-vso K8s auth role pattern reused — minio-vso role is
+# bound to the `vso` policy which has the read-cap on this path.)
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: minio-kms-creds
+  namespace: minio
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: minio-vso
+  mount: secret
+  type: kv-v2
+  path: platform/minio/sse-master-key
+  refreshAfter: 60s
+  destination:
+    name: minio-kms-creds
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # MinIO reads this exact env var name at startup; combined value is
+        # `<key-name>:<base64-key>` (both fields stashed in the same KV path).
+        MINIO_KMS_SECRET_KEY:
+          text: '{{ .Secrets.key_name }}:{{ .Secrets.master_key_b64 }}'

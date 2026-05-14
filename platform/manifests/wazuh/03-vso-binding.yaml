@@ -1,0 +1,63 @@
+# VSO binding for the Wazuh dashboard's OIDC config bundle.
+#
+# Renders K8s Secret `wazuh-oidc-vso` in the `wazuh` namespace from the
+# OpenBao path `secret/data/wazuh/oidc`. Keys passed through verbatim
+# (no template transformation) so 07j can extract by jsonpath.
+#
+# Bootstrap order:
+#   1. 07i-keycloak-wazuh-client.sh — provisions Keycloak client + writes
+#      secret/data/wazuh/oidc to OpenBao.
+#   2. (vso.hcl already includes secret/data/wazuh/oidc — no policy edit
+#      needed; just a re-load in 07j.)
+#   3. Apply this manifest.
+#   4. Create K8s auth role wazuh-vso (handled inline in 07j).
+#   5. 07j-wazuh-oidc-configure.sh consumes the rendered Secret.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wazuh-vso
+  namespace: wazuh
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: wazuh-vso
+  namespace: wazuh
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: wazuh-vso
+    serviceAccount: wazuh-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: wazuh-oidc-vso
+  namespace: wazuh
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: wazuh-vso
+  mount: secret
+  type: kv-v2
+  path: wazuh/oidc
+  refreshAfter: 60s
+  destination:
+    name: wazuh-oidc-vso
+    create: true
+    type: Opaque

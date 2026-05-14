@@ -1,0 +1,106 @@
+# Wazuh values overlay (production version of infrastructure/wazuh/values.yaml).
+#
+# Differences from local:
+#   - dashboard.ingress.host: wazuh.${DOMAIN}        (was wazuh.secforge.local)
+#   - cluster-issuer: ${LE_ISSUER}                   (was mkcert-issuer)
+#   - storage class: wazuh-local                     (was hostpath; the
+#     wazuh-local SC is no-provisioner + pre-bound to static PVs on
+#     /var/lib/wazuh, the dedicated 100G partition. See
+#     platform/manifests/k3s/storageclass-wazuh-local.yaml and
+#     platform/manifests/wazuh/static-pvs.yaml. Apply via 00d-wazuh-storage.sh
+#     BEFORE 07-wazuh.sh on fresh installs.)
+#
+# Chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.4) — vendored.
+
+storageClass:
+  create: false
+
+# adminPassword + others NOT here — apply.sh creates 4 Secrets with random
+# passwords, chart consumes via existingSecrets.
+security:
+  existingSecrets:
+    indexer:   wazuh-indexer-creds
+    api:       wazuh-api-creds
+    dashboard: wazuh-dashboard-creds
+    filebeat:  wazuh-filebeat-creds
+
+vault:
+  enabled: false
+  bootstrap:
+    enabled: false
+
+credentialRotation:
+  enabled: false
+
+s3:
+  enabled: false
+
+indexer:
+  replicas: 1
+  javaOpts: "-Xms1536m -Xmx1536m"
+  resources:
+    requests: { cpu: 250m, memory: 1536Mi }
+    # 3Gi (was 2Gi): the indexer JVM uses ~1.85Gi at steady state; running
+    # `securityadmin.sh` (needed by 07j to push OIDC auth config into the
+    # .opendistro_security index) starts a second JVM in the same container
+    # and OOMKills the indexer at 2Gi. 3Gi gives ~1Gi headroom.
+    limits:   { cpu: 1,    memory: 3Gi }
+  storage:
+    storageClass: wazuh-local
+    size: 10Gi  # request only; bound PV size is 30Gi (see static-pvs.yaml)
+  driftDetection:
+    enabled: false
+  watchdog:
+    enabled: false
+  metrics:
+    enabled: true
+
+manager:
+  replicas: 1
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits:   { cpu: 1,    memory: 1500Mi }
+  storage:
+    storageClass: wazuh-local
+    size: 10Gi  # request only; bound PV size is 50Gi (see static-pvs.yaml)
+  cluster:
+    enabled: false
+  agentGroups: {}
+  metrics:
+    enabled: true
+
+dashboard:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits:   { cpu: 500m, memory: 768Mi }
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    host: wazuh.${DOMAIN}
+    annotations:
+      cert-manager.io/cluster-issuer: ${LE_ISSUER}
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    tls:
+      - secretName: wazuh-dashboard-tls
+        hosts:
+          - wazuh.${DOMAIN}
+  ssl:
+    enabled: false
+  metrics:
+    enabled: true
+
+# Chart's agent DaemonSet stays disabled; we deploy a hardened standalone
+# DaemonSet in the wazuh-agent namespace (PSS=privileged for hostPath).
+agent:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+cleanup:
+  enabled: true
+
+certs:
+  rotation:
+    enabled: false

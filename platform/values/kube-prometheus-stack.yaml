@@ -1,0 +1,248 @@
+# kube-prometheus-stack — Prometheus + Alertmanager + node-exporter +
+# kube-state-metrics + Grafana with OIDC-federated login.
+#
+# Single-node bare metal sizing: 14d Prom retention, 1 Grafana replica.
+# Cross-namespace ServiceMonitor selection ON so platform components
+# (Tempo, Loki, OTel collector, etc.) ship metrics without per-monitor
+# allowlisting.
+#
+# Grafana production deltas vs local edition:
+#   - real Let's Encrypt cert via cert-manager Certificate (no mkcert)
+#   - hostAliases: auth.${DOMAIN} → ingress-nginx ClusterIP (same hairpin
+#     fix we use on OpenBao). HARDCODED IP — re-update if ingress-nginx
+#     is reinstalled.
+#   - root_url / domain: grafana.${DOMAIN}
+#   - tls_client_ca dropped — Let's Encrypt is in the system CA bundle
+#   - Grafana password lookup auto-provisioned by chart; Admin role
+#     mapped from preferred_username (same single-user workaround as the
+#     local edition pending the role_attribute_path proper fix)
+
+fullnameOverride: kps
+
+# ─── Prometheus ────────────────────────────────────────────────────────
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+    probeSelectorNilUsesHelmValues: false
+    probeSelector: {}
+    probeNamespaceSelector: {}
+
+    retention: 14d
+    retentionSize: "18GB"
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ${STORAGE_CLASS}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+
+    # Override the operator-injected config-reloader sidecar to set
+    # explicit resource limits. Without this, the require-resource-limits
+    # Kyverno policy (Enforce) blocks pod admission. Added 2026-05-14
+    # after a STS-template re-apply triggered pod recreate + admission failure.
+    containers:
+      - name: config-reloader
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
+
+  ingress:
+    enabled: false   # internal only; Grafana is the user-facing surface
+
+# ─── Alertmanager ──────────────────────────────────────────────────────
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    retention: 120h
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ${STORAGE_CLASS}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  ingress:
+    enabled: false
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["alertname", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'null'
+      routes:
+        - matchers: [alertname="Watchdog"]
+          receiver: 'null'
+    receivers:
+      - name: 'null'
+
+# ─── Grafana ───────────────────────────────────────────────────────────
+grafana:
+  replicas: 1
+  defaultDashboardsTimezone: browser
+
+  # Modern K8s handles PV ownership via fsGroup; chart's initChownData
+  # init container is unnecessary and violates restricted PSS.
+  initChownData:
+    enabled: false
+
+  persistence:
+    enabled: true
+    storageClassName: ${STORAGE_CLASS}
+    size: 5Gi
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+  # Resolve auth.${DOMAIN} (OIDC token endpoint) AND grafana.${DOMAIN}
+  # (sidecar's reload-datasources call gets 302-redirected to public host
+  # because enforce_domain=true) to the ingress-nginx ClusterIP.
+  # Same hairpin fix as OpenBao. If ingress-nginx is reinstalled, update this IP.
+  hostAliases:
+    - ip: "10.43.119.237"
+      hostnames:
+        - auth.${DOMAIN}
+        - grafana.${DOMAIN}
+
+  # OIDC client_secret rendered by VSO (manifests/observability/05-grafana-vso-binding.yaml)
+  # into Secret `grafana-oidc-client-secret`. The Secret's key
+  # GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET is read directly via envFrom.
+  envFromSecrets:
+    - name: grafana-oidc-client-secret
+      optional: false
+
+  grafana.ini:
+    server:
+      root_url: "https://grafana.${DOMAIN}"
+      domain: "grafana.${DOMAIN}"
+      enforce_domain: true
+    security:
+      cookie_secure: true
+      cookie_samesite: "lax"
+      strict_transport_security: true
+      strict_transport_security_max_age_seconds: 63072000   # 2y to match platform HSTS
+      strict_transport_security_preload: true
+      x_content_type_options: true
+      x_xss_protection: true
+    auth:
+      disable_login_form: true            # OIDC only; no local username/password
+      disable_signout_menu: false
+      oauth_auto_login: false             # let user click; no silent SSO
+    "auth.generic_oauth":
+      enabled: true
+      name: "Keycloak"
+      allow_sign_up: true                  # auto-provision Grafana users on first OIDC login
+      client_id: "grafana"
+      # client_secret comes from envFromSecrets above (GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET)
+      scopes: "openid profile email"
+      auth_url: "https://auth.${DOMAIN}/realms/platform/protocol/openid-connect/auth"
+      token_url: "https://auth.${DOMAIN}/realms/platform/protocol/openid-connect/token"
+      api_url: "https://auth.${DOMAIN}/realms/platform/protocol/openid-connect/userinfo"
+      tls_skip_verify_insecure: false
+      use_pkce: true
+      # Same single-user workaround as OpenBao until the realm_access.roles
+      # claim path is debugged (Phase 7d follow-up). Bind on preferred_username.
+      role_attribute_path: "preferred_username == 'jason.upole' && 'Admin' || 'Viewer'"
+      role_attribute_strict: true
+    log:
+      mode: "console"
+      level: "info"
+
+  sidecar:
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true     # auto-creates Prometheus DS pointing at the chart's Prom
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      provider:
+        allowUiUpdates: false            # dashboards are git-source-of-truth
+
+  # We provide our own Ingress (manifests/observability/06-grafana-ingress.yaml).
+  ingress:
+    enabled: false
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+
+# ─── kube-state-metrics ────────────────────────────────────────────────
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# ─── prometheus-node-exporter ──────────────────────────────────────────
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+  extraArgs:
+    # Read host textfile collector written by /usr/local/sbin/mount-count-exporter.sh
+    # (systemd timer, every 60s). Exposes node_mount_count + node_mount_max_limit.
+    # /host/root is the hostPath mount of / in the node-exporter DaemonSet.
+    - --collector.textfile.directory=/host/root/var/lib/node_exporter/textfile_collector
+
+# ─── k3s control-plane scrapers off ────────────────────────────────────
+# k3s embeds controller-manager, scheduler, etcd into a single process and
+# doesn't expose them on the conventional ports the chart tries to scrape.
+kubeControllerManager:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+windowsMonitoring:
+  enabled: false

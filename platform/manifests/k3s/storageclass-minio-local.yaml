@@ -1,0 +1,18 @@
+# StorageClass for the MinIO PV pinned to /var/lib/minio (dedicated 250G partition).
+#
+# Mirrors the wazuh-local SC pattern. See storageclass-wazuh-local.yaml
+# for the full rationale.
+#
+# Companion files:
+#   platform/manifests/minio/static-pv.yaml    — the actual PV object
+#   platform/components/00e-minio-storage.sh   — idempotent installer
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: minio-local
+  annotations:
+    secforge.platform/purpose: "Static PV on /var/lib/minio; no dynamic provisioner."
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: false

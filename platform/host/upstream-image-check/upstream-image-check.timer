@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly upstream container image digest check (Monday 04:00)
+
+[Timer]
+OnCalendar=Mon *-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

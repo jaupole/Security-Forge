@@ -1,0 +1,54 @@
+# Velero ScheduledBackup CRs.
+#
+# Two schedules:
+#   - daily-everything: Every day at 02:00 UTC. 30-day retention. Includes
+#     all namespaces except system ones. PVs included via node-agent (kopia).
+#   - weekly-platform: Every Sunday at 03:00 UTC. 90-day retention. Same
+#     scope but kept longer for "I deleted X two months ago" recovery.
+#
+# Excluded namespaces: kube-system, kube-public, kube-node-lease, default.
+#   - kube-system / kube-public / kube-node-lease: cluster machinery,
+#     re-creatable by re-running the install steps.
+#   - default: should be empty in production (no app should land there).
+
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-everything
+  namespace: velero
+  labels:
+    secforge.platform/component: velero
+spec:
+  schedule: "0 2 * * *"
+  template:
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - default
+    includeClusterResources: true
+    snapshotVolumes: false       # we use kopia file-system backup, not CSI snapshots
+    defaultVolumesToFsBackup: true
+    ttl: 720h0m0s                # 30 days
+
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-platform
+  namespace: velero
+  labels:
+    secforge.platform/component: velero
+spec:
+  schedule: "0 3 * * 0"          # Sunday 03:00 UTC
+  template:
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - default
+    includeClusterResources: true
+    snapshotVolumes: false
+    defaultVolumesToFsBackup: true
+    ttl: 2160h0m0s               # 90 days

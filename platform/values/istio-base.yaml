@@ -1,0 +1,2 @@
+# istio/base — CRDs + cluster-wide resources only.
+defaultRevision: ""

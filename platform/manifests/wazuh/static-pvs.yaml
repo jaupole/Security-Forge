@@ -1,0 +1,90 @@
+# Static PVs for the Wazuh manager + indexer, pinned to /var/lib/wazuh.
+#
+# Bound to PVCs that the wazuh chart's StatefulSet volumeClaimTemplates
+# expect by name (`wazuh-manager-data-wazuh-manager-0` and
+# `wazuh-indexer-data-wazuh-indexer-0`). The PVCs reference these PVs
+# explicitly via `volumeName` and storageClassName=wazuh-local.
+#
+# Pre-conditions:
+#   1. /var/lib/wazuh is a separate xfs partition (vg0-wazuh, 100G,
+#      created by 00-host-bootstrap.sh).
+#   2. The target dirs exist with the correct uid/gid/mode:
+#        /var/lib/wazuh/wazuh-manager-data  →  0:999 (root:wazuh group)
+#                                              mode 2777 (setgid)
+#        /var/lib/wazuh/wazuh-indexer-data  →  1000:1000 (ops:ops)
+#                                              mode 2777 (setgid)
+#      The setgid bit makes child files inherit the parent's gid — the
+#      wazuh-manager container runs UID 999 inside the wazuh group, and
+#      writes files with gid 999 even though they appear as
+#      "systemd-journal" on the host (host gid 999 = systemd-journal,
+#      coincidence, irrelevant to the container).
+#   3. The wazuh-local StorageClass exists (storageclass-wazuh-local.yaml).
+#
+# Capacity:
+#   Manager: 50Gi (was 10Gi, but the PV holds 15G+ in steady state — CVE
+#            feed cache + alert archive + queues — and the host partition
+#            has 100G to spare).
+#   Indexer: 30Gi (was 10Gi; indexer growth depends on log-volume
+#            retention. Note: as of 2026-05-14 the indexer is mis-configured
+#            to write data to /usr/share/wazuh-indexer/data instead of the
+#            PV mount at /var/lib/wazuh-indexer — separate config drift to
+#            address; this PV is effectively unused until that's fixed).
+#
+# Lifecycle:
+#   Reclaim policy = Retain. Deleting the PVC leaves the PV in `Released`
+#   state with data intact on disk. Operator must explicitly cleanup with
+#   `kubectl delete pv` + `rm -rf /var/lib/wazuh/<dir>/*`.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wazuh-manager-data-static
+  labels:
+    secforge.platform/wazuh-volume: manager-data
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: wazuh-local
+  volumeMode: Filesystem
+  local:
+    path: /var/lib/wazuh/wazuh-manager-data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: Exists
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: wazuh
+    name: wazuh-manager-data-wazuh-manager-0
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wazuh-indexer-data-static
+  labels:
+    secforge.platform/wazuh-volume: indexer-data
+spec:
+  capacity:
+    storage: 30Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: wazuh-local
+  volumeMode: Filesystem
+  local:
+    path: /var/lib/wazuh/wazuh-indexer-data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: Exists
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: wazuh
+    name: wazuh-indexer-data-wazuh-indexer-0

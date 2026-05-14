@@ -1,0 +1,48 @@
+# Trivy egress for vulnerability DB updates + image registry calls.
+#
+# Phase C #4 hardening (Layer A). Layered on top of the egress baseline
+# (default-deny + DNS + K8s API).
+#
+# Trivy operator workloads needing public 443:
+#   - trivy-operator → ghcr.io/aquasecurity/trivy-db (vulnerability DB,
+#     refreshed periodically — every 6h by default)
+#   - trivy-operator → image registries listed in pod specs (digest +
+#     manifest fetches; standalone mode caches locally)
+#
+# scan-vulnerabilityreport-* Jobs run in the same ns and reuse the same
+# allow (they wrap trivy CLI which makes the same calls).
+#
+# Same "public IPs only on web ports" pattern as cert-manager — RFC1918,
+# link-local, host's own public IP excluded.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-public-443
+  namespace: trivy-system
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+              - 65.21.25.40/32
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP

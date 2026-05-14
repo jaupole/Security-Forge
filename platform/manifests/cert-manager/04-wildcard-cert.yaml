@@ -1,0 +1,31 @@
+# Wildcard certificate for *.${DOMAIN}.
+#
+# Issued by ${LE_ISSUER} (Let's Encrypt prod) via DNS-01 challenge.
+# Stored as Secret `${WILDCARD_CERT_SECRET}` in `${WILDCARD_CERT_NAMESPACE}`.
+# Per-namespace consumers can either:
+#   1. Reference this Secret directly (cross-namespace via reflector or
+#      similar — not done in production today)
+#   2. Issue per-namespace Certificate CRs (current pattern; works fine
+#      because cert-manager handles renewal centrally)
+#
+# Pattern 2 is what's in active use: each ns has its own Certificate CR
+# pointing at this ClusterIssuer.
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: secforge-wildcard
+  namespace: ${WILDCARD_CERT_NAMESPACE}
+  labels:
+    secforge.platform/component: cert-manager
+spec:
+  secretName: ${WILDCARD_CERT_SECRET}
+  issuerRef:
+    name: ${LE_ISSUER}
+    kind: ClusterIssuer
+  commonName: '*.${DOMAIN}'
+  dnsNames:
+    - '*.${DOMAIN}'
+    - '${DOMAIN}'
+  duration: 2160h    # 90 days
+  renewBefore: 720h  # 30 days
