@@ -58,6 +58,15 @@ apps/authzen-facade/authzen-facade
 !infrastructure/wazuh/vendor/
 !apps/lib/
 
+# === LOCAL-DEV VENDORED TOOLCHAINS ===
+# Hand-downloaded tarballs/archives for SpiceDB CLI, zed, etc. Operator
+# fetches these from upstream; they live in local-dev/bin/ but are not
+# committed (tens of MB each, license-burdened).
+local-dev/bin/*.zip
+local-dev/bin/*.tar.gz
+local-dev/bin/*.tgz
+local-dev/bin/completions/
+
 # Go build/test
 *.test
 *.out
