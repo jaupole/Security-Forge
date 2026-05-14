@@ -57,9 +57,18 @@ spec:
       excludes:
         - .*
       templates:
-        # Keycloak OIDC client_secret. App reads as OIDC_CLIENT_SECRET.
+        # Keycloak OIDC client_secret (user-login `control` client).
+        # App reads as OIDC_CLIENT_SECRET.
         OIDC_CLIENT_SECRET:
           text: '{{ .Secrets.oidc_client_secret }}'
+        # Keycloak admin-API client_secret (`control-admin` service-account
+        # client — separate from the user-login OIDC client). Used by
+        # @keycloak/keycloak-admin-client for member-create / role-mgmt
+        # / etc. Realm-management roles assigned to this client's
+        # service account: manage-users, view-users, query-users,
+        # view-clients, view-realm.
+        KEYCLOAK_ADMIN_CLIENT_SECRET:
+          text: '{{ .Secrets.admin_client_secret }}'
         # SpiceDB pre-shared key for gRPC auth (same value also rendered
         # into the spicedb pod from its own VSO binding — we just
         # consume it here, not own it).

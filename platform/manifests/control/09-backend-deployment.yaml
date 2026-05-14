@@ -64,14 +64,12 @@ spec:
             # admin-API client (NOT the OIDC user-login client).
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
-            # TODO(phase-A2): create a dedicated control-admin Keycloak
-            # client with Service Accounts Roles enabled + realm-management
-            # role bindings, store its secret in OpenBao, render via VSO.
-            # Until then we reuse the OIDC client + its secret to satisfy
-            # the Zod validation. Admin-API calls (member create, role
-            # mgmt, etc.) will fail with 403 until the proper admin
-            # client + grants are in place.
-            - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control }
+            # Admin-API client (created 2026-05-15). Service-account-only,
+            # confidential, with realm-management roles: manage-users,
+            # view-users, query-users, view-clients, view-realm.
+            # KEYCLOAK_ADMIN_CLIENT_SECRET comes from VSO-rendered
+            # control-app-secrets via envFrom below.
+            - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The control-db-app Secret has
@@ -87,17 +85,12 @@ spec:
             - { name: OTEL_SERVICE_NAME, value: control }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=control,deployment.environment=prod" }
           envFrom:
-            # Adds OIDC_CLIENT_SECRET (used as KEYCLOAK_ADMIN_CLIENT_SECRET
-            # placeholder via the workaround below), SPICEDB_PRESHARED_KEY,
-            # SESSION_KEY from the VSO-rendered Secret.
+            # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
+            # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered
+            # Secret. All four come from secret/apps/control/runtime in
+            # OpenBao via the VaultStaticSecret in 04-vso-bindings.yaml.
             - secretRef:
                 name: control-app-secrets
-            # Map OIDC_CLIENT_SECRET → KEYCLOAK_ADMIN_CLIENT_SECRET via
-            # an additional Secret with that single key. Provisioned
-            # 2026-05-15 morning when we add the proper admin client.
-            - secretRef:
-                name: control-keycloak-admin
-                optional: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }
