@@ -102,3 +102,20 @@ spec:
   jwtTtl: "5m"
   fallback: false
   autoPopulateDNSNames: false
+
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: secforge-control
+spec:
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: ["control"]
+  ttl: "1h"
+  jwtTtl: "5m"
+  fallback: false
+  autoPopulateDNSNames: false

@@ -183,3 +183,21 @@ path "secret/data/teleport/github" {
 path "secret/metadata/teleport/github" {
   capabilities = ["read"]
 }
+
+# Control plane API (control ns).
+#   - keycloak/clients/control: OIDC client_secret for the `control` Keycloak client
+#   - apps/control/runtime: bundle of OIDC_CLIENT_SECRET, SPICEDB_PRESHARED_KEY,
+#                           SESSION_KEY consumed via VSO-rendered K8s Secret
+# Created 2026-05-14 evening as part of Phase A of the control rollout.
+path "secret/data/keycloak/clients/control" {
+  capabilities = ["read"]
+}
+path "secret/metadata/keycloak/clients/control" {
+  capabilities = ["read"]
+}
+path "secret/data/apps/control/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/control/+" {
+  capabilities = ["read", "list"]
+}
