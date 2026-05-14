@@ -33,12 +33,17 @@ spec:
   policyTypes: [Egress]
 
 ---
-# Allow DNS resolution to kube-dns / CoreDNS. Every other egress rule
-# below relies on cluster-internal DNS first.
+# Essentials: DNS + kube-apiserver. The CNPG manager process inside the
+# postgres pod fetches its TLS certs from the API server at startup;
+# without this, the bootstrap-controller hangs in "no certificates
+# configured" forever and the cluster never reaches Ready. Every app pod
+# also needs DNS for in-cluster service-name resolution.
+#
+# Same shape as keycloak ns's allow-egress-essentials.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-dns
+  name: allow-egress-essentials
   namespace: control
   labels:
     secforge.platform/component: control
@@ -47,6 +52,7 @@ spec:
   podSelector: {}
   policyTypes: [Egress]
   egress:
+    # CoreDNS in kube-system
     - to:
         - namespaceSelector:
             matchLabels:
@@ -55,10 +61,21 @@ spec:
             matchLabels:
               k8s-app: kube-dns
       ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # kube-apiserver via the in-cluster ClusterIP (10.43.0.1).
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    # kube-apiserver via the host:6443 path (k3s embedded API server).
+    # Required because k3s pods that bypass kube-proxy hit the host directly.
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - { protocol: TCP, port: 6443 }
 
 ---
 # Intra-namespace traffic: portal → control-service (same-origin path
