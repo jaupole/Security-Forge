@@ -96,6 +96,7 @@ spec:
       verifyImages:
         - imageReferences:
             - "ghcr.io/secforge/*"
+            - "ghcr.io/jaupole/*"
           required: true
           mutateDigest: false
           verifyDigest: false
@@ -103,6 +104,10 @@ spec:
             - entries:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegExp: "^https://github\\.com/secforge/"
+                    # Accepts signatures from either the `secforge` org repos
+                    # OR `jaupole/` user repos (Security-Forge, ecosystem-control,
+                    # ecosystem-portal as of 2026-05-16). Expand the alternation
+                    # if more SecForge-authored repos start publishing images.
+                    subjectRegExp: "^https://github\\.com/(secforge|jaupole)/"
                     rekor:
                       url: "https://rekor.sigstore.dev"

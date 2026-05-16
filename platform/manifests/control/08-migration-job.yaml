@@ -36,6 +36,10 @@ spec:
       restartPolicy: Never
       serviceAccountName: control
       automountServiceAccountToken: false
+      # GHCR is private — pull via VSO-rendered dockerconfigjson Secret
+      # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -67,7 +71,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          image: ghcr.io/secforge/control:${CONTROL_TAG}
+          # Digest-pinned (cosign signs digests, not tags). Bump via the
+          # GHA image-build run output; Renovate or a CI bot can later
+          # automate the bump.
+          image: ghcr.io/jaupole/control@sha256:6028a60ee7f615ddad47c6ecabe8d46f1fd4c1b71ff98306f51053bdd4de63cf
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint

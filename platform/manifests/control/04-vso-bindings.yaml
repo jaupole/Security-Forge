@@ -89,6 +89,42 @@ spec:
           text: '{{ .Secrets.email_hmac_key }}'
 
 ---
+# GHCR image-pull credential. Renders into a kubernetes.io/dockerconfigjson
+# Secret consumed via `imagePullSecrets:` on the control + portal
+# Deployments + the migration Job. Token is a fine-grained PAT scoped to
+# read:packages on jaupole/ecosystem-{control,portal} only.
+#
+# OpenBao path: secret/data/apps/control/ghcr-pull
+#   - username: GitHub user (jaupole)
+#   - password: PAT (rotate via OpenBao + 90-day expiry on the GH token)
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/ghcr-pull
+  refreshAfter: 5m
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ".dockerconfigjson":
+          text: |-
+            {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
+
+---
 # barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
 # Same VSO consumer SA, same OpenBao path as keycloak's CNPG cluster.
 apiVersion: secrets.hashicorp.com/v1beta1
