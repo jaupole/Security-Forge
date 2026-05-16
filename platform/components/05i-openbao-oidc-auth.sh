@@ -67,7 +67,8 @@ ADMIN_ROLE_JSON=$(cat <<EOF
   "allowed_redirect_uris": [
     "https://bao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback",
     "https://bao.${DOMAIN}/oidc/callback",
-    "http://localhost:8250/oidc/callback"
+    "http://localhost:8250/oidc/callback",
+    "https://localhost:8200/ui/vault/auth/oidc/oidc/callback"
   ],
   "policies": ["admin"],
   "oidc_scopes": ["openid", "profile", "email"],
