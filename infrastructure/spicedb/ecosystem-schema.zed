@@ -284,3 +284,50 @@ definition managerapp/task {
     permission edit = owner + assignee + parent_project->edit + parent_pursuit->edit
     permission complete = owner + assignee + parent_project->edit + parent_pursuit->edit
 }
+
+// ─── Per-app domain types — member_hub (Membership-enrollment SaaS) ──────
+// MEMBER_HUB registers as an ecosystem app via `organization_apps` in
+// ecosystem_control. Its domain owns three top-level types:
+//   - member_record:  the canonical store of an org's enrolled members
+//   - enrollment:     an in-progress application for membership
+//   - email_campaign: outbound bulk emails (transactional sends go
+//                     straight through Postmark; not modeled here)
+//
+// All three back-link to `app` so the existing app-level cascades
+// (org admin → app admin → app:view/admin) apply for free. Tuples for
+// `organization` / `user` are NOT written by MEMBER_HUB — Control owns
+// those. MEMBER_HUB only writes tuples for the types defined below.
+
+definition member_hub/member_record {
+    relation app: app
+    relation subject: user                      // the member the record describes
+    relation editor: user                       // staff who can update the record
+    relation viewer: user                       // staff who can view but not edit
+
+    permission view   = subject + editor + viewer + app->view
+    permission edit   = editor + app->administer
+    permission delete = app->administer
+}
+
+definition member_hub/enrollment {
+    relation app: app
+    relation applicant: user                    // the user applying for membership
+    relation reviewer: user                     // staff who can review/decide
+
+    permission view   = applicant + reviewer + app->view
+    permission edit   = applicant + reviewer + app->administer  // applicant edits draft; reviewer revises during review
+    permission review = reviewer + app->administer
+    permission decide = reviewer + app->administer              // approve/reject
+    permission delete = app->administer
+}
+
+definition member_hub/email_campaign {
+    relation app: app
+    relation author: user                       // staff who composed the campaign
+    relation publisher: user                    // staff who can actually send
+
+    permission view    = author + publisher + app->view
+    permission edit    = author + publisher + app->administer
+    permission publish = publisher + app->administer
+    permission delete  = app->administer
+}
