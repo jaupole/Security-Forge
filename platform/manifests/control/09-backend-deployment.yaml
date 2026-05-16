@@ -39,10 +39,15 @@ spec:
     spec:
       serviceAccountName: control
       automountServiceAccountToken: false
-      # GHCR is private — pull via VSO-rendered dockerconfigjson Secret
-      # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+      # GHCR is private. TEMP: using a manually-created docker-registry
+      # Secret (ghcr-pull-secret-temp) because the OpenBao admin path
+      # is currently down (root token revoked accidentally; recovery
+      # ceremony pending). Switch back to `ghcr-pull-secret` (VSO-
+      # rendered from secret/apps/control/ghcr-pull) once admin is
+      # restored. See follow-up ticket: restore-openbao-admin-and-
+      # rewire-ghcr-pull.
       imagePullSecrets:
-        - name: ghcr-pull-secret
+        - name: ghcr-pull-secret-temp
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
