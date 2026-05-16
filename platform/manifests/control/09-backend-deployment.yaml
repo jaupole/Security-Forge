@@ -59,6 +59,14 @@ spec:
             - { name: API_HOST, value: "0.0.0.0" }
             - { name: TRUST_PROXY, value: "1" }
             - { name: PORTAL_ORIGIN, value: "https://control.${DOMAIN}" }
+            # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
+            # which presents its INTERNAL cert (signed by secforge-internal-ca,
+            # not Let's Encrypt). Point NODE_EXTRA_CA_CERTS at the
+            # internal CA so jose's createRemoteJWKSet (and any other
+            # global-fetch caller) can verify the chain. Node's built-in
+            # Mozilla CA bundle is still loaded — NODE_EXTRA_CA_CERTS is
+            # additive, not a replacement.
+            - { name: NODE_EXTRA_CA_CERTS, value: "/etc/secforge/openbao-ca.crt" }
             # Keycloak — config.ts wants KEYCLOAK_URL (the base; it builds
             # /realms/<realm> internally), KEYCLOAK_REALM, and a SEPARATE
             # admin-API client (NOT the OIDC user-login client).
@@ -84,11 +92,22 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: control }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=control,deployment.environment=prod" }
+            # PII encryption (rule 38). Transit client uses SPIFFE
+            # JWT-SVID written by the spiffe-helper sidecar to a shared
+            # tmpfs volume, exchanges it for an OpenBao token via
+            # auth/jwt/login (role: control), then encrypts/decrypts via
+            # transit/pii-encryption.
+            - { name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
+            - { name: OPENBAO_CA_CERT_PATH, value: "/etc/secforge/openbao-ca.crt" }
+            - { name: OPENBAO_JWT_AUTH_ROLE, value: control }
+            - { name: TRANSIT_KEY_NAME, value: pii-encryption }
+            - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
-            # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered
-            # Secret. All four come from secret/apps/control/runtime in
-            # OpenBao via the VaultStaticSecret in 04-vso-bindings.yaml.
+            # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
+            # the VSO-rendered Secret. All five come from
+            # secret/apps/control/runtime in OpenBao via the
+            # VaultStaticSecret in 04-vso-bindings.yaml.
             - secretRef:
                 name: control-app-secrets
           resources:
@@ -114,10 +133,67 @@ spec:
             # Distroless nodejs22 needs /tmp writable for sourcemaps + V8
             # cache; everything else stays read-only.
             - { name: tmp, mountPath: /tmp }
+            # OpenBao internal CA cert (signed by secforge-internal-ca).
+            # Used by Transit client for HTTPS verification — see CLAUDE.md
+            # bright-line on no-cert-bypass.
+            - { name: openbao-ca, mountPath: /etc/secforge, readOnly: true }
+            # JWT-SVID written by the spiffe-helper sidecar; Transit
+            # client reads from /run/spiffe/jwt-svid.token.
+            - { name: spiffe-jwt, mountPath: /run/spiffe, readOnly: true }
+        # spiffe-helper sidecar — fetches a JWT-SVID via the SPIFFE
+        # workload API every TTL/2 seconds and writes it to the shared
+        # spiffe-jwt volume. Audience: openbao (matches the OpenBao
+        # JWT auth role's bound_audiences). Sidecar runs in daemon
+        # mode; on cert/SVID expiry it re-fetches and overwrites the file.
+        - name: spiffe-helper
+          image: ghcr.io/spiffe/spiffe-helper:0.11.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-config"
+            - "/etc/spiffe-helper/helper.conf"
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 50m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - { name: spiffe-helper-config, mountPath: /etc/spiffe-helper, readOnly: true }
+            - { name: spiffe-jwt, mountPath: /run/spiffe }
+            - { name: spiffe-workload-api, mountPath: /spiffe-workload-api, readOnly: true }
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        - name: openbao-ca
+          configMap:
+            name: openbao-internal-ca-cert
+            items:
+              - key: ca.crt
+                path: openbao-ca.crt
+        - name: spiffe-jwt
+          emptyDir:
+            sizeLimit: 1Mi
+            medium: Memory
+        - name: spiffe-helper-config
+          configMap:
+            name: control-spiffe-helper-config
+            items:
+              - key: helper.conf
+                path: helper.conf
+        # SPIFFE workload API — provided by the SPIRE CSI driver
+        # (spire-spiffe-csi-driver DaemonSet). Mounts the spire-agent
+        # unix socket so the spiffe-helper can request JWT-SVIDs.
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
       # Spread across nodes is moot on a single-node cluster, but the
       # podAntiAffinity reads correctly once we add a second node.
       topologySpreadConstraints:

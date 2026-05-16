@@ -69,15 +69,37 @@ spec:
         - name: migrate
           image: ghcr.io/secforge/control:${CONTROL_TAG}
           imagePullPolicy: IfNotPresent
-          command: ["/nodejs/bin/node", "dist/db/migrate.js"]
+          # Use the CLI's db:migrate command. dist/db/migrate.js is just an
+          # exported module (no top-level call); the runnable entrypoint
+          # is the commander-based CLI at dist/cli/index.js.
+          command: ["/nodejs/bin/node", "dist/cli/index.js", "db:migrate"]
+          # Env mirrors the API Deployment (09-backend-deployment.yaml) because
+          # src/api/config.ts validates the full env at import time — the CLI
+          # imports the pool which imports config, which throws if any
+          # required var is missing. Job-only behavioral envs (eg API_PORT)
+          # are still required by the schema even if migrate doesn't use them.
           env:
-            - name: NODE_ENV
-              value: production
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: control-db-app
-                  key: uri
+            - { name: NODE_ENV,                value: production }
+            - { name: API_PORT,                value: "4000" }
+            - { name: API_HOST,                value: "0.0.0.0" }
+            - { name: TRUST_PROXY,             value: "1" }
+            - { name: PORTAL_ORIGIN,           value: "https://control.${DOMAIN}" }
+            - { name: KEYCLOAK_URL,            value: "https://auth.${DOMAIN}" }
+            - { name: KEYCLOAK_REALM,          value: platform }
+            - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
+            - { name: SPICEDB_ENDPOINT,        value: "spicedb.spicedb.svc.cluster.local:50051" }
+            - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+            - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+            - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+          envFrom:
+            # Pulls EMAIL_HMAC_KEY + OIDC_CLIENT_SECRET +
+            # KEYCLOAK_ADMIN_CLIENT_SECRET + SPICEDB_PRESHARED_KEY +
+            # SESSION_KEY — config.ts requires them all even though
+            # migrations don't use them.
+            - secretRef:
+                name: control-app-secrets
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: [ALL] }

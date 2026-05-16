@@ -79,6 +79,14 @@ spec:
         # and stores in OpenBao; rotate via OpenBao + Pod restart.
         SESSION_KEY:
           text: '{{ .Secrets.session_signing_key }}'
+        # HMAC-SHA256 key (32 bytes base64) for indexed lookup of
+        # encrypted email columns (e.g. pending_invitations.invited_email_hmac).
+        # See src/lib/secrets/hmac.ts for rationale on HMAC vs convergent
+        # encryption (HMAC chosen so DB readers can't recover plaintext).
+        # Rotation: bump the key in OpenBao + rebuild HMAC column for
+        # every row that needs to remain searchable.
+        EMAIL_HMAC_KEY:
+          text: '{{ .Secrets.email_hmac_key }}'
 
 ---
 # barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
