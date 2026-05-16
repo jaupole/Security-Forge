@@ -1,6 +1,22 @@
 # Velero — K8s resource + PV backups to in-cluster MinIO `backups` bucket.
 #
-# Architecture:
+# Chart 12.0.1 / app v1.18.0 (bumped 2026-05-16 from chart 8.2.0 / app 1.15.1).
+# Chart breaking changes since 8.2.0 — quick map:
+#   - `configuration.repositoryMaintenanceJob.{requests,limits,latestJobsCount}`
+#     REMOVED. Maintenance Job sizing + retention now go in the
+#     `velero-repo-maintenance` ConfigMap (see
+#     platform/manifests/velero/07-repo-maintenance-cm.yaml). Reference is
+#     `configuration.repositoryMaintenanceJob.repositoryConfigData.name`.
+#   - `serviceAccount.server.automountServiceAccountToken` — now required.
+#   - `upgradeCRDsJob` — new block; needs `automountServiceAccountToken` +
+#     `extraEnvVars: []` even when the Job is disabled via top-level
+#     `upgradeCRDs: false`.
+#   - `extraEnvVars` shape changed `{}` → `[]` in three places
+#     (configuration, nodeAgent, upgradeCRDsJob).
+#   - velero-plugin-for-aws bumped v1.10.0 → v1.13.1 (the chart's
+#     commented example pairs v1.13.1 with Velero 1.18.0 — upstream-tested).
+#
+# Architecture (unchanged):
 #   - Deployment: velero server (controller, schedule reconciler).
 #   - DaemonSet: node-agent (kopia-based PV backup; reads /var/lib/kubelet/pods).
 #   - BackupStorageLocation: minio.minio.svc.cluster.local:9000, bucket `backups`,
@@ -18,16 +34,19 @@
 # but NOT against full disk loss or data-center incident. Off-site
 # replication (e.g., to B2 via `mc mirror`) can be added later.
 
+# Velero image — chart 12.0.1's default is velero/velero:v1.18.0. Don't
+# override unless we need a specific patch.
+
 initContainers:
   - name: velero-plugin-for-aws
-    image: velero/velero-plugin-for-aws:v1.10.0
+    # Bumped 2026-05-16: 1.10.0 → 1.13.1 to match chart-maintainer's
+    # tested pairing for Velero 1.18.x.
+    image: velero/velero-plugin-for-aws:v1.13.1
     imagePullPolicy: IfNotPresent
     volumeMounts:
       - mountPath: /target
         name: plugins
-    # Required by Kyverno require-resource-limits (Enforce). The init
-    # container just `cp`s the plugin binary into /target then exits,
-    # so it needs tiny resources. Added 2026-05-14.
+    # Required by Kyverno require-resource-limits (Enforce).
     resources:
       requests:
         cpu: 10m
@@ -40,17 +59,32 @@ resources:
   requests: { cpu: 100m, memory: 256Mi }
   limits:   { cpu: 500m, memory: 512Mi }
 
-# Disable the upgrade-CRDs Job hook — its image reference
-# `docker.io/bitnami/kubectl:1.31` was removed from Docker Hub
-# (Bitnami restructured their public images). The chart still installs
-# CRDs from `templates/crds/` on fresh install, so we don't need the hook.
-# If we need to upgrade CRDs later, run `kubectl apply -f` manually
-# against the chart's CRD manifests.
-upgradeCRDs: false
-cleanUpCRDs: false
+# Enable the upgrade-CRDs Job. Required when bumping across CRD-changing
+# Velero versions (e.g. 1.15 → 1.18 introduced the "Queued" status.phase
+# value — controller will throw "Unsupported value: Queued" on EVERY
+# backup until CRDs match the binary). Chart 12+ uses
+# registry.k8s.io/kubectl (no longer the removed bitnami/kubectl image),
+# so re-enabling is safe.
+upgradeCRDs: true
+cleanUpCRDs: false   # cleanup is destructive — only for CI / fresh test clusters
+
+# upgradeCRDsJob block — schema-required even when upgradeCRDs: false
+# because chart 12 validates the full values shape. Just satisfy the
+# schema with defaults that document intent.
+upgradeCRDsJob:
+  automountServiceAccountToken: true
+  extraEnvVars: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Server ServiceAccount — explicit even though default is true,
+# to document that the API credential IS automounted (required by
+# the controller's in-cluster API access pattern).
+serviceAccount:
+  server:
+    automountServiceAccountToken: true
 
 configuration:
-  # Logging
   logLevel: info
   logFormat: json
 
@@ -83,6 +117,29 @@ configuration:
   # annotating every Pod with `backup.velero.io/backup-volumes`.)
   defaultVolumesToFsBackup: true
 
+  # Schema-required: chart 12 expects an array (was {} in chart 8).
+  extraEnvVars: []
+
+  # Repository maintenance Job config — chart 12 removed the inline
+  # `requests`/`limits`/`latestJobsCount` fields. Sizing + retention now
+  # live in a ConfigMap that the chart RENDERS from these values
+  # (chart-managed; do NOT pre-create the CM externally — Helm ownership
+  # check rejects pre-existing CMs without its annotations).
+  # Values preserve chart-8.2.0 inline config exactly:
+  #   keepLatestMaintenanceJobs = old latestJobsCount: 3
+  #   podResources cpu/memory   = old requests/limits
+  repositoryMaintenanceJob:
+    repositoryConfigData:
+      name: "velero-repo-maintenance"
+      global:
+        keepLatestMaintenanceJobs: 3
+        podResources:
+          cpuRequest: "100m"
+          cpuLimit: "500m"
+          memoryRequest: "128Mi"
+          memoryLimit: "1Gi"
+      repositories: {}
+
 # DaemonSet for filesystem-based PV backups.
 deployNodeAgent: true
 nodeAgent:
@@ -94,6 +151,8 @@ nodeAgent:
   tolerations:
     - effect: NoSchedule
       operator: Exists
+  # Schema-required: chart 12 expects an array.
+  extraEnvVars: []
 
 # Pod label so MinIO chart's NetworkPolicy + our cross-ns NP allow access.
 podLabels:

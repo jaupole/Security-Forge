@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${VELERO_CHART_VER:-8.2.0}"
+CHART_VER="${VELERO_CHART_VER:-12.0.1}"
 NS=velero
 NS_BAO=openbao
 NS_MINIO=minio
@@ -163,6 +163,9 @@ for i in $(seq 1 12); do
 done
 
 # 8. Helm install
+# Chart 12+ renders the velero-repo-maintenance ConfigMap from
+# `configuration.repositoryMaintenanceJob.repositoryConfigData` in values.yaml
+# (chart-managed; don't pre-apply externally — Helm ownership check would reject).
 "$LIB/install-helm.sh" \
   --release velero --namespace "$NS" \
   --repo-name vmware-tanzu --repo-url https://vmware-tanzu.github.io/helm-charts \

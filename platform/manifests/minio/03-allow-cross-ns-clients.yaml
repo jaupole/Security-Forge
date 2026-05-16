@@ -57,3 +57,17 @@ spec:
       ports:
         - port: 9000
           protocol: TCP
+    # Velero chart 12+ creates repository-maintenance Jobs dynamically.
+    # The chart doesn't expose a podLabels field for these Jobs (verified
+    # 2026-05-16 against velero-chart 12.0.1), so the `minio-client=true`
+    # label isn't on them — the label-gated rule above doesn't match.
+    # Allow ANY pod in the velero ns to reach MinIO. Defense-in-depth
+    # is preserved: velero ns has default-deny-egress, and only Velero
+    # (chart-managed) workloads run there.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: velero
+      ports:
+        - port: 9000
+          protocol: TCP
