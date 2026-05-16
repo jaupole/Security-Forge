@@ -53,6 +53,7 @@ spec:
                 - ingress-nginx
                 - cert-manager
                 - image-builds
+                - topolvm-system
       validate:
         message: "Pods must not use host namespaces (hostNetwork, hostPID, hostIPC)."
         pattern:
@@ -81,6 +82,7 @@ spec:
                 - ingress-nginx
                 - cert-manager
                 - image-builds
+                - topolvm-system
       validate:
         message: "Pods must not use hostPort."
         pattern:
@@ -110,6 +112,7 @@ spec:
                 - wazuh-agent
                 - velero
                 - image-builds
+                - topolvm-system
       validate:
         message: "Pods must not run privileged containers."
         pattern:

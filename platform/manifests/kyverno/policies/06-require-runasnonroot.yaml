@@ -24,6 +24,9 @@
 #                  systemd-native.
 #   - velero:      node-agent DaemonSet (hostPath /var/lib/kubelet/pods).
 #   - ingress-nginx: nginx binds privileged ports (80/443) on the node IP.
+#   - topolvm-system: lvmd needs root to /dev/* for LVM2 operations;
+#                  topolvm-node DaemonSet needs hostPath for /run/topolvm
+#                  CSI socket + privileged for volume mount/unmount.
 
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -57,6 +60,7 @@ spec:
                 - ingress-nginx
                 - istio-system
                 - trivy-system
+                - topolvm-system
       validate:
         message: |
           Containers must run as non-root. Set
