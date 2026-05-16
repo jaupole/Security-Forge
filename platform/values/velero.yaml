@@ -117,6 +117,22 @@ configuration:
   # annotating every Pod with `backup.velero.io/backup-volumes`.)
   defaultVolumesToFsBackup: true
 
+  # Enable CSI snapshot integration (built into velero binary 1.16+).
+  # Required for VolumeSnapshot-based backup/restore as an alternative
+  # to FSB/PVR. FSB has a known limitation: PVR is bound to backup-time
+  # pod UIDs and does not match new pods after delete+recreate, which
+  # breaks restore for StatefulSet-owned PVs. CSI snapshot path is
+  # PVC-bound (UID-independent) and works correctly for STSs IF the
+  # storage class's CSI driver supports VolumeSnapshot.
+  #
+  # NOTE: enabling this alone does NOT make all PVs CSI-snapshottable.
+  # The storage class's CSI driver must implement CSI Snapshotter spec
+  # (e.g., TopoLVM thick LVs do NOT — only thin pool does). Per-backup
+  # opt-in via `spec.snapshotMoveData: true` lets you choose CSI per
+  # backup rather than for all.
+  features: EnableCSI
+  defaultSnapshotMoveData: true
+
   # Schema-required: chart 12 expects an array (was {} in chart 8).
   extraEnvVars: []
 
