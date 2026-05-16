@@ -71,11 +71,16 @@ spec:
         - { protocol: TCP, port: 443 }
     # kube-apiserver via the host:6443 path (k3s embedded API server).
     # Required because k3s pods that bypass kube-proxy hit the host directly.
+    # Also TCP/443 for *.secforge.dev hostnames that resolve to this same
+    # public IP — JWKS fetch from auth.secforge.dev, OIDC discovery, etc.
+    # routes pod → public IP → loops back through ingress-nginx → in-cluster
+    # service. Without this, jose's createRemoteJWKSet can't reach Keycloak.
     - to:
         - ipBlock:
             cidr: 65.21.25.40/32
       ports:
         - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
 
 ---
 # Intra-namespace traffic: portal → control-service (same-origin path
@@ -220,6 +225,36 @@ spec:
       ports:
         - { protocol: TCP, port: 4317 }   # gRPC OTLP
         - { protocol: TCP, port: 4318 }   # HTTP OTLP
+
+---
+# Egress to MinIO for CNPG plugin-barman-cloud base + WAL backups + retention.
+# Without this, default-deny-egress silently breaks all CNPG backups — barman
+# reports the scheduled backup "completed" because the plugin process exited,
+# but no data was actually shipped, and the retention pass can't list existing
+# backups to enforce its policy. Discovered during 2026-05-16 drift sweep —
+# control-db ScheduledBackups had been firing daily with hidden failure.
+# Scope: only the CNPG-managed postgres pods (label cnpg.io/cluster=control-db),
+# not the app pods — the app shouldn't talk to MinIO directly from this ns.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: control-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
 
 ---
 # CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
