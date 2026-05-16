@@ -81,3 +81,28 @@ spec:
                     subjectRegExp: "^https://github\\.com/spiffe/"
                     rekor:
                       url: "https://rekor.sigstore.dev"
+    # SecForge-owned images (currently: keycloak overlay with HIBP blacklist
+    # + recovery-codes/dpop pre-built — see .github/workflows/keycloak-image-build.yml).
+    # The subject regex is intentionally broad against the secforge org so
+    # additional SecForge-built images (member-hub, control, portal, etc.)
+    # automatically inherit verification when CI starts publishing them.
+    # IMPORTANT: if you fork this repo to a different GitHub owner, update
+    # the regex to match your own org/user.
+    - name: verify-secforge
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/secforge/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/secforge/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"

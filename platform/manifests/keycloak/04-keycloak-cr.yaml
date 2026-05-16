@@ -21,8 +21,24 @@ metadata:
     secforge.platform/edition: prod
 spec:
   instances: 1
-  image: quay.io/keycloak/keycloak:26.3.3
-  startOptimized: false   # see local-edition note re: build-time features
+  # Production uses the SecForge custom Keycloak image which bakes in:
+  #   - HIBP top-100k password blacklist at /opt/keycloak/data/password-blacklists/
+  #   - `kc.sh build --features=recovery-codes,dpop --db=postgres` augmentation
+  # Built + Cosign-keyless-signed by .github/workflows/keycloak-image-build.yml.
+  # Verified at admission by Kyverno verify-image-signature policy
+  # (rule: verify-secforge).
+  #
+  # Refresh procedure: bump infrastructure/keycloak/image/Dockerfile, merge,
+  # GHA outputs the new digest in its run summary, then replace the digest
+  # below and `kubectl apply`. The Keycloak Operator handles the rollout.
+  #
+  # Placeholder digest below — replace with the first GHA build's output.
+  # While unset (i.e., still pointing at the placeholder), the live cluster
+  # continues running localhost/secforge/keycloak:26.3.3-optimized (drift
+  # from this file — to be cut over once the GHA pipeline produces the
+  # first signed digest).
+  image: ghcr.io/secforge/keycloak@sha256:0000000000000000000000000000000000000000000000000000000000000000  # TODO: replace after first GHA build
+  startOptimized: true    # using the pre-built optimized image
 
   db:
     vendor: postgres

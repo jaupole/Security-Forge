@@ -1,0 +1,129 @@
+# Build, push, and Cosign-keyless-sign the SecForge custom Keycloak image.
+#
+# Triggers:
+#   - push to main/master if anything under infrastructure/keycloak/image/ changes
+#   - manual (workflow_dispatch) for ad-hoc rebuild
+#   - PR (build-only, no push, no sign) for review feedback
+#
+# OIDC identity for the Cosign signature is automatic from the
+# permissions.id-token: write claim. The cluster's Kyverno
+# verify-image-signature ClusterPolicy enforces that ghcr.io/secforge/keycloak
+# images carry a Cosign signature whose subject regex matches this repo —
+# update the policy if you fork this repo to a different owner.
+
+name: keycloak-image-build
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - infrastructure/keycloak/image/**
+      - .github/workflows/keycloak-image-build.yml
+  pull_request:
+    paths:
+      - infrastructure/keycloak/image/**
+      - .github/workflows/keycloak-image-build.yml
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why running manually (e.g. blacklist refresh, base bump)
+        required: false
+        default: manual rebuild
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/keycloak
+
+jobs:
+  build-sign-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # push to ghcr.io
+      id-token: write   # cosign keyless OIDC
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:v0.18.2
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Resolve image metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=raw,value=26.3.3-secforge,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=SecForge Keycloak
+            org.opencontainers.image.description=Keycloak with HIBP password blacklist + recovery-codes,dpop pre-built
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.vendor=SecForge
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build (+ push on non-PR)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: infrastructure/keycloak/image
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=keycloak
+          cache-to: type=gha,scope=keycloak,mode=max
+
+      - name: Cosign keyless sign
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+
+      - name: Verify signature (smoke test)
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github\\.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+
+      - name: Output deploy instructions
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "## Built + signed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## To deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bump \`platform/manifests/keycloak/04-keycloak-cr.yaml\` \`spec.image\` to:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```yaml' >> "$GITHUB_STEP_SUMMARY"
+          echo "  image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Then \`kubectl apply -f\` it. Operator handles the rollout." >> "$GITHUB_STEP_SUMMARY"

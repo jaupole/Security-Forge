@@ -1,0 +1,5 @@
+# Build context is the Dockerfile + README only. Nothing else should leak
+# into the build cache to keep layer hashes stable across machines.
+*
+!Dockerfile
+!README.md

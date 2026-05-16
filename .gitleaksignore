@@ -1,4 +1,10 @@
-# Empty at init time — gitleaks pre-flight scan returned zero findings on 2026-05-01.
 # Add entries here only for legitimate false positives (test fixtures, placeholders in docs, etc.).
 # Format: <commit-or-path>:<rule-id>:<line>
 # Example: docs/02-decisions/0001-local-first.md:generic-api-key:42
+
+# False positive 2026-05-16: gitleaks' generic-api-key rule fires on the
+# legacy ad-hoc Keycloak image tag `26.3.3-optimized` (version + suffix has
+# enough entropy to look like a generated secret). The tag is a documented
+# image reference, not a credential.
+platform/manifests/keycloak/04-keycloak-cr.yaml:generic-api-key:37
+docs/03-runbooks/keycloak-realm-hardening-replay.md:generic-api-key:135
