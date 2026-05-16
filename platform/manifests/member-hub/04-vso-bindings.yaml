@@ -1,0 +1,120 @@
+# VSO bindings for the member-hub namespace.
+#
+# Three rendered K8s Secrets:
+#   - member-hub-app-secrets       → app-level keys (session-signing,
+#                                 SpiceDB PSK, Keycloak client_secret)
+#   - member-hub-db-superuser-app  → CNPG application user credentials
+#                                 (CNPG operator creates this automatically;
+#                                 listed here for the network-policy reference)
+#   - cnpg-minio-credentials    → barman-cloud → MinIO bucket credentials
+#
+# The OpenBao policy that grants reads on these paths lives at
+# `platform/manifests/openbao/policies/member-hub.hcl`. The K8s auth role
+# binding (k8s SA `member-hub-vso` → policy `member-hub`) is created by the
+# openbao bootstrap; ongoing role changes go via kcadm-style direct API.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: member-hub-vso
+  namespace: member-hub
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: member-hub-vso
+    serviceAccount: member-hub-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# Aggregates app-level secrets (Keycloak client, SpiceDB, session key)
+# into a single K8s Secret consumed via envFrom in the backend Deployment.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: member-hub-app-secrets
+  namespace: member-hub
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: member-hub-vso
+  mount: secret
+  type: kv-v2
+  path: apps/member-hub/runtime
+  refreshAfter: 60s
+  destination:
+    name: member-hub-app-secrets
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # Keycloak OIDC client_secret (user-login `member-hub` client).
+        # App reads as OIDC_CLIENT_SECRET.
+        OIDC_CLIENT_SECRET:
+          text: '{{ .Secrets.oidc_client_secret }}'
+        # Keycloak admin-API client_secret (`member-hub-admin` service-account
+        # client — separate from the user-login OIDC client). Used by
+        # @keycloak/keycloak-admin-client for member-create / role-mgmt
+        # / etc. Realm-management roles assigned to this client's
+        # service account: manage-users, view-users, query-users,
+        # view-clients, view-realm.
+        KEYCLOAK_ADMIN_CLIENT_SECRET:
+          text: '{{ .Secrets.admin_client_secret }}'
+        # SpiceDB pre-shared key for gRPC auth (same value also rendered
+        # into the spicedb pod from its own VSO binding — we just
+        # consume it here, not own it).
+        SPICEDB_PRESHARED_KEY:
+          text: '{{ .Secrets.spicedb_psk }}'
+        # @fastify/secure-session signing key (raw 32-byte base64). The
+        # bootstrap script generates this once via `openssl rand -base64 32`
+        # and stores in OpenBao; rotate via OpenBao + Pod restart.
+        SESSION_KEY:
+          text: '{{ .Secrets.session_signing_key }}'
+        # HMAC-SHA256 key (32 bytes base64) for indexed lookup of
+        # encrypted email columns (e.g. pending_invitations.invited_email_hmac).
+        # See src/lib/secrets/hmac.ts for rationale on HMAC vs convergent
+        # encryption (HMAC chosen so DB readers can't recover plaintext).
+        # Rotation: bump the key in OpenBao + rebuild HMAC column for
+        # every row that needs to remain searchable.
+        EMAIL_HMAC_KEY:
+          text: '{{ .Secrets.email_hmac_key }}'
+
+---
+# barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
+# Same VSO consumer SA, same OpenBao path as keycloak's CNPG cluster.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: member-hub
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: member-hub-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 60s
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

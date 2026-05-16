@@ -1,0 +1,68 @@
+# Ingress for the member-hub plane — member-hub.${DOMAIN}.
+#
+# TAILNET-ONLY. The hostname has no public DNS A/AAAA record (deliberately,
+# 2026-05-14 cleanup of wildcards). Operator reaches it via the local
+# hosts file:
+#   100.77.117.112  member-hub.secforge.dev
+#
+# Single-route Ingress: Member Hub is a single Hono app (server-rendered
+# HTMX via views.tsx), no separate SPA. All paths go to the same Service.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: member-hub
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    secforge.platform/component: member-hub
+  annotations:
+    # Per-host LE issuance via DNS01 (Cloudflare). Works even though
+    # member-hub.${DOMAIN} has no public A record — DNS01 only needs the
+    # _acme-challenge TXT record, which cert-manager creates via the
+    # Cloudflare API regardless of A-record presence.
+    cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Defense-in-depth: even with the SNAT-bypass bug on the existing
+    # whitelist annotation (every external request appears as
+    # 10.42.0.1), this annotation kicks in once nginx is flipped to
+    # hostNetwork mode (deferred). Until then the DNS-removal is the
+    # real gate.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.42.0.0/16,65.21.25.40/32"
+    # Rate limit — slightly stricter than keycloak (5 rps) because the
+    # member-hub API has fewer legitimate burst patterns.
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    # Per-app CSP / Permissions-Policy / X-Frame-Options owned HERE, not
+    # in the cluster-wide secforge-default-headers ConfigMap (per the
+    # 2026-05-14 Wazuh dashboard CSP incident lesson — global CM only
+    # owns nosniff + Referrer-Policy).
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self 'https://js.stripe.com')";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Cross-Origin-Opener-Policy: same-origin";
+    # CORS handled at the application layer (Hono cors middleware).
+    # Setting it here would override the app's per-route policy.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - member-hub.${DOMAIN}
+      secretName: member-hub-tls
+  rules:
+    - host: member-hub.${DOMAIN}
+      http:
+        paths:
+          # All paths → Hono app (single deployment, no SPA split).
+          # /api/* routes are Hono handlers, /(.*) is server-rendered HTMX.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: member-hub
+                port:
+                  number: 80

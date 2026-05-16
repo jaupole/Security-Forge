@@ -1,0 +1,67 @@
+# Postgres cluster for the member-hub-plane API.
+#
+# Migrations 001-021 (incl. RLS at 019, audit-log hash chain at 020,
+# idempotency keys at 021) run from the `member-hub` repo via the
+# migration Job in 07-migration-job.yaml. CNPG operator manages the
+# rest of the lifecycle: failover, WAL archiving, base backups via
+# barman-cloud plugin → MinIO.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: member-hub-db
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      database: member_hub
+      owner: member_hub
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+      # RLS uses session-local GUCs (app.user_id, app.org_id). These
+      # are set via `SET LOCAL` in src/api/db-tx.ts and propagated by
+      # the txnContext() helper. No special postgresql.conf entries
+      # needed — `SET LOCAL` works on standard configs.
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin.
+  # ObjectStore CR lives in 06-objectstore.yaml; ScheduledBackup CR
+  # in 07-cnpg-scheduled-backup.yaml. Plugin install + operator
+  # wiring is in component 09h-cnpg-barman-plugin.sh.
+  #
+  # `parameters.barmanObjectName` is REQUIRED — it links the cluster to
+  # the ObjectStore CR by name. Without it, the operator can't load the
+  # plugin connection and the instance-manager loops on
+  # "Unknown plugin: barman-cloud.cloudnative-pg.io". Discovered the
+  # hard way during the 2026-05-14 member-hub rollout.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-backup

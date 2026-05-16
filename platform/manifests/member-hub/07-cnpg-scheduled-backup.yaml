@@ -1,0 +1,19 @@
+# Daily ScheduledBackup for member-hub-db.
+# 02:45 UTC — 15 min after keycloak's 02:30 to stagger MinIO PUTs.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: member-hub-db-daily
+  namespace: member-hub
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: member-hub-db
+spec:
+  schedule: "0 45 2 * * *"          # 6-field CNPG cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: member-hub-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false

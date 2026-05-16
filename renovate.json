@@ -1,0 +1,120 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":enableVulnerabilityAlertsWithLabel(security)",
+    ":timezone(Europe/Berlin)",
+    "group:allNonMajor"
+  ],
+  "schedule": [
+    "after 9pm every weekday",
+    "before 5am every weekday",
+    "every weekend"
+  ],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 8,
+  "labels": ["dependencies", "renovate"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "dependencies"],
+    "schedule": "at any time",
+    "minimumReleaseAge": null,
+    "automerge": false
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on Monday"]
+  },
+  "packageRules": [
+    {
+      "description": "GitHub Actions: auto-merge minor + patch after passing CI",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Helm charts: separate dashboard entries per chart (high-touch)",
+      "matchManagers": ["helm-values", "helmv3"],
+      "labels": ["helm-chart", "dependencies"],
+      "dependencyDashboardApproval": true,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Kubernetes base images / sidecar images: 7-day soak",
+      "matchManagers": ["dockerfile", "kubernetes"],
+      "matchDatasources": ["docker"],
+      "minimumReleaseAge": "7 days",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Keycloak base image — operator review before merge (manual flip + image-build pipeline)",
+      "matchManagers": ["regex"],
+      "matchPackageNames": ["quay.io/keycloak/keycloak"],
+      "dependencyDashboardApproval": true,
+      "labels": ["keycloak", "manual-review"]
+    },
+    {
+      "description": "SecLists HIBP password blacklist: yearly cadence is fine",
+      "matchManagers": ["regex"],
+      "matchPackageNames": ["danielmiessler/SecLists"],
+      "schedule": ["every 6 months"],
+      "labels": ["password-blacklist", "manual-review"]
+    },
+    {
+      "description": "node_modules in any TS project — security PRs immediately, others batched weekly",
+      "matchManagers": ["npm", "pnpm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "node deps (non-major)"
+    },
+    {
+      "description": "Major Node-deps: dashboard-only (review required)",
+      "matchManagers": ["npm", "pnpm"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "k3s + Kubernetes version: never auto-bump; gated by maintenance window",
+      "matchPackageNames": ["k3s-io/k3s"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Keycloak base image digest in custom Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": ["infrastructure/keycloak/image/Dockerfile$"],
+      "matchStrings": [
+        "ARG KEYCLOAK_BASE_DIGEST=(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "quay.io/keycloak/keycloak",
+      "datasourceTemplate": "docker",
+      "currentValueTemplate": "26.3.3"
+    },
+    {
+      "description": "SecLists HIBP blacklist commit pin in Keycloak Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": ["infrastructure/keycloak/image/Dockerfile$"],
+      "matchStrings": [
+        "ARG PWDB_COMMIT=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "depNameTemplate": "danielmiessler/SecLists",
+      "packageNameTemplate": "danielmiessler/SecLists",
+      "datasourceTemplate": "git-refs",
+      "currentValueTemplate": "master"
+    },
+    {
+      "description": "CHART_VER pins in platform/components/*.sh helm install scripts",
+      "customType": "regex",
+      "managerFilePatterns": ["^platform/components/.+\\.sh$"],
+      "matchStrings": [
+        "CHART_VER=\"\\$\\{[A-Z_]+:-(?<currentValue>[0-9.]+)\\}\"\\s*\\n.*helm.*--chart\\s+(?<depName>[\\w./-]+)"
+      ],
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://kubernetes-charts.storage.googleapis.com/"
+    }
+  ]
+}

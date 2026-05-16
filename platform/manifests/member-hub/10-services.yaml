@@ -1,0 +1,24 @@
+# In-cluster Service for the member-hub namespace.
+# ClusterIP-only — external access is via ingress-nginx (11-ingress.yaml).
+#
+# Single Service: Member Hub is a single Hono app (server-rendered HTMX
+# via views.tsx — no separate SPA / portal Deployment). The Service's
+# port 80 forwards to the Hono container's :3000 listening port.
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: member-hub
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: app
+    secforge.platform/component: member-hub
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: app
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }
