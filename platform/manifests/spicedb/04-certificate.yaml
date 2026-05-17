@@ -1,16 +1,33 @@
-# gRPC TLS for SpiceDB — internal service, never reachable externally,
-# self-signed Issuer is sufficient. Local edition used the mkcert ClusterIssuer
-# which doesn't exist in production; we use a namespace-scoped self-signed Issuer
-# instead. Caller verification still relies on PSK + (eventually) Istio mTLS.
+# gRPC TLS for SpiceDB.
+#
+# 2026-05-17 change — switched from a namespace-local self-signed
+# Issuer to the cluster-wide `secforge-internal-ca` ClusterIssuer.
+#
+# Why: ecosystem apps (Ecosystem Control, Member Hub, future apps)
+# call SpiceDB via gRPC over TLS. With a namespace-local self-signed
+# issuer, each caller would need the self-signed CA cert mounted in
+# its own pod — brittle (rotation drift) and high-touch. Using the
+# cluster-wide internal CA means every pod that already trusts
+# `secforge-internal-ca` (via NODE_EXTRA_CA_CERTS pointing at the
+# openbao-internal-ca-cert ConfigMap, which carries that CA root)
+# automatically trusts SpiceDB. Same pattern as Keycloak's internal
+# cert + OpenBao's TLS.
+#
+# The previous `spicedb-selfsigned` Issuer is kept commented in case
+# of rollback; safe to delete after a successful cert rotation cycle.
+#
+# Caller verification: PSK + TLS chain. Eventual Istio mTLS layer
+# adds workload identity on top.
 
----
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: spicedb-selfsigned
-  namespace: spicedb
-spec:
-  selfSigned: {}
+# Retained as comment for rollback reference only:
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Issuer
+# metadata:
+#   name: spicedb-selfsigned
+#   namespace: spicedb
+# spec:
+#   selfSigned: {}
 
 ---
 apiVersion: cert-manager.io/v1
@@ -44,6 +61,6 @@ spec:
     - digital signature
     - key encipherment
   issuerRef:
-    name: spicedb-selfsigned
-    kind: Issuer
+    name: secforge-internal-ca
+    kind: ClusterIssuer
     group: cert-manager.io

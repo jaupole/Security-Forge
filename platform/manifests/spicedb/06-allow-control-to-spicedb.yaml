@@ -1,0 +1,35 @@
+# Allow `control` ns (Ecosystem Control's api Deployment) → SpiceDB
+# gRPC on 50051. Control's `isPlatformAdmin` + `writeOrgPlatformLink`
+# in src/api/lib/platform-admin.ts call SpiceDB directly via the
+# `@authzed/authzed-node` gRPC client. The platform's intended
+# pattern routes ecosystem apps through the AuthZEN façade in `app`
+# ns, but Control was built before the façade existed and still
+# uses direct calls. Until that's refactored (out-of-scope for the
+# 2026-05-16 Member Hub Day 4 session), this explicit allow keeps
+# /api/v1/me + org-mutating endpoints functional.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-control-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/expedient: 'direct-grpc-instead-of-authzen-facade'
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: control
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 50051
