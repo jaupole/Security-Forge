@@ -53,7 +53,8 @@
       "_comment": "Gitleaks doesn't sign releases with cosign yet; pin SHA256 from release notes."
     },
     "semgrep": {
-      "version": "1.95.0",
+      "version": "1.163.0",
+      "_version_note": "Bumped from 1.95.0 on 2026-05-19. 1.95.0 ships with an opentelemetry-instrumentation version that's incompatible with Python 3.12 on Ubuntu 24.04 GHA runners — pipx install succeeds but `semgrep` itself crashes at import. 1.163.0 ships a fixed dep set.",
       "install_via": "pipx",
       "sigstore_signed": false,
       "verify_with": "pip-hash",
