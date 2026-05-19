@@ -48,6 +48,20 @@ Read paths are gated by the SpiceDB `read_audit` permission
    - The per-app VSO binding (in `12-audit-anchor-cronjob.yaml`) renders
      this into a K8s Secret `audit-anchors-push-token` in the app ns.
 
+   > **STATUS 2026-05-19**: the GitHub PAT ("SecForge Audit Anchors",
+   > fine-grained, Contents:RW on `secforge-audit-anchors`, expires
+   > 2027-05-19) is **already created and already stored in OpenBao** at
+   > `secret/apps/member-hub/audit-anchors-push-token`. It is **untouched
+   > — never run against** anything: the audit-anchor CronJob only fires
+   > once Member Hub is deployed to the cluster (currently laptop-hybrid-
+   > dev, no cluster footprint — see operator-backlog #34's
+   > Member-Hub-Track-C note). **FIX-WHEN-WE-MOVE-MEMBER-HUB**: when
+   > Member Hub gets its cluster deployment, (a) confirm this token still
+   > has >30d to expiry, (b) confirm the VSO binding renders the
+   > `audit-anchors-push-token` Secret, (c) confirm the
+   > `audit-verifier-db` password Secret is populated (Step 4 below),
+   > then apply manifests 12 + 13. Until then nothing here is live.
+
 4. **CNPG `audit_verifier` role password** — needs a one-off SQL after
    migration 040 applies + write password to OpenBao:
    ```sql
