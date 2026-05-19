@@ -366,6 +366,7 @@ gate_secrets() {
 
 gate_supply_chain() {
   local result='{"gate":"gate-supply-chain","scanners_run":[],"scanners_skipped":[],"findings":[]}'
+  echo "  [supply-chain] enter" >&2
 
   # Helper: record a skipped scanner with a reason
   skip() {
@@ -376,6 +377,7 @@ gate_supply_chain() {
   }
 
   # ---- npm: signature verification ----
+  echo "  [supply-chain] step npm-audit-signatures" >&2
   if [[ -f package-lock.json || -f yarn.lock || -f pnpm-lock.yaml ]]; then
     if command -v npm >/dev/null 2>&1; then
       local raw
@@ -400,6 +402,7 @@ gate_supply_chain() {
   fi
 
   # ---- npm/yarn: Socket security scan (publish-time intel) ----
+  echo "  [supply-chain] step socket" >&2
   if [[ -f package.json ]]; then
     if command -v socket >/dev/null 2>&1; then
       local socket_raw
@@ -424,6 +427,7 @@ gate_supply_chain() {
   fi
 
   # ---- python: pip-audit ----
+  echo "  [supply-chain] step pip-audit" >&2
   if [[ -f requirements.txt || -f pyproject.toml || -f poetry.lock ]]; then
     if command -v pip-audit >/dev/null 2>&1; then
       local pip_raw
@@ -456,6 +460,7 @@ gate_supply_chain() {
   # ---- OpenSSF Scorecard: project hygiene of direct deps ----
   # Only run if we have a manifest and the binary is available. Cheap-ish but
   # network-dependent, so skip cleanly when offline.
+  echo "  [supply-chain] step scorecard" >&2
   if command -v scorecard >/dev/null 2>&1; then
     if [[ -f package.json || -f pyproject.toml || -f go.mod ]]; then
       local sc_raw
@@ -487,6 +492,7 @@ gate_supply_chain() {
 
   # If nothing ran, warn cleanly. Guard against jq failure producing an empty
   # $ran_count which would bash-error on the [[ -eq ]] integer compare.
+  echo "  [supply-chain] step ran_count check" >&2
   local ran_count
   ran_count=$(echo "$result" | jq '.scanners_run | length' 2>/dev/null || echo 0)
   ran_count=${ran_count:-0}
@@ -494,6 +500,7 @@ gate_supply_chain() {
     result=$(echo "$result" | jq '. + {warning:"no supply-chain scanner ran — see scanners_skipped for reasons"}')
   fi
 
+  echo "  [supply-chain] exit clean" >&2
   echo "$result"
 }
 
