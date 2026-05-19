@@ -137,24 +137,32 @@ gate_sast() {
   local version configs=(--config p/security-audit --config p/secrets --config p/owasp-top-ten)
   version=$(semgrep --version 2>/dev/null || echo "unknown")
 
-  local args=(semgrep "${configs[@]}" --config auto --severity ERROR --severity WARNING --json --quiet)
+  # `--config auto` requires SEMGREP_APP_TOKEN (cloud auth). Without it,
+  # semgrep refuses to scan and emits nothing on stdout, leaving the gate
+  # blank. The three explicit registry packs above cover the same surface.
+  local args=(semgrep "${configs[@]}" --severity ERROR --severity WARNING --json --quiet)
   if [[ "$SCOPE" == "pr" && -n "$BASE_SHA" ]]; then
     args+=(--baseline-commit "$BASE_SHA")
   else
     args+=(.)
   fi
 
-  local raw runtime
+  local raw runtime errfile
+  errfile=$(mktemp)
   runtime=$(date +%s)
   set +e
-  raw=$("${args[@]}" 2>/dev/null)
+  raw=$("${args[@]}" 2>"$errfile")
   set -e
   runtime=$(( $(date +%s) - runtime ))
 
   if [[ -z "$raw" ]]; then
-    gate_error "gate-sast" "semgrep produced no output"
+    local errtail
+    errtail=$(tail -c 512 "$errfile" 2>/dev/null | tr -d '\r' | head -c 400)
+    rm -f "$errfile"
+    gate_error "gate-sast" "semgrep produced no output (stderr: ${errtail:-empty})"
     return
   fi
+  rm -f "$errfile"
   raw=$(as_json "$raw" '{"results":[]}')
 
   # semgrep --json normally returns {results:[...], ...}. Some configs
@@ -477,9 +485,11 @@ gate_supply_chain() {
          "go install github.com/ossf/scorecard/v4@latest  # or  brew install scorecard"
   fi
 
-  # If nothing ran, warn cleanly.
+  # If nothing ran, warn cleanly. Guard against jq failure producing an empty
+  # $ran_count which would bash-error on the [[ -eq ]] integer compare.
   local ran_count
-  ran_count=$(echo "$result" | jq '.scanners_run | length')
+  ran_count=$(echo "$result" | jq '.scanners_run | length' 2>/dev/null || echo 0)
+  ran_count=${ran_count:-0}
   if [[ "$ran_count" -eq 0 ]]; then
     result=$(echo "$result" | jq '. + {warning:"no supply-chain scanner ran — see scanners_skipped for reasons"}')
   fi
@@ -631,27 +641,32 @@ gate_tests() {
   # Parse summary counts. Each framework prints something different; we
   # extract conservative numbers and let the agent do nuanced re-parse if needed.
   local passed=0 failed=0 skipped=0
+  # set -e + pipefail aborts the function if grep finds 0 matches (rc=1). All
+  # pipes need `|| true` so a clean test run (no "failed" tokens) doesn't kill
+  # the gate.
+  set +o pipefail
   case "$framework" in
     pytest)
-      passed=$(echo "$raw"  | grep -oE '[0-9]+ passed'  | tail -1 | awk '{print $1}'); passed=${passed:-0}
-      failed=$(echo "$raw"  | grep -oE '[0-9]+ failed'  | tail -1 | awk '{print $1}'); failed=${failed:-0}
-      skipped=$(echo "$raw" | grep -oE '[0-9]+ skipped' | tail -1 | awk '{print $1}'); skipped=${skipped:-0}
+      passed=$(echo "$raw"  | grep -oE '[0-9]+ passed'  | tail -1 | awk '{print $1}' || true); passed=${passed:-0}
+      failed=$(echo "$raw"  | grep -oE '[0-9]+ failed'  | tail -1 | awk '{print $1}' || true); failed=${failed:-0}
+      skipped=$(echo "$raw" | grep -oE '[0-9]+ skipped' | tail -1 | awk '{print $1}' || true); skipped=${skipped:-0}
       ;;
     vitest|jest)
-      passed=$(echo "$raw"  | grep -oE 'Tests:.*[0-9]+ passed'  | grep -oE '[0-9]+ passed'  | head -1 | awk '{print $1}'); passed=${passed:-0}
-      failed=$(echo "$raw"  | grep -oE 'Tests:.*[0-9]+ failed'  | grep -oE '[0-9]+ failed'  | head -1 | awk '{print $1}'); failed=${failed:-0}
-      skipped=$(echo "$raw" | grep -oE 'Tests:.*[0-9]+ skipped' | grep -oE '[0-9]+ skipped' | head -1 | awk '{print $1}'); skipped=${skipped:-0}
+      passed=$(echo "$raw"  | grep -oE 'Tests:.*[0-9]+ passed'  | grep -oE '[0-9]+ passed'  | head -1 | awk '{print $1}' || true); passed=${passed:-0}
+      failed=$(echo "$raw"  | grep -oE 'Tests:.*[0-9]+ failed'  | grep -oE '[0-9]+ failed'  | head -1 | awk '{print $1}' || true); failed=${failed:-0}
+      skipped=$(echo "$raw" | grep -oE 'Tests:.*[0-9]+ skipped' | grep -oE '[0-9]+ skipped' | head -1 | awk '{print $1}' || true); skipped=${skipped:-0}
       ;;
     go)
       failed=$(echo "$raw" | grep -cE '^--- FAIL' || true); failed=${failed:-0}
       passed=$(echo "$raw" | grep -cE '^--- PASS' || true); passed=${passed:-0}
       ;;
     cargo)
-      passed=$(echo "$raw"  | grep -oE '[0-9]+ passed'   | tail -1 | awk '{print $1}'); passed=${passed:-0}
-      failed=$(echo "$raw"  | grep -oE '[0-9]+ failed'   | tail -1 | awk '{print $1}'); failed=${failed:-0}
-      skipped=$(echo "$raw" | grep -oE '[0-9]+ ignored'  | tail -1 | awk '{print $1}'); skipped=${skipped:-0}
+      passed=$(echo "$raw"  | grep -oE '[0-9]+ passed'   | tail -1 | awk '{print $1}' || true); passed=${passed:-0}
+      failed=$(echo "$raw"  | grep -oE '[0-9]+ failed'   | tail -1 | awk '{print $1}' || true); failed=${failed:-0}
+      skipped=$(echo "$raw" | grep -oE '[0-9]+ ignored'  | tail -1 | awk '{print $1}' || true); skipped=${skipped:-0}
       ;;
   esac
+  set -o pipefail
 
   # Build findings: one entry per failed test bucket. Detail-level parsing
   # (per-test file/line) is the subagent's job; the runner just signals fail.
