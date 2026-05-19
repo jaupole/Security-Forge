@@ -1,0 +1,80 @@
+# Admin-console Ingress for Keycloak (auth.${DOMAIN}/admin).
+#
+# DRIFT FIX (operator-backlog #35): this Ingress existed live on the
+# cluster since ~2026-05-13 but had NO manifest in the repo — pure
+# drift. This file codifies the live `keycloak-admin` Ingress as the
+# source of truth. Diff against `kubectl get ingress -n keycloak
+# keycloak-admin` before re-applying.
+#
+# Why a separate Ingress from 05-ingress.yaml: the admin console
+# (`/admin`) is gated to the tailnet + pod CIDR + the host's own IP via
+# whitelist-source-range. Public OIDC endpoints (`/`) stay open in
+# 05-ingress.yaml. Keep the two split so the admin allowlist can tighten
+# independently.
+#
+# ── operator-backlog #35: admin-console cache-mismatch ──────────────
+# Symptom (2026-05-18): after a Keycloak image upgrade, an already-open
+# admin tab throws "Failed to fetch dynamically imported module:
+# ClientDetails-<hash>.js" because the in-memory SPA still references
+# the previous resource-version path (`/resources/<oldver>/...`), which
+# the new pod no longer serves.
+#
+# Investigated 2026-05-19 — the caching is ALREADY correct:
+#   - `/admin/master/console/` HTML  → `Cache-Control: no-cache`
+#     (Keycloak emits this itself; the browser always revalidates, so a
+#      plain reload fetches the fresh index.html with new asset paths).
+#   - `/resources/<version>/.../*.js` → `Cache-Control: max-age=2592000`
+#     and the `<version>` path segment is content-versioned, so a new
+#     Keycloak image serves assets under a new path — no stale-asset
+#     collision.
+# The prescribed "add no-cache via ingress configuration-snippet" fix is
+# therefore redundant AND blocked: ingress-nginx 1.15 ships with
+# `allow-snippet-annotations: false` and enabling it cluster-wide re-opens
+# an arbitrary-nginx-config-injection surface — not worth it for a header
+# Keycloak already sets.
+#
+# Residual: an admin tab left open ACROSS a Keycloak image upgrade
+# breaks on the next lazy-chunk import until the tab is reloaded. A
+# reload fixes it (the no-cache HTML pulls fresh asset paths). This is
+# inherent SPA-vs-backend-version-skew behaviour in Keycloak's own admin
+# console — not something this Ingress can resolve. Operator workaround
+# stays "reload the tab after a Keycloak upgrade" (NOT incognito — a
+# normal reload suffices now that the headers are confirmed correct).
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-admin
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak-admin
+  annotations:
+    cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    # Keycloak backend speaks HTTPS only (httpEnabled=false since 2026-05-13).
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Backend cert is secforge-internal-ca issued (not publicly trusted).
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Admin console reachable only from the tailnet (100.64.0.0/10),
+    # the in-cluster pod CIDR (10.42.0.0/16), and the host's own
+    # public IP (65.21.25.40/32). No public exposure of /admin.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.42.0.0/16,65.21.25.40/32"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth.${DOMAIN}
+      secretName: keycloak-tls
+  rules:
+    - host: auth.${DOMAIN}
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak-service
+                port:
+                  number: 8443

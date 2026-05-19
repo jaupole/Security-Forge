@@ -103,6 +103,22 @@ spec:
       value: info
     - name: spi-events-listener-jboss-logging-error-level
       value: warn
+    # Theme/static-resource caching (operator-backlog #35). These match
+    # Keycloak's production-mode defaults — pinned here so the intent is
+    # declarative and survives a future upstream default change:
+    #   - static-max-age: how long the browser caches /resources/<ver>/*
+    #     assets. 30d. Safe because the <ver> path segment is content-
+    #     versioned — a Keycloak upgrade serves assets under a new path.
+    #   - cache-themes / cache-templates: Keycloak keeps theme files +
+    #     FreeMarker templates in memory rather than re-reading from disk.
+    #     true in production; pinned so a dev-mode default flip doesn't
+    #     silently change admin-console asset behaviour.
+    - name: spi-theme-static-max-age
+      value: "2592000"
+    - name: spi-theme-cache-themes
+      value: "true"
+    - name: spi-theme-cache-templates
+      value: "true"
 
   resources:
     requests:
