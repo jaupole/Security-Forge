@@ -10,7 +10,8 @@
     "trivy": {
       "version": "0.70.0",
       "repo": "aquasecurity/trivy",
-      "asset_template": "trivy_{version}_{os}-{arch}.tar.gz",
+      "_asset_naming": "trivy uses Linux-64bit / Linux-ARM64 (capital L, no underscore-amd64). Template hard-codes amd64; templatize when arm64 CI is added.",
+      "asset_template": "trivy_{version}_Linux-64bit.tar.gz",
       "sigstore_signed": true,
       "verify_with": "cosign-keyless",
       "cosign_identity": "https://github.com/aquasecurity/trivy/.github/workflows/release.yaml@refs/tags/v{version}",
@@ -45,7 +46,8 @@
     "gitleaks": {
       "version": "8.30.1",
       "repo": "gitleaks/gitleaks",
-      "asset_template": "gitleaks_{version}_{os}_{arch}.tar.gz",
+      "_asset_naming": "gitleaks publishes linux_x64 / linux_arm64 (not amd64). Template hard-codes x64; templatize when arm64 CI is added.",
+      "asset_template": "gitleaks_{version}_linux_x64.tar.gz",
       "sigstore_signed": false,
       "verify_with": "sha256",
       "_comment": "Gitleaks doesn't sign releases with cosign yet; pin SHA256 from release notes."
@@ -79,8 +81,9 @@
       "pip_hash_sha256": "PINME"
     },
     "scorecard": {
-      "version": "5.0.0",
+      "version": "5.5.0",
       "repo": "ossf/scorecard",
+      "_version_note": "v5.0.0 was never released; ossf jumped from 5.x prereleases to 5.5.0 (2026-04-23). Pinned at 5.5.0 on 2026-05-19.",
       "asset_template": "scorecard_{version}_{os}_{arch}.tar.gz",
       "sigstore_signed": true,
       "verify_with": "cosign-keyless",
