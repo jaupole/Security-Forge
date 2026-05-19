@@ -33,6 +33,14 @@ install -m 0644 -o root -g root \
     "$PLATFORM_DIR/host/sysctl/99-secforge-hardening.conf" \
     /etc/sysctl.d/99-secforge-hardening.conf
 
+green "==> install /etc/sysctl.d/91-k3s-kubelet.conf"
+# Required for k3s kubelet --protect-kernel-defaults. New HWE kernels reset
+# these on upgrade reboot; persisting here keeps k3s booting cleanly. Discovered
+# 2026-05-19 when 6.17.0-23 → 29 left k3s in crash-loop.
+install -m 0644 -o root -g root \
+    "$PLATFORM_DIR/host/sysctl/91-k3s-kubelet.conf" \
+    /etc/sysctl.d/91-k3s-kubelet.conf
+
 # ─── 2. inotify limits + mount table ceiling ──────────────────────────
 green "==> install /etc/sysctl.d/90-secforge-limits.conf"
 cat > /etc/sysctl.d/90-secforge-limits.conf <<'EOF'
@@ -224,6 +232,8 @@ cat <<EOF
 
 Settings active:
   - sysctl hardening:        /etc/sysctl.d/99-secforge-hardening.conf
+  - k3s kubelet sysctls:     /etc/sysctl.d/91-k3s-kubelet.conf
+                             (vm.overcommit_memory=1, kernel.panic=10, kernel.panic_on_oops=1)
   - inotify + mount limits:  /etc/sysctl.d/90-secforge-limits.conf
                              (fs.inotify.max_user_instances=8192, fs.mount-max=1048576)
   - ufw default-deny:        enabled, 22/80/443/6443 open + cni0/pod-CIDR rules
