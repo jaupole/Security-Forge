@@ -56,8 +56,10 @@ initContainers:
         memory: 64Mi
 
 resources:
-  requests: { cpu: 100m, memory: 256Mi }
-  limits:   { cpu: 500m, memory: 512Mi }
+  # 2Gi limit: Velero v1.18 OOMs at 512Mi during restore on this cluster
+  # (observed 2026-05-19 during openbao admin recovery from #34).
+  requests: { cpu: 200m, memory: 512Mi }
+  limits:   { cpu: 1,    memory: 2Gi }
 
 # Enable the upgrade-CRDs Job. Required when bumping across CRD-changing
 # Velero versions (e.g. 1.15 → 1.18 introduced the "Queued" status.phase

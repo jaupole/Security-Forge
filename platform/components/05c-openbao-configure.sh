@@ -95,6 +95,19 @@ bao bao write auth/kubernetes/config \
   kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
   disable_local_ca_jwt="false" 2>&1 | tail -1
 
+# ─── 5. admin-break-glass role ────────────────────────────────────────────
+# Per docs/03-runbooks/openbao-recovery.md § "Kubernetes auth break-glass":
+# anyone with `kubectl exec` into openbao ns can mint a 1h admin token via
+# the openbao SA. Closes operator-backlog #34 (the runbook claimed this role
+# existed; it never actually did until 2026-05-19).
+echo ">>> Creating auth/kubernetes/role/admin-break-glass (admin policy, 1h ttl)"
+bao bao write auth/kubernetes/role/admin-break-glass \
+  bound_service_account_names=openbao \
+  bound_service_account_namespaces=openbao \
+  token_policies=admin \
+  token_ttl=1h \
+  token_max_ttl=1h 2>&1 | tail -1
+
 # Clear root token from process memory (the Secret is the canonical source)
 unset ROOT_TOKEN
 
@@ -105,6 +118,7 @@ cat <<EOF
   Loaded $(ls "$POLICIES_DIR"/*.hcl | wc -l) policies.
   Enabled engines: kv-v2 (at secret/), transit (with pii-encryption key).
   Enabled auth methods: kubernetes.
+  Created roles: admin-break-glass (k8s SA openbao/openbao → admin policy, 1h ttl).
 
   Next: bash $SCRIPT_DIR/05d-vso-install.sh
 EOF
