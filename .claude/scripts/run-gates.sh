@@ -724,7 +724,18 @@ esac
 
 results="[]"
 for g in "${GATES[@]}"; do
+  echo ">>> running $g" >&2
+  set +e
   result=$("$g")
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]]; then
+    echo "    $g exited non-zero (rc=$rc); recording error placeholder" >&2
+    result=$(jq -n --arg g "$g" --argjson rc "$rc" '{gate:$g, error:("gate function exit "+($rc|tostring)), findings:[]}')
+  fi
+  # Hard guarantee: never feed non-JSON into the aggregator.
+  result=$(as_json "$result" "$(jq -n --arg g "$g" '{gate:$g, error:"gate emitted non-JSON output", findings:[]}')")
+  echo "    $g result: $(echo "$result" | jq -c '{gate, findings_count: (.findings|length // 0), error: (.error // null)}' 2>/dev/null || echo 'failed-to-summarize')" >&2
   results=$(echo "$results" | jq --argjson r "$result" '. += [$r]')
 done
 
