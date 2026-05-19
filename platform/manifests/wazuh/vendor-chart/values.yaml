@@ -13,9 +13,25 @@ global:
     busybox:
       repository: public.ecr.aws/docker/library/busybox
       tag: "1.36"
+    # bitnami/kubectl — Debian-based, kept ONLY for the cert jobs
+    # (certs/job.yaml + certs/rotation-cronjob.yaml) which need `openssl`
+    # baked in. bitnami's catalog is being sunset; the proper fix is a
+    # purpose-built signed toolbox image (kubectl+bash+openssl+jq) —
+    # tracked as a CVE-backlog follow-up. Standing CVE contribution here
+    # is ~0: certs/job is a one-shot pre-install hook (deleted on success)
+    # and cert-rotation is a low-frequency CronJob whose pod is reaped fast.
     kubectl:
       repository: public.ecr.aws/bitnami/kubectl
       tag: "1.32.3-debian-12-r5"
+    # Slim kubectl for the sh+kubectl-only jobs (manager-cleanup, indexer
+    # watchdog, indexer drift-detection). Wolfi-based, near-zero CVE — the
+    # shared bitnami/kubectl previously used here carried 15 crit / 126
+    # high. The -dev variant ships /bin/sh + busybox (awk, seq, date) for
+    # the shell scripts; digest-pinned. cgr.dev/chainguard/* is on the
+    # Kyverno restrict-image-registries allow-list.
+    kubectlSlim:
+      repository: cgr.dev/chainguard/kubectl
+      tag: "latest-dev@sha256:6b7bd52501052b5072eb108becf43f8fa3a0e06da21fb8e605f0aed9de1a1d0f"
 
 # =============================================================================
 # Security & Credentials

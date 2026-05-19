@@ -68,7 +68,15 @@ spec:
                 limits:   { cpu: 50m, memory: 32Mi }
           containers:
             - name: reporter
-              image: alpine/k8s:1.31.2
+              # alpine/k8s — NOT swapped to chainguard/kubectl like the other
+              # CVE-backlog CronJobs, because this job needs `jq` + `kubectl`
+              # + a shell together and no slim off-the-shelf image bundles
+              # all three. Bumped 1.31.2 -> 1.34.1 for the CVE-patch delta
+              # (36->28 crit) and moved off bare docker.io to mirror.gcr.io
+              # (consistency with the initContainer above). The proper fix —
+              # a purpose-built signed toolbox image — is a CVE-backlog
+              # follow-up; this job is a 6-hourly short-lived completed pod.
+              image: mirror.gcr.io/alpine/k8s:1.34.1
               securityContext:
                 runAsUser: 65534
                 allowPrivilegeEscalation: false

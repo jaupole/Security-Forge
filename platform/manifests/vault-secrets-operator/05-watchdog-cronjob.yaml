@@ -91,11 +91,15 @@ spec:
               type: RuntimeDefault
           containers:
             - name: watchdog
-              # alpine/k8s ships kubectl + busybox sh in a small alpine base.
-              # rancher/kubectl is distroless (no shell), and the bitnami mirror
-              # doesn't carry 1.34.x tags. mirror.gcr.io is on the Kyverno
-              # allow-list (restrict-image-registries).
-              image: mirror.gcr.io/alpine/k8s:1.34.1
+              # chainguard/kubectl :latest-dev — wolfi-based, near-zero CVE.
+              # The fat alpine/k8s bundle previously used here carried 28
+              # critical / 240 high CVEs (it ships helm + aws-cli + a dozen
+              # tools this job never calls). The -dev variant ships /bin/sh +
+              # busybox (grep, date) alongside kubectl — the script needs a
+              # shell, so the distroless non-dev variant won't work. Digest-
+              # pinned for reproducibility; cgr.dev/chainguard/* is on the
+              # Kyverno restrict-image-registries allow-list.
+              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:6b7bd52501052b5072eb108becf43f8fa3a0e06da21fb8e605f0aed9de1a1d0f
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false

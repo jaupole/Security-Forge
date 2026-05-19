@@ -32,7 +32,7 @@ spec:
             fsGroup: 1000
           containers:
             - name: watchdog
-              image: "{{ .Values.global.initImages.kubectl.repository }}:{{ .Values.global.initImages.kubectl.tag }}"
+              image: "{{ .Values.global.initImages.kubectlSlim.repository }}:{{ .Values.global.initImages.kubectlSlim.tag }}"
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
