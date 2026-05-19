@@ -116,7 +116,13 @@ spec:
               # Copy /var/ossec/etc/ tree without preserving ownership
               # (we lack CAP_CHOWN; pod-level fsGroup=999 chowns the
               # EmptyDir afterwards to match the image's wazuh user).
-              cp -r --preserve=mode,timestamps /var/ossec/etc/. /etc-overlay/
+              # Don't preserve timestamps either — `cp` would invoke
+              # utimensat(), which on Ubuntu 24.04 hardened kernels
+              # requires CAP_FOWNER (not in our drop-ALL + DAC_OVERRIDE
+              # set). Mode is the only attribute the agent actually
+              # cares about post-copy. Surfaced 2026-05-19 as wazuh-agent
+              # CrashLoopBackOff on `cp -p` "Operation not permitted".
+              cp -r --preserve=mode /var/ossec/etc/. /etc-overlay/
 
               # Append our customizations to ossec.conf. Wazuh's parser
               # accepts multiple top-level <ossec_config> blocks

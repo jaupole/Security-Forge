@@ -302,12 +302,26 @@ spec:
             initialDelaySeconds: 45
             periodSeconds: 15
             timeoutSeconds: 5
+          # Liveness checks BOTH the agent-events listener AND the wazuh-apid
+          # daemon. Operator-backlog #20: wazuh-apid can die while remoted
+          # stays alive — a tcpSocket on agents-events wouldn't catch that
+          # and the dashboard's wait-for-dependencies init blocks
+          # indefinitely. exec covers both signals; pod restart auto-
+          # recovers without operator intervention.
           livenessProbe:
-            tcpSocket:
-              port: agents-events
-            initialDelaySeconds: 60
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  pgrep -x wazuh-apid >/dev/null
+                  pgrep -x wazuh-remoted >/dev/null
+                  pgrep -x wazuh-analysisd >/dev/null
+            initialDelaySeconds: 120
             periodSeconds: 30
             timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.manager.resources | nindent 12 }}
           volumeMounts:
