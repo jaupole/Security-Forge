@@ -1,0 +1,103 @@
+{
+  "_comment": "Pinned tool versions for the advisor loop. Re-pin quarterly, not on every release. Re-verify SHA256s when bumping. Some tools sign releases with cosign; we verify those too.",
+  "_schema_version": "1.0",
+  "_pinned_at": "2026-05-11",
+  "_re_pin_after": "2026-08-11",
+
+  "platforms": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"],
+
+  "tools": {
+    "trivy": {
+      "version": "0.70.0",
+      "repo": "aquasecurity/trivy",
+      "asset_template": "trivy_{version}_{os}-{arch}.tar.gz",
+      "sigstore_signed": true,
+      "verify_with": "cosign-keyless",
+      "cosign_identity": "https://github.com/aquasecurity/trivy/.github/workflows/release.yaml@refs/tags/v{version}",
+      "cosign_issuer": "https://token.actions.githubusercontent.com"
+    },
+    "syft": {
+      "version": "1.16.0",
+      "repo": "anchore/syft",
+      "asset_template": "syft_{version}_{os}_{arch}.tar.gz",
+      "sigstore_signed": true,
+      "verify_with": "cosign-keyless",
+      "cosign_identity": "https://github.com/anchore/syft/.github/workflows/release.yaml@refs/tags/v{version}",
+      "cosign_issuer": "https://token.actions.githubusercontent.com"
+    },
+    "grype": {
+      "version": "0.83.0",
+      "repo": "anchore/grype",
+      "asset_template": "grype_{version}_{os}_{arch}.tar.gz",
+      "sigstore_signed": true,
+      "verify_with": "cosign-keyless",
+      "cosign_identity": "https://github.com/anchore/grype/.github/workflows/release.yaml@refs/tags/v{version}",
+      "cosign_issuer": "https://token.actions.githubusercontent.com"
+    },
+    "cosign": {
+      "version": "2.4.1",
+      "repo": "sigstore/cosign",
+      "asset_template": "cosign-{os}-{arch}",
+      "sigstore_signed": true,
+      "verify_with": "self-bootstrap",
+      "_comment": "Cosign verifies itself with a previous cosign. For first install, fall back to GitHub release SHA256."
+    },
+    "gitleaks": {
+      "version": "8.30.1",
+      "repo": "gitleaks/gitleaks",
+      "asset_template": "gitleaks_{version}_{os}_{arch}.tar.gz",
+      "sigstore_signed": false,
+      "verify_with": "sha256",
+      "_comment": "Gitleaks doesn't sign releases with cosign yet; pin SHA256 from release notes."
+    },
+    "semgrep": {
+      "version": "1.95.0",
+      "install_via": "pipx",
+      "sigstore_signed": false,
+      "verify_with": "pip-hash",
+      "pip_hash_sha256": "PINME"
+    },
+    "checkov": {
+      "version": "3.2.105",
+      "install_via": "pipx",
+      "sigstore_signed": false,
+      "verify_with": "pip-hash",
+      "pip_hash_sha256": "PINME"
+    },
+    "tfsec": {
+      "version": "1.28.13",
+      "repo": "aquasecurity/tfsec",
+      "asset_template": "tfsec-{os}-{arch}",
+      "sigstore_signed": false,
+      "verify_with": "sha256"
+    },
+    "pip-audit": {
+      "version": "2.7.3",
+      "install_via": "pipx",
+      "sigstore_signed": false,
+      "verify_with": "pip-hash",
+      "pip_hash_sha256": "PINME"
+    },
+    "scorecard": {
+      "version": "5.0.0",
+      "repo": "ossf/scorecard",
+      "asset_template": "scorecard_{version}_{os}_{arch}.tar.gz",
+      "sigstore_signed": true,
+      "verify_with": "cosign-keyless",
+      "cosign_identity": "https://github.com/ossf/scorecard/.github/workflows/goreleaser.yaml@refs/tags/v{version}",
+      "cosign_issuer": "https://token.actions.githubusercontent.com"
+    },
+    "zap": {
+      "_comment": "OWASP ZAP runs as a container. Pin by digest, not tag. Re-verify quarterly. Use docker pull zaproxy/zap-stable && docker inspect --format='{{index .RepoDigests 0}}' to capture the current digest.",
+      "version": "2.16.1",
+      "image": "zaproxy/zap-stable@sha256:8770b23f9e8b49038f413cb2b10c58c901e5b6717be221a22b1bcab5c9771b8a",
+      "verify_with": "image-digest",
+      "_run_via": "docker run --rm -t -v $PWD:/zap/wrk/:rw zaproxy/zap-stable@sha256:<digest> zap-baseline.py -t $URL -J report.json -I"
+    }
+  },
+
+  "_notes_on_pin_me": [
+    "Entries marked 'PINME' are placeholders. Run install-verify.sh --capture-hashes to populate them from the release artifact actually downloaded.",
+    "Each pin runs through a quarterly re-verify cycle. The CI installer refuses to proceed if a SHA256 doesn't match the pin."
+  ]
+}
