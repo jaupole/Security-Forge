@@ -1,0 +1,287 @@
+# Member Hub — nightly audit anchor CronJob.
+# operator-backlog #33 Part 2.
+#
+# Each run:
+#   1. Reads the last anchored row ID from secforge-audit-anchors:member-hub/
+#      (clones a fresh tip — git history is the source of truth, not local
+#       cluster state).
+#   2. Queries audit.event for MAX(id), MAX(full_hash) WHERE id > last anchored.
+#   3. Signs the full_hash with OpenBao Transit (`transit/sign/audit-signing`,
+#      Ed25519, key version 1+).
+#   4. Writes `member-hub/YYYY-MM-DD.json` with the anchor payload + signature.
+#   5. Commits + pushes via a write-scoped PAT.
+#
+# The PAT is stored at OpenBao path `secret/data/apps/member-hub/audit-anchors-push-token`
+# with key `token`. Operator one-time setup (see commit message + the closing
+# section of `docs/03-runbooks/audit-anchors.md`).
+#
+# Failure modes (any of these halts THIS run; next night's run tries again):
+#   - DB unreachable → exit 1, no commit.
+#   - OpenBao unreachable → exit 1, no commit.
+#   - audit.event MAX(id) == last anchored id → exit 0 with "no new rows" log.
+#   - git push fails (auth, conflict) → exit 1, no commit; next run picks up.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: member-hub-audit-signer
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+
+---
+# VSO binding: GitHub push token (operator-provisioned in OpenBao).
+# Path: secret/apps/member-hub/audit-anchors-push-token
+# Key:  token (the fine-grained PAT with contents:write on
+#       jaupole/secforge-audit-anchors only)
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: audit-anchors-push-token
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+spec:
+  type: kv-v2
+  mount: secret
+  path: apps/member-hub/audit-anchors-push-token
+  refreshAfter: 1h
+  vaultAuthRef: member-hub-vso
+  destination:
+    create: true
+    name: audit-anchors-push-token
+    type: Opaque
+
+---
+# Reused VaultAuth: lets the audit-signer SA log into OpenBao under its
+# own role (member-hub-audit-signer, policy `audit-signer`) so it can
+# call transit/sign/audit-signing without needing the broader
+# member-hub-vso scope.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: member-hub-audit-signer
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: member-hub-audit-signer
+    serviceAccount: member-hub-audit-signer
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# The signer script itself, mounted into the Job pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: member-hub-audit-anchor-script
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+data:
+  anchor.sh: |
+    #!/bin/sh
+    set -eu
+    apk add --no-cache --quiet postgresql-client git curl jq >/dev/null
+
+    : "${OPENBAO_ADDR:?OPENBAO_ADDR required}"
+    : "${PGHOST:?PGHOST required}"
+    : "${PGUSER:?PGUSER required}"
+    : "${PGPASSWORD:?PGPASSWORD required}"
+    : "${PGDATABASE:?PGDATABASE required}"
+    : "${GH_TOKEN:?GH_TOKEN required (audit-anchors push)}"
+    APP_SLUG="${APP_SLUG:-member-hub}"
+    ANCHORS_REPO="${ANCHORS_REPO:-jaupole/secforge-audit-anchors}"
+
+    # 1. Login to OpenBao via the projected SA token.
+    SA_JWT="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+    LOGIN_BODY="$(printf '{"role":"member-hub-audit-signer","jwt":"%s"}' "$SA_JWT")"
+    BAO_TOKEN="$(curl -fsS --max-time 10 \
+        -X POST -H 'Content-Type: application/json' --data "$LOGIN_BODY" \
+        --cacert /etc/ssl/openbao-ca/ca.crt \
+        "${OPENBAO_ADDR}/v1/auth/kubernetes/login" \
+      | jq -r '.auth.client_token')"
+    [ -n "$BAO_TOKEN" ] && [ "$BAO_TOKEN" != "null" ] || { echo "bao login failed" >&2; exit 1; }
+
+    # 2. Find latest audit row.
+    LATEST_JSON="$(psql -qAtX -v ON_ERROR_STOP=1 -c \
+      "SELECT json_build_object('id', id, 'full_hash_hex', encode(full_hash, 'hex')) FROM audit.event WHERE full_hash IS NOT NULL ORDER BY id DESC LIMIT 1")"
+    LATEST_ID="$(echo "$LATEST_JSON"  | jq -r '.id')"
+    LATEST_HEX="$(echo "$LATEST_JSON" | jq -r '.full_hash_hex')"
+    if [ -z "$LATEST_ID" ] || [ "$LATEST_ID" = "null" ]; then
+      echo "no chained audit rows yet — skipping anchor commit" >&2
+      exit 0
+    fi
+
+    # 3. Sign latest_hex via Transit.
+    SIGN_BODY="$(jq -nc --arg in "$(printf '%s' "$LATEST_HEX" | base64 -w0)" '{input:$in}')"
+    SIG_RESP="$(curl -fsS --max-time 10 \
+        -X POST -H "X-Vault-Token: $BAO_TOKEN" -H 'Content-Type: application/json' \
+        --data "$SIGN_BODY" \
+        --cacert /etc/ssl/openbao-ca/ca.crt \
+        "${OPENBAO_ADDR}/v1/transit/sign/audit-signing")"
+    SIG_VAULT="$(echo "$SIG_RESP" | jq -r '.data.signature')"
+    # vault:v<n>:<base64sig> — strip the vault:v<n>: prefix for verifiers.
+    SIG_VERSION="$(printf '%s' "$SIG_VAULT" | cut -d: -f2 | sed 's/^v//')"
+    SIG_B64="$(printf '%s' "$SIG_VAULT" | cut -d: -f3-)"
+
+    # 4. Read the Transit pubkey so verifiers can cross-check key swaps.
+    KEY_RESP="$(curl -fsS --max-time 10 \
+        -X GET -H "X-Vault-Token: $BAO_TOKEN" \
+        --cacert /etc/ssl/openbao-ca/ca.crt \
+        "${OPENBAO_ADDR}/v1/transit/keys/audit-signing")"
+    PUBKEY_B64="$(echo "$KEY_RESP" | jq -r ".data.keys.\"$SIG_VERSION\".public_key")"
+
+    # 5. Clone the anchors repo, write the daily anchor file, push.
+    git config --global user.email "audit-signer@member-hub.secforge.dev"
+    git config --global user.name  "Member Hub Audit Signer"
+    REPO_DIR="$(mktemp -d)"
+    git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${ANCHORS_REPO}.git" "$REPO_DIR"
+    cd "$REPO_DIR"
+
+    DATE_TODAY="$(date -u +%Y-%m-%d)"
+    PREV_ID="$(jq -s 'map(.covers_through_id) | max // 0' ${APP_SLUG}/*.json 2>/dev/null || echo 0)"
+    if [ "$LATEST_ID" = "$PREV_ID" ]; then
+      echo "no new rows since previous anchor (id=$PREV_ID) — skipping commit" >&2
+      exit 0
+    fi
+
+    mkdir -p "$APP_SLUG"
+    ANCHOR_FILE="$APP_SLUG/${DATE_TODAY}.json"
+    jq -n \
+      --arg app "$APP_SLUG" \
+      --arg date "$DATE_TODAY" \
+      --argjson covers "$LATEST_ID" \
+      --argjson prev "$PREV_ID" \
+      --arg hash "$LATEST_HEX" \
+      --arg sig "$SIG_B64" \
+      --argjson keyver "$SIG_VERSION" \
+      --arg pub "$PUBKEY_B64" \
+      '{
+        app:$app, date:$date,
+        covers_through_id:$covers, previous_anchor_id:$prev,
+        full_hash_hex:$hash, signature_b64:$sig,
+        transit_key_version:$keyver, transit_pubkey_b64:$pub,
+        schema_version:1
+      }' > "$ANCHOR_FILE"
+
+    git add "$ANCHOR_FILE"
+    if git diff --staged --quiet; then
+      echo "anchor file unchanged (idempotent re-run) — no commit" >&2
+      exit 0
+    fi
+    git commit -m "anchor(${APP_SLUG}): ${DATE_TODAY} through id=${LATEST_ID}"
+    git push origin HEAD:main
+
+    # 6. Persist the signed_root on the row so DB queries can show
+    #    "this row was anchored at ...". Best-effort — failure here does
+    #    not invalidate the just-pushed anchor.
+    psql -qAtX -v ON_ERROR_STOP=1 -c \
+      "UPDATE audit.event SET signed_root = decode('$LATEST_HEX', 'hex') WHERE id = $LATEST_ID AND signed_root IS NULL" || true
+
+    echo "✓ anchor pushed: $APP_SLUG/$DATE_TODAY.json covers_through_id=$LATEST_ID"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-anchor
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+spec:
+  # Daily at 00:17 UTC. Staggered 17 min past the hour to avoid
+  # contention with backup schedules at top-of-hour.
+  schedule: "17 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: member-hub
+            app.kubernetes.io/component: audit-signer
+            # Allow the egress NetPol to permit this pod → openbao + minio +
+            # github. NetworkPolicy is in 05-network-policies.yaml.
+            audit-signer: "true"
+        spec:
+          serviceAccountName: member-hub-audit-signer
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: anchor
+              image: mirror.gcr.io/alpine:3.21
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false  # apk add needs writes
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              command: ["/bin/sh", "/scripts/anchor.sh"]
+              env:
+                - name: OPENBAO_ADDR
+                  value: https://openbao.openbao.svc.cluster.local:8200
+                - name: PGHOST
+                  value: member-hub-db-rw.member-hub.svc.cluster.local
+                - name: PGDATABASE
+                  value: member_hub
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: member-hub-db-app
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: member-hub-db-app
+                      key: password
+                - name: GH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-anchors-push-token
+                      key: token
+              volumeMounts:
+                - name: anchor-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: openbao-ca
+                  mountPath: /etc/ssl/openbao-ca
+                  readOnly: true
+          volumes:
+            - name: anchor-script
+              configMap:
+                name: member-hub-audit-anchor-script
+                defaultMode: 0755
+            - name: openbao-ca
+              configMap:
+                name: openbao-ca

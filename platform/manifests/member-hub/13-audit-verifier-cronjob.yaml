@@ -1,0 +1,124 @@
+# Member Hub — periodic audit-verifier CronJob.
+# operator-backlog #33 Part 3.
+#
+# Runs every 5 min. On chain break:
+#   - UPDATE audit.tamper_flag SET tamper_detected = true, first_bad_id = ...
+#   - lib/audit.ts in the api pods reads that flag on every record() and
+#     refuses to write new audit rows while it's set.
+#   - Operator investigates + clears via
+#       pnpm tsx src/scripts/clear-audit-tamper-flag.ts --confirm
+#     (records the clearing action as its own audit.event).
+#
+# DB connection uses the dedicated `audit_verifier` Postgres role
+# (migration 040). Has SELECT on audit.event + SELECT/UPDATE on
+# audit.tamper_flag, nothing else. Compromised verifier cannot mutate
+# the chain — only flag tampering.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: member-hub-audit-verifier
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-verifier
+    secforge.platform/component: audit-anchors
+
+---
+# VSO binding for the audit_verifier Postgres role password. The CNPG
+# Cluster CR (or a one-off bootstrap SQL) creates the role and writes
+# the password to OpenBao at this path; VSO renders it into a K8s Secret.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: audit-verifier-db
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-verifier
+spec:
+  type: kv-v2
+  mount: secret
+  path: apps/member-hub/audit-verifier-db
+  refreshAfter: 1h
+  vaultAuthRef: member-hub-vso
+  destination:
+    create: true
+    name: audit-verifier-db
+    type: Opaque
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-verifier
+  namespace: member-hub
+  labels:
+    app.kubernetes.io/name: member-hub
+    app.kubernetes.io/component: audit-verifier
+    secforge.platform/component: audit-anchors
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: member-hub
+            app.kubernetes.io/component: audit-verifier
+        spec:
+          serviceAccountName: member-hub-audit-verifier
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: verify
+              # The verifier is part of the member-hub backend image —
+              # ships workers/audit-verifier/verify.ts as a tsx entrypoint.
+              # Same image, smaller resource shape.
+              image: ghcr.io/jaupole/member-hub:latest   # digest-pinned via Renovate
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              command:
+                - node
+                - --import
+                - tsx
+                - /app/workers/audit-verifier/verify.ts
+              env:
+                - name: PGHOST
+                  value: member-hub-db-rw.member-hub.svc.cluster.local
+                - name: PGDATABASE
+                  value: member_hub
+                - name: PGUSER
+                  value: audit_verifier
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-verifier-db
+                      key: password
+                - name: VERIFY_BATCH
+                  value: "5000"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

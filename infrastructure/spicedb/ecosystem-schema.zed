@@ -101,6 +101,7 @@ definition organization {
     // Sub-admin "split" relations (set from job-role bundles):
     relation member_manager: user              // can invite/suspend/assign-roles to members
     relation position_manager: user            // can create/edit/delete role bundles
+    relation auditor: user                     // can read audit.event for this org (operator-backlog #33 Part 4)
     relation member: user                      // belongs to this org
     relation app: app                          // org has activated this app
 
@@ -128,6 +129,15 @@ definition organization {
     permission manage_members = local_administrator + member_manager + cascading_manage_members
     permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
     permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+    // operator-backlog #33 Part 4: audit log read access.
+    // `read_audit` is a SUPERSET of `administer` — anyone who can
+    // administer the org can read its audit; PLUS the dedicated
+    // `auditor` tier for compliance/SOC investigators who should see
+    // audit but not mutate org state.
+    // Backward-compat: pre-#33 audit routes gated on `administer`
+    // continue to work; switching them to `read_audit` adds the
+    // auditor tier without dropping anyone.
+    permission read_audit = auditor + administer
 }
 
 // ─── App ────────────────────────────────────────────────────────────────
