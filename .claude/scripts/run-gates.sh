@@ -79,6 +79,22 @@ require_jq() {
 
 now_iso() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
+# Validate that $1 is parseable JSON. If yes, echo it back. If not, echo the
+# fallback (default '{}'). Prevents `jq --argjson` from aborting the entire
+# gate run when a scanner emits a banner, error string, or empty output.
+as_json() {
+  local val="$1" fallback="${2:-{}}"
+  if [[ -z "$val" ]]; then
+    printf '%s' "$fallback"
+    return
+  fi
+  if printf '%s' "$val" | jq -e . >/dev/null 2>&1; then
+    printf '%s' "$val"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
 git_sha() {
   git rev-parse HEAD 2>/dev/null || echo "no-git"
 }
@@ -139,6 +155,7 @@ gate_sast() {
     gate_error "gate-sast" "semgrep produced no output"
     return
   fi
+  raw=$(as_json "$raw" '{"results":[]}')
 
   # semgrep --json normally returns {results:[...], ...}. Some configs
   # (e.g. --config auto on newer semgrep, or certain error shapes) return
@@ -187,7 +204,7 @@ gate_deps() {
   set -e
   runtime=$(( $(date +%s) - runtime ))
 
-  if [[ -z "$raw" ]]; then raw='{"Results":[]}'; fi
+  raw=$(as_json "$raw" '{"Results":[]}')
 
   # Build the raw findings shape first.
   local base
@@ -260,7 +277,7 @@ gate_iac() {
   set -e
   runtime=$(( $(date +%s) - runtime ))
 
-  if [[ -z "$raw" ]]; then raw='{"results":{"failed_checks":[]}}'; fi
+  raw=$(as_json "$raw" '{"results":{"failed_checks":[]}}')
 
   jq -n \
     --arg gate "gate-iac" \
@@ -307,7 +324,7 @@ gate_secrets() {
 
   raw=$(cat "$tmpfile" 2>/dev/null || echo "[]")
   rm -f "$tmpfile"
-  if [[ -z "$raw" ]]; then raw="[]"; fi
+  raw=$(as_json "$raw" '[]')
 
   jq -n \
     --arg gate "gate-secrets" \
@@ -357,6 +374,7 @@ gate_supply_chain() {
       set +e
       raw=$(npm audit signatures --json 2>/dev/null || echo '{}')
       set -e
+      raw=$(as_json "$raw" '{}')
       result=$(echo "$result" | jq --argjson r "$raw" '
         .scanners_run += ["npm-audit-signatures"]
         | .findings += ($r.invalid // [] | map({
@@ -380,6 +398,7 @@ gate_supply_chain() {
       set +e
       socket_raw=$(socket security scan . --json 2>/dev/null || echo '{}')
       set -e
+      socket_raw=$(as_json "$socket_raw" '{}')
       result=$(echo "$result" | jq --argjson r "$socket_raw" '
         .scanners_run += ["socket"]
         | .findings += (($r.alerts // []) | map({
@@ -403,6 +422,7 @@ gate_supply_chain() {
       set +e
       pip_raw=$(pip-audit --format json --progress-spinner off 2>/dev/null || echo '{"dependencies":[]}')
       set -e
+      pip_raw=$(as_json "$pip_raw" '{"dependencies":[]}')
       result=$(echo "$result" | jq --argjson r "$pip_raw" '
         .scanners_run += ["pip-audit"]
         | .findings += (
@@ -435,6 +455,7 @@ gate_supply_chain() {
       # Score the current repo; for full transitive scoring use sbom-rank.sh.
       sc_raw=$(scorecard --local . --format json 2>/dev/null || echo '{}')
       set -e
+      sc_raw=$(as_json "$sc_raw" '{}')
       result=$(echo "$result" | jq --argjson r "$sc_raw" '
         .scanners_run += ["scorecard"]
         | .findings += (
@@ -542,6 +563,7 @@ gate_dast() {
   # we wrap with the standard gate envelope.
   local parsed
   parsed=$(python3 "$(dirname "$0")/dast-parse.py" < "$report_path" 2>/dev/null || echo '{}')
+  parsed=$(as_json "$parsed" '{}')
   rm -rf "$tmpdir"
 
   jq -n \
