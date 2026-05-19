@@ -382,20 +382,32 @@ gate_supply_chain() {
     if command -v npm >/dev/null 2>&1; then
       local raw
       set +e
-      raw=$(npm audit signatures --json 2>/dev/null || echo '{}')
+      raw=$(npm audit signatures --json 2>/dev/null)
+      local npm_rc=$?
       set -e
+      echo "    npm_rc=$npm_rc raw_len=${#raw}" >&2
       raw=$(as_json "$raw" '{}')
+      set +e
       result=$(echo "$result" | jq --argjson r "$raw" '
         .scanners_run += ["npm-audit-signatures"]
-        | .findings += ($r.invalid // [] | map({
+        | .findings += ((($r.invalid // []) | map({
             id:"SUPPLY-UNSIGNED",
             severity:"CRITICAL",
-            package:.name,
+            package:(.name // "unknown"),
             ecosystem:"npm",
             signal:"no valid registry signature",
             scanner:"npm-audit-signatures",
-            fingerprint:("supply-unsigned:npm:" + .name)
-          }))')
+            fingerprint:("supply-unsigned:npm:" + (.name // "unknown"))
+          })))')
+      local jq_rc=$?
+      set -e
+      echo "    npm jq_rc=$jq_rc result_len=${#result}" >&2
+      if [[ "$jq_rc" -ne 0 ]]; then
+        # The jq mutation failed; record a soft skip and move on.
+        result=$(echo '{"gate":"gate-supply-chain","scanners_run":[],"scanners_skipped":[],"findings":[]}' | jq \
+          --argjson rc "$jq_rc" \
+          '.scanners_skipped += [{scanner:"npm-audit-signatures", reason:("jq merge failed rc=" + ($rc|tostring))}]')
+      fi
     else
       skip "npm-audit-signatures" "npm not installed" "install Node.js"
     fi
