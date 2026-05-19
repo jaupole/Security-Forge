@@ -82,6 +82,49 @@ spec:
           volumeMounts:
             - name: wazuh-indexer-data
               mountPath: /var/lib/wazuh-indexer
+        {{- if and .Values.indexer.security .Values.indexer.security.openid .Values.indexer.security.openid.enabled }}
+        # Builds a writable JVM truststore by copying the bundled cacerts
+        # and importing every cert from the trustedCa ConfigMap. The main
+        # container then points OPENSEARCH_JAVA_OPTS at /jvm-truststore/cacerts
+        # so the OIDC backend's JWKS fetch trusts the internal CA.
+        - name: jvm-truststore-setup
+          image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+              cp "$JAVA_HOME/lib/security/cacerts" /jvm-truststore/cacerts
+              chmod 644 /jvm-truststore/cacerts
+              for cert in /extra-ca-certs/*; do
+                [ -f "$cert" ] || continue
+                alias="$(basename "$cert" | tr '.' '_')"
+                "$JAVA_HOME/bin/keytool" -delete -alias "$alias" -keystore /jvm-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+                "$JAVA_HOME/bin/keytool" -importcert -alias "$alias" -file "$cert" -keystore /jvm-truststore/cacerts -storepass changeit -noprompt
+              done
+              echo "JVM truststore built at /jvm-truststore/cacerts"
+          volumeMounts:
+            - name: extra-ca-certs
+              mountPath: /extra-ca-certs
+              readOnly: true
+            - name: jvm-truststore
+              mountPath: /jvm-truststore
+        {{- end }}
         - name: security-config
           image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
           securityContext:
@@ -254,6 +297,69 @@ spec:
               sed -i 's/^              //' /security-config/roles_mapping.yml
               sed -i 's/^              //' /security-config/roles.yml
 
+              {{- if and .Values.indexer.security .Values.indexer.security.openid .Values.indexer.security.openid.enabled }}
+              # ─── OIDC: inject openid_auth_domain into config.yml ───
+              # Inserted after the `authc:` line. pemtrustedcas_content is
+              # read from /extra-ca-certs/{{ .Values.indexer.security.trustedCa.key }}
+              # and indented to live YAML position so it survives securityadmin -cd.
+              CA_FILE=/extra-ca-certs/{{ .Values.indexer.security.trustedCa.key }}
+              if [ ! -f "$CA_FILE" ]; then
+                echo "WARN: CA file $CA_FILE not found — openid pemtrustedcas_content will be empty (TLS verify will fail)"
+              fi
+              OIDC_BLOCK=$(mktemp)
+              {
+                echo "      openid_auth_domain:"
+                echo "        description: \"OIDC against Keycloak (chart-native)\""
+                echo "        http_enabled: true"
+                echo "        transport_enabled: false"
+                echo "        order: {{ .Values.indexer.security.openid.order | default 1 }}"
+                echo "        http_authenticator:"
+                echo "          type: openid"
+                echo "          challenge: false"
+                echo "          config:"
+                echo "            subject_key: {{ .Values.indexer.security.openid.subjectKey | default "preferred_username" }}"
+                echo "            roles_key: {{ .Values.indexer.security.openid.rolesKey | default "roles" }}"
+                echo "            openid_connect_url: \"{{ .Values.indexer.security.openid.connectUrl }}\""
+                if [ -f "$CA_FILE" ]; then
+                  echo "            pemtrustedcas_content: |"
+                  sed 's/^/              /' "$CA_FILE"
+                fi
+                echo "        authentication_backend:"
+                echo "          type: noop"
+              } > "$OIDC_BLOCK"
+              # Insert after the first "    authc:" line in config.yml
+              awk -v inj="$OIDC_BLOCK" '
+                BEGIN { while ((getline line < inj) > 0) buf = buf line "\n"; close(inj) }
+                { print }
+                !done && /^    authc:[[:space:]]*$/ { printf "%s", buf; done = 1 }
+              ' /security-config/config.yml > /tmp/config.yml.new
+              mv /tmp/config.yml.new /security-config/config.yml
+              rm -f "$OIDC_BLOCK"
+              echo "Injected openid_auth_domain into config.yml"
+
+              {{- with .Values.indexer.security.openid.adminUsers }}
+              # ─── OIDC: append admin users to all_access rolesmapping ───
+              # Inserts a `users:` list under the all_access entry (right after
+              # the `all_access:` key) so OIDC subjects keep cluster-admin
+              # rights across helm upgrades. Uses awk so no python dep.
+              USERS_BLOCK=$(mktemp)
+              {
+                echo "  users:"
+                {{- range . }}
+                echo "    - \"{{ . }}\""
+                {{- end }}
+              } > "$USERS_BLOCK"
+              awk -v inj="$USERS_BLOCK" '
+                BEGIN { while ((getline line < inj) > 0) buf = buf line "\n"; close(inj) }
+                { print }
+                !done && /^all_access:[[:space:]]*$/ { printf "%s", buf; done = 1 }
+              ' /security-config/roles_mapping.yml > /tmp/rm.yml
+              mv /tmp/rm.yml /security-config/roles_mapping.yml
+              rm -f "$USERS_BLOCK"
+              echo "Appended users to all_access rolesmapping"
+              {{- end }}
+              {{- end }}
+
               echo "=== Security config ready ==="
               echo "Admin hash: ${ADMIN_HASH:0:20}..."
               echo "Kibana hash: ${KIBANA_HASH:0:20}..."
@@ -261,6 +367,11 @@ spec:
           volumeMounts:
             - name: security-config
               mountPath: /security-config
+            {{- if and .Values.indexer.security .Values.indexer.security.openid .Values.indexer.security.openid.enabled }}
+            - name: extra-ca-certs
+              mountPath: /extra-ca-certs
+              readOnly: true
+            {{- end }}
       containers:
         - name: wazuh-indexer
           image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag }}"
@@ -477,6 +588,11 @@ spec:
               readOnly: true
             - name: security-config
               mountPath: /usr/share/wazuh-indexer/config/opensearch-security
+            {{- if and .Values.indexer.security .Values.indexer.security.openid .Values.indexer.security.openid.enabled }}
+            - name: jvm-truststore
+              mountPath: /jvm-truststore
+              readOnly: true
+            {{- end }}
         {{- if .Values.indexer.exporter.enabled }}
         - name: opensearch-exporter
           image: "{{ .Values.indexer.exporter.image.repository }}:{{ .Values.indexer.exporter.image.tag }}"
@@ -535,6 +651,13 @@ spec:
             secretName: {{ include "wazuh.fullname" . }}-indexer-certs
         - name: security-config
           emptyDir: {}
+        {{- if and .Values.indexer.security .Values.indexer.security.openid .Values.indexer.security.openid.enabled }}
+        - name: extra-ca-certs
+          configMap:
+            name: {{ .Values.indexer.security.trustedCa.configMapName }}
+        - name: jvm-truststore
+          emptyDir: {}
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: wazuh-indexer-data

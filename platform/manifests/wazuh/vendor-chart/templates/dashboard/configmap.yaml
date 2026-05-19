@@ -23,4 +23,22 @@ data:
     opensearch.requestHeadersAllowlist: ["securitytenant", "Authorization"]
     opensearch_security.multitenancy.enabled: false
     opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+    {{- with .Values.dashboard.security.openid }}
+    {{- if .enabled }}
+    # OIDC federation — added by SecForge 2026-05-13.
+    # client_secret + cookie_password are replaced at pod start by
+    # the inject-credentials initContainer (sourced from the Secret
+    # named in .Values.dashboard.security.openid.secretName). Keeps
+    # secrets out of the rendered ConfigMap.
+    opensearch_security.auth.type: "openid"
+    opensearch_security.openid.connect_url: {{ .connectUrl | quote }}
+    opensearch_security.openid.client_id: {{ .clientId | quote }}
+    opensearch_security.openid.client_secret: "__OIDC_CLIENT_SECRET__"
+    opensearch_security.openid.scope: {{ .scope | quote }}
+    opensearch_security.openid.header: "Authorization"
+    opensearch_security.openid.base_redirect_url: {{ .baseRedirectUrl | quote }}
+    opensearch_security.cookie.secure: true
+    opensearch_security.cookie.password: "__OIDC_COOKIE_PASSWORD__"
+    {{- end }}
+    {{- end }}
 {{- end }}

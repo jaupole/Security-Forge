@@ -197,12 +197,20 @@ data:
       <!-- ============================================ -->
       <!-- Java/Spring Exceptions                       -->
       <!-- ============================================ -->
+      <!-- Tightened 2026-05-14: previous regex matched the bare word
+           "Exception" (and friends) anywhere in any log, which fired on
+           k3s-audit.log entries that merely *named* a resource like
+           kyverno-cel-exception-validating-webhook-cfg. The new pattern
+           requires a real Java-shaped marker: a fully-qualified package
+           prefix (e.g. java.lang., com.foo.), a stack-frame "at X.Y.Z("
+           line, or a literal "Caused by:" header. PCRE2 is used so we
+           get word boundaries (\b) — OS_Regex doesn't support them. -->
       <rule id="100006" level="10">
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
-        <regex>Exception|StackTrace|NullPointerException|RuntimeException|OutOfMemoryError</regex>
-        <description>Java exception detected</description>
+        <regex type="pcre2">(?:java|javax|org\.springframework|com\.\w+|org\.\w+)\.\w[\w.]*(?:Exception|Error)\b|^\s+at\s+\w+(?:\.\w+)+\([\w.$]+:\d+\)|Caused by:\s+\w+(?:\.\w+)+(?:Exception|Error)\b|java\.lang\.StackTraceElement</regex>
+        <description>Java exception detected (stack frame or fully-qualified exception class)</description>
         <group>custom,exception,</group>
       </rule>
 

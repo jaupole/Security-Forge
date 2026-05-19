@@ -124,6 +124,18 @@ spec:
             - |
               cp /config-template/opensearch_dashboards.yml /config/opensearch_dashboards.yml
               sed -i "s|__KIBANA_PASSWORD__|${KIBANA_PASSWORD}|g" /config/opensearch_dashboards.yml
+              # OIDC secret substitution — added 2026-05-13 with chart-native OIDC support.
+              # Placeholders __OIDC_CLIENT_SECRET__ and __OIDC_COOKIE_PASSWORD__
+              # in the rendered ConfigMap get swapped with the actual values
+              # from env (sourced from the wazuh-oidc-vso K8s Secret). Keeps
+              # secrets out of the etcd-visible ConfigMap.
+              # Use '|' delimiter so / and + in base64 values don't collide.
+              # Use awk/python-style substitution if either secret contains '|'.
+              {{- if (.Values.dashboard.security.openid).enabled }}
+              if [ -n "${OIDC_CLIENT_SECRET:-}" ]; then
+                python3 -c "import os, sys; s=open('/config/opensearch_dashboards.yml').read(); s=s.replace('__OIDC_CLIENT_SECRET__', os.environ['OIDC_CLIENT_SECRET']).replace('__OIDC_COOKIE_PASSWORD__', os.environ.get('OIDC_COOKIE_PASSWORD','')); open('/config/opensearch_dashboards.yml','w').write(s)" 2>/dev/null ||                 awk -v cs="$OIDC_CLIENT_SECRET" -v cp="$OIDC_COOKIE_PASSWORD" '{ gsub(/__OIDC_CLIENT_SECRET__/, cs); gsub(/__OIDC_COOKIE_PASSWORD__/, cp); print }' /config/opensearch_dashboards.yml > /config/.tmp && mv /config/.tmp /config/opensearch_dashboards.yml
+              fi
+              {{- end }}
               # Replace indexer FQDN with ClusterIP from auto-injected env var (zero DNS)
               if [ -n "$WAZUH_INDEXER_SERVICE_HOST" ]; then
                 sed -i "s|__INDEXER_HOST__|${WAZUH_INDEXER_SERVICE_HOST}|g" /config/opensearch_dashboards.yml
@@ -146,6 +158,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "wazuh.dashboardSecretName" . }}
                   key: password
+            {{- if (.Values.dashboard.security.openid).enabled }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dashboard.security.openid.secretName }}
+                  key: client_secret
+            - name: OIDC_COOKIE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dashboard.security.openid.cookieSecretName | default .Values.dashboard.security.openid.secretName }}
+                  key: cookie_password
+            {{- end }}
             - name: WAZUH_API_URL
               value: "https://{{ include "wazuh.fullname" . }}-manager-0.{{ include "wazuh.manager.fqdn" . }}"
             - name: API_USERNAME
@@ -196,6 +220,12 @@ spec:
                   key: password
             - name: DASHBOARD_USERNAME
               value: "kibanaserver"
+            {{- if (.Values.dashboard.security.openid).enabled }}
+            {{- if .Values.dashboard.security.openid.trustedCa }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/secforge-internal-ca.pem
+            {{- end }}
+            {{- end }}
             - name: DASHBOARD_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -246,6 +276,14 @@ spec:
               readOnly: true
             - name: wazuh-app-config
               mountPath: /usr/share/wazuh-dashboard/data/wazuh/config
+            {{- if (.Values.dashboard.security.openid).enabled }}
+            {{- with .Values.dashboard.security.openid.trustedCa }}
+            - name: trusted-ca
+              mountPath: /etc/ssl/certs/secforge-internal-ca.pem
+              subPath: {{ .key }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
       volumes:
         - name: dashboard-config-template
           configMap:
@@ -257,4 +295,11 @@ spec:
             secretName: {{ include "wazuh.fullname" . }}-dashboard-certs
         - name: wazuh-app-config
           emptyDir: {}
+        {{- if (.Values.dashboard.security.openid).enabled }}
+        {{- with .Values.dashboard.security.openid.trustedCa }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .configMapName }}
+        {{- end }}
+        {{- end }}
 {{- end }}
