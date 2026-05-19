@@ -1,0 +1,150 @@
+# VSO connection-cache watchdog.
+#
+# Problem: VSO 1.4.0 maintains a Go HTTP client connection pool keyed on the
+# resolved openbao pod IP. When openbao pods rotate (cluster reboot, openbao
+# Velero recovery, openbao chart upgrade), VSO holds the stale pod IP and
+# every reconcile fails with `dial tcp <old-pod-ip>:8200: no route to host`.
+# A `kubectl rollout restart` clears the pool and VSO resumes — confirmed
+# 2× on 2026-05-19 (openbao Velero recovery + post-reboot).
+#
+# This CronJob watches VSO logs for the dial-failure signature and bounces
+# the deployment when it appears. Self-healing within ~5 min.
+#
+# Why log-grep instead of `synced=False` check: VSO computes an HMAC on each
+# reconcile and only writes (+ updates the SecretSynced condition) when
+# upstream data actually changes. So `synced=False` can be a stale-but-
+# functional status; the log-side dial error is the true failure signal.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vso-watchdog
+  namespace: vault-secrets-operator
+  labels:
+    app.kubernetes.io/name: vso-watchdog
+    secforge.platform/component: vault-secrets-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vso-watchdog
+  namespace: vault-secrets-operator
+  labels:
+    app.kubernetes.io/name: vso-watchdog
+    secforge.platform/component: vault-secrets-operator
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vso-watchdog
+  namespace: vault-secrets-operator
+  labels:
+    app.kubernetes.io/name: vso-watchdog
+    secforge.platform/component: vault-secrets-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vso-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: vso-watchdog
+    namespace: vault-secrets-operator
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vso-watchdog
+  namespace: vault-secrets-operator
+  labels:
+    app.kubernetes.io/name: vso-watchdog
+    secforge.platform/component: vault-secrets-operator
+spec:
+  # Every 5 min. Fast enough that the next openbao recovery doesn't leave
+  # the cluster running on stale Secrets for long.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: vso-watchdog
+        spec:
+          serviceAccountName: vso-watchdog
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: watchdog
+              # alpine/k8s ships kubectl + busybox sh in a small alpine base.
+              # rancher/kubectl is distroless (no shell), and the bitnami mirror
+              # doesn't carry 1.34.x tags. mirror.gcr.io is on the Kyverno
+              # allow-list (restrict-image-registries).
+              image: mirror.gcr.io/alpine/k8s:1.34.1
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 200m, memory: 128Mi }
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  # Bail if VSO pod restarted recently (< 5 min); avoid bounce loops
+                  # while a fresh pod is still warming up.
+                  pod=$(kubectl -n vault-secrets-operator get pod \
+                    -l app.kubernetes.io/name=vault-secrets-operator,app.kubernetes.io/instance=vault-secrets-operator \
+                    --field-selector=status.phase=Running \
+                    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                  if [ -z "$pod" ]; then
+                    echo "No running VSO pod; nothing to do."
+                    exit 0
+                  fi
+                  start=$(kubectl -n vault-secrets-operator get pod "$pod" \
+                    -o jsonpath='{.status.containerStatuses[?(@.name=="manager")].state.running.startedAt}' 2>/dev/null)
+                  [ -z "$start" ] && start=$(kubectl -n vault-secrets-operator get pod "$pod" \
+                    -o jsonpath='{.status.startTime}' 2>/dev/null)
+                  # Busybox date (alpine) needs -D for the input format; GNU
+                  # date accepts -d natively. Try GNU first, fall back to busybox.
+                  start_ts=$(date -u -d "$start" +%s 2>/dev/null || \
+                             date -u -D '%Y-%m-%dT%H:%M:%SZ' -d "$start" +%s 2>/dev/null || \
+                             echo 0)
+                  if [ "$start_ts" != "0" ]; then
+                    age=$(( $(date -u +%s) - start_ts ))
+                    if [ "$age" -lt 300 ]; then
+                      echo "VSO pod uptime ${age}s < 300s; skipping watchdog check."
+                      exit 0
+                    fi
+                  else
+                    age="unknown(parse-failed)"
+                  fi
+
+                  # Count dial-cache failures in the last 5 minutes.
+                  errs=$(kubectl -n vault-secrets-operator logs "$pod" --since=5m 2>&1 \
+                    | grep -cE 'dial tcp .* (no route to host|connection refused|i/o timeout)' || true)
+
+                  echo "VSO pod=$pod uptime=${age:-unknown}s dial_errors_last_5m=$errs"
+
+                  if [ "$errs" -gt 0 ]; then
+                    echo "Bouncing VSO to clear stale connection cache."
+                    kubectl -n vault-secrets-operator rollout restart deploy/vault-secrets-operator-controller-manager
+                  fi
