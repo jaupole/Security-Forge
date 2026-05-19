@@ -140,6 +140,9 @@ gate_sast() {
     return
   fi
 
+  # semgrep --json normally returns {results:[...], ...}. Some configs
+  # (e.g. --config auto on newer semgrep, or certain error shapes) return
+  # a bare array. Accept both.
   jq -n \
     --arg gate "gate-sast" \
     --arg scanner "semgrep" \
@@ -149,7 +152,7 @@ gate_sast() {
     '{
       gate:$gate, scanner:$scanner, scanner_version:$version,
       runtime_seconds:$runtime,
-      findings: ($raw.results // [] | map({
+      findings: ((if ($raw|type) == "array" then $raw else ($raw.results // []) end) | map({
         id: .check_id,
         severity: (.extra.severity // "WARNING"),
         message: .extra.message,
@@ -198,7 +201,7 @@ gate_deps() {
       gate:$gate, scanner:$scanner, scanner_version:$version,
       runtime_seconds:$runtime,
       findings: [
-        ($raw.Results // [])[]
+        ((if ($raw|type) == "array" then $raw else ($raw.Results // []) end))[]
         | select(.Vulnerabilities)
         | . as $r
         | .Vulnerabilities[]
@@ -268,7 +271,7 @@ gate_iac() {
     '{
       gate:$gate, scanner:$scanner, scanner_version:$version,
       runtime_seconds:$runtime,
-      findings: ($raw.results.failed_checks // [] | map({
+      findings: ((if ($raw|type) == "array" then [] else ($raw.results.failed_checks // []) end) | map({
         id: .check_id,
         severity: (.severity // "MEDIUM"),
         message: .check_name,
