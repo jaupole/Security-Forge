@@ -215,6 +215,11 @@ def query_osv(packages: list[dict], force_refresh: bool = False) -> dict[str, li
             "package": {"ecosystem": p["ecosystem"], "name": p["name"]},
             "version": p["version"],
         }).encode()
+        # Reject any non-https scheme — defeats semgrep's dynamic-urllib
+        # warning AND closes the `file://` / `ftp://` exposure class. OSV_API
+        # is a hardcoded https:// constant; the check is belt-and-suspenders.
+        if not OSV_API.startswith("https://"):
+            raise ValueError(f"only https:// allowed for OSV_API, got: {OSV_API[:30]!r}")
         req = urllib.request.Request(
             OSV_API,
             data=body,

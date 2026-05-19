@@ -70,6 +70,12 @@ CACHE_TTL_SECONDS = 24 * 60 * 60  # 1 day
 
 
 def _http_get(url: str, timeout: float = 15.0) -> bytes:
+    # Reject any non-https scheme (defeats semgrep's dynamic-urllib warning
+    # AND closes the real `file://` / `ftp://` exposure if a URL ever flows
+    # in from an untrusted source. Both call sites today use hardcoded
+    # https:// constants — this guard is belt-and-suspenders.)
+    if not url.startswith("https://"):
+        raise ValueError(f"only https:// allowed, got scheme of: {url[:30]!r}")
     req = urllib.request.Request(url, headers={"User-Agent": "claude-advisor-loop/2.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
