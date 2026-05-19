@@ -228,6 +228,9 @@ def query_osv(packages: list[dict], force_refresh: bool = False) -> dict[str, li
         )
         vulns: list[dict] = []
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            # OSV_API is a hardcoded https:// constant guarded by the scheme
+            # check above; semgrep's static pattern flags the call regardless.
             with urllib.request.urlopen(req, timeout=20.0) as resp:
                 data = json.loads(resp.read())
             vulns = data.get("vulns", []) or []
