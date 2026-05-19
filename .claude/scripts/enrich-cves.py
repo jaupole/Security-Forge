@@ -77,9 +77,9 @@ def _http_get(url: str, timeout: float = 15.0) -> bytes:
     if not url.startswith("https://"):
         raise ValueError(f"only https:// allowed, got scheme of: {url[:30]!r}")
     req = urllib.request.Request(url, headers={"User-Agent": "claude-advisor-loop/2.0"})
+    # https:// scheme check above is the real mitigation; only inputs are
+    # EPSS_URL + OSV_API hardcoded constants. semgrep flags the static pattern.
     # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-    # The dynamic-urllib pattern is mitigated by the explicit https:// scheme
-    # check above; the only inputs are EPSS_URL + OSV_API hardcoded constants.
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 
