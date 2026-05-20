@@ -1,8 +1,8 @@
 # Wazuh operations runbook
 
-> Architecture: [observability](../01-architecture/08-observability.md). Deploy: `infrastructure/wazuh/`.
+> Architecture: [observability](../01-architecture/08-observability.md). Deploy: `platform/components/07-wazuh.sh`.
 
-Wazuh is the SecForge platform's SIEM (5th pillar). Deployed in Phase 7.2 (Session 4, 2026-05-01) using the vendored Helm chart at `infrastructure/wazuh/vendor/wazuh/` (chart `ileonelperea/wazuh-helm` v1.2.10, App 4.14.4). Path-decision rationale: see PLAN.md `### Path decision (2026-05-01)`.
+Wazuh is the SecForge platform's SIEM (5th pillar). Deployed in Phase 7.2 (Session 4, 2026-05-01) using the vendored Helm chart at `platform/manifests/wazuh/vendor-chart/` (chart `ileonelperea/wazuh-helm` v1.2.10, App 4.14.4). Path-decision rationale: see PLAN.md `### Path decision (2026-05-01)`.
 
 ## Stack at a glance
 
@@ -360,11 +360,11 @@ Is `wazuh-alerts-*` index present at all?
 
 ### Rotate the chart-managed credential Secrets
 
-The four credential Secrets (`wazuh-{indexer,api,dashboard,filebeat}-creds`) are pre-created by `apply.sh` with random passwords meeting Wazuh's complexity policy (length 8–64, ≥1 upper / ≥1 lower / ≥1 digit / ≥1 special from `.*+?=!&|`). To rotate:
+The four credential Secrets (`wazuh-{indexer,api,dashboard,filebeat}-creds`) are pre-created by `platform/components/07-wazuh.sh` with random passwords meeting Wazuh's complexity policy (length 8–64, ≥1 upper / ≥1 lower / ≥1 digit / ≥1 special from `.*+?=!&|`). To rotate:
 
 ```bash
 kubectl delete secret -n wazuh wazuh-{indexer,api,dashboard,filebeat}-creds
-bash infrastructure/wazuh/apply.sh    # idempotent — re-creates with fresh PWs, helm-upgrades, rolls
+bash platform/components/07-wazuh.sh   # idempotent — re-creates with fresh PWs, helm-upgrades, rolls
 ```
 
 **Note:** rotating the Secrets requires rolling all three workloads since they read passwords as env vars at container start.
@@ -373,8 +373,8 @@ bash infrastructure/wazuh/apply.sh    # idempotent — re-creates with fresh PWs
 
 ## Vendored chart maintenance
 
-- Chart vendored at `infrastructure/wazuh/vendor/wazuh/` (vendoring chosen because the chart is single-maintainer; we own the artifact).
-- Patches applied to upstream are in `infrastructure/wazuh/vendor/PATCHES.md` — currently P-001 (remove `NET_RAW` from manager capabilities; PSS baseline forbids it) and P-002 (remove `workload=wazuh` nodeSelector from cleanup CronJob; we don't have those node labels).
+- Chart vendored at `platform/manifests/wazuh/vendor-chart/` (vendoring chosen because the chart is single-maintainer; we own the artifact).
+- Patches applied to upstream are in `platform/manifests/wazuh/vendor-chart/PATCHES.md` — currently P-001 (remove `NET_RAW` from manager capabilities; PSS baseline forbids it) and P-002 (remove `workload=wazuh` nodeSelector from cleanup CronJob; we don't have those node labels).
 - To bump the chart: `helm pull wazuh-eks/wazuh --version <new> --untar` into a temp dir, diff against current vendored copy, re-apply each patch from `PATCHES.md`, run `helm template` audit (CLAUDE.md bright-lines), update `.provenance`.
 
 ## Threat model + compliance
@@ -436,8 +436,8 @@ The cert-manager-issued cert chains to the mkcert local root. If your browser do
 
 ### `wazuh-manager-cleanup` Pending
 
-Confirm vendor/PATCHES.md P-002 is applied (the chart's hardcoded `nodeSelector: workload=wazuh` removed). If you re-vendored from upstream, that patch may need to be re-applied.
+Confirm `platform/manifests/wazuh/vendor-chart/PATCHES.md` P-002 is applied (the chart's hardcoded `nodeSelector: workload=wazuh` removed). If you re-vendored from upstream, that patch may need to be re-applied.
 
 ### Indexer pod gets OOMKilled
 
-Tighten the indexer JVM heap via `infrastructure/wazuh/values.yaml` → `indexer.javaOpts`. Default is `-Xms1536m -Xmx1536m`; can lower to 1024m on a memory-constrained host. Match the container `requests.memory` to the heap (50/50 rule of thumb for OpenSearch).
+Tighten the indexer JVM heap via `platform/values/wazuh.yaml` → `indexer.javaOpts`. Default is `-Xms1536m -Xmx1536m`; can lower to 1024m on a memory-constrained host. Match the container `requests.memory` to the heap (50/50 rule of thumb for OpenSearch).

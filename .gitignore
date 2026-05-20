@@ -20,7 +20,6 @@ infrastructure/mkcert/*-key.pem
 !docs/**/*.key
 *.pem
 !infrastructure/cert-manager/**/*.pem
-!infrastructure/wazuh/vendor/**/*.pem
 *.p12
 *.pfx
 *.jks
@@ -55,7 +54,6 @@ apps/authzen-facade/authzen-facade
 *.exe
 *.exe~
 **/vendor/
-!infrastructure/wazuh/vendor/
 !apps/lib/
 
 # === LOCAL-DEV VENDORED TOOLCHAINS ===
@@ -73,7 +71,7 @@ local-dev/bin/completions/
 coverage.txt
 
 # Helm vendored .tgz (the unpacked chart is committed; the tarball is not)
-infrastructure/wazuh/vendor/wazuh/charts/*.tgz
+platform/manifests/wazuh/vendor-chart/charts/*.tgz
 
 # === OPERATOR SCRATCHPAD / EPHEMERAL ===
 notes/

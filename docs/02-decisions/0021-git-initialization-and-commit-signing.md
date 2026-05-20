@@ -30,7 +30,7 @@ The decisions below were made in a 2026-05-01 operator session. The original stu
 - **Secrets (non-negotiable):** Shamir unseal keys, OpenBao recovery PEMs, root tokens, Transit tokens, mkcert CA private keys, generic `*.key`/`*.pem`/`*.p12`/`*.pfx`/`*.jks` outside known-good paths, `.env*` (except `.env.example`)
 - **Per-machine state:** `.claude/settings.local.json`, `.claude/projects/`, `.vscode/`, `.idea/`, OS files (`.DS_Store`, `Thumbs.db`), editor swap files
 - **Build artifacts:** Go binaries (`apps/helloworld-bff/helloworld-bff`, `apps/authzen-facade/authzen-facade`), `*.test`, `*.out`, `coverage.txt`
-- **Vendored Helm tarballs:** `infrastructure/wazuh/vendor/wazuh/charts/*.tgz` (the unpacked chart source IS committed; the tarballs that can be re-pulled are not)
+- **Vendored Helm tarballs:** `platform/manifests/wazuh/vendor-chart/charts/*.tgz` (the unpacked chart source IS committed; the tarballs that can be re-pulled are not)
 - **Operator scratchpad:** `notes/` (loki-baseline diagnostics, etc.)
 - **Logs and temp:** `*.log` (with carve-outs for docs), `*.tmp`, `/tmp/`
 - **Kubectl dumps and debug outputs:** `kubectl-dump-*.yaml`, `*-debug.log`, `*-baseline-*`
@@ -99,7 +99,7 @@ When a remote does land, the choice should consider: future Cosign keyless image
 - **trailing-whitespace** — hygiene
 - **end-of-file-fixer** — hygiene
 - **check-merge-conflict** — refuses merge-conflict markers
-- **check-yaml** (with `--allow-multiple-documents`; excluded for `infrastructure/wazuh/vendor/` because Helm templates contain Go-template syntax that breaks pure-YAML validation)
+- **check-yaml** (with `--allow-multiple-documents`; excluded for `platform/manifests/*/vendor-chart/` because Helm templates contain Go-template syntax that breaks pure-YAML validation)
 - **detect-private-key** — blocks accidentally-committed key blobs
 - **check-added-large-files** with `--maxkb=500` (excluded for `apps/*/sbom/` because SBOMs are known-large supply-chain artifacts kept in tree by design)
 

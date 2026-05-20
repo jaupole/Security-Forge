@@ -773,7 +773,7 @@ Local-edition does not have an incident-response procedure beyond the runbooks a
 
 ### MA — Maintenance · `Out-of-scope` (local edition)
 
-N/A at local edition — no remote-vendor maintenance access exists; the operator IS the maintainer. **Cloud-edition** scope: AWS Support access logging, vendor remote-access controls, third-party tool maintenance access (e.g., Wazuh vendor patches we apply at `infrastructure/wazuh/vendor/PATCHES.md` would become NIST MA-4 events).
+N/A at local edition — no remote-vendor maintenance access exists; the operator IS the maintainer. **Cloud-edition** scope: AWS Support access logging, vendor remote-access controls, third-party tool maintenance access (e.g., Wazuh vendor patches we apply at `platform/manifests/wazuh/vendor-chart/PATCHES.md` would become NIST MA-4 events).
 
 ### MP — Media Protection · `Out-of-scope` (local edition)
 

@@ -29,7 +29,7 @@ repos:
       - id: check-yaml
         args: ['--allow-multiple-documents']
         # Skip vendored Helm charts (intentional templating that breaks check-yaml)
-        exclude: '^(infrastructure/wazuh/vendor/|platform/manifests/.*/vendor-chart/)'
+        exclude: '^platform/manifests/.*/vendor-chart/'
       - id: detect-private-key
       - id: check-added-large-files
         args: ['--maxkb=500']

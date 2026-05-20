@@ -31,7 +31,7 @@ This ADR establishes a single canonical table of every long-lived-enough-to-care
 | OpenBao admin OIDC token | OpenBao | issuer (Keycloak) policy | re-auth | `infrastructure/openbao/configure-auth-oidc.sh` |
 | BFF session cookie (Valkey TTL) | BFF + Valkey | idle 30 min · hard-cap 8 h | per-request renewal of idle | [ADR-0017](./0017-session-expiry-semantics.md), `04-bff-pattern.md` |
 | DPoP key (per-pod, in-memory) | BFF | pod lifetime | n/a — pod restart mints a new key | [ADR-0011](./0011-bff-single-replica-local.md) |
-| Wazuh internal mTLS leaf cert | Wazuh chart bootstrap | 5 y | (none today) — Phase 7d scheduled cert-manager replacement | `infrastructure/wazuh/values.yaml`, [`docs/03-runbooks/wazuh-operations.md`](../03-runbooks/wazuh-operations.md) |
+| Wazuh internal mTLS leaf cert | Wazuh chart bootstrap | 5 y | (none today) — Phase 7d scheduled cert-manager replacement | `platform/values/wazuh.yaml`, [`docs/03-runbooks/wazuh-operations.md`](../03-runbooks/wazuh-operations.md) |
 | Wazuh internal mTLS root CA | Wazuh chart bootstrap | 10 y | (none today) — see Phase 7c (SPIRE-as-CA) follow-up | as above |
 | Image-signing key (Cosign, local) | operator | TBD — flagged in [F-ADR-12](../../Fix%20after%2007/00-audit-findings.md#f-adr-12--medium--missing-adr--image-signing-key-custody) | TBD operator decision before supply-chain phase | TBD |
 | Wazuh dashboard admin password | apply.sh-generated | persistent until rotated | manual via apply.sh re-run | [`docs/03-runbooks/wazuh-operations.md § First login`](../03-runbooks/wazuh-operations.md#first-login) |
