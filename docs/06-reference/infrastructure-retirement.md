@@ -32,11 +32,11 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `cosign/` | 🟡 Partial | One file: `cosign.pub`. Not referenced anywhere in `platform/`. Confirm it is the *local-edition* signing key (not the GHCR production verification key) before deleting. |
 | `istio/` | 🟡 Partial | `01-08` values/policies superseded by `manifests/istio/`. **`authzpol-strict-7c2-draft/` is 🅿️ PARKED** — `operator-backlog #21` (Phase 7c-2) depends on it. Keep that subdir. |
 | `keycloak/` | 🟡 Partial | 35 files — realm defs, client scripts, image build, operator CRDs, key-rotation cron. Needs a real content-diff against `platform/components/keycloak*.sh` + `manifests/keycloak/`. |
-| `kyverno/` | 🟡 Partial | `policies/` likely superseded by `manifests/kyverno/policies/`; `tests/` fixtures + `kyverno-test.yaml` have no obvious platform home — confirm before deleting. |
+| `kyverno/` | 🟡 Partial | `policies/`: `pod-security.yaml` + `verify-signatures.yaml` were already superseded by `manifests/kyverno/`. `no-secret-shaped-env.yaml` + `legacy-secret-env-expiry.yaml` were **missing from platform** — migrated 2026-05-20 to `manifests/kyverno/policies/09`+`10` (Audit mode). `tests/` fixtures + `kyverno-test.yaml` still have no platform home — confirm before deleting. |
 | `observability/` | 🟡 Partial | Values superseded by `components/{prometheus,loki,tempo,promtail,otel-collector}.sh`; `dashboards/` + `13-alerting-rules.yaml` may be a gap (see below). |
 | `openbao/` | 🟡 Partial | 8/10 `policies/*.hcl` already in `platform/manifests/openbao/policies/`. `app-template.hcl` + `vso.hcl` are not — confirm migrated/renamed/obsolete. Config scripts superseded by `components/openbao*.sh`. |
 | `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
-| `secrets-guardrails/` | 🔴 Gap | The guardrail verification suite (8 `verify/*.sh`) + 2 weekly CronJobs. Confirmed 2026-05-20: the CronJobs are **not running on the production cluster** — the guardrails exist but their automated weekly verification/drift-check does not run in prod. Decide: migrate the CronJobs, or accept the coverage was intentionally dropped. |
+| `secrets-guardrails/` | 🟡 Partial | Investigated 2026-05-20. The real gap was upstream — the `no-secret-shaped-env-vars` admission policy itself was missing from production (now migrated, see `kyverno/` row). The 2 weekly CronJobs here are **broken local-edition scaffolding**: they target a non-existent `app` namespace, POST to an undeployed `security-events-collector`, and `weekly-guardrail-verify` runs `run-all.sh` in offline mode inside a `docker`-less image. Not portable as-is — a production verifier needs a from-scratch LIVE-mode rebuild, best done after the Enforce flip (see operator-backlog #39). The `verify/*.sh` suite retains value as an operator-run offline tool. |
 | `spicedb/` | 🔴 Gap | `schema.zed` + `ecosystem-schema.zed` — no `.zed` file exists in `platform/`. The schema may have moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub); verify where the live SpiceDB schema is sourced before deleting. `tests/` fixtures also need a home. |
 | `valkey/` | 🟡 With helloworld | Investigated 2026-05-20: Valkey is **not deployed in production** (no namespace/pods/helm release) and nothing in `platform/` references it. Its only consumer is the `helloworld` demo BFF (`apps/helloworld-bff/`), itself not deployed in prod. Not a production capability gap — retire together with the helloworld-demo decision. |
 | `helloworld/` | 📦 App | Phase 9 integration-demo app provisioning. Confirmed 2026-05-20: the demo is **not deployed in production**. Belongs with `apps/helloworld-*`, not platform infra — retire as demo scaffolding (drags `valkey/` with it). |
@@ -44,9 +44,6 @@ subdir so nothing edition-agnostic is lost on the way out.
 
 ## Genuine gaps — resolve before the dir can go
 
-- **`secrets-guardrails/`** — the verification suite + weekly drift/verify
-  CronJobs are not running in production. Migrate the CronJobs, or accept the
-  coverage was intentionally dropped.
 - **`spicedb/schema.zed` + `ecosystem-schema.zed`** — the authorization model;
   no `.zed` exists in `platform/`. The live ecosystem schema appears to have
   moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub). Confirm the
@@ -54,8 +51,14 @@ subdir so nothing edition-agnostic is lost on the way out.
 - **`openbao/policies/{app-template,vso}.hcl`** — present in `infrastructure/`
   but not in `platform/manifests/openbao/policies/`; confirm migrated or obsolete.
 - **`kyverno/tests/`** — admission-policy test fixtures, no platform home.
+- **`secrets-guardrails/` CronJobs** — a production guardrail-verification
+  CronJob needs a from-scratch LIVE-mode rebuild (operator-backlog #39); the
+  old ones are broken local-edition scaffolding.
 
 Resolved: `grafana/dashboards/` migrated 2026-05-20 (now `platform/components/07q`).
+The `no-secret-shaped-env-vars` + `legacy-secret-env-expiry` admission policies
+were missing from production — migrated 2026-05-20 (`manifests/kyverno/policies/09`+`10`,
+Audit mode; Enforce flip tracked as operator-backlog #39).
 `valkey/` is not a production gap — it is helloworld-demo scaffolding (see the table).
 
 ## Landmine — do NOT delete
