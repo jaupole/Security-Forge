@@ -21,8 +21,9 @@
 #     (so this script can persist the rendered Wazuh client_secret)
 #
 # OpenSearch Security plugin config (config.yml authc OIDC domain) +
-# dashboard-side OIDC enablement (opensearch_dashboards.yml) live in
-# the chart patches; see infrastructure/wazuh/vendor/PATCHES.md P-003.
+# dashboard-side OIDC enablement (opensearch_dashboards.yml) are
+# chart-native in the vendored chart templates under
+# platform/manifests/wazuh/vendor-chart/.
 #
 # Usage:
 #   BAO_TOKEN=hvs.xxxx bash infrastructure/keycloak/clients/wazuh.sh
