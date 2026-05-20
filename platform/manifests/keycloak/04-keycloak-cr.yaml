@@ -1,7 +1,6 @@
 # Keycloak custom resource — managed by the Keycloak Operator.
 #
-# Production version of infrastructure/keycloak/04-keycloak-cr.yaml.
-# Differences:
+# Differences from the retired local edition:
 #   - hostname: auth.${DOMAIN} (was auth.secforge.local)
 #   - admin/public split removed (single host for now; admin gating is by
 #     Keycloak's own auth + the BFF pattern; we can re-add the split with
@@ -28,7 +27,7 @@ spec:
   # Verified at admission by Kyverno verify-image-signature policy
   # (rule: verify-secforge).
   #
-  # Refresh procedure: bump infrastructure/keycloak/image/Dockerfile, merge,
+  # Refresh procedure: bump platform/manifests/keycloak/image/Dockerfile, merge,
   # GHA outputs the new digest in its run summary, then replace the digest
   # below and `kubectl apply`. The Keycloak Operator handles the rollout.
   #

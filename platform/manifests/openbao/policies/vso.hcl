@@ -139,8 +139,8 @@ path "secret/metadata/platform/cert-manager/cloudflare" {
 }
 
 # Wazuh dashboard OIDC client_secret + issuer + redirect_uri (Phase 7d
-# Item 7). Provisioned by infrastructure/keycloak/clients/wazuh.sh and
-# rendered into wazuh ns via VSO for the dashboard pod's
+# Item 7). Provisioned by platform/components/07i-keycloak-wazuh-client.sh
+# and rendered into wazuh ns via VSO for the dashboard pod's
 # opensearch_dashboards.yml config.
 path "secret/data/wazuh/oidc" {
   capabilities = ["read"]

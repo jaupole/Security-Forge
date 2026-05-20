@@ -65,7 +65,7 @@ if ! kubectl -n "$KEYCLOAK_NS" exec "$KEYCLOAK_POD" -- \
   echo "       Check 'kubectl -n keycloak get pod keycloak-0 -o jsonpath={.spec.containers[*].image}'" >&2
   echo "       and the Keycloak CR spec.image. Build pipeline:" >&2
   echo "         .github/workflows/keycloak-image-build.yml" >&2
-  echo "       Image source: infrastructure/keycloak/image/Dockerfile" >&2
+  echo "       Image source: platform/manifests/keycloak/image/Dockerfile" >&2
   exit 1
 fi
 

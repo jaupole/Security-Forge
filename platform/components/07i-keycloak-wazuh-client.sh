@@ -2,8 +2,7 @@
 # 07i — Create the `wazuh-dashboard` OIDC client in Keycloak's `platform`
 # realm + stage the OIDC config bundle in OpenBao for VSO consumption.
 #
-# Production version of infrastructure/keycloak/clients/wazuh.sh.
-# Deltas:
+# Deltas from the retired local-edition client script:
 #   - Auth via keycloak-initial-admin Secret (no kcadm-admin-tmp pattern)
 #   - secforge.local → ${DOMAIN}
 #   - No platform_admin realm-role pre-check (production uses
