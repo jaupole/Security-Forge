@@ -34,12 +34,12 @@
 # edition.
 #
 # Usage:
-#   bash infrastructure/wazuh-agent/bootstrap-agent-key.sh
+#   bash platform/manifests/wazuh-agent/bootstrap-agent-key.sh
 #
 # Pre-conditions:
 #   - wazuh-manager-0 is up + healthy
 #   - wazuh-agent namespace exists (kubectl apply -f
-#     infrastructure/wazuh-agent/01-namespace.yaml first)
+#     platform/manifests/wazuh-agent/01-namespace.yaml first)
 
 set -euo pipefail
 

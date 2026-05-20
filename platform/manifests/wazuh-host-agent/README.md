@@ -64,11 +64,11 @@ The script is **not** in `components/` — it's a verification tool, not part of
 - **Recovery if you ban your own IP during fail2ban testing:** documented in `11b-fail2ban.sh`'s closing-message.
 - **Removing the in-cluster DaemonSet manually** if `11-wazuh-host-agent.sh` skipped that step for any reason:
   ```bash
-  kubectl delete -f infrastructure/wazuh-agent/04-daemonset.yaml
-  kubectl delete -f infrastructure/wazuh-agent/03-configmap.yaml
+  kubectl delete -f platform/manifests/wazuh-agent/04-daemonset.yaml
+  kubectl delete -f platform/manifests/wazuh-agent/03-configmap.yaml
   kubectl delete ns wazuh-agent
   ```
-- **The `infrastructure/wazuh-agent/` tree** (local-edition manifests for the DaemonSet) and `platform/components/07b-wazuh-agent.sh` (production-edition installer for the same) are both superseded by component 11. After 10 is verified, remove `07b-wazuh-agent.sh` from `components/` so `install-all.sh` stops re-deploying the DaemonSet on every run. The local-edition tree under `infrastructure/wazuh-agent/` can stay for now (it's documentation of the abandoned approach); revisit during a future cleanup pass.
+- **The in-cluster DaemonSet** (`platform/manifests/wazuh-agent/` + `platform/components/07b-wazuh-agent.sh`) is superseded by component 11. After 11 is verified, remove `07b-wazuh-agent.sh` from `components/` so `install-all.sh` stops re-deploying the DaemonSet on every run. (The retired local-edition copy under `infrastructure/wazuh-agent/` was removed in the 2026-05-20 retirement.)
 
 ## ADR
 

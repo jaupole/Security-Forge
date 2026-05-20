@@ -24,10 +24,10 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `ingress-nginx/` | ✅ **Done** | Retired 2026-05-20 (`values.yaml` only; platform has the full equivalent). |
 | `lib/` | ✅ **Done** | Retired 2026-05-20. Two `api-auth/verify-*.sh` local-edition test scripts; the library itself lives in `apps/lib/`. |
 | `minio/` | ✅ **Done** | Retired 2026-05-20 (values + bucket-bootstrap Job + NetworkPolicies; platform has `components/minio*.sh` + `manifests/minio/`). |
-| `namespaces/` | 🟢 Superseded | Bulk ns + quota/limit file; platform components self-create their namespaces. Companion Local-Edition doc `docs/06-reference/namespaces.md` retires with it. Deferred from the 2026-05-20 batch — `namespaces.yaml` is referenced by runbooks (`spire-rotation.md`, `keycloak-operations.md`) whose own edition status needs per-ref handling first. |
-| `spire/` | 🟢 Superseded | values + ClusterSPIFFEID + a Go test-workload demo; platform has `components/spire*.sh` + `manifests/spire/`. |
+| `namespaces/` | ✅ **Done** | Retired 2026-05-20 with its companion Local-Edition doc `namespaces.md`. Bulk ns + quota/limit file; platform components self-create their namespaces. |
+| `spire/` | ✅ **Done** | Retired 2026-05-20. values + ClusterSPIFFEID + a Go test-workload demo; platform has `components/spire*.sh` + `manifests/spire/` + `values/spire.yaml`. |
 | `vault-secrets-operator/` | ✅ **Done** | Retired 2026-05-20. values + connection/auth + one-shot cutover scripts; platform has `components/vso-*.sh` + `manifests/vault-secrets-operator/`. |
-| `wazuh-agent/` | 🟢 Superseded | In-cluster DaemonSet — superseded by the host-resident agent (component 11); see `platform/README.md` note on `07b-wazuh-agent.sh`. |
+| `wazuh-agent/` | ✅ **Done** | Retired 2026-05-20. Local-edition in-cluster DaemonSet — superseded by the host-resident agent (component 11); the platform copy `manifests/wazuh-agent/` remains pending component-11 sign-off. |
 | `teleport/` | 🟢 Replaced | Teleport was stopped; Tailscale took its operator-access role. Separate cleanup: `platform/components/teleport.sh`, `cloudnativepg/clusters/teleport-db.yaml`, `minio/networkpolicy-from-teleport.yaml`. |
 | `cosign/` | 🟡 Partial | One file: `cosign.pub`. Not referenced anywhere in `platform/`. Confirm it is the *local-edition* signing key (not the GHCR production verification key) before deleting. |
 | `istio/` | 🟡 Partial | `01-08` values/policies superseded by `manifests/istio/`. **`authzpol-strict-7c2-draft/` is 🅿️ PARKED** — `operator-backlog #21` (Phase 7c-2) depends on it. Keep that subdir. |
@@ -78,6 +78,22 @@ Audit mode; Enforce flip tracked as operator-backlog #39).
 4. `git rm` the subdir; commit the subdir + its repointing together.
 
 Local-Edition reference docs that exist only to document a retired subdir
-(e.g. the now-removed `cluster-services.md`, and `namespaces.md`) retire
-*alongside* it — they are Local-Edition content, not repointed to `platform/`.
-The production equivalents are `platform/README.md` + `install-all.sh`.
+(`cluster-services.md`, `postgres-instances.md`, `namespaces.md` — all
+removed) retire *alongside* it — they are Local-Edition content, not
+repointed to `platform/`. The production equivalents are
+`platform/README.md` + `install-all.sh`.
+
+## Residual after the subdir deletions
+
+Deleting the subdirs leaves stale `infrastructure/*` path mentions in prose
+and comments elsewhere. Handled by type:
+
+- **Live `platform/` config** — repointed as each subdir was retired (must
+  be clean).
+- **ADR / PLAN / closed operator-backlog references** — left as-is; they are
+  point-in-time decision/phase records, not live pointers.
+- **Architecture docs, runbooks, `apps/*/deploy/` comments** — still carry
+  Local-Edition path mentions. Some runbooks (`spire-rotation.md`,
+  `teleport-operations.md`) are themselves wholly Local-Edition and
+  superseded by platform equivalents. This is a separate Local-Edition
+  docs cleanup — tracked as operator-backlog #40.

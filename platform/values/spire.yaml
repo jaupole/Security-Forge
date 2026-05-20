@@ -4,7 +4,7 @@
 # CRDs:   spiffe/spire-crds 0.5.0   (installed separately, must come first)
 # Source: https://github.com/spiffe/helm-charts-hardened
 #
-# Differences from local edition (infrastructure/spire/values.yaml):
+# Differences from the retired local edition:
 #   - trustDomain:    secforge.local       -> ${SPIFFE_TRUST_DOMAIN} (= secforge.platform)
 #   - clusterName:    docker-desktop       -> ${SPIRE_CLUSTER_NAME}  (= secforge-prod)
 #   - caSubject CN:   secforge.local       -> ${SPIFFE_TRUST_DOMAIN}
