@@ -14,7 +14,7 @@ The observability stack consumes everything built in Phases 1–6. Four pillars,
 
 Cloud-edition delta: nothing changes except Loki/Tempo backing buckets move from MinIO to S3 and Wazuh scales out from 1+1+1 to 3+3+1. Prometheus replaces single-replica with HA pair.
 
-**Verification:** `bash infrastructure/observability/verify-e2e.sh` fires synthetic traffic and checks each pillar end-to-end. Last run: 8/8 green.
+**Verification:** end-to-end checks (synthetic traffic across each pillar) were carried by the retired local edition's `verify-e2e.sh`; a platform equivalent is not yet in place.
 
 ---
 

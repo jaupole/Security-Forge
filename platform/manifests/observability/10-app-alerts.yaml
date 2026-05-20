@@ -1,0 +1,130 @@
+# SecForge application + security alert rules.
+#
+# Migrated 2026-05-20 from the retired infrastructure/observability/13-alerting-rules.yaml.
+# These are the app/security signals; the node/container-health alerts live
+# separately in 09-platform-alerts.yaml.
+#
+# Picked up by kube-prometheus-stack's Prometheus via the `release: kps`
+# label. Each alert's annotation references docs/03-runbooks/alerts.md for
+# diagnosis + remediation.
+#
+# Migration notes — 6 of the local edition's 14 rules were NOT carried:
+#   - PodCrashLooping        — superseded by 09-platform-alerts' PodCrashLoopBackOff.
+#   - NamespaceMemoryHigh    — depended on per-namespace ResourceQuotas (a
+#                              local-edition construct); 09's container-memory
+#                              alerts cover the OOM risk.
+#   - SecretsGuardrailBypass{Critical,High,RateAnomaly} + AnnotatedBypassActiveOver30d
+#                            — keyed on a metric emitted by the retired
+#                              secrets-guardrails event pipeline. A production
+#                              guardrail-verification rebuild (operator-backlog
+#                              #39) will define fresh alerts.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: secforge-app-alerts
+  namespace: observability
+  labels:
+    release: kps
+    secforge.platform/component: observability
+spec:
+  groups:
+    - name: secforge.openbao
+      rules:
+        - alert: OpenBaoSealed
+          expr: |
+            max by (namespace) (vault_core_unsealed{namespace="openbao"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: openbao
+          annotations:
+            summary: "OpenBao is sealed"
+            description: "vault_core_unsealed=0. Unseal openbao-seal-0 with 3 of 5 Shamir keys; if 403s persist after unseal, rotate the Transit token. Runbooks: openbao-seal-unseal.md, openbao-recovery.md, alerts.md#openbaosealed"
+
+        - alert: OpenBaoLockedUsers
+          expr: |
+            max(vault_core_locked_users{namespace="openbao"}) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: openbao
+          annotations:
+            summary: "OpenBao has {{ $value }} locked user(s)"
+            description: "User-lockout floor breached after repeated bad logins. Investigate which auth method + identity. Runbook: alerts.md#openbaolockedusers"
+
+        - alert: OpenBaoAuditFailures
+          expr: |
+            sum(rate(vault_audit_log_request_failure{namespace="openbao"}[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: openbao
+          annotations:
+            summary: "OpenBao audit log writes failing"
+            description: "Audit failures are CRITICAL — OpenBao refuses operations when audit can't write. Check stdout/ device, container disk pressure. Runbook: alerts.md#openbaoauditfailures"
+
+    - name: secforge.auth
+      rules:
+        - alert: KeycloakHTTP5xxRate
+          expr: |
+            sum(rate(http_server_requests_seconds_count{namespace="keycloak",outcome="SERVER_ERROR"}[5m]))
+              / clamp_min(sum(rate(http_server_requests_seconds_count{namespace="keycloak"}[5m])), 1) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            component: keycloak
+          annotations:
+            summary: "Keycloak 5xx rate >5%"
+            description: "{{ $value | humanizePercentage }} of Keycloak HTTP requests returned 5xx for 10m. Check Postgres (Agroal pool), realm config, JVM heap. Runbook: alerts.md#keycloakhttp5xxrate"
+
+        - alert: KeycloakDBPoolExhausted
+          expr: |
+            agroal_available_count{namespace="keycloak"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: keycloak
+          annotations:
+            summary: "Keycloak DB pool fully checked out"
+            description: "Agroal available_count=0 for 5m. Inflight requests are queueing. Check Postgres latency. Runbook: alerts.md#keycloakdbpoolexhausted"
+
+    - name: secforge.authz
+      rules:
+        - alert: SpiceDBCheckLatencyHigh
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (rate(grpc_server_handling_seconds_bucket{namespace="spicedb",grpc_method="CheckPermission"}[5m]))
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            component: spicedb
+          annotations:
+            summary: "SpiceDB CheckPermission p99 >500ms"
+            description: "p99 CheckPermission latency is {{ $value | humanizeDuration }} over 10m. Check cache hit rate, Postgres, dispatch cluster health. Runbook: alerts.md#spicedbchecklatencyhigh"
+
+        - alert: SpiceDBGRPCErrorRate
+          expr: |
+            sum(rate(grpc_server_handled_total{namespace="spicedb",grpc_code!="OK"}[5m]))
+              / clamp_min(sum(rate(grpc_server_handled_total{namespace="spicedb"}[5m])), 1) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            component: spicedb
+          annotations:
+            summary: "SpiceDB gRPC error rate >5%"
+            description: "{{ $value | humanizePercentage }} non-OK gRPC for 10m. Check schema, datastore, AuthZEN façade. Runbook: alerts.md#spicedbgrpcerrorrate"
+
+    - name: secforge.mesh
+      rules:
+        - alert: IstioTCPConnectionFailureSpike
+          expr: |
+            sum(rate(istio_tcp_connections_failed_total[5m]))
+              / clamp_min(sum(rate(istio_tcp_connections_opened_total[5m])), 1) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: istio
+          annotations:
+            summary: "ztunnel TCP failure rate >10%"
+            description: "{{ $value | humanizePercentage }} of mesh TCP connections fail for 10m. Check AuthorizationPolicies, ztunnel logs, target workload health. Runbook: alerts.md#istiotcpconnectionfailurespike"

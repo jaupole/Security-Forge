@@ -1,6 +1,6 @@
 # Alerts runbook
 
-> All alerts are defined in `infrastructure/observability/13-alerting-rules.yaml` and evaluated by `kps-prometheus`. Local-edition Alertmanager has receiver `null`, so alerts are visible only in:
+> Alerts are defined in `platform/manifests/observability/09-platform-alerts.yaml` (node/container health) and `10-app-alerts.yaml` (app/security signals), evaluated by `kps-prometheus`. Until Alertmanager has a real receiver wired, alerts are visible only in:
 >
 > - Grafana → Alerting → Alert rules
 > - Prometheus UI: `kubectl port-forward -n observability svc/kps-prometheus 9090:9090` → http://localhost:9090/alerts
