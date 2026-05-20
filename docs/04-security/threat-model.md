@@ -757,7 +757,7 @@ Phase 7 observability stack (Prom + Grafana + Loki + Tempo) provides the continu
 
 ### CM — Configuration Management · `Covered`
 
-Git-signed commits (ed25519) per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md); pre-commit hooks (gitleaks + standard hygiene); Kyverno policies in `infrastructure/kyverno/` (Audit-mode for image-signing per F-ADR-12 flag, Enforce for PSS-restricted); Helm-templated configuration with values-files committed; ADR discipline for non-trivial choices per CLAUDE.md.
+Git-signed commits (ed25519) per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md); pre-commit hooks (gitleaks + standard hygiene); Kyverno policies in `platform/manifests/kyverno/policies/` (Audit-mode for image-signing per F-ADR-12 flag, Enforce for PSS-restricted); Helm-templated configuration with values-files committed; ADR discipline for non-trivial choices per CLAUDE.md.
 
 ### CP — Contingency Planning · `Partial`
 
