@@ -42,6 +42,52 @@
 
 ### 1. Authenticate kcadm inside the keycloak-0 pod
 
+**1a — Configure the kcadm truststore (first run + after every pod restart).**
+
+`kcadm` runs on a JVM whose default truststore holds only public CAs. The
+in-cluster endpoint presents the `keycloak-internal-tls` cert signed by the
+private `secforge-internal-ca` CA, so `config credentials` fails with a
+trust error before any password is even checked:
+
+```
+Failed to send request - PKIX path building failed:
+sun.security.provider.certpath.SunCertPathBuilderException: unable to find
+valid certification path to requested target
+```
+
+Hand kcadm a truststore that contains the internal CA. The truststore
+config and the `/tmp` files live only in the `keycloak-0` pod and are lost
+on pod restart — redo this whenever the pod has restarted:
+
+```bash
+# Pull the internal CA out of the TLS secret
+kubectl -n keycloak get secret keycloak-internal-tls \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/secforge-ca.crt
+
+# Stream it into the pod. `kubectl cp` needs tar, which the distroless
+# Keycloak image does not ship — pipe over stdin instead.
+kubectl -n keycloak exec -i keycloak-0 -- \
+  sh -c 'cat > /tmp/secforge-ca.crt' < /tmp/secforge-ca.crt
+
+# Build a PKCS12 truststore inside the pod. keytool ships with the JRE;
+# if it is not on PATH it is at $JAVA_HOME/bin/keytool.
+kubectl -n keycloak exec -i keycloak-0 -- sh -c '
+  keytool -importcert -noprompt -alias secforge-internal-ca \
+    -file /tmp/secforge-ca.crt \
+    -keystore /tmp/kcadm-truststore.p12 -storetype PKCS12 -storepass changeit'
+
+# Point kcadm at it
+kubectl -n keycloak exec -i keycloak-0 -- /opt/keycloak/bin/kcadm.sh \
+  config truststore --trustpass changeit /tmp/kcadm-truststore.p12
+```
+
+`auth.secforge.dev` carries a publicly-trusted Let's Encrypt cert and would
+need no truststore — but the `keycloak` namespace has external egress
+blocked, so an in-pod kcadm cannot hairpin out to its own public hostname.
+The in-cluster service hostname plus this truststore is the working path.
+
+**1b — Authenticate.**
+
 ```bash
 kubectl -n keycloak exec -it keycloak-0 -- /opt/keycloak/bin/kcadm.sh \
   config credentials \
@@ -51,14 +97,15 @@ kubectl -n keycloak exec -it keycloak-0 -- /opt/keycloak/bin/kcadm.sh \
 # Prompts for password; cache lands in /opt/keycloak/.keycloak/kcadm.config
 ```
 
-The cache survives `exec` exit but is **lost on pod restart**. If the pod
-restarts mid-procedure, re-auth.
+The credentials cache survives `exec` exit but — like the step 1a
+truststore — is **lost on pod restart**. If the pod restarts mid-procedure,
+redo both 1a and 1b.
 
 **Server hostname matters** — must be one of the cert SANs:
 - `keycloak-service.keycloak.svc.cluster.local` (use this from in-cluster)
 - `keycloak-service.keycloak.svc`
 - `keycloak-service`
-- `auth.secforge.dev`
+- `auth.secforge.dev` (publicly trusted — but egress-blocked from in-pod)
 - ✗ NOT `localhost`
 
 ### 2. Verify auth
@@ -97,9 +144,18 @@ should match:
   "maxFailureWaitSeconds": 3600,
   "waitIncrementSeconds": 120,
   "bruteForceProtected": true,
-  "registrationAllowed": false
+  "registrationAllowed": false,
+  "ssoSessionIdleTimeout": 900,
+  "ssoSessionMaxLifespan": 28800,
+  "ssoSessionIdleTimeoutRememberMe": 28800,
+  "ssoSessionMaxLifespanRememberMe": 86400
 }
 ```
+
+Session lifetimes: a regular session idles out after 15 min and is hard-capped
+at 8 h. A "Remember Me" session (the login-page checkbox) idles out after 8 h
+and is hard-capped at 24 h — tightened 2026-05-19 from the prior 7 d / 30 d
+for production session hygiene.
 
 Default required actions list should be:
 ```json
@@ -172,8 +228,11 @@ unreproducible — a DR rebuild would lose them.
 - Client-level mappers (audience self-mappers per
   `project_keycloak_audience_mappers` memory). Those live in the realm
   import Secret and ARE re-applied by KeycloakRealmImport.
-- Realm-level event listener config or admin-console session timeouts.
-  Add stages to the script as they become hardening requirements.
+- Realm-level event listener config. Add stages to the script as they
+  become hardening requirements.
+- The `master` realm's own session timeouts (admin-console sessions).
+  Stage [02] covers the `platform` realm's user-session lifetimes only;
+  the `master` realm is hardened separately.
 
 ## Source-of-truth note
 

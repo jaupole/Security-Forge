@@ -28,11 +28,16 @@ spec:
     enabled: true
 
     # ─── Session and token lifetimes ───────────────────────────────
-    # Idle 15 min, absolute 8h. Remember-me 30d (idle 7d).
+    # Idle 15 min, absolute 8h. Remember-me capped to 24h absolute /
+    # 8h idle (2026-05-19 — production session hygiene; was 30d / 7d
+    # idle). A ticked "Remember Me" now survives an overnight gap but
+    # not a multi-day one. With mandatory passkeys, re-login is a
+    # biometric tap. Replayed live by 03a-keycloak-realm-hardening.sh
+    # since KeycloakRealmImport is one-shot.
     ssoSessionIdleTimeout: 900
     ssoSessionMaxLifespan: 28800
-    ssoSessionIdleTimeoutRememberMe: 604800
-    ssoSessionMaxLifespanRememberMe: 2592000
+    ssoSessionIdleTimeoutRememberMe: 28800
+    ssoSessionMaxLifespanRememberMe: 86400
     # Offline tokens disabled (we don't issue them).
     offlineSessionIdleTimeout: 0
     offlineSessionMaxLifespan: 0

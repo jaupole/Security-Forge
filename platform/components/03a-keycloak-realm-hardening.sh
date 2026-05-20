@@ -69,7 +69,12 @@ if ! kubectl -n "$KEYCLOAK_NS" exec "$KEYCLOAK_POD" -- \
   exit 1
 fi
 
-echo ">>> [02] Realm-level hardening fields"
+echo ">>> [02] Realm-level hardening fields (incl. session lifetimes)"
+# Session lifetimes: regular 15min idle / 8h absolute; remember-me
+# capped to 8h idle / 24h absolute (2026-05-19 — production session
+# hygiene, was 30d / 7d idle). KeycloakRealmImport is one-shot so the
+# import Secret's values do not propagate to a running realm; this
+# stage is the authoritative replay.
 kc update "realms/$REALM" \
   -s 'passwordPolicy="length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"' \
   -s 'failureFactor=10' \
@@ -77,7 +82,11 @@ kc update "realms/$REALM" \
   -s 'waitIncrementSeconds=120' \
   -s 'bruteForceProtected=true' \
   -s 'sslRequired="external"' \
-  -s 'registrationAllowed=false'
+  -s 'registrationAllowed=false' \
+  -s 'ssoSessionIdleTimeout=900' \
+  -s 'ssoSessionMaxLifespan=28800' \
+  -s 'ssoSessionIdleTimeoutRememberMe=28800' \
+  -s 'ssoSessionMaxLifespanRememberMe=86400'
 
 echo ">>> [03] WebAuthn policy (RpId, RpEntityName, required user verification)"
 kc update "realms/$REALM" \
@@ -180,7 +189,11 @@ kc get "realms/$REALM" | jq '{
   maxFailureWaitSeconds,
   waitIncrementSeconds,
   bruteForceProtected,
-  registrationAllowed
+  registrationAllowed,
+  ssoSessionIdleTimeout,
+  ssoSessionMaxLifespan,
+  ssoSessionIdleTimeoutRememberMe,
+  ssoSessionMaxLifespanRememberMe
 }'
 echo ""
 echo "=== Default required actions ==="
