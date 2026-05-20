@@ -13,7 +13,6 @@ These are populated as you go through the phases (each phase prompt creates the 
 
 - `namespaces.md` — namespace inventory and resource quotas (created in Phase 1)
 - `postgres-instances.md` — Postgres instance inventory and credentials (Phase 1)
-- `cluster-services.md` — ingress, cert-manager, Kyverno settings (Phase 1)
 - `spiffe-ids.md` — canonical SPIFFE ID naming scheme (Phase 2)
 - `openbao-policies.md` — what each policy can do (Phase 5)
 - `screenshots/` — UI screenshots of dashboards and Hello World (Phase 9)

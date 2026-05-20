@@ -19,12 +19,12 @@ subdir so nothing edition-agnostic is lost on the way out.
 | Subdir | Verdict | Notes |
 |---|---|---|
 | `wazuh/` | ✅ **Done** | Retired 2026-05-20. Decoder/rules/ISM migrated to `platform/components/07o`+`07p`; rules renumbered 100300-range. |
-| `cert-manager/` | 🟢 Superseded | `values.yaml` + `cluster-issuer.yaml`; platform has `components/cert-manager.sh` + `manifests/cert-manager/` + `values/cert-manager.yaml`. |
+| `cert-manager/` | ✅ **Done** | Retired 2026-05-20 (pure local-edition config; platform has `components/cert-manager.sh` + `manifests/cert-manager/` + `values/cert-manager.yaml`). |
 | `cloudnativepg/` | 🟢 Superseded | Cluster CRs + values; platform has `components/cloudnativepg.sh`, `manifests/cnpg-system/`, per-component `*/02-cnpg-cluster.yaml`, `values/cloudnativepg.yaml`. |
-| `ingress-nginx/` | 🟢 Superseded | `values.yaml` only; platform has the full equivalent. |
+| `ingress-nginx/` | ✅ **Done** | Retired 2026-05-20 (`values.yaml` only; platform has the full equivalent). |
 | `lib/` | 🟢 Superseded | Two `api-auth/verify-*.sh` test scripts; the library itself lives in `apps/lib/`. |
-| `minio/` | 🟢 Superseded | values + bucket-bootstrap Job + NetworkPolicies; platform has `components/minio*.sh` + `manifests/minio/`. |
-| `namespaces/` | 🟢 Superseded | Bulk ns + quota/limit file; platform components self-create their namespaces. |
+| `minio/` | ✅ **Done** | Retired 2026-05-20 (values + bucket-bootstrap Job + NetworkPolicies; platform has `components/minio*.sh` + `manifests/minio/`). |
+| `namespaces/` | 🟢 Superseded | Bulk ns + quota/limit file; platform components self-create their namespaces. Companion Local-Edition doc `docs/06-reference/namespaces.md` retires with it. Deferred from the 2026-05-20 batch — `namespaces.yaml` is referenced by runbooks (`spire-rotation.md`, `keycloak-operations.md`) whose own edition status needs per-ref handling first. |
 | `spire/` | 🟢 Superseded | values + ClusterSPIFFEID + a Go test-workload demo; platform has `components/spire*.sh` + `manifests/spire/`. |
 | `vault-secrets-operator/` | 🟢 Superseded | values + connection/auth + one-shot cutover scripts (already has an `archive/`); platform has `components/vso-*.sh` + `manifests/vault-secrets-operator/`. |
 | `wazuh-agent/` | 🟢 Superseded | In-cluster DaemonSet — superseded by the host-resident agent (component 11); see `platform/README.md` note on `07b-wazuh-agent.sh`. |
@@ -76,3 +76,8 @@ Audit mode; Enforce flip tracked as operator-backlog #39).
    in `docs/`, ADRs, and `platform/` (closed operator-backlog items are
    historical record — leave them).
 4. `git rm` the subdir; commit the subdir + its repointing together.
+
+Local-Edition reference docs that exist only to document a retired subdir
+(e.g. the now-removed `cluster-services.md`, and `namespaces.md`) retire
+*alongside* it — they are Local-Edition content, not repointed to `platform/`.
+The production equivalents are `platform/README.md` + `install-all.sh`.

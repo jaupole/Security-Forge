@@ -545,7 +545,7 @@ TLS termination + routing. mkcert-issued cert today.
 | **(S1) Spoof TLS cert (CA compromise)** | H (Severe × Rare) | mkcert local CA trusted at operator's OS level; cert-pinning at browser; cloud-edition needs Let's Encrypt or pinned CA | Local: laptop CA-trust = trusted (assumption per §Out-of-scope). Cloud-edition inverts. |
 | **(T1) Tamper request before BFF** | L (Major × Rare) | TLS terminates at nginx; nginx config via Helm (committed); no mid-stream rewrites in current config | nginx CVE → arbitrary modification (E1). |
 | **(R1) Request log integrity** | M (Significant × Moderate) | nginx access log to STDOUT → Loki | **See X-R1.** |
-| **(I1) Request body in nginx access log** | L (Minor × Rare) | nginx default does NOT log request body | A future config change enabling body logging would leak. Reviewable in `infrastructure/ingress-nginx/` Helm values. |
+| **(I1) Request body in nginx access log** | L (Minor × Rare) | nginx default does NOT log request body | A future config change enabling body logging would leak. Reviewable in `platform/values/ingress-nginx.yaml`. |
 | **(D1) Connection flood** | L (Minor × Moderate) | nginx default rate-limit + connection-limit per source IP | Local edition single source = trivial; cloud-edition: WAF in front. |
 | **(E1) nginx CVE → host process** | M (Severe × Rare) | Pod runs as non-root, PSS-restricted, image pinned by tag; Cosign at supply-chain phase | **F-ADR-12 flag** for Cosign Audit→Enforce. **Tracked-but-not-accepted** (supply-chain phase). |
 
