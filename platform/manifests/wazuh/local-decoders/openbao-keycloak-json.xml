@@ -1,0 +1,54 @@
+<!--
+  OpenBao + Keycloak pod-log JSON decoders.
+
+  Companion to the openbao / keycloak <localfile> blocks in the host
+  wazuh-agent's ossec.conf (platform/manifests/wazuh-host-agent/ossec.conf.template).
+  Those blocks tail the kubelet pod-log files as log_format=syslog and
+  tag each line with <label key="source">openbao|keycloak</label>.
+
+  THE PROBLEM
+    kubelet writes pod logs in this shape:
+      <RFC3339-timestamp> (stdout|stderr) (F|P) <payload>
+    Wazuh's syslog pre-decoder treats the line as RFC3164-shaped and
+    consumes BOTH the timestamp AND the `stdout`/`stderr` token (the
+    hostname slot). So the content reaching decoders for a real pod-log
+    line is:
+      F {"...":...}    (full line, JSON payload)
+      P {"...":...}    (partial / continuation — multi-segment line)
+    Without a decoder anchored on that `F `/`P ` prefix, the built-in
+    JSON_Decoder never engages and the OpenBao audit / Keycloak event
+    JSON is never parsed — so the openbao-keycloak-audit rules
+    (100300-100399) have no decoded fields to match.
+
+  THE DECODERS
+    Two decoders, both named `json` on purpose: Wazuh's runtime sets the
+    event's `decoded_as` field to the DECODER name, and the
+    openbao-keycloak-audit rules use <decoded_as>json</decoded_as> as a
+    sentinel. The chart-shipped ruleset already declares a `json` decoder
+    for unwrapped JSON; Wazuh allows multiple decoders to share a name —
+    they are tried in order as alternative entry points to the same rule
+    chain. These two add the kubelet-wrapped `F `/`P ` shapes; all paths
+    emit decoded_as=json so the rules fire identically.
+
+    `<prematch>` uses OSRegex (no pcre2, no grouped alternation like
+    `(F|P)`, no POSIX classes) — analysisd rejects `^stdout (F|P) `.
+    Hence two separate decoders with literal `^F ` / `^P ` prematches.
+    JSON_Decoder with offset="after_prematch" starts parsing at the `{`.
+
+  This does NOT conflict with the k3s-audit decoder: that one CLAIMS
+  lines via <program_name>^k3s-audit$</program_name>; these match the
+  message-body prefix of openbao/keycloak lines, which carry no
+  program_name tag.
+
+  Lives at /var/ossec/etc/decoders/local_decoder_openbao_keycloak.xml on
+  the wazuh-manager pod. Source-of-truth in this repo; deploy via
+  platform/components/07o-wazuh-audit-rules.sh.
+-->
+<decoder name="json">
+  <prematch>^F </prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>
+<decoder name="json">
+  <prematch>^P </prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>

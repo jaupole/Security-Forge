@@ -55,10 +55,11 @@ data:
              <RFC3339-TS> (stdout|stderr) (P|F) <json-or-text-line>
            Pure <log_format>json</log_format> can't parse this — each
            line starts with the kubelet timestamp prefix, not '{'.
-           Use `syslog` format here (sends raw lines); the manager's
-           local_decoder.xml strips the kubelet wrapper and applies
-           JSON_Decoder to the trailing payload. See infrastructure/
-           wazuh/03-decoders-configmap.yaml. -->
+           Use `syslog` format here (sends raw lines); the manager-side
+           openbao-keycloak-json decoder strips the kubelet wrapper and
+           applies JSON_Decoder to the trailing payload. See
+           platform/manifests/wazuh/local-decoders/openbao-keycloak-json.xml
+           (installed by platform/components/07o-wazuh-audit-rules.sh). -->
       <localfile>
         <log_format>syslog</log_format>
         <location>/host/var/log/pods/openbao_openbao-*/openbao/*.log</location>

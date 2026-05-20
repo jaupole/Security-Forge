@@ -7,13 +7,21 @@ stays organized and operators can find what they need.
 
 | Range | Purpose |
 |---|---|
-| 100000–100199 | Reserved for upstream Wazuh examples |
-| 100200–100299 | Trivy / image-scanning integration (existing) |
-| 100400–100499 | upstream-image-check (this session) |
-| 100500–100599 | OpenBao / SPIRE custom rules (future) |
-| 100600–100699 | k8s admission / Kyverno alerts (future) |
-| 100700–100799 | Application-specific (Proposal Forge / Project Tracker) |
-| 100800+ | Available |
+| 100001–100099 | Wazuh chart `local_rules.xml` — application-error catch-alls (chart-shipped) |
+| 100100–100199 | Reserved for upstream Wazuh examples |
+| 100200–100299 | Trivy / image-scanning integration (`14-trivy-wazuh.sh`) |
+| 100300–100399 | OpenBao + Keycloak audit-log rules (`07o-wazuh-audit-rules.sh`) |
+| 100400–100499 | upstream-image-check (`07l-wazuh-upstream-image-rules.sh`) |
+| 100500–100599 | OpenBao seal-state maintenance rules (`07m-wazuh-maintenance-rules.sh`) |
+| 100600–100699 | cert-manager renewal maintenance rules (`07m-wazuh-maintenance-rules.sh`) |
+| 100700–100799 | CloudNativePG cluster-health maintenance rules (`07m-wazuh-maintenance-rules.sh`) |
+| 100800–100899 | Velero backup-status maintenance rules (`07m-wazuh-maintenance-rules.sh`) |
+| 100900–100999 | Wazuh agent connectivity maintenance rules (`07m-wazuh-maintenance-rules.sh`) |
+| 101000+ | Available (next: per-app audit rules — Project Tracker, Proposal Forge) |
+
+> The OpenBao + Keycloak audit rules originated in the retired local edition
+> at 100200–100299; they were renumbered into 100300–100399 during the
+> platform migration because Trivy already occupies the 100200 range.
 
 ## Meta-groups (cross-cutting tags)
 

@@ -122,14 +122,14 @@ kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 
 The init container appends these to the agent image's default `ossec.conf`. Verified loaded at runtime: `kubectl exec -n wazuh-agent ds/wazuh-agent -c wazuh-agent -- tail /var/ossec/etc/ossec.conf` shows the localfile blocks at the bottom.
 
-**Status:** **agent → manager → indexer with secforge custom rule firing on real pod-log lines** — fully live as of 2026-05-05 (operator-backlog #17, #18, #23, #24 all closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously; alerts.log shows real OpenBao + Keycloak events firing rules. With #23 closed, filebeat → indexer ships the alerts to `wazuh-alerts-4.x-YYYY.MM.DD` daily indices; the dashboard's Discover view populates within ~30s of an event. With #24 closed, the secforge custom rules (100200-100299) fire on the kubelet-wrapped JSON shape — see § "kubelet pod-log prefix handling" below for the syslog-pre-decoder quirk that bit us.
+**Status:** **agent → manager → indexer with secforge custom rule firing on real pod-log lines** — fully live as of 2026-05-05 (operator-backlog #17, #18, #23, #24 all closed). With `client.keys` persisting (§ 1 above), `wazuh-logcollector` stays running and the localfile tailing reaches the manager continuously; alerts.log shows real OpenBao + Keycloak events firing rules. With #23 closed, filebeat → indexer ships the alerts to `wazuh-alerts-4.x-YYYY.MM.DD` daily indices; the dashboard's Discover view populates within ~30s of an event. With #24 closed, the secforge custom rules (100300-100399 on the platform; 100200-range in the retired local edition) fire on the kubelet-wrapped JSON shape — see § "kubelet pod-log prefix handling" below for the syslog-pre-decoder quirk that bit us.
 
 **Manager-side decoders + rules (operator-backlog #18 closeout, 2026-05-05).** The agent's `<localfile log_format="syslog">` blocks emit kubelet-wrapped pod-log lines (`<RFC3339-TS> stdout F {...json...}`); the manager's syslog pre-decoder strips the kubelet wrapper, then a custom JSON_Decoder parses the trailing JSON into named fields. Rules then match those fields and surface alerts at level ≥ 3 (Wazuh's archive-and-display threshold).
 
-- **Decoder:** `infrastructure/wazuh/03-decoders-configmap.yaml` → mounts at `/var/ossec/etc/decoders/local_decoder.xml`. Patched in via `infrastructure/wazuh/04-manager-decoders-patch.sh`.
-- **Rules:** `infrastructure/wazuh/04-rules-configmap.yaml` → mounts at `/var/ossec/etc/rules/secforge_local_rules.xml`. Patched in via `infrastructure/wazuh/05-manager-rules-patch.sh`. Rule range 100200–100299; non-overlapping with the chart-shipped 100001–100099 application-error range. Rule shapes:
-  - **OpenBao** (sentinel: `auth.display_name` + `request.path` exist): 100200 base @ level 3, 100201 auth/policy denial @ level 8, 100202/100204/100205 sensitive-write on `sys/`/`auth/jwt/`/`transit/keys/` @ level 6, 100203 brute-force correlation @ level 14.
-  - **Keycloak** (sentinel: `loggerName` starts with `org.keycloak`): 100220 base @ level 3, 100221 WARN @ level 5, 100222 ERROR @ level 10, 100224 FATAL @ level 12, 100223 audit-listener (`org.keycloak.events`) @ level 5.
+- **Decoder:** `platform/manifests/wazuh/local-decoders/openbao-keycloak-json.xml` → installed at `/var/ossec/etc/decoders/local_decoder_openbao_keycloak.xml` by `platform/components/07o-wazuh-audit-rules.sh`.
+- **Rules:** `platform/manifests/wazuh/local-rules/openbao-keycloak-audit.xml` → installed at `/var/ossec/etc/rules/local_rules_openbao_keycloak_audit.xml` by `platform/components/07o-wazuh-audit-rules.sh`. Rule range 100300–100399 (renumbered from the local edition's 100200-range — that collided with Trivy's 100200-100203; see `docs/06-reference/wazuh-rule-conventions.md`). Rule shapes:
+  - **OpenBao** (sentinel: `auth.display_name` + `request.path` exist): 100300 base @ level 3, 100301 auth/policy denial @ level 8, 100302/100304/100305 sensitive-write on `sys/`/`auth/jwt/`/`transit/keys/` @ level 6, 100306 read-side denial @ level 5, 100303 brute-force correlation @ level 14.
+  - **Keycloak** (sentinel: `loggerName` starts with `org.keycloak`): 100320 base @ level 3, 100321 WARN @ level 5, 100322 ERROR @ level 10, 100324 FATAL @ level 12, 100323 audit-listener (`org.keycloak.events`) @ level 5.
 
 **Wazuh rule-schema gotchas hit during the cutover (preserve here so future-you doesn't rediscover):**
 1. `<field name="type">`, `<field name="level">`, `<field name="request.operation">`, `<field name="request.path">` are all reserved tag names in Wazuh's rule schema — analysisd rejects with `5107: Syntax error on tag '<name>'`. Anchor on uniquely-named decoded fields (`auth.display_name`, `loggerName`) instead, and use `<match>` (substring) for severity-style discriminators.
@@ -146,7 +146,7 @@ The wazuh-agent's `<localfile log_format="syslog">` blocks tail kubelet pod logs
 
 Wazuh's syslog pre-decoder runs first and (counterintuitively) consumes BOTH the timestamp AND the `stdout` / `stderr` token — it treats `stdout`/`stderr` as the syslog HOSTNAME slot per RFC3164's `<TS> <HOSTNAME> <PROGRAM>: <MSG>` shape. So the message content reaching the decoders is **`F {"...":...}`** (full lines) or **`P {"...":...}`** (partial / continuation lines). It is NOT `{"...":...}` — the leading `F ` / `P ` is what bit us in #24.
 
-Three custom decoders in `infrastructure/wazuh/03-decoders-configmap.yaml` handle this:
+Three `json`-named decoders handle this — the chart ships one, and `platform/manifests/wazuh/local-decoders/openbao-keycloak-json.xml` adds the other two:
 
 | Decoder name | Prematch | Notes |
 |---|---|---|
@@ -154,7 +154,7 @@ Three custom decoders in `infrastructure/wazuh/03-decoders-configmap.yaml` handl
 | `json` (our `^F `) | `^F ` | Kubelet full-line shape. `offset="after_prematch"` aims `JSON_Decoder` at the `{` that follows the trailing space. |
 | `json` (our `^P `) | `^P ` | Kubelet continuation-line shape. Rare — only fires when a single stdout write exceeds kubelet's ~16 KiB buffer. |
 
-All three decoders are intentionally named `json` (NOT a unique custom name). Wazuh allows multiple decoders to share a name and tries them in order; rules in `04-rules-configmap.yaml` then key on `<decoded_as>json</decoded_as>` and fire identically regardless of which decoder did the JSON parse.
+All three decoders are intentionally named `json` (NOT a unique custom name). Wazuh allows multiple decoders to share a name and tries them in order; rules in `openbao-keycloak-audit.xml` then key on `<decoded_as>json</decoded_as>` and fire identically regardless of which decoder did the JSON parse.
 
 **Why `<prematch>` is restricted:**
 
@@ -177,13 +177,13 @@ kubectl exec -n wazuh wazuh-manager-0 -i -c wazuh-manager -- /var/ossec/bin/wazu
 JSON
 ```
 
-Both should land at Phase 3 `id: '100200'`. If only the first does, our `^F ` decoder isn't loaded — check `kubectl exec -n wazuh wazuh-manager-0 -- cat /var/ossec/etc/decoders/local_decoder.xml`.
+Both should land at Phase 3 `id: '100300'`. If only the first does, our `^F ` decoder isn't loaded — check `kubectl exec -n wazuh wazuh-manager-0 -- cat /var/ossec/etc/decoders/local_decoder_openbao_keycloak.xml`.
 
-**Read-side auth/policy denial — rule 100206 (operator-backlog #27, closed 2026-05-05):**
+**Read-side auth/policy denial — rule 100306 (operator-backlog #27, closed 2026-05-05):**
 
-OpenBao audit events for *denied* requests don't carry `auth.display_name` — the audit shape on auth/policy failure emits only `auth.token_type`. That excludes them from rule 100200 (which sentinels on `auth.display_name`), so they fall through to chart's catch-all rule 100001 (`<match> ERROR </match>`, level 10, false-high — reads failing auth are diagnostic, not application-error severity).
+OpenBao audit events for *denied* requests don't carry `auth.display_name` — the audit shape on auth/policy failure emits only `auth.token_type`. That excludes them from rule 100300 (which sentinels on `auth.display_name`), so they fall through to chart's catch-all rule 100001 (`<match> ERROR </match>`, level 10, false-high — reads failing auth are diagnostic, not application-error severity).
 
-Rule 100206 fixes this by **parenting on 100001 directly via `<if_sid>100001</if_sid>`**. When 100001 matches AND the OpenBao read-denial pattern also matches (`request.operation=^read$`, `request.path` populated, top-level `error` populated), 100206 overrides at level 5. Stand-alone parenting on 100200 doesn't work because (a) failed events lack `auth.display_name`, and (b) Wazuh fires the highest-level rule when multiple match, so a stand-alone level-5 rule loses to 100001's level 10 every time.
+Rule 100306 fixes this by **parenting on 100001 directly via `<if_sid>100001</if_sid>`**. When 100001 matches AND the OpenBao read-denial pattern also matches (`request.operation=^read$`, `request.path` populated, top-level `error` populated), 100306 overrides at level 5. Stand-alone parenting on 100300 doesn't work because (a) failed events lack `auth.display_name`, and (b) Wazuh fires the highest-level rule when multiple match, so a stand-alone level-5 rule loses to 100001's level 10 every time.
 
 OSRegex gotcha (worth its own callout — bit us during #27): in `<field>` constraints, **`\.` means "any char"** and **bare `.` means "literal period"**. That inverts the PCRE convention. Use `\.+` for "any non-empty content"; use `\.+@\.+` for an email-shape match; use bare `.+` only when you actually want literal periods. The same convention applies in `<regex>` blocks. The `^read$` form (anchored literal) does work as expected — it's only the wildcards that flip.
 
@@ -195,19 +195,19 @@ kubectl exec -n wazuh wazuh-manager-0 -i -c wazuh-manager -- /var/ossec/bin/wazu
 JSON
 ```
 
-Expected: Phase 3 `id: '100206'` at level 5, description `OpenBao read denied: path=sys/metrics error=...`.
+Expected: Phase 3 `id: '100306'` at level 5, description `OpenBao read denied: path=sys/metrics error=...`.
 
 **Verify ingestion end-to-end (after deploy):**
 
 ```bash
 # 1. Manager has the decoder + rules.
 kubectl exec -n wazuh wazuh-manager-0 -- ls -la \
-    /var/ossec/etc/decoders/local_decoder.xml \
-    /var/ossec/etc/rules/secforge_local_rules.xml
+    /var/ossec/etc/decoders/local_decoder_openbao_keycloak.xml \
+    /var/ossec/etc/rules/local_rules_openbao_keycloak_audit.xml
 kubectl exec -n wazuh wazuh-manager-0 -- bash -c \
     'grep "Total rules enabled" /var/ossec/logs/ossec.log | tail -1'
-# Expected: 8473 (chart-shipped 8462 + 11 secforge rules); a different
-# count means the rule file failed to load — check the next grep.
+# Expected: chart-shipped total + 12 secforge rules (the 100300-range);
+# a lower count means the rule file failed to load — check the next grep.
 kubectl exec -n wazuh wazuh-manager-0 -- bash -c \
     'grep -E "Error loading the rules|Syntax error" /var/ossec/logs/ossec.log | tail -3'
 
@@ -215,13 +215,13 @@ kubectl exec -n wazuh wazuh-manager-0 -- bash -c \
 kubectl exec -n wazuh wazuh-manager-0 -i -- /var/ossec/bin/wazuh-logtest <<'JSON'
 {"time":"2026-05-05T13:00:00Z","type":"request","auth":{"display_name":"jason"},"request":{"operation":"read","path":"secret/data/foo"}}
 JSON
-# Expected: rule 100200 fires at level 3 with description
+# Expected: rule 100300 fires at level 3 with description
 # "OpenBao audit: actor=jason op=read path=secret/data/foo".
 
 # 3. End-to-end (operator hits Keycloak + OpenBao, alerts land in dashboard).
 curl -sk https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration >/dev/null
 kubectl exec -n openbao openbao-0 -- bao kv get secret/foo 2>/dev/null
-# Then in Wazuh dashboard, Discover view: filter `rule.id: 100200 OR rule.id: 100220`.
+# Then in Wazuh dashboard, Discover view: filter `rule.id: 100300 OR rule.id: 100320`.
 ```
 
 ### 3. OIDC federation with Keycloak — deferred (medium follow-up)
@@ -320,7 +320,7 @@ kubectl exec -n wazuh wazuh-indexer-0 -c wazuh-indexer -- curl -sk -u "admin:$WA
     -d "{
       \"query\":{\"bool\":{\"must\":[
         {\"range\":{\"@timestamp\":{\"gte\":\"$TS_BEFORE\"}}},
-        {\"range\":{\"rule.id\":{\"gte\":100200,\"lte\":100299}}}
+        {\"range\":{\"rule.id\":{\"gte\":100300,\"lte\":100399}}}
       ]}},
       \"size\":5,
       \"_source\":[\"@timestamp\",\"rule.id\",\"rule.description\",
@@ -328,8 +328,8 @@ kubectl exec -n wazuh wazuh-indexer-0 -c wazuh-indexer -- curl -sk -u "admin:$WA
                    \"data.loggerName\",\"data.message\",\"agent.name\"]
     }" | jq '.hits | {total: .total.value, ids: [.hits[]._source["rule.id"]] | unique}'
 # Expected (post-#24 closeout, real-event coverage live):
-#   total >= 2; ids include at least one OpenBao rule (100200-100209) and
-#   one Keycloak rule (100220-100229) within the TS_BEFORE..now window.
+#   total >= 2; ids include at least one OpenBao rule (100300-100309) and
+#   one Keycloak rule (100320-100329) within the TS_BEFORE..now window.
 # This is the canonical "secforge-specific SIEM coverage live" closure
 # signal — narrower than "any wazuh-alerts hits" (which can be satisfied
 # by chart-shipped rule 100001 catching error keywords). If total > 0

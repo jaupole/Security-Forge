@@ -42,6 +42,12 @@
 #     07h-grafana-datasources  Tempo + Loki datasources
 #     07i-keycloak-wazuh-client         Keycloak wazuh-dashboard OIDC client
 #     07j-wazuh-oidc-configure          Wazuh OIDC + indexer security config
+#     07k-wazuh-k8s-group               Wazuh k8s agent-group + shared agent.conf
+#     07l-wazuh-upstream-image-rules    upstream-image-check rules + Maintenance dashboard
+#     07m-wazuh-maintenance-rules       OpenBao/cert-manager/CNPG/Velero maintenance rules
+#     07n-wazuh-k3s-audit-decoder       k3s API-audit claim decoder
+#     07o-wazuh-audit-rules             OpenBao + Keycloak audit decoder + rules
+#     07p-wazuh-alerts-retention        ISM retention policy for wazuh-alerts-* indices
 #
 #   Group 09 — backups
 #     09a-velero               Velero
@@ -120,6 +126,12 @@ COMPONENT_ORDER=(
   07h-grafana-datasources
   07i-keycloak-wazuh-client
   07j-wazuh-oidc-configure
+  07k-wazuh-k8s-group
+  07l-wazuh-upstream-image-rules
+  07m-wazuh-maintenance-rules
+  07n-wazuh-k3s-audit-decoder
+  07o-wazuh-audit-rules
+  07p-wazuh-alerts-retention
 
   # Backups
   09a-velero

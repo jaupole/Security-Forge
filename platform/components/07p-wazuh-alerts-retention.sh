@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SecForge — Wazuh alert-index retention via an OpenSearch ISM policy.
+# 07p — Wazuh alert-index retention via an OpenSearch ISM policy.
 #
 # THE PROBLEM
 #   Nothing prunes the indexer. wazuh-alerts-4.x-YYYY.MM.DD indices
@@ -22,14 +22,17 @@
 # requires if_seq_no/if_primary_term for updates) if present. Re-running
 # is safe. Also enrols any already-existing wazuh-alerts-* index.
 #
-# Uses the ambient kubectl context (root via k3s.yaml, or a user with
-# ~/.kube/config). curl runs inside the indexer pod, which already
-# trusts localhost:9200's TLS.
+# Uses the ambient kubectl context. curl runs inside the indexer pod,
+# which already trusts localhost:9200's TLS.
 #
-# Usage (host or workstation with kubectl access to the cluster):
-#   bash infrastructure/wazuh/07-alerts-retention-ism.sh
+# Run AFTER 07-wazuh.sh deploys the indexer. Idempotent.
 
 set -euo pipefail
+
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "ERROR: kubectl not found in PATH" >&2
+  exit 1
+fi
 
 NS=wazuh
 POLICY=wazuh-alerts-retention
@@ -99,8 +102,9 @@ ADD=$(printf '{"policy_id":"%s"}' "$POLICY" | idx_put -XPOST -H 'Content-Type: a
     "https://localhost:9200/_plugins/_ism/add/${INDEX_PATTERN}" --data-binary @-)
 echo "    indexer: ${ADD}"
 
-green ""
-green "ISM policy '${POLICY}' applied — ${INDEX_PATTERN} indices auto-delete"
-green "${RETENTION_DAYS} days after creation, and the policy attaches to new"
-green "indices automatically (ism_template)."
-green ""
+cat <<EOF
+
+✓ ISM policy '${POLICY}' applied — ${INDEX_PATTERN} indices auto-delete
+${RETENTION_DAYS} days after creation, and the policy attaches to new
+indices automatically (ism_template).
+EOF
