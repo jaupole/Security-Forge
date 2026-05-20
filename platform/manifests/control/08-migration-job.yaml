@@ -1,4 +1,4 @@
-# One-shot Job that applies migrations 001-021 to control-db.
+# One-shot Job that applies all pending migrations to control-db.
 #
 # Run BEFORE the API Deployment so the schema (incl. RLS at 019, audit-log
 # hash chain at 020, idempotency keys at 021) is in place when the first
@@ -74,7 +74,7 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          image: ghcr.io/jaupole/control@sha256:f8f5ebc476534378b17f213a5a76949a18388ed8402c86ee9a8037e8c2a825c6
+          image: ghcr.io/jaupole/control@sha256:dd7bf142424c3310b31c2d19d588ec9f4eb7a9476222c1d87d613117800c3bf8
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint
