@@ -33,7 +33,7 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `istio/` | ⏸️ **Deferred** | Investigated 2026-05-20: coupled to **open Phase 7c-2 work** (operator-backlog #21). `01-04` values + `install.sh` are cleanly superseded, but `05-peer-auth-app-*` + `06-authz-default-deny` are the 7c-1 baseline #21 builds on, `authzpol-strict-7c2-draft/` is the parked 7c-2 prep, and live runbooks (`istio-authz.md`, `istio-peer-auth-tighten.md`) treat this tree as source-of-truth. **Retire as part of the 7c-2 closeout** — a partial retirement now would orphan the prep. |
 | `keycloak/` | ✅ **Done** | Retired 2026-05-20. The local-edition Keycloak (secforge-tenants realm, local deploy config, client scripts, operator CRDs, key-rotation cron) is fully superseded by platform's keycloak (11 manifests + operator/ + realms/ + 7 components). One piece was live content — `image/` (the custom Keycloak image Dockerfile the production keycloak-cr builds from) — migrated to `platform/manifests/keycloak/image/`. |
 | `kyverno/` | ✅ **Done** | Retired 2026-05-20. All 4 policies superseded: `no-secret-shaped-env` + `legacy-secret-env-expiry` migrated to `manifests/kyverno/policies/09`+`10` (e272919); `pod-security` → `01-pss-baseline` + `06-require-runasnonroot`; `verify-signatures` → `05-image-signature-verification`. `values.yaml` → `values/kyverno.yaml`. `tests/` (offline `kyverno test` fixtures) were coupled to the local-edition policy form (`app` ns) and retired with the dir; re-creating offline test coverage against the rescoped 09/10 platform policies is net-new work, not a migration. |
-| `observability/` | 🟡 Partial | Values superseded by `components/{prometheus,loki,tempo,promtail,otel-collector}.sh`; `dashboards/` + `13-alerting-rules.yaml` may be a gap (see below). |
+| `observability/` | 🔴 Migrate-then-retire | Investigated 2026-05-20: helm values, apply scripts, and `10-platform-health-dashboard.yaml` are superseded (the 6 Grafana dashboards were migrated in 2207b4b). But `13-alerting-rules.yaml` is **genuine content** — a `secforge-platform` PrometheusRule with 14 app/security alerts (OpenBao sealed/audit/locked-users, Keycloak 5xx + DB-pool, SpiceDB latency/errors, Istio TCP failures, 4× secrets-guardrail-bypass). Platform's `09-platform-alerts.yaml` is a **different** set (node/container health, 12 alerts) — it does NOT supersede `13`. The 14 must be migrated to `platform/manifests/observability/`, with adaptation: `app`/`valkey` namespace regexes → real app namespaces, `NamespaceMemoryHigh` depends on ResourceQuotas (may not exist on platform), the 4 guardrail alerts are inert until the security-events-collector is deployed. |
 | `openbao/` | 🟡 Partial | 8/10 `policies/*.hcl` already in `platform/manifests/openbao/policies/`. `app-template.hcl` + `vso.hcl` are not — confirm migrated/renamed/obsolete. Config scripts superseded by `components/openbao*.sh`. |
 | `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
 | `secrets-guardrails/` | ✅ **Done** | Retired 2026-05-20. The real gap (the `no-secret-shaped-env-vars` admission policy) was migrated separately — see `kyverno/` row. The 2 CronJobs were broken local-edition scaffolding; a production guardrail-verifier gets a from-scratch LIVE-mode rebuild (operator-backlog #39). The `verify/` suite was retired with the dir (operator decision 2026-05-20). |
@@ -42,24 +42,30 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `helloworld/` | ✅ **Done** | Retired 2026-05-20. Phase-9 integration-demo provisioning; the demo was retired 2026-05-04 and is not in production. The app *source* under `apps/helloworld-*` stays as the integration reference. |
 | `project-tracker/` | ✅ **Done** | Retired 2026-05-20. One local-edition `provision-db-and-bao.sh`; Project Tracker's production deploy will get platform-style provisioning like the other ecosystem apps. |
 
-## Genuine gaps — resolve before the dir can go
+## Genuine gaps — still to resolve
 
-- **`spicedb/ecosystem-schema.zed`** — the live ecosystem authorization model.
-  Investigated 2026-05-20: it is the ONLY copy anywhere (not in `platform/`,
-  not in the app repos). Must be migrated to `platform/manifests/spicedb/`
-  with its `tests/` suite — a content migration, not a delete.
-- **`openbao/policies/{app-template,vso}.hcl`** — present in `infrastructure/`
-  but not in `platform/manifests/openbao/policies/`; confirm migrated or obsolete.
-- **`kyverno/tests/`** — admission-policy test fixtures, no platform home.
-- **`secrets-guardrails/` CronJobs** — a production guardrail-verification
-  CronJob needs a from-scratch LIVE-mode rebuild (operator-backlog #39); the
-  old ones are broken local-edition scaffolding.
+Three subdirs hold live content needing a migration before their dir can go:
 
-Resolved: `grafana/dashboards/` migrated 2026-05-20 (now `platform/components/07q`).
-The `no-secret-shaped-env-vars` + `legacy-secret-env-expiry` admission policies
-were missing from production — migrated 2026-05-20 (`manifests/kyverno/policies/09`+`10`,
-Audit mode; Enforce flip tracked as operator-backlog #39).
-`valkey/` is not a production gap — it is helloworld-demo scaffolding (see the table).
+- **`observability/13-alerting-rules.yaml`** — 14 app/security PrometheusRule
+  alerts (OpenBao sealed/audit/locked-users, Keycloak 5xx + DB-pool, SpiceDB
+  latency/errors, Istio TCP failures, 4× guardrail-bypass) with no platform
+  equivalent — `09-platform-alerts.yaml` is a different, node-health set.
+  Migrate to `platform/manifests/observability/`, adapting the `app`/`valkey`
+  namespace regexes and re-checking the quota-dependent `NamespaceMemoryHigh`.
+- **`spicedb/ecosystem-schema.zed`** — the live ecosystem authorization model;
+  the only copy anywhere. Migrate to `platform/manifests/spicedb/` with the
+  `tests/` suite — content migration, not a delete.
+- **`openbao/policies/{app-template,vso}.hcl`** — in `infrastructure/` but not
+  in `platform/manifests/openbao/policies/`; confirm migrated / obsolete (the
+  rest of `infrastructure/openbao/` is not yet content-diffed).
+
+Tracked separately: a production guardrail-verification CronJob — a
+from-scratch LIVE-mode rebuild (operator-backlog #39); `infrastructure/istio/`
+retires with the Phase 7c-2 closeout (#21).
+
+Resolved 2026-05-20: 19 of 23 subdirs retired (see the table). The Grafana
+dashboards and the two ADR-0013 Kyverno admission policies were genuine gaps —
+migrated and deployed.
 
 ## Landmine — do NOT delete
 

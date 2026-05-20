@@ -53,7 +53,7 @@ URLs (replace `<domain>` with the Grafana host, e.g. `secforge.dev`):
 
 ## How dashboards interact with alerts
 
-The alert rules in `platform/manifests/observability/09-platform-alerts.yaml` use the same metrics the dashboards visualize. If an alert fires, the matching dashboard panel will show the offending series highlighted. The mapping:
+The app/security alert rules mapped below (Keycloak 5xx, SpiceDB latency, OpenBao audit, etc.) are pending migration to `platform/manifests/observability/` as part of the `infrastructure/` retirement — see `docs/06-reference/infrastructure-retirement.md`. They use the same metrics the dashboards visualize. If an alert fires, the matching dashboard panel will show the offending series highlighted. The mapping:
 
 | Alert | Dashboard panel |
 |---|---|
