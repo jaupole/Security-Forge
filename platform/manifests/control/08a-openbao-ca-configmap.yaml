@@ -1,0 +1,51 @@
+# Internal-CA trust bundle consumed by the Control backend
+# (09-backend-deployment.yaml mounts this at /etc/secforge/openbao-ca.crt).
+#
+# Control makes outbound in-cluster TLS calls to two services whose certs
+# are issued by SEPARATE internal CAs:
+#   - Keycloak  (auth.${DOMAIN} → keycloak ClusterIP)  → "SecForge Internal CA"
+#   - OpenBao   (openbao.openbao.svc:8200, Transit)    → "SecForge OpenBao Internal CA"
+#
+# Both Deployment env vars point at the single rendered file:
+#   NODE_EXTRA_CA_CERTS   — jose's createRemoteJWKSet / global fetch (Keycloak)
+#   OPENBAO_CA_CERT_PATH  — the Transit client's https.Agent (OpenBao)
+# so this ConfigMap must carry BOTH CA certs. It originally held only the
+# Keycloak CA; Control's Transit calls failed TLS verification
+# (UNABLE_TO_VERIFY_LEAF_SIGNATURE) until the OpenBao CA was added here —
+# operator-backlog #34. The ConfigMap was previously created out-of-band;
+# this manifest brings it under source control.
+#
+# Both are 10-year ECDSA roots (the OpenBao CA is defined in
+# openbao/03-ca.yaml). On CA rotation, refresh this bundle.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-internal-ca-cert
+  namespace: control
+  labels:
+    secforge.platform/component: control
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBgjCCASigAwIBAgIUTmHjrPJ49XeBAPBatZ+BogyKcfYwCgYIKoZIzj0EAwIw
+    HzEdMBsGA1UEAxMUU2VjRm9yZ2UgSW50ZXJuYWwgQ0EwHhcNMjYwNTEzMjAyNjA1
+    WhcNMzYwNTEwMjAyNjA1WjAfMR0wGwYDVQQDExRTZWNGb3JnZSBJbnRlcm5hbCBD
+    QTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHveqJvL2AT0Y8yMnfwxcplEFE5h
+    K9eEtlNeYpnZCyyDEAwetNDuTn32MP1TT5PWTjzu2sCqokX7sMWd3j7LXtyjQjBA
+    MA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRv0NX8
+    EeLc9/aIOLvplkzpbJRyiDAKBggqhkjOPQQDAgNIADBFAiEA38x1k5TLa87keT9M
+    KXu9ajnxxJEQVl1pLPZWpIoL3Z8CIBbvH0fPyYWetk+wfW8BfM/xURuQpEWUPhYX
+    UVPw4DCf
+    -----END CERTIFICATE-----
+    -----BEGIN CERTIFICATE-----
+    MIIBkjCCATigAwIBAgIUSxY4mtG5eG/cQNuuAIRNvCj0d5owCgYIKoZIzj0EAwIw
+    JzElMCMGA1UEAxMcU2VjRm9yZ2UgT3BlbkJhbyBJbnRlcm5hbCBDQTAeFw0yNjA1
+    MDcyMDA0MTdaFw0zNjA1MDQyMDA0MTdaMCcxJTAjBgNVBAMTHFNlY0ZvcmdlIE9w
+    ZW5CYW8gSW50ZXJuYWwgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASrlOS/
+    ttWVln7sYQNA0Yuz4Aok9uxQVeouoK5S7/VuocFWCVKxgRYnL6y4gOTUY/gGte+E
+    65qKqdXgbalQRDUxo0IwQDAOBgNVHQ8BAf8EBAMCAqQwDwYDVR0TAQH/BAUwAwEB
+    /zAdBgNVHQ4EFgQU27dXVI51Z1oSpaeRwklEryJS0owwCgYIKoZIzj0EAwIDSAAw
+    RQIgTkq8ozvK3Pk1XzId4CV8KKe3przlRPYF11dVroXocrgCIQCGA2qlq8lG2mbJ
+    UCtcbA0KtYtSZdYn+sINAIFAAoniSQ==
+    -----END CERTIFICATE-----

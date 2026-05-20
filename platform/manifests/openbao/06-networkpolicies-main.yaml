@@ -5,6 +5,7 @@
 # Allowed flows:
 #   ingress-nginx (any ns)              → openbao:8200 (Ingress for UI/API)
 #   app ns                              → openbao:8200 (workload JWT auth)
+#   control ns (api pods)               → openbao:8200 (Transit field encryption)
 #   spicedb ns                          → openbao:8200 (PSK rotation in Phase 5.10)
 #   keycloak ns                         → openbao:8200 (OIDC validation if needed)
 #   observability ns (Phase 7)          → openbao:8200/sys/metrics
@@ -65,6 +66,40 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: app
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: control ns (the API deployment pods) → openbao:8200.
+# Control authenticates with a SPIFFE JWT-SVID and calls Transit for
+# field-level credential encryption (operator-backlog #34 — email-config
+# credentials, and the per-org QBO/Stripe vendor credentials). VSO
+# renders Control's startup secrets, so Transit is Control's only direct
+# OpenBao call path. The pod-selector keeps the scope to the api pods —
+# control-db and the migration Job stay unable to reach the API.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-control-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: control
+              app.kubernetes.io/component: api
       ports:
         - protocol: TCP
           port: 8200
