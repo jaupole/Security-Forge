@@ -314,10 +314,14 @@ spec:
                 - /bin/sh
                 - -c
                 - |
-                  set -e
-                  pgrep -x wazuh-apid >/dev/null
-                  pgrep -x wazuh-remoted >/dev/null
-                  pgrep -x wazuh-analysisd >/dev/null
+                  # wazuh-apid runs as a python process (python3 wazuh_apid.py),
+                  # so `pgrep -x wazuh-apid` never matches it. wazuh-control
+                  # status is Wazuh's own authoritative daemon check and reports
+                  # apid correctly regardless of how the daemon is launched.
+                  s=$(/var/ossec/bin/wazuh-control status 2>/dev/null || true)
+                  echo "$s" | grep -q "wazuh-apid is running" || exit 1
+                  echo "$s" | grep -q "wazuh-remoted is running" || exit 1
+                  echo "$s" | grep -q "wazuh-analysisd is running" || exit 1
             initialDelaySeconds: 120
             periodSeconds: 30
             timeoutSeconds: 5
