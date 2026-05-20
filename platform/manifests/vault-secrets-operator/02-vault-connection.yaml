@@ -3,8 +3,7 @@
 #
 # Address rationale:
 #   Use the headless `openbao.openbao.svc.cluster.local` service rather
-#   than `openbao-active.*`. The mkcert-issued cert (see
-#   infrastructure/openbao/02-certificates.yaml) covers the headless
+#   than `openbao-active.*`. The OpenBao TLS cert covers the headless
 #   name in its SANs but NOT `openbao-active`. OpenBao internally
 #   redirects writes to the leader, so VSO using the round-robin service
 #   is correct.

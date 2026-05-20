@@ -292,8 +292,6 @@ spec:
           port: 5432
 
 # ──────────────────────────────────────────────────────────────────────
-# Postgres (app ns) ingress allow for the OpenBao database engine.
-# We can't add this from the openbao ns; it must be created in `app` ns.
-# (It is — see infrastructure/openbao/07-postgres-app-ingress.yaml.)
-# Same applies to spicedb ns (Phase 7d.2 — see
-# infrastructure/openbao/10-postgres-spicedb-ingress.yaml).
+# Postgres ingress allow for the OpenBao database engine. It can't be
+# added from the openbao ns — it must be created in the consuming
+# namespace (the app DB namespace, and the spicedb ns).

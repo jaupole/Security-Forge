@@ -1,7 +1,7 @@
-# Helm values for openbao-seal — production version of
-# infrastructure/openbao/03-openbao-seal-values.yaml.
+# Helm values for openbao-seal.
 #
-# Differences from local: storageClass=${STORAGE_CLASS} (was hostpath).
+# Differences from the retired local edition: storageClass=${STORAGE_CLASS}
+# (was hostpath).
 # All other domain-agnostic.
 
 global:

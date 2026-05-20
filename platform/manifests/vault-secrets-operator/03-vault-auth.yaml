@@ -1,8 +1,8 @@
 # VaultAuth — how VSO authenticates to OpenBao.
 # Phase 6.10b — Step 2. See ADR-0015.
 #
-# Method: Kubernetes auth (the same auth method enabled in Phase 5.4 by
-# infrastructure/openbao/configure-auth-k8s-jwt.sh). VSO presents its
+# Method: Kubernetes auth (the same auth method enabled by the platform
+# openbao-jwt-auth component). VSO presents its
 # own ServiceAccount projected token to OpenBao, which validates it via
 # the in-cluster TokenReview API.
 #

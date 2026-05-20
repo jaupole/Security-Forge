@@ -1,7 +1,6 @@
-# Helm values for the main OpenBao release — production version of
-# infrastructure/openbao/04-openbao-values.yaml.
+# Helm values for the main OpenBao release.
 #
-# Differences from local:
+# Differences from the retired local edition:
 #   - storageClass: ${STORAGE_CLASS} (was hostpath)
 #   - hostAliases removed (production DNS resolves real hostnames; no need
 #     for the local-edition workaround pointing auth.* at ingress-nginx IP)

@@ -34,7 +34,7 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `keycloak/` | ✅ **Done** | Retired 2026-05-20. The local-edition Keycloak (secforge-tenants realm, local deploy config, client scripts, operator CRDs, key-rotation cron) is fully superseded by platform's keycloak (11 manifests + operator/ + realms/ + 7 components). One piece was live content — `image/` (the custom Keycloak image Dockerfile the production keycloak-cr builds from) — migrated to `platform/manifests/keycloak/image/`. |
 | `kyverno/` | ✅ **Done** | Retired 2026-05-20. All 4 policies superseded: `no-secret-shaped-env` + `legacy-secret-env-expiry` migrated to `manifests/kyverno/policies/09`+`10` (e272919); `pod-security` → `01-pss-baseline` + `06-require-runasnonroot`; `verify-signatures` → `05-image-signature-verification`. `values.yaml` → `values/kyverno.yaml`. `tests/` (offline `kyverno test` fixtures) were coupled to the local-edition policy form (`app` ns) and retired with the dir; re-creating offline test coverage against the rescoped 09/10 platform policies is net-new work, not a migration. |
 | `observability/` | ✅ **Done** | Retired 2026-05-20. Helm values, apply scripts, and the dashboard ConfigMap are superseded by `platform/manifests/observability/` + `values/` + the observability components (the 6 Grafana dashboards were migrated in 2207b4b). `13-alerting-rules.yaml`'s 8 app/security alerts (OpenBao/Keycloak/SpiceDB/Istio) — genuine content with no platform equivalent — migrated to `platform/manifests/observability/10-app-alerts.yaml`; 6 of the original 14 rules dropped (redundant / quota-dependent / tied to the retired guardrail pipeline — rationale in that file's header). |
-| `openbao/` | 🟡 Partial | 8/10 `policies/*.hcl` already in `platform/manifests/openbao/policies/`. `app-template.hcl` + `vso.hcl` are not — confirm migrated/renamed/obsolete. Config scripts superseded by `components/openbao*.sh`. |
+| `openbao/` | ✅ **Done** | Retired 2026-05-20. Deploy config (01-10 yaml), the bootstrap/configure/init scripts, and 9 of 10 `policies/*.hcl` are superseded by platform's openbao (`manifests/openbao/` + `values/openbao*.yaml` + 6 `openbao*` components + `policies/`). The one infra-only policy — `app-template.hcl` (ADR-0013 §4's identity-templated per-app policy) — was parked in `platform/manifests/openbao/policies/_deferred/`; platform uses concrete per-app policies, so the template pattern is deferred, not live. Live platform/ comment refs repointed. |
 | `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
 | `secrets-guardrails/` | ✅ **Done** | Retired 2026-05-20. The real gap (the `no-secret-shaped-env-vars` admission policy) was migrated separately — see `kyverno/` row. The 2 CronJobs were broken local-edition scaffolding; a production guardrail-verifier gets a from-scratch LIVE-mode rebuild (operator-backlog #39). The `verify/` suite was retired with the dir (operator decision 2026-05-20). |
 | `spicedb/` | 🔴 Migrate-then-retire | Investigated 2026-05-20: the **only `.zed` schema files in the whole Projects tree are `infrastructure/spicedb/{schema,ecosystem-schema}.zed`** — none in `platform/`, none in the app repos, none in a cluster ConfigMap/CR/Job. The live ecosystem SpiceDB's authorization model has no other source of truth. **Do NOT blanket-delete.** Migrate `ecosystem-schema.zed` + the `tests/` validation suite into `platform/manifests/spicedb/` (Wazuh-style content migration) first; `schema.zed` is the older helloworld/PT model — confirm superseded against the live schema before dropping it. The deploy config (CR, netpols, VSO binding, cron, operator bundle) is superseded by `platform/manifests/spicedb/`. |
@@ -44,14 +44,11 @@ subdir so nothing edition-agnostic is lost on the way out.
 
 ## Genuine gaps — still to resolve
 
-Two subdirs hold live content needing a migration before their dir can go:
+One subdir still holds live content needing a migration before it can go:
 
 - **`spicedb/ecosystem-schema.zed`** — the live ecosystem authorization model;
   the only copy anywhere. Migrate to `platform/manifests/spicedb/` with the
   `tests/` suite — content migration, not a delete.
-- **`openbao/policies/{app-template,vso}.hcl`** — in `infrastructure/` but not
-  in `platform/manifests/openbao/policies/`; confirm migrated / obsolete (the
-  rest of `infrastructure/openbao/` is not yet content-diffed).
 
 Tracked separately: a production guardrail-verification CronJob — a
 from-scratch LIVE-mode rebuild (operator-backlog #39); `infrastructure/istio/`

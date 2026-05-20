@@ -8,9 +8,9 @@
 #   2. Ingress allow on the openbao namespace from
 #      vault-secrets-operator → openbao:8200.
 #
-# Cross-namespace pattern matches infrastructure/openbao/07-postgres-app-ingress.yaml
-# (a NetworkPolicy logically owned by openbao but applied to a different
-# namespace). The reverse here: this file is logically VSO's, and the second
+# Cross-namespace pattern — a NetworkPolicy logically owned by one
+# component but applied to a different namespace. The reverse here: this
+# file is logically VSO's, and the second
 # policy is applied to the openbao namespace.
 
 # ──────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ spec:
 
 # ──────────────────────────────────────────────────────────────────────
 # Ingress allow on openbao ns: vault-secrets-operator → openbao:8200.
-# Lives here (not in infrastructure/openbao/06-networkpolicies-main.yaml)
+# Lives here (not in platform/manifests/openbao/06-networkpolicies-main.yaml)
 # so VSO's NetworkPolicy footprint is colocated with VSO. apply.sh ships
 # it; if VSO is uninstalled, removing this file removes the rule.
 ---
