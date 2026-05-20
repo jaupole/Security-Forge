@@ -9,6 +9,12 @@
     100800-100899: Velero backup status
     100900-100999: Wazuh agent connectivity overrides
 
+  Base rules 100600/100700/100800 are level 0 (no-alert parents): they
+  exist only so the child <if_sid> failure rules can chain off them. They
+  were level 3 until 2026-05-20 — which emitted one indexed alert per
+  component log line (~3700 noise alerts in 40 min). The child failure
+  rules (100601/100602/100701/100801) are unaffected and still alert.
+
   Lives at /var/ossec/etc/rules/local_rules_secforge_maintenance.xml on the
   wazuh-manager pod. Source-of-truth in this repo; deploy via
   platform/components/07m-wazuh-maintenance-rules.sh.
@@ -38,7 +44,7 @@
 
 <!-- ─── 100600: cert-manager renewal ──────────────────────────────── -->
 <group name="cert_manager,maintenance,">
-  <rule id="100600" level="3">
+  <rule id="100600" level="0">
     <match>cert-manager</match>
     <description>cert-manager: log line</description>
     <group>cert_manager,</group>
@@ -64,7 +70,7 @@
 
 <!-- ─── 100700: CloudNativePG cluster health ──────────────────────── -->
 <group name="cnpg,maintenance,">
-  <rule id="100700" level="3">
+  <rule id="100700" level="0">
     <match>cnpg|cloudnative-pg|postgres-operator</match>
     <description>CNPG: operator log line</description>
     <group>cnpg,</group>
@@ -80,7 +86,7 @@
 
 <!-- ─── 100800: Velero backup status ──────────────────────────────── -->
 <group name="velero,maintenance,">
-  <rule id="100800" level="3">
+  <rule id="100800" level="0">
     <match>velero</match>
     <description>Velero: log line</description>
     <group>velero,</group>
