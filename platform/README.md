@@ -2,7 +2,7 @@
 
 Single-source-of-truth orchestration layer for deploying the SecForge platform to production (currently: bare metal Hetzner box, single-node k3s).
 
-This is a **separate, parallel** structure to `infrastructure/`, which targets the local edition (Docker Desktop K8s + `secforge.local`). Both share the same component charts and CRD-level resources where possible; they diverge in values, ingress hostnames, and trust-domain configuration.
+This is the **live deploy tree**. The older `infrastructure/` tree targeted the retired Local Edition (Docker Desktop K8s + `secforge.local`) and is being wound down — see `docs/06-reference/infrastructure-retirement.md` for the per-subdir retirement status.
 
 ## Quick reference
 
@@ -36,12 +36,12 @@ To change the public domain in production: edit `globals.env`, run `./install-al
 Encoded in `components/` filename prefixes:
 
 1. `01-cloudnativepg.sh` — Postgres operator (foundational; many others depend on it)
-2. `02-spire.sh` *(pending)* — workload identity
-3. `03-keycloak.sh` *(pending)* — identity provider (depends on 01)
-4. `04-spicedb.sh` *(pending)* — authorization (depends on 01)
-5. `05-openbao.sh` *(pending)* — secrets (depends on 01, 02)
-6. `06-istio.sh` *(pending)* — service mesh
-7. `07-observability.sh` *(pending)* — Prometheus, Loki, Tempo, Grafana, Wazuh
+2. `02-spire.sh` — workload identity
+3. `03-keycloak.sh` — identity provider (depends on 01)
+4. `04-spicedb.sh` — authorization (depends on 01)
+5. `05-openbao.sh` — secrets (depends on 01, 02)
+6. `06-istio.sh` — service mesh
+7. `07-observability.sh` — Prometheus, Loki, Tempo, Grafana, Wazuh
 8. `08-teleport.sh` *(pending)* — privileged access
 9. `09a-velero.sh` / `09b-cnpg-backups.sh` / `09c-velero-tune.sh` — backups
 10. `10-tailscale.sh` + `10a-ingress-tailnet-split.sh` + `10b-sshd-lockdown.sh` — operator-access mesh (Tailscale on the host) + admin-Ingress allowlist (Kyverno-enforced `whitelist-source-range: 100.64.0.0/10` on `wazuh.*`/`grafana.*`/`openbao-admin.*`/`auth-admin.*`/etc.) + sshd bound to tailnet only. Solves the DHCP-rotating-operator-IP problem and removes scanner visibility for admin UIs. See `manifests/tailscale/README.md` for design rationale.
@@ -53,17 +53,13 @@ Encoded in `components/` filename prefixes:
 
 ## Relationship to `infrastructure/`
 
-`infrastructure/` (existing, untouched):
-- Targets local Docker Desktop K8s
-- Domain hardcoded as `secforge.local`
-- Trust domain hardcoded as `spiffe://secforge.local`
-- Has individual `apply.sh` scripts and values for hands-on local development
-
-`platform/` (this directory):
+`platform/` (this directory) is the **only live deploy tree**:
 - Targets production k3s on bare metal
 - Domain is `${DOMAIN}` (currently `secforge.dev`, set in `globals.env`)
 - Trust domain is `${SPIFFE_TRUST_DOMAIN}` (set to `spiffe://secforge.platform` — deliberately decoupled from public DNS so domain changes don't force SVID re-issuance)
 - Single orchestrator (`install-all.sh`) for deterministic cluster builds
+
+`infrastructure/` is the **retired Local Edition** (Docker Desktop K8s, `secforge.local`, `spiffe://secforge.local`, per-component `apply.sh` scripts). It is **being removed**, subdir by subdir — `infrastructure/wazuh/` is already gone (migrated to components `07o`/`07p`). Do not add to it or treat it as a live config source. The per-subdir retirement status, the known content gaps, and the landmine (`istio/authzpol-strict-7c2-draft/` is parked Phase 7c-2 work) are tracked in `docs/06-reference/infrastructure-retirement.md`.
 
 ## Required tooling on the install host
 
