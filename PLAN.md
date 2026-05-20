@@ -524,7 +524,7 @@ The `.env`-killer. Outbound third-party credentials (Stripe, OpenAI, SendGrid, S
 > - 7.3 kube-prometheus-stack revision 6 — Grafana OIDC + workaround, platform-health dashboard, NetworkPolicies
 > - 7.4 Loki revision 4 — single-binary, MinIO-backed, retention disabled, label-gated. Promtail revision 3 (DaemonSet, 111 active files, 204 to Loki).
 > - 7.5 Tempo revision 3 — single-binary, MinIO-backed, expand-env enabled. OTel-collector revision 1 (DaemonSet).
-> - Platform-health dashboard — `infrastructure/grafana/dashboards/platform-health.json`
+> - Platform-health dashboard — `platform/manifests/observability/dashboards/platform-health.json`
 > - Path A Keycloak client pattern — `infrastructure/keycloak/clients/grafana.sh`
 > - Runbooks added — `keycloak-client-provisioning.md`; OIDC userinfo debug section appended to `keycloak-operations.md`
 > - PLAN.md follow-up #1 — updated with empirical findings
@@ -571,10 +571,10 @@ The `.env`-killer. Outbound third-party credentials (Stripe, OpenAI, SendGrid, S
 >      - **OpenBao tracing skipped:** OpenBao 2.5 has no native OTLP exporter — only Prometheus/datadog sinks in the `telemetry` stanza. It's a leaf component (called only at BFF bootstrap), so missing it from request-flow traces is acceptable. Tracked as a Phase 7d candidate (revisit on upstream support).
 >      - Verified end-to-end: 4 services confirmed in Tempo `service.name` tag values: `authzen-facade`, `helloworld-bff`, `keycloak`, `spicedb`.
 > 2. ✅ **7.7 dashboards** (Session 3) — added 4 starter dashboards as ConfigMaps with `grafana_dashboard=1` label; Grafana sidecar provisions them on file-watch (the reload-API call to `https://grafana.secforge.local/api/admin/provisioning/dashboards/reload` fails from inside the cluster, which is noisy but harmless — files land in `/tmp/dashboards/` and Grafana picks them up on its scan cycle):
->    - `infrastructure/grafana/dashboards/auth-events.json` — Keycloak HTTP rate by outcome, p99 latency by URI, JVM heap, Agroal pool, Loki tail of LOGIN/LOGIN_ERROR/LOGOUT/REFRESH_TOKEN events
->    - `infrastructure/grafana/dashboards/authz-checks.json` — SpiceDB CheckPermission rate, p50/p95/p99 latency, gRPC error rate, cache hit ratio, AuthZEN evaluate-log tail
->    - `infrastructure/grafana/dashboards/secret-access.json` — OpenBao audit req/sec, login req/sec, locked users, audit failures, p99 audit latency, audit-log tail
->    - `infrastructure/grafana/dashboards/service-mesh.json` — ztunnel TCP open/close/fail, throughput, open sockets, istiod xDS bytes, DNS upstream p99
+>    - `platform/manifests/observability/dashboards/auth-events.json` — Keycloak HTTP rate by outcome, p99 latency by URI, JVM heap, Agroal pool, Loki tail of LOGIN/LOGIN_ERROR/LOGOUT/REFRESH_TOKEN events
+>    - `platform/manifests/observability/dashboards/authz-checks.json` — SpiceDB CheckPermission rate, p50/p95/p99 latency, gRPC error rate, cache hit ratio, AuthZEN evaluate-log tail
+>    - `platform/manifests/observability/dashboards/secret-access.json` — OpenBao audit req/sec, login req/sec, locked users, audit failures, p99 audit latency, audit-log tail
+>    - `platform/manifests/observability/dashboards/service-mesh.json` — ztunnel TCP open/close/fail, throughput, open sockets, istiod xDS bytes, DNS upstream p99
 >    - Apply script: `infrastructure/observability/apply-dashboards.sh` (parameterized over all `*.json` files; replaces the old single-purpose script). Each dashboard is a ConfigMap named `grafana-dashboard-<basename>`.
 > 3. ✅ **7.8 Alertmanager** (Session 3) — `infrastructure/observability/13-alerting-rules.yaml` adds a `secforge-platform` PrometheusRule with 10 alerts in 5 groups (`secforge.platform`, `secforge.auth`, `secforge.authz`, `secforge.secrets`, `secforge.mesh`): PodCrashLooping, OpenBaoSealed, NamespaceMemoryHigh, KeycloakHTTP5xxRate, KeycloakDBPoolExhausted, SpiceDBCheckLatencyHigh, SpiceDBGRPCErrorRate, OpenBaoLockedUsers, OpenBaoAuditFailures, IstioTCPConnectionFailureSpike. All loaded `health=ok state=inactive`. Receiver remains `null` (local edition — alerts visible in Alertmanager UI / Grafana Alerting / Prometheus `/alerts`). Companion runbook `docs/03-runbooks/alerts.md` documents diagnose+remediate per alert and links to `openbao-seal-unseal.md` / `openbao-recovery.md` for the operationally-trickiest paths.
 > 4. ✅ **7.9 end-to-end verify** (Session 3) — `infrastructure/observability/verify-e2e.sh` is a self-contained idempotent script that fires synthetic traffic (5× BFF /login + 3× AuthZEN /access/v1/evaluation) and checks that each of the four observability pillars sees the activity. Last run: **8/8 green** — BFF/AuthZEN/Keycloak/OpenBao logs in Loki, BFF/AuthZEN/Keycloak/SpiceDB traces in Tempo, Prometheus counter increments confirmed. Passkey-driven full-flow verification (browser → Keycloak login form → BFF callback) is more elaborate and tracked as a Phase 9 task — for Phase 7 closure, the synthetic-traffic verify is sufficient because every pillar is shown to receive data end-to-end. Two findings from running it: Loki was rejecting old log entries (`entry too far behind`) immediately after a fresh deploy — these are stale once Promtail catches up; verify script uses a 1h log window to avoid the window-too-narrow false negative. BFF emits no per-request logs today (only startup) — adding request-scope structured logging is a Phase 9 / Phase 10 hygiene task.
@@ -731,7 +731,7 @@ wired through Phase 7's observability stack:
   `{job="secrets-guardrails"}`. Aspirational until
   `compactor.retention_enabled` flips (DIAGNOSTIC fresh-bucket boot
   loop documented inline; flip is a separate operator-backlog item).
-- **7b.3 Grafana dashboard** — `infrastructure/grafana/dashboards/secrets-guardrails.json`
+- **7b.3 Grafana dashboard** — `platform/manifests/observability/dashboards/secrets-guardrails.json`
   (uid: `secrets-guardrails`), 7 panels, tagged `secrets, guardrails, audit`.
 - **7b.4 PrometheusRule** — `secforge.secrets-guardrails` group, 4 rules
   (Critical immediate, High in 1m, Annotated-bypass-aged-30d weekly,

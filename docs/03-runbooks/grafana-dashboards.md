@@ -1,8 +1,8 @@
 # Grafana dashboards runbook
 
-> Architecture: [observability](../01-architecture/08-observability.md). Sources: `infrastructure/grafana/dashboards/*.json`.
+> Architecture: [observability](../01-architecture/08-observability.md). Sources: `platform/manifests/observability/dashboards/*.json`.
 
-Five dashboards are provisioned via ConfigMaps with the `grafana_dashboard=1` label. Grafana's `sidecar.dashboards` provisioner watches the observability namespace and auto-loads them.
+Six dashboards are provisioned via ConfigMaps with the `grafana_dashboard=1` label. Grafana's `sidecar.dashboards` provisioner watches the observability namespace and auto-loads them.
 
 ## Catalog
 
@@ -13,25 +13,27 @@ Five dashboards are provisioned via ConfigMaps with the `grafana_dashboard=1` la
 | AuthZ checks — SpiceDB | `secforge-authz-checks` | `authz-checks.json` | CheckPermission rate/latency, gRPC errors, cache hit rate |
 | Secret access — OpenBao | `secforge-secret-access` | `secret-access.json` | audit log rate, login flows, locked users, audit failures |
 | Service mesh — Istio Ambient | `secforge-service-mesh` | `service-mesh.json` | ztunnel TCP connection state, mesh throughput, istiod xDS |
+| Secrets guardrails | `secrets-guardrails` | `secrets-guardrails.json` | legacy-secret-env escape-hatch admissions, annotation-expiry tracking |
 
-URLs (replace base with your local DNS):
-- `https://grafana.secforge.local/d/secforge-platform-health/`
-- `https://grafana.secforge.local/d/secforge-auth-events/`
-- `https://grafana.secforge.local/d/secforge-authz-checks/`
-- `https://grafana.secforge.local/d/secforge-secret-access/`
-- `https://grafana.secforge.local/d/secforge-service-mesh/`
+URLs (replace `<domain>` with the Grafana host, e.g. `secforge.dev`):
+- `https://grafana.<domain>/d/secforge-platform-health/`
+- `https://grafana.<domain>/d/secforge-auth-events/`
+- `https://grafana.<domain>/d/secforge-authz-checks/`
+- `https://grafana.<domain>/d/secforge-secret-access/`
+- `https://grafana.<domain>/d/secforge-service-mesh/`
+- `https://grafana.<domain>/d/secrets-guardrails/`
 
 ## Adding or updating a dashboard
 
 1. **Edit the JSON.** Either:
-   - Edit `infrastructure/grafana/dashboards/<name>.json` directly, OR
+   - Edit `platform/manifests/observability/dashboards/<name>.json` directly, OR
    - Open the dashboard in Grafana → Settings → JSON Model → make changes interactively → "Apply" → copy the JSON back into the file. (Grafana's UI is editable: the chart provisions dashboards as `editable: false`, but in Grafana 11+ "Save" still produces a JSON delta you can paste back.)
 2. **Re-apply.** From the project root:
    ```bash
-   bash infrastructure/observability/apply-dashboards.sh
+   bash platform/components/07q-grafana-dashboards.sh
    ```
    The script enumerates `*.json` files, wraps each in a ConfigMap named `grafana-dashboard-<basename>` with the `grafana_dashboard=1` label, and applies via `kubectl apply -f -`.
-3. **Wait ~30s.** Grafana's sidecar polls every ~10s for ConfigMap changes. The reload-API call (`POST /api/admin/provisioning/dashboards/reload`) fails from inside the cluster because the sidecar resolves `grafana.secforge.local` via `/etc/hosts` to 127.0.0.1, which doesn't bind in-pod — but file-watch is independent of that, so the dashboard appears anyway. The sidecar errors are noisy but harmless.
+3. **Wait ~30s.** Grafana's sidecar polls every ~10s for ConfigMap changes. The reload-API call (`POST /api/admin/provisioning/dashboards/reload`) may fail from inside the cluster depending on how the sidecar resolves the Grafana host — but file-watch is independent of that, so the dashboard appears anyway. Any sidecar reload-API errors are noisy but harmless.
 4. **Verify in Grafana** at the dashboard URL above.
 
 ## Conventions for new dashboards
@@ -39,7 +41,7 @@ URLs (replace base with your local DNS):
 - Set `uid` to `secforge-<short-name>` so the URL is stable across redeploys.
 - Set `tags` to include `secforge` plus a domain tag (`auth`, `authz`, `mesh`, `secrets`, `platform`).
 - Set `editable: false` on the dashboard root — committed JSON is the source of truth.
-- Reference datasources by `uid`: `prometheus`, `loki`, `tempo` (set in `02-grafana-ingress.yaml` / `grafana-datasources-extra` ConfigMap).
+- Reference datasources by `uid`: `prometheus`, `loki`, `tempo` (Prometheus from kube-prometheus-stack; Loki + Tempo from the `grafana-datasources-extra` ConfigMap — `platform/manifests/observability/08-grafana-datasources-extra.yaml`).
 - Default to `refresh: "30s"` and time range `now-1h to now`.
 
 ## Common pitfalls
@@ -51,7 +53,7 @@ URLs (replace base with your local DNS):
 
 ## How dashboards interact with alerts
 
-The alert rules in `infrastructure/observability/13-alerting-rules.yaml` use the same metrics the dashboards visualize. If an alert fires, the matching dashboard panel will show the offending series highlighted. The mapping:
+The alert rules in `platform/manifests/observability/09-platform-alerts.yaml` use the same metrics the dashboards visualize. If an alert fires, the matching dashboard panel will show the offending series highlighted. The mapping:
 
 | Alert | Dashboard panel |
 |---|---|

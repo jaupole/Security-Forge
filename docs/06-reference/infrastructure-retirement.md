@@ -35,24 +35,28 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `kyverno/` | 🟡 Partial | `policies/` likely superseded by `manifests/kyverno/policies/`; `tests/` fixtures + `kyverno-test.yaml` have no obvious platform home — confirm before deleting. |
 | `observability/` | 🟡 Partial | Values superseded by `components/{prometheus,loki,tempo,promtail,otel-collector}.sh`; `dashboards/` + `13-alerting-rules.yaml` may be a gap (see below). |
 | `openbao/` | 🟡 Partial | 8/10 `policies/*.hcl` already in `platform/manifests/openbao/policies/`. `app-template.hcl` + `vso.hcl` are not — confirm migrated/renamed/obsolete. Config scripts superseded by `components/openbao*.sh`. |
-| `grafana/` | 🔴 Gap | 6 dashboard JSONs (`auth-events`, `authz-checks`, `platform-health`, `secret-access`, `secrets-guardrails`, `service-mesh`). No Grafana dashboard JSONs exist anywhere in `platform/`. Migrate before deleting. |
-| `secrets-guardrails/` | 🔴 Gap | The guardrail verification suite (8 `verify/*.sh`) + 2 weekly CronJobs. No equivalent in `platform/`. Decide: migrate, or confirm the cron coverage was intentionally dropped. |
+| `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
+| `secrets-guardrails/` | 🔴 Gap | The guardrail verification suite (8 `verify/*.sh`) + 2 weekly CronJobs. Confirmed 2026-05-20: the CronJobs are **not running on the production cluster** — the guardrails exist but their automated weekly verification/drift-check does not run in prod. Decide: migrate the CronJobs, or accept the coverage was intentionally dropped. |
 | `spicedb/` | 🔴 Gap | `schema.zed` + `ecosystem-schema.zed` — no `.zed` file exists in `platform/`. The schema may have moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub); verify where the live SpiceDB schema is sourced before deleting. `tests/` fixtures also need a home. |
-| `valkey/` | 🔴 Gap | `values.yaml` is the **only** Valkey config in the repo. No Valkey component/manifest/values in `platform/`. Valkey is the session store (CLAUDE.md); confirm how it is deployed in production before deleting. |
-| `helloworld/` | 📦 App | Phase 9 integration-demo app provisioning. Belongs with `apps/helloworld-*`, not platform infra — separate decision. |
+| `valkey/` | 🟡 With helloworld | Investigated 2026-05-20: Valkey is **not deployed in production** (no namespace/pods/helm release) and nothing in `platform/` references it. Its only consumer is the `helloworld` demo BFF (`apps/helloworld-bff/`), itself not deployed in prod. Not a production capability gap — retire together with the helloworld-demo decision. |
+| `helloworld/` | 📦 App | Phase 9 integration-demo app provisioning. Confirmed 2026-05-20: the demo is **not deployed in production**. Belongs with `apps/helloworld-*`, not platform infra — retire as demo scaffolding (drags `valkey/` with it). |
 | `project-tracker/` | 📦 App | One `provision-db-and-bao.sh` for the Project Tracker app — app-level, not platform infra. |
 
 ## Genuine gaps — resolve before the dir can go
 
-- **`valkey/`** — no production Valkey config exists. Either Valkey is deployed
-  un-managed, or apps relying on it are still in hybrid-dev mode.
 - **`secrets-guardrails/`** — the verification suite + weekly drift/verify
-  CronJobs have no platform home. Losing the dir loses that coverage.
-- **`grafana/dashboards/`** — 6 dashboards with no platform equivalent.
-- **`spicedb/schema.zed` + `ecosystem-schema.zed`** — the authorization model.
-  Confirm the live schema source first.
-- **`openbao/policies/{app-template,vso}.hcl`** — confirm migrated or obsolete.
+  CronJobs are not running in production. Migrate the CronJobs, or accept the
+  coverage was intentionally dropped.
+- **`spicedb/schema.zed` + `ecosystem-schema.zed`** — the authorization model;
+  no `.zed` exists in `platform/`. The live ecosystem schema appears to have
+  moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub). Confirm the
+  authoritative source before deleting.
+- **`openbao/policies/{app-template,vso}.hcl`** — present in `infrastructure/`
+  but not in `platform/manifests/openbao/policies/`; confirm migrated or obsolete.
 - **`kyverno/tests/`** — admission-policy test fixtures, no platform home.
+
+Resolved: `grafana/dashboards/` migrated 2026-05-20 (now `platform/components/07q`).
+`valkey/` is not a production gap — it is helloworld-demo scaffolding (see the table).
 
 ## Landmine — do NOT delete
 

@@ -48,6 +48,7 @@
 #     07n-wazuh-k3s-audit-decoder       k3s API-audit claim decoder
 #     07o-wazuh-audit-rules             OpenBao + Keycloak audit decoder + rules
 #     07p-wazuh-alerts-retention        ISM retention policy for wazuh-alerts-* indices
+#     07q-grafana-dashboards            SecForge custom Grafana dashboards
 #
 #   Group 09 — backups
 #     09a-velero               Velero
@@ -132,6 +133,7 @@ COMPONENT_ORDER=(
   07n-wazuh-k3s-audit-decoder
   07o-wazuh-audit-rules
   07p-wazuh-alerts-retention
+  07q-grafana-dashboards
 
   # Backups
   09a-velero
