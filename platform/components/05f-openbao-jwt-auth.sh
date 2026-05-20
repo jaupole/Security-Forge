@@ -53,12 +53,20 @@ else
   bao bao auth enable jwt 2>&1 | tail -1
 fi
 
-# 3. Configure JWT auth with SPIRE OIDC discovery + SPIRE upstream CA
+# 3. Configure JWT auth with SPIRE OIDC discovery + SPIRE upstream CA.
+#    bound_issuer is deliberately NOT the discovery URL. OpenBao fetches
+#    JWKS from the in-cluster Service name (oidc_discovery_url), but the
+#    `iss` claim SPIRE stamps into JWT-SVIDs is the spire-server's
+#    configured jwt_issuer: https://oidc-discovery.secforge.platform
+#    (one of the oidc-discovery-provider's served domains). The token's
+#    `iss` is matched against bound_issuer, so bound_issuer MUST equal the
+#    spire-server jwt_issuer, not the discovery Service name — a mismatch
+#    fails every SPIFFE login with "invalid issuer (iss) claim".
 echo ">>> Configuring jwt auth (oidc_discovery_url -> SPIRE OIDC, ca -> spire-upstream-ca)"
 bao bao write auth/jwt/config \
   oidc_discovery_url="https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local" \
   oidc_discovery_ca_pem=@/tmp/spire-ca.pem \
-  bound_issuer="https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local" \
+  bound_issuer="https://oidc-discovery.secforge.platform" \
   default_role="" 2>&1 | tail -3
 
 # 4. Capture the JWT auth method's accessor for any policy that needs to
@@ -75,6 +83,7 @@ cat <<EOF
 ✓ JWT-SPIFFE auth method enabled and configured.
 
   Discovery URL: https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local
+  Bound issuer:  https://oidc-discovery.secforge.platform (spire-server jwt_issuer)
   CA validation: spire-upstream-ca (cert mounted at /tmp/spire-ca.pem in openbao-0)
   Accessor:      $JWT_ACCESSOR
 
