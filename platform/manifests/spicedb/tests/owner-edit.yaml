@@ -1,7 +1,7 @@
 # Validator: an owner can edit and view their document.
 #
-# Run: bash infrastructure/spicedb/tests/run.sh
-# Or:  zed validate infrastructure/spicedb/tests/owner-edit.yaml
+# Run: bash platform/manifests/spicedb/tests/run.sh
+# Or:  zed validate platform/manifests/spicedb/tests/owner-edit.yaml
 
 schema: |
   definition user {}

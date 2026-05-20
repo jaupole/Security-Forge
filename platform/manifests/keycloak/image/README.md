@@ -63,7 +63,7 @@ docker buildx build \
   --platform linux/amd64 \
   --tag ghcr.io/secforge/keycloak:local-test \
   --load \
-  infrastructure/keycloak/image/
+  platform/manifests/keycloak/image/
 ```
 
 **Do not** push locally-built images to ghcr — they won't carry the

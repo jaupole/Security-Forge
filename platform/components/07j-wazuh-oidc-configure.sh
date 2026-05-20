@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 07j — Wire Wazuh dashboard's OIDC login into the running cluster.
 #
-# Production version of infrastructure/wazuh/configure-wazuh-oidc.sh.
-# Single change: maps `users: [jason.upole]` (subject_key=preferred_username)
+# Single change from the retired local-edition configurator: maps
+# `users: [jason.upole]` (subject_key=preferred_username)
 # instead of `backend_roles: [platform_admin]` — same single-user workaround
 # the rest of the platform (OpenBao, Grafana) uses until realm_access.roles
 # claim plumbing is fixed.
