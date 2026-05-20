@@ -1,5 +1,4 @@
 # Postgres cluster for Keycloak — managed by CloudNativePG.
-# Production version of infrastructure/cloudnativepg/clusters/keycloak-db.yaml.
 
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

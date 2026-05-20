@@ -1,5 +1,4 @@
-# Postgres cluster for SpiceDB. Production version of
-# infrastructure/cloudnativepg/clusters/spicedb-db.yaml.
+# Postgres cluster for SpiceDB — managed by CloudNativePG.
 
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster

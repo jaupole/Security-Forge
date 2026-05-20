@@ -20,13 +20,13 @@ subdir so nothing edition-agnostic is lost on the way out.
 |---|---|---|
 | `wazuh/` | ✅ **Done** | Retired 2026-05-20. Decoder/rules/ISM migrated to `platform/components/07o`+`07p`; rules renumbered 100300-range. |
 | `cert-manager/` | ✅ **Done** | Retired 2026-05-20 (pure local-edition config; platform has `components/cert-manager.sh` + `manifests/cert-manager/` + `values/cert-manager.yaml`). |
-| `cloudnativepg/` | 🟢 Superseded | Cluster CRs + values; platform has `components/cloudnativepg.sh`, `manifests/cnpg-system/`, per-component `*/02-cnpg-cluster.yaml`, `values/cloudnativepg.yaml`. |
+| `cloudnativepg/` | ✅ **Done** | Retired 2026-05-20. Platform has `components/cloudnativepg.sh`, `manifests/cnpg-system/`, per-component `*/02-cnpg-cluster.yaml`, `values/cloudnativepg.yaml`. Companion Local-Edition doc `postgres-instances.md` retired with it. |
 | `ingress-nginx/` | ✅ **Done** | Retired 2026-05-20 (`values.yaml` only; platform has the full equivalent). |
-| `lib/` | 🟢 Superseded | Two `api-auth/verify-*.sh` test scripts; the library itself lives in `apps/lib/`. |
+| `lib/` | ✅ **Done** | Retired 2026-05-20. Two `api-auth/verify-*.sh` local-edition test scripts; the library itself lives in `apps/lib/`. |
 | `minio/` | ✅ **Done** | Retired 2026-05-20 (values + bucket-bootstrap Job + NetworkPolicies; platform has `components/minio*.sh` + `manifests/minio/`). |
 | `namespaces/` | 🟢 Superseded | Bulk ns + quota/limit file; platform components self-create their namespaces. Companion Local-Edition doc `docs/06-reference/namespaces.md` retires with it. Deferred from the 2026-05-20 batch — `namespaces.yaml` is referenced by runbooks (`spire-rotation.md`, `keycloak-operations.md`) whose own edition status needs per-ref handling first. |
 | `spire/` | 🟢 Superseded | values + ClusterSPIFFEID + a Go test-workload demo; platform has `components/spire*.sh` + `manifests/spire/`. |
-| `vault-secrets-operator/` | 🟢 Superseded | values + connection/auth + one-shot cutover scripts (already has an `archive/`); platform has `components/vso-*.sh` + `manifests/vault-secrets-operator/`. |
+| `vault-secrets-operator/` | ✅ **Done** | Retired 2026-05-20. values + connection/auth + one-shot cutover scripts; platform has `components/vso-*.sh` + `manifests/vault-secrets-operator/`. |
 | `wazuh-agent/` | 🟢 Superseded | In-cluster DaemonSet — superseded by the host-resident agent (component 11); see `platform/README.md` note on `07b-wazuh-agent.sh`. |
 | `teleport/` | 🟢 Replaced | Teleport was stopped; Tailscale took its operator-access role. Separate cleanup: `platform/components/teleport.sh`, `cloudnativepg/clusters/teleport-db.yaml`, `minio/networkpolicy-from-teleport.yaml`. |
 | `cosign/` | 🟡 Partial | One file: `cosign.pub`. Not referenced anywhere in `platform/`. Confirm it is the *local-edition* signing key (not the GHCR production verification key) before deleting. |
