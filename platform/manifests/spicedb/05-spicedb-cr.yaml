@@ -1,7 +1,6 @@
 # SpiceDBCluster — managed by the SpiceDB Operator.
 #
-# Production version of infrastructure/spicedb/04-spicedb-cr.yaml.
-# Differences:
+# Differences from the retired local edition:
 #   - secretName: spicedb-config-vso  ->  spicedb-config (legacy, pre-OpenBao
 #                                          name; will migrate to VSO in Phase 5)
 #   - edition label: local -> prod

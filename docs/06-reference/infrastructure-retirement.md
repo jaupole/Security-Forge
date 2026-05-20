@@ -37,27 +37,31 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `openbao/` | ✅ **Done** | Retired 2026-05-20. Deploy config (01-10 yaml), the bootstrap/configure/init scripts, and 9 of 10 `policies/*.hcl` are superseded by platform's openbao (`manifests/openbao/` + `values/openbao*.yaml` + 6 `openbao*` components + `policies/`). The one infra-only policy — `app-template.hcl` (ADR-0013 §4's identity-templated per-app policy) — was parked in `platform/manifests/openbao/policies/_deferred/`; platform uses concrete per-app policies, so the template pattern is deferred, not live. Live platform/ comment refs repointed. |
 | `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
 | `secrets-guardrails/` | ✅ **Done** | Retired 2026-05-20. The real gap (the `no-secret-shaped-env-vars` admission policy) was migrated separately — see `kyverno/` row. The 2 CronJobs were broken local-edition scaffolding; a production guardrail-verifier gets a from-scratch LIVE-mode rebuild (operator-backlog #39). The `verify/` suite was retired with the dir (operator decision 2026-05-20). |
-| `spicedb/` | 🔴 Migrate-then-retire | Investigated 2026-05-20: the **only `.zed` schema files in the whole Projects tree are `infrastructure/spicedb/{schema,ecosystem-schema}.zed`** — none in `platform/`, none in the app repos, none in a cluster ConfigMap/CR/Job. The live ecosystem SpiceDB's authorization model has no other source of truth. **Do NOT blanket-delete.** Migrate `ecosystem-schema.zed` + the `tests/` validation suite into `platform/manifests/spicedb/` (Wazuh-style content migration) first; `schema.zed` is the older helloworld/PT model — confirm superseded against the live schema before dropping it. The deploy config (CR, netpols, VSO binding, cron, operator bundle) is superseded by `platform/manifests/spicedb/`. |
+| `spicedb/` | ✅ **Done** | Retired 2026-05-20. The deploy config (CR, netpols, VSO binding, cron, operator bundle) is superseded by `platform/manifests/spicedb/`. The genuine content — `ecosystem-schema.zed` + `schema.zed` (the SpiceDB authorization model; the only `.zed` copies anywhere) + the `tests/` validation suite — was migrated to `platform/manifests/spicedb/`. **Follow-ups:** confirm against a live `zed schema read` whether `schema.zed` (the older helloworld/PT model) is still needed or fully superseded by `ecosystem-schema.zed`; and wire a platform schema-apply path (the local `apply-schema.sh`/`run.sh` were not ported — they need platform `zed` setup). The live SpiceDB already has its schema applied — this migration preserves the source of truth. |
 | `valkey/` | ✅ **Done** | Retired 2026-05-20 with the helloworld demo. Not deployed in production; its only consumer was the helloworld demo BFF. |
 | `helloworld/` | ✅ **Done** | Retired 2026-05-20. Phase-9 integration-demo provisioning; the demo was retired 2026-05-04 and is not in production. The app *source* under `apps/helloworld-*` stays as the integration reference. |
 | `project-tracker/` | ✅ **Done** | Retired 2026-05-20. One local-edition `provision-db-and-bao.sh`; Project Tracker's production deploy will get platform-style provisioning like the other ecosystem apps. |
 
-## Genuine gaps — still to resolve
+## Status — content gaps all resolved
 
-One subdir still holds live content needing a migration before it can go:
+**22 of 23 subdirs retired** (see the table). Every genuine-content item was
+migrated into `platform/`, not lost: the Grafana dashboards, the two ADR-0013
+Kyverno admission policies, the Keycloak custom-image Dockerfile, the
+app/security PrometheusRule alerts, the OpenBao templated-policy artifact,
+and the SpiceDB schema + validation tests.
 
-- **`spicedb/ecosystem-schema.zed`** — the live ecosystem authorization model;
-  the only copy anywhere. Migrate to `platform/manifests/spicedb/` with the
-  `tests/` suite — content migration, not a delete.
+**Remaining:** `infrastructure/istio/` only — deferred, it retires as part of
+the Phase 7c-2 closeout (operator-backlog #21). Once that lands, the
+`infrastructure/` tree is gone entirely.
 
-Tracked separately: a production guardrail-verification CronJob — a
-from-scratch LIVE-mode rebuild (operator-backlog #39); `infrastructure/istio/`
-retires with the Phase 7c-2 closeout (#21).
-
-Resolved 2026-05-20: 20 of 23 subdirs retired (see the table); `istio`
-deferred to the 7c-2 closeout; `openbao` + `spicedb` remain. The Grafana
-dashboards, the two ADR-0013 Kyverno admission policies, the Keycloak custom
-image, and the app/security alert rules were genuine content — all migrated.
+Open follow-ups (none block the retirement):
+- A production guardrail-verification CronJob — from-scratch LIVE-mode
+  rebuild (operator-backlog #39).
+- SpiceDB — confirm whether `schema.zed` (the older helloworld/PT model) is
+  still needed against a live `zed schema read`; wire a platform
+  schema-apply path (`apply-schema.sh`/`run.sh` were not ported).
+- The Audit→Enforce flip of the two ADR-0013 Kyverno policies (#39).
+- Residual Local-Edition prose/comment refs in `docs/` + `apps/` (#40).
 
 ## Landmine — do NOT delete
 
