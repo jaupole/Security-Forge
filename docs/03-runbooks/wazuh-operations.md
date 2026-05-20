@@ -428,7 +428,7 @@ output.elasticsearch:
 Two consequences worth knowing:
 
 1. **Filebeat auths to the indexer as the `admin` superuser, not as the dedicated `filebeat_internal` user the chart intended.** Functional but over-privileged; cluster-internal mTLS keeps the blast radius bounded. Future fix would be a fork of the cont-init script to use FILEBEAT_USERNAME instead.
-2. **The image's sed uses `|` as the substitution delimiter,** so `INDEXER_PASSWORD` / `FILEBEAT_PASSWORD` MUST NOT contain `|` (delimiter) or `&` (replacement metacharacter). `infrastructure/wazuh/apply.sh` `gen_pw()` enforces this — `specials = ".*+?=!"`. If you bypass that script and create the secrets manually, exclude those chars yourself or expect the operator-backlog #23 failure mode to recur.
+2. **The image's sed uses `|` as the substitution delimiter,** so `INDEXER_PASSWORD` / `FILEBEAT_PASSWORD` MUST NOT contain `|` (delimiter) or `&` (replacement metacharacter). `platform/components/07-wazuh.sh` `gen_pw()` enforces this — `specials = ".*+?=!"`. If you bypass that script and create the secrets manually, exclude those chars yourself or expect the operator-backlog #23 failure mode to recur.
 
 ### Dashboard `/app/login` shows TLS warning in browser
 

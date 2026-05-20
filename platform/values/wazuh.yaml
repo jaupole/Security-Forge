@@ -1,4 +1,4 @@
-# Wazuh values overlay (production version of infrastructure/wazuh/values.yaml).
+# Wazuh values overlay — chart values for the bare-metal platform deployment.
 #
 # Differences from local:
 #   - dashboard.ingress.host: wazuh.${DOMAIN}        (was wazuh.secforge.local)
