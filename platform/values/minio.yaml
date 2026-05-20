@@ -4,7 +4,6 @@
 #   - Tempo (tempo-traces bucket)
 #   - Loki  (loki-chunks bucket, Phase 7-rest)
 #   - Velero / CNPG (backups bucket — when off-box B2 isn't desired)
-#   - Teleport (teleport-recordings bucket — Phase 8)
 #   - Wazuh archive (wazuh-archive — Phase 7-rest)
 #
 # Buckets are NOT created by the chart's makeBucketJob (it doesn't expose

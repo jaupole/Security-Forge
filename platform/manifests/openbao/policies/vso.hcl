@@ -149,41 +149,6 @@ path "secret/metadata/wazuh/oidc" {
   capabilities = ["read"]
 }
 
-# Teleport OIDC client_secret + issuer + redirect_uri (Phase 8a Step 4).
-# Provisioned by infrastructure/keycloak/clients/teleport.sh and
-# rendered into teleport ns by VSO for the auth pod's OIDCConnector
-# config (Phase 8b).
-path "secret/data/teleport/oidc" {
-  capabilities = ["read"]
-}
-path "secret/metadata/teleport/oidc" {
-  capabilities = ["read"]
-}
-
-# Teleport scoped MinIO user creds (session-recording bucket access).
-# Provisioned by infrastructure/teleport/apply-minio-user.sh and
-# rendered into teleport ns by VSO for the auth pod's S3 backend
-# config (Phase 8b).
-path "secret/data/minio/teleport/credentials" {
-  capabilities = ["read"]
-}
-path "secret/metadata/minio/teleport/credentials" {
-  capabilities = ["read"]
-}
-
-# Teleport GitHub OAuth App client_id + client_secret (Phase 8b prototype B).
-# Teleport CE does not support OIDC connectors (Enterprise-gated), so the
-# Keycloak path planned in 8a is replaced for the local edition by a
-# GitHub OAuth App against real github.com. The connector CRD references
-# the rendered Secret via the operator's secret-lookup syntax. Provisioned
-# by infrastructure/teleport/apply-github-connector.sh.
-path "secret/data/teleport/github" {
-  capabilities = ["read"]
-}
-path "secret/metadata/teleport/github" {
-  capabilities = ["read"]
-}
-
 # Control plane API (control ns).
 #   - keycloak/clients/control: OIDC client_secret for the user-login client
 #   - keycloak/clients/control-admin: client_secret for the admin-API

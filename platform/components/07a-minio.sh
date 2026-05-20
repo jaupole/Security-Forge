@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 07a — MinIO (in-cluster S3 substitute) + bucket bootstrap.
 #
-# Storage backend for Tempo (now), Loki / Wazuh-archive / Teleport-recordings
-# (Phase 7-rest / Phase 8). Console NOT exposed via Ingress; admin access
+# Storage backend for Tempo (now), Loki / Wazuh-archive (Phase 7-rest).
+# Console NOT exposed via Ingress; admin access
 # is `kubectl port-forward -n minio svc/minio 9001:9001` then login with
 # minio-root-credentials.
 #

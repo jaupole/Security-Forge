@@ -42,7 +42,6 @@ Encoded in `components/` filename prefixes:
 5. `05-openbao.sh` — secrets (depends on 01, 02)
 6. `06-istio.sh` — service mesh
 7. `07-observability.sh` — Prometheus, Loki, Tempo, Grafana, Wazuh
-8. `08-teleport.sh` *(pending)* — privileged access
 9. `09a-velero.sh` / `09b-cnpg-backups.sh` / `09c-velero-tune.sh` — backups
 10. `10-tailscale.sh` + `10a-ingress-tailnet-split.sh` + `10b-sshd-lockdown.sh` — operator-access mesh (Tailscale on the host) + admin-Ingress allowlist (Kyverno-enforced `whitelist-source-range: 100.64.0.0/10` on `wazuh.*`/`grafana.*`/`openbao-admin.*`/`auth-admin.*`/etc.) + sshd bound to tailnet only. Solves the DHCP-rotating-operator-IP problem and removes scanner visibility for admin UIs. See `manifests/tailscale/README.md` for design rationale.
 11. `11-wazuh-host-agent.sh` + `11a-auditd.sh` + `11b-fail2ban.sh` — host-side detection capability buildout (native Wazuh agent on the bare-metal host; supersedes the in-cluster `07b-wazuh-agent.sh` DaemonSet pattern). See `manifests/wazuh-host-agent/README.md` for design rationale.

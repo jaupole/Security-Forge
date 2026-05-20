@@ -8,7 +8,6 @@
 #   - loki-chunks        (no Object Lock; Loki enforces 14d retention)
 #   - backups            (versioned)
 #   - wazuh-archive      (versioned)
-#   - teleport-recordings (versioned + Object Lock + 90d governance)
 #
 # Re-run safe: `mb --ignore-existing` and repeated `version enable` are no-ops.
 ---
@@ -90,12 +89,6 @@ spec:
               # wazuh-archive: versioned (Phase 7-rest will populate).
               mc mb --ignore-existing local/wazuh-archive
               mc version enable local/wazuh-archive
-
-              # teleport-recordings: versioned + Object Lock + 90d governance
-              # (Phase 8 will populate; create now so MinIO is ready).
-              mc mb --with-lock --ignore-existing local/teleport-recordings
-              mc retention set --default GOVERNANCE 90d local/teleport-recordings
-              mc version enable local/teleport-recordings
 
               echo "--- buckets ---"
               mc ls local/

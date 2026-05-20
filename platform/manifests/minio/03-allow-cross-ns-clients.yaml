@@ -2,13 +2,13 @@
 #
 # The MinIO Helm chart installs a NetworkPolicy that only allows ingress
 # from pods labeled `minio-client=true` in the SAME namespace. Tempo (in
-# observability), Loki (Phase 7-rest), Teleport (Phase 8), Wazuh-archive,
-# etc. all live in different namespaces and need access.
+# observability), Loki (Phase 7-rest), Wazuh-archive, etc. all live in
+# different namespaces and need access.
 #
 # NPs are additive (UNION of allow rules), so this co-exists with the
 # chart's policy without removing same-namespace clients.
 #
-# Allowlist namespaces: observability, app, teleport, wazuh.
+# Allowlist namespaces: observability, app, wazuh.
 # Add to the `from:` block when a new namespace needs MinIO access.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -30,7 +30,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [observability, app, teleport, wazuh, velero]
+                values: [observability, app, wazuh, velero]
           podSelector:
             matchLabels:
               minio-client: "true"
