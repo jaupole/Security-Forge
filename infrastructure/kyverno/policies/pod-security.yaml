@@ -48,7 +48,7 @@ spec:
                 - istio-system          # ztunnel CNI requires privileged
                 - spire                 # agent DaemonSet needs hostPath
                 - observability         # node-exporter needs hostPath/hostNetwork/hostPID for node metrics (Phase 7.3)
-                - wazuh                 # Wazuh stack (Phase 7.2): manager runs as root inside container; certs-job lacks per-container seccompProfile in chart. Namespace-level PSS=baseline (see infrastructure/wazuh/01-namespace.yaml). Agent DaemonSet deferred to Phase 7d with capabilities-based hardening.
+                - wazuh                 # Wazuh stack (Phase 7.2): manager runs as root inside container; certs-job lacks per-container seccompProfile in chart. Namespace-level PSS=baseline (see platform/manifests/wazuh/01-namespace.yaml). Agent DaemonSet deferred to Phase 7d with capabilities-based hardening.
                 - wazuh-agent           # Wazuh agent DaemonSet (Phase 7d Item 5): hostPath mounts of /etc, /var/log, /host/proc + runAsUser=0 required for FIM. Per-pod hardening: privileged dropped, capabilities=[DAC_OVERRIDE] only, hostPID dropped, image pinned by digest. Namespace-level PSS=privileged (see infrastructure/wazuh-agent/01-namespace.yaml).
       validate:
         podSecurity:
@@ -66,7 +66,7 @@ spec:
           # certs-bootstrap Job and manager StatefulSet don't fully meet
           # restricted (manager: runAsUser=0; certs-job: missing per-container
           # seccompProfile). Namespace declares PSS=baseline (see
-          # infrastructure/wazuh/01-namespace.yaml) so admission still enforces
+          # platform/manifests/wazuh/01-namespace.yaml) so admission still enforces
           # baseline at the kubelet layer.
           # PSS restricted does NOT require readOnlyRootFilesystem, so MinIO,
           # Postgres etc. that write to mounted volumes need no exception.
