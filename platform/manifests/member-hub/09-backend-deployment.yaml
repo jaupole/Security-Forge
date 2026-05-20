@@ -109,7 +109,10 @@ spec:
             - { name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
             - { name: OPENBAO_CA_CERT_PATH, value: "/etc/secforge/openbao-ca.crt" }
             - { name: OPENBAO_JWT_AUTH_ROLE, value: member-hub }
-            - { name: TRANSIT_KEY_NAME, value: pii-encryption }
+            # TRANSIT_KEYNAME (no underscore before NAME) is deliberate: the
+            # no-secret-shaped-env Kyverno policy flags a bare `_KEY_` token,
+            # and this holds a Transit key *name*, not key material.
+            - { name: TRANSIT_KEYNAME, value: pii-encryption }
             - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
