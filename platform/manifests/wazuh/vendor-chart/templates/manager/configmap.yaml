@@ -134,10 +134,19 @@ data:
 
     <group name="custom,">
 
+      <!-- 2026-05-20: each content rule below carries a
+           <program_name negate="yes">^k3s</program_name> guard so it does
+           NOT evaluate k3s' own audit log or server logs. The k3s audit
+           log embeds full k8s objects and names every namespace, so bare
+           patterns (" 5\d\d ", "connection pool", " ERROR ") false-match
+           constantly — the same class of bug fixed for rule 100006 on
+           2026-05-14. The k3s audit log has its own dedicated ruleset. -->
+
       <!-- ============================================ -->
       <!-- Application Errors (ERROR level)             -->
       <!-- ============================================ -->
       <rule id="100001" level="10">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
@@ -150,10 +159,11 @@ data:
       <!-- HTTP 5xx - Server Errors                     -->
       <!-- ============================================ -->
       <rule id="100002" level="12">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
-        <regex>status.?[=:].?5\d\d|statusCode.?[=:].?5\d\d| 5\d\d </regex>
+        <regex>status.?[=:].?5\d\d|statusCode.?[=:].?5\d\d</regex>
         <description>HTTP 5xx server error</description>
         <group>custom,http_error,server_error,</group>
       </rule>
@@ -162,6 +172,7 @@ data:
       <!-- HTTP 401 - Authentication Failures           -->
       <!-- ============================================ -->
       <rule id="100003" level="8">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
@@ -174,6 +185,7 @@ data:
       <!-- HTTP 403 - Authorization Denied              -->
       <!-- ============================================ -->
       <rule id="100004" level="8">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
@@ -186,6 +198,7 @@ data:
       <!-- HTTP 429 - Rate Limiting                     -->
       <!-- ============================================ -->
       <rule id="100005" level="8">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
@@ -206,6 +219,7 @@ data:
            line, or a literal "Caused by:" header. PCRE2 is used so we
            get word boundaries (\b) — OS_Regex doesn't support them. -->
       <rule id="100006" level="10">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
@@ -218,6 +232,7 @@ data:
       <!-- Database Connection Errors                   -->
       <!-- ============================================ -->
       <rule id="100007" level="12">
+        <program_name negate="yes">^k3s</program_name>
         {{- if .Values.agent.monitoredNamespaces }}
         <regex>{{ $nsPattern }}</regex>
         {{- end }}
