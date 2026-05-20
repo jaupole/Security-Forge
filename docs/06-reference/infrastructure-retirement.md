@@ -37,17 +37,17 @@ subdir so nothing edition-agnostic is lost on the way out.
 | `openbao/` | 🟡 Partial | 8/10 `policies/*.hcl` already in `platform/manifests/openbao/policies/`. `app-template.hcl` + `vso.hcl` are not — confirm migrated/renamed/obsolete. Config scripts superseded by `components/openbao*.sh`. |
 | `grafana/` | ✅ **Done** | Retired 2026-05-20. The 6 dashboards migrated to `platform/manifests/observability/dashboards/` + installer `platform/components/07q-grafana-dashboards.sh`. |
 | `secrets-guardrails/` | ✅ **Done** | Retired 2026-05-20. The real gap (the `no-secret-shaped-env-vars` admission policy) was migrated separately — see `kyverno/` row. The 2 CronJobs were broken local-edition scaffolding; a production guardrail-verifier gets a from-scratch LIVE-mode rebuild (operator-backlog #39). The `verify/` suite was retired with the dir (operator decision 2026-05-20). |
-| `spicedb/` | 🔴 Gap | `schema.zed` + `ecosystem-schema.zed` — no `.zed` file exists in `platform/`. The schema may have moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub); verify where the live SpiceDB schema is sourced before deleting. `tests/` fixtures also need a home. |
+| `spicedb/` | 🔴 Migrate-then-retire | Investigated 2026-05-20: the **only `.zed` schema files in the whole Projects tree are `infrastructure/spicedb/{schema,ecosystem-schema}.zed`** — none in `platform/`, none in the app repos, none in a cluster ConfigMap/CR/Job. The live ecosystem SpiceDB's authorization model has no other source of truth. **Do NOT blanket-delete.** Migrate `ecosystem-schema.zed` + the `tests/` validation suite into `platform/manifests/spicedb/` (Wazuh-style content migration) first; `schema.zed` is the older helloworld/PT model — confirm superseded against the live schema before dropping it. The deploy config (CR, netpols, VSO binding, cron, operator bundle) is superseded by `platform/manifests/spicedb/`. |
 | `valkey/` | ✅ **Done** | Retired 2026-05-20 with the helloworld demo. Not deployed in production; its only consumer was the helloworld demo BFF. |
 | `helloworld/` | ✅ **Done** | Retired 2026-05-20. Phase-9 integration-demo provisioning; the demo was retired 2026-05-04 and is not in production. The app *source* under `apps/helloworld-*` stays as the integration reference. |
 | `project-tracker/` | ✅ **Done** | Retired 2026-05-20. One local-edition `provision-db-and-bao.sh`; Project Tracker's production deploy will get platform-style provisioning like the other ecosystem apps. |
 
 ## Genuine gaps — resolve before the dir can go
 
-- **`spicedb/schema.zed` + `ecosystem-schema.zed`** — the authorization model;
-  no `.zed` exists in `platform/`. The live ecosystem schema appears to have
-  moved to the Ecosystem app repos (`ecosystem.zed` in Member Hub). Confirm the
-  authoritative source before deleting.
+- **`spicedb/ecosystem-schema.zed`** — the live ecosystem authorization model.
+  Investigated 2026-05-20: it is the ONLY copy anywhere (not in `platform/`,
+  not in the app repos). Must be migrated to `platform/manifests/spicedb/`
+  with its `tests/` suite — a content migration, not a delete.
 - **`openbao/policies/{app-template,vso}.hcl`** — present in `infrastructure/`
   but not in `platform/manifests/openbao/policies/`; confirm migrated or obsolete.
 - **`kyverno/tests/`** — admission-policy test fixtures, no platform home.
