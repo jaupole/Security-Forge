@@ -1,7 +1,7 @@
 // SecForge platform authorization schema.
 //
 // Source of truth: this file. Changes require a PR + the validator
-// tests in infrastructure/spicedb/tests/ to pass.
+// tests in platform/manifests/spicedb/tests/ to pass.
 //
 // Tier 1 — tenant   : organizational boundary (one per customer)
 // Tier 2 — app      : product instance bound to a tenant

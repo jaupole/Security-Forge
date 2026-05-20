@@ -2,8 +2,8 @@
 #
 # Bound to the SA `vault-secrets-operator-controller-manager` in the
 # `vault-secrets-operator` namespace via the Kubernetes auth method's
-# role `vault-secrets-operator` (configured by
-# infrastructure/vault-secrets-operator/configure-openbao-role.sh).
+# role `vault-secrets-operator` (configured by the platform
+# vso-configure component).
 #
 # Phase 6.10b — Step 2. See ADR-0015.
 #
