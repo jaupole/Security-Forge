@@ -287,16 +287,20 @@ gate_iac() {
 
   raw=$(as_json "$raw" '{"results":{"failed_checks":[]}}')
 
-  jq -n \
+  # checkov's JSON output can be multi-MB; passing it through `jq --argjson`
+  # puts the whole document on the command line and trips ARG_MAX ("Argument
+  # list too long", exit 126). Pipe it on stdin instead — only the small
+  # scalars stay as args. The other gates use --argjson too, but semgrep /
+  # trivy / gitleaks output for this repo stays well under the limit.
+  printf '%s' "$raw" | jq \
     --arg gate "gate-iac" \
     --arg scanner "checkov" \
     --arg version "$version" \
     --argjson runtime "$runtime" \
-    --argjson raw "$raw" \
     '{
       gate:$gate, scanner:$scanner, scanner_version:$version,
       runtime_seconds:$runtime,
-      findings: ((if ($raw|type) == "array" then [] else ($raw.results.failed_checks // []) end) | map({
+      findings: ((if (type) == "array" then [] else (.results.failed_checks // []) end) | map({
         id: .check_id,
         severity: (.severity // "MEDIUM"),
         message: .check_name,
