@@ -15,6 +15,7 @@
 # keyless from GitHub Actions OIDC — see .github/workflows/keycloak-image-build.yml).
 
 ARG KEYCLOAK_BASE_DIGEST=sha256:6a7217a100bd3e5de4063a27a538ef999a3c5a88c4b4ec0ffc0a642aee7b2597
+# checkov:skip=CKV_DOCKER_7: the base image is digest-pinned via the KEYCLOAK_BASE_DIGEST ARG above — stronger than a version tag; checkov cannot resolve the ARG-based digest.
 FROM quay.io/keycloak/keycloak@${KEYCLOAK_BASE_DIGEST}
 
 # HIBP-derived top-100k password blacklist. Source: danielmiessler/SecLists
@@ -28,6 +29,7 @@ ARG PWDB_SHA256=07f876a616f08fb2cc5c3e0ce04e4a6d1123380580472b0997baebc4e8226977
 # BuildKit native: fetch + checksum-verify + chown + chmod in one declarative
 # step. No curl-in-image, no shell escape hatches, fails the build loudly
 # if the upstream content changes.
+# checkov:skip=CKV_DOCKER_4: ADD is required here — it fetches a URL with checksum verification; COPY cannot fetch URLs.
 ADD --chmod=0444 --chown=1000:0 --checksum=sha256:${PWDB_SHA256} \
     ${PWDB_URL} \
     /opt/keycloak/data/password-blacklists/Pwdb_top-100000.txt
@@ -42,5 +44,8 @@ ENV KC_FEATURES=recovery-codes,dpop
 ENV KC_DB=postgres
 RUN /opt/keycloak/bin/kc.sh build
 
-# (USER, ENTRYPOINT, CMD all inherited from the base image — no override
-# needed. Keycloak Operator passes the start args via the Keycloak CR.)
+# ENTRYPOINT + CMD are inherited from the base image; the Keycloak Operator
+# passes start args via the Keycloak CR. USER is declared explicitly — the
+# base already runs as 1000; this makes the non-root runtime intent
+# explicit (checkov CKV_DOCKER_3).
+USER 1000

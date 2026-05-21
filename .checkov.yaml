@@ -1,14 +1,10 @@
 # Checkov configuration — SecForge repo. Auto-loaded by `checkov` when the
 # IaC gate (run-gates.sh gate_iac) runs `checkov --directory .`.
 #
-# skip-check
-#   CKV_SECRET_6 — "Base64 High Entropy String", checkov's entropy
-#     heuristic. Verified 2026-05-21: all 12 hits were ordinary kebab-case
-#     config tokens and Kubernetes Secret *name* references
-#     (scram-sha-256, minio-root-credentials, spicedb-grpc-tls,
-#     barman-cloud-client-tls, openbao-ca-bundle, …) — never secret
-#     material. Real secret detection is gitleaks' job (gate_secrets,
-#     200+ rules) + the pre-commit hook; this heuristic is pure noise here.
+# skip-check — each entry is a checkov check disabled repo-wide, with the
+# rationale inline below. Per-resource accepts use `checkov.io/skipN`
+# annotations on the resource instead; the entries here are ones whose
+# rationale is a genuine repo-wide property.
 #
 # skip-path  (regex, matched against file paths — single source of gate
 #             scope; the first five moved here from the run-gates.sh CLI)
@@ -21,7 +17,32 @@
 #     at admission by Kyverno regardless.
 
 skip-check:
+  # "Base64 High Entropy String" — checkov's entropy heuristic. Verified
+  # 2026-05-21: all 12 hits were kebab-case config tokens and Kubernetes
+  # Secret *name* references (scram-sha-256, minio-root-credentials, …),
+  # never secret material. Real secret detection is gitleaks' job
+  # (gate_secrets, 200+ rules) + the pre-commit hook.
   - CKV_SECRET_6
+  # "imagePullPolicy should be Always" — conflicts with the platform's
+  # digest-pinning policy (CKV_K8S_43 / Renovate pinDigests): for a
+  # digest-pinned image `IfNotPresent` is correct, and `Always` only adds
+  # a registry round-trip per pod start.
+  - CKV_K8S_15
+  # "Prefer secrets as files over env vars" — secrets are delivered as env
+  # vars by deliberate architecture (ADR-0013 / ADR-0015: OpenBao → VSO →
+  # envFrom). Converting to file mounts is a tracked future consideration,
+  # not a defect.
+  - CKV_K8S_35
+  # "Container UID should be > 10000" — UIDs are image-determined
+  # (nginx-unprivileged 101, minio/mc 1000, …); forcing >10000 breaks
+  # images. The host-UID-collision risk is N/A on this single-tenant node.
+  # Root containers are still caught by CKV_K8S_23 + the Kyverno
+  # require-run-as-nonroot policy.
+  - CKV_K8S_40
+  # "HEALTHCHECK instruction" — every image here is Kubernetes-deployed;
+  # liveness/readiness is governed by k8s probes, not a Dockerfile
+  # HEALTHCHECK (which only the Docker daemon honours).
+  - CKV_DOCKER_2
 
 skip-path:
   - node_modules

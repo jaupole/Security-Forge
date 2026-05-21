@@ -49,6 +49,7 @@ metadata:
     checkov.io/skip2: "CKV_K8S_25=DAC_OVERRIDE/SETUID/SETGID are required (see header) — the image s6-init drops root to the wazuh user"
     checkov.io/skip3: "CKV_K8S_8=the wazuh agent has no HTTP health endpoint; an exec probe risks the operator-backlog #36 crash-loop"
     checkov.io/skip4: "CKV_K8S_9=a node DaemonSet agent exposes no readiness surface; it is not a Service backend"
+    checkov.io/skip5: "CKV_K8S_23=the wazuh-agent image's s6-init starts as root before dropping to the wazuh user — runAsUser 0 is required (see header)"
   labels:
     app.kubernetes.io/name: wazuh-agent
     app.kubernetes.io/component: agent
