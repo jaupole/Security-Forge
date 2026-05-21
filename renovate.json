@@ -93,7 +93,7 @@
     {
       "description": "Keycloak base image digest in custom Dockerfile",
       "customType": "regex",
-      "managerFilePatterns": ["infrastructure/keycloak/image/Dockerfile$"],
+      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile$"],
       "matchStrings": [
         "ARG KEYCLOAK_BASE_DIGEST=(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -104,7 +104,7 @@
     {
       "description": "SecLists HIBP blacklist commit pin in Keycloak Dockerfile",
       "customType": "regex",
-      "managerFilePatterns": ["infrastructure/keycloak/image/Dockerfile$"],
+      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile$"],
       "matchStrings": [
         "ARG PWDB_COMMIT=(?<currentDigest>[a-f0-9]{40})"
       ],

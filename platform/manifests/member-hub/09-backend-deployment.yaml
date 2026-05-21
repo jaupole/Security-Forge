@@ -2,7 +2,7 @@
 #
 # SCAFFOLD STATUS: This manifest was derived from platform/manifests/control/
 # on 2026-05-16 as part of Phase 2 deploy scaffolding. The image reference
-# `ghcr.io/secforge/member-hub:${MEMBER_HUB_TAG}` is a placeholder —
+# `ghcr.io/jaupole/member-hub:${MEMBER_HUB_TAG}` is a placeholder —
 # the Member Hub repo doesn't have source/Dockerfile/GHA pipeline yet.
 # When the Member Hub source materializes, verify: (1) Hono listening port
 # (default 3000, not 4000), (2) /healthz + /readyz endpoint paths,
@@ -10,7 +10,7 @@
 # additional volume mounts.
 #
 # Image built from the Member Hub repo's Dockerfile and tagged
-# `ghcr.io/secforge/member-hub:${MEMBER_HUB_TAG}`. Cosign-keyless signed
+# `ghcr.io/jaupole/member-hub:${MEMBER_HUB_TAG}`. Cosign-keyless signed
 # via GHA OIDC (Kyverno verify-secforge rule enforces).
 #
 # Listens on :3000 (Hono default). Reverse-proxied by ingress-nginx via
@@ -63,7 +63,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/secforge/member-hub:${MEMBER_HUB_TAG}
+          image: ghcr.io/jaupole/member-hub:${MEMBER_HUB_TAG}
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
