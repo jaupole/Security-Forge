@@ -1,0 +1,33 @@
+# gitleaks configuration — SecForge repo.
+#
+# Extends the upstream default ruleset (200+ specific, high-precision
+# rules) and adds a small, surgical allowlist for confirmed false
+# positives from the `generic-api-key` rule. `generic-api-key` is
+# gitleaks' heuristic catch-all: it keys on substrings like "key",
+# "api", "credential", "token" and flags any nearby token-shaped value.
+#
+# The allowlist is deliberately PATTERN-scoped, not PATH-scoped. Path
+# allowlisting (e.g. excluding *_test.go or docs/) would blind the
+# scanner to genuine secrets in those files — test files and docs are
+# common real-leak vectors. Each regex below is specific enough that it
+# cannot plausibly coincide with an actual credential.
+#
+# Confirmed false positives (verified 2026-05-21 with gitleaks 8.30.1):
+#   - keycloak:<tag>            Keycloak container image references —
+#                               "keycloak" contains the substring "key"
+#   - api.test:<port>           RFC 2606-style test hostnames in Go tests
+#   - "credential management,"  the literal phrase in ADR/runbook prose
+
+title = "SecForge gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Confirmed generic-api-key false positives: image tags, test hostnames, prose. See file header."
+regexTarget = "match"
+regexes = [
+  '''keycloak:[\w.-]+''',
+  '''api\.test:[0-9]+''',
+  '''credential management,''',
+]
