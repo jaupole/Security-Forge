@@ -16,7 +16,7 @@ metadata:
     secforge.platform/edition: prod
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
   primaryUpdateStrategy: unsupervised
 
   enableSuperuserAccess: false

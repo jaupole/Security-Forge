@@ -84,7 +84,7 @@ metadata:
     platform.platform/purpose: restore-drill
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:16.4-bookworm
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
   storage:
     size: 5Gi
   bootstrap:
