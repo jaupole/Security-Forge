@@ -287,11 +287,17 @@ gate_iac() {
 
   raw=$(as_json "$raw" '{"results":{"failed_checks":[]}}')
 
-  # checkov's JSON output can be multi-MB; passing it through `jq --argjson`
-  # puts the whole document on the command line and trips ARG_MAX ("Argument
-  # list too long", exit 126). Pipe it on stdin instead — only the small
-  # scalars stay as args. The other gates use --argjson too, but semgrep /
-  # trivy / gitleaks output for this repo stays well under the limit.
+  # Two checkov-specific quirks are handled here:
+  #  1. Its JSON output can be multi-MB; `jq --argjson` would put the whole
+  #     document on the command line and trip ARG_MAX ("Argument list too
+  #     long", exit 126), so it goes in on stdin — only small scalars stay
+  #     as args. (The other gates use --argjson, but semgrep / trivy /
+  #     gitleaks output for this repo stays well under the limit.)
+  #  2. checkov emits a JSON ARRAY — one element per detected framework
+  #     (kubernetes, dockerfile, github_actions, …) — whenever more than one
+  #     framework matches. The findings expression flattens failed_checks
+  #     across every element; a bare `.results.failed_checks` would silently
+  #     see only a single-framework object and yield nothing on this repo.
   printf '%s' "$raw" | jq \
     --arg gate "gate-iac" \
     --arg scanner "checkov" \
@@ -300,7 +306,8 @@ gate_iac() {
     '{
       gate:$gate, scanner:$scanner, scanner_version:$version,
       runtime_seconds:$runtime,
-      findings: ((if (type) == "array" then [] else (.results.failed_checks // []) end) | map({
+      findings: ([ (if (type) == "array" then .[] else . end)
+                   | (.results.failed_checks // [])[] ] | map({
         id: .check_id,
         severity: (.severity // "MEDIUM"),
         message: .check_name,
