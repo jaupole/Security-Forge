@@ -3938,7 +3938,7 @@ spec:
         - --crd=false
         - --config
         - /opt/operator/update-graph.yaml
-        image: ghcr.io/authzed/spicedb-operator:v1.24.0
+        image: ghcr.io/authzed/spicedb-operator:v1.24.0@sha256:6049e4f4bbb8e3374b3f76188577304e48452c5f6a4b5a9b4f8902613aa39bf6
         livenessProbe:
           httpGet:
             path: /healthz
