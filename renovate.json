@@ -18,6 +18,15 @@
   "prConcurrentLimit": 8,
   "labels": ["dependencies", "renovate"],
   "pinDigests": true,
+  "ignoreDeps": [
+    "github.com/secforge/lib",
+    "local/authzen-facade",
+    "local/security-events-collector",
+    "ghcr.io/jaupole/control",
+    "ghcr.io/jaupole/portal",
+    "ghcr.io/secforge/keycloak",
+    "public.ecr.aws/curl/curl"
+  ],
   "kubernetes": {
     "managerFilePatterns": [
       "platform/manifests/**/*.yaml",
