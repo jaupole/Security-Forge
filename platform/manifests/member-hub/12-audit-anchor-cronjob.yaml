@@ -205,6 +205,7 @@ metadata:
     # Authenticates to OpenBao Transit with the pod SA token (Kubernetes
     # auth) to sign audit roots — the token is required; CKV_K8S_38 N/A.
     checkov.io/skip1: "CKV_K8S_38=authenticates to OpenBao Transit via the pod ServiceAccount token; required"
+    checkov.io/skip2: "CKV_K8S_22=installs git/openbao/psql via apk add at runtime — the root filesystem must be writable (see readOnlyRootFilesystem below)"
   labels:
     app.kubernetes.io/name: member-hub
     app.kubernetes.io/component: audit-signer
@@ -248,6 +249,8 @@ spec:
                 readOnlyRootFilesystem: false  # apk add needs writes
                 capabilities:
                   drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
               resources:
                 requests: { cpu: 50m, memory: 64Mi }
                 limits:   { cpu: 500m, memory: 256Mi }

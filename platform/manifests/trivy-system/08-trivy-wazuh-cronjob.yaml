@@ -23,6 +23,8 @@ metadata:
     # Runs `kubectl get vulnerabilityreports` cluster-wide — the SA token
     # is genuinely required, so CKV_K8S_38 (disable token automount) is N/A.
     checkov.io/skip1: "CKV_K8S_38=runs kubectl against the cluster API; the ServiceAccount token is required"
+    checkov.io/skip2: "CKV_K8S_22=the reporter runs kubectl (writes a ~/.kube cache); a read-only rootfs is part of the purpose-built-image CVE-backlog follow-up"
+    checkov.io/skip3: "CKV_K8S_25=the ensure-output-dir initContainer adds DAC_OVERRIDE to manage the shared output dir written by the non-root reporter"
   labels:
     secforge.platform/component: trivy-wazuh
 spec:
@@ -56,6 +58,8 @@ spec:
                 capabilities:
                   drop: ["ALL"]
                   add: ["DAC_OVERRIDE"]
+                seccompProfile:
+                  type: RuntimeDefault
               command:
                 - /bin/sh
                 - -c

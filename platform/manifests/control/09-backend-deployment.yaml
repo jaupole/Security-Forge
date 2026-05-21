@@ -14,6 +14,12 @@ kind: Deployment
 metadata:
   name: control
   namespace: control
+  annotations:
+    # The `api` container is fully probed; only the spiffe-helper sidecar
+    # (a token-refresher daemon) lacks probes — it exposes no HTTP health
+    # surface, and pod liveness is governed by the api container.
+    checkov.io/skip1: "CKV_K8S_8=spiffe-helper sidecar has no HTTP liveness endpoint; the api container is probed"
+    checkov.io/skip2: "CKV_K8S_9=spiffe-helper sidecar has no HTTP readiness endpoint; the api container is probed"
   labels:
     app.kubernetes.io/name: control
     app.kubernetes.io/component: api

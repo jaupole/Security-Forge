@@ -21,6 +21,8 @@
 
 name: DAST (ZAP baseline)
 
+# checkov:skip=CKV_GHA_7: the workflow_dispatch `target_url` input only overrides the DAST scan target — this workflow runs a scan and produces no build artifact.
+
 on:
   pull_request:
     branches: [main]

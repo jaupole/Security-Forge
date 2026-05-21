@@ -50,6 +50,9 @@ spec:
               drop: [ALL]
             seccompProfile:
               type: RuntimeDefault
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits:   { cpu: 250m, memory: 64Mi }
           env:
             - name: ROOT_USER
               valueFrom:
