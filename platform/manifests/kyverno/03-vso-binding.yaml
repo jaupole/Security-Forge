@@ -1,0 +1,86 @@
+# VSO binding for the kyverno namespace.
+#
+# Renders ONE K8s Secret:
+#   - ghcr-pull-secret → read-only GHCR credential. Consumed by the
+#     `verify-image-signature` ClusterPolicy's verify-secforge rule
+#     (imageRegistryCredentials) so the Kyverno admission controller can
+#     pull cosign signatures for the PRIVATE ghcr.io/jaupole/* (and
+#     secforge/*) packages. Without it, Kyverno verifies anonymously and
+#     ghcr.io answers 401, so no SecForge image is ever verified.
+#
+# This is the registry-auth half of the image-verification fix; the
+# network half (egress to ghcr.io + sigstore) is
+# 06-egress-image-verification.yaml.
+#
+# Secret source: the existing apps/control/ghcr-pull OpenBao path — a
+# fine-grained PAT scoped read:packages on jaupole/ecosystem-{control,
+# portal}, which is exactly the set of SecForge images admitted to the
+# cluster. Reusing it avoids a second PAT to rotate.
+#
+# The OpenBao policy granting read on secret/data/apps/control/+ is the
+# shared `vso` policy (loaded by 05c-openbao-configure.sh). The K8s auth
+# role binding (SA kyverno-vso → policy vso) is created by
+# platform/components/12c-kyverno-image-verify-creds.sh — NOT a manifest,
+# matching the control-vso / cert-manager-vso convention.
+#
+# Applied 2026-05-21.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kyverno-vso
+  namespace: kyverno
+  labels:
+    secforge.platform/component: vault-secrets-operator
+# No pod mounts this SA — VSO mints tokens for it via the TokenRequest
+# API. Keep automount off so a stray pod can never pick it up.
+automountServiceAccountToken: false
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: kyverno-vso
+  namespace: kyverno
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: kyverno-vso
+    serviceAccount: kyverno-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# GHCR image-pull credential rendered as a kubernetes.io/dockerconfigjson
+# Secret. Read by Kyverno's verifyImages engine, not mounted by any pod.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: kyverno
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: kyverno-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/ghcr-pull
+  refreshAfter: 5m
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ".dockerconfigjson":
+          text: |-
+            {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}

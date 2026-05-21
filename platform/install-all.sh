@@ -61,7 +61,9 @@
 #
 #   Group 12 — admission policy + governance
 #     12-kyverno               Kyverno admission engine (HA)
-#     12b-kyverno-policies     ClusterPolicies (PSS + image-sig stub + etc.)
+#     12b-kyverno-policies     ClusterPolicies (PSS, image-signature, etc.)
+#     12c-kyverno-image-verify-creds
+#                              GHCR read credential for image verification
 #
 #   Per-app — instantiation, not in install-all
 #     bootstrap-app.sh         takes APP_* env vars; instantiates the
@@ -146,6 +148,7 @@ COMPONENT_ORDER=(
   # Governance
   12-kyverno
   12b-kyverno-policies
+  12c-kyverno-image-verify-creds
 )
 
 green() { printf '\033[32m%s\033[0m\n' "$*"; }

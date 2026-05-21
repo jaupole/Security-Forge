@@ -1,0 +1,54 @@
+# Layer A egress allow: kyverno admission controller → public HTTPS, for
+# supply-chain image signature verification.
+#
+# The `verify-image-signature` ClusterPolicy verifies cosign keyless
+# signatures at admission. That requires the admission controller to reach
+# THREE external endpoints, all HTTPS/443:
+#   - the OCI registry (ghcr.io)  — pull the cosign signature artifact
+#   - tuf-repo-cdn.sigstore.dev   — fetch the Fulcio root CA via TUF
+#   - rekor.sigstore.dev          — check the transparency log
+#
+# All three are CDN-fronted with rotating IPs, so a named-host allowlist is
+# impossible at Layer A (NetworkPolicy is IP/CIDR only — DNS-name egress is
+# a Layer B / Istio concern). The honest, maintainable rule is "public 443,
+# minus every private + link-local range" so this can never become an
+# in-cluster lateral path or a 169.254.169.254 metadata-exfil path. Egress
+# default-deny still holds for every other port and destination.
+#
+# Scoped to the admission-controller pods ONLY — they are the only ones
+# that run verifyImages (the policy is background:false,
+# skipBackgroundRequests:true). The background/cleanup/reports controllers
+# keep the bare DNS + K8s-API egress baseline.
+#
+# Without this, verify-image-signature fails open: every verification
+# errors on a blocked dial and — validationFailureAction: Audit — only
+# warns, so no image is ever actually verified.
+#
+# Applied 2026-05-21.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-image-verification
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: admission-controller
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8        # cluster pod + service CIDRs, RFC1918
+              - 172.16.0.0/12     # RFC1918
+              - 192.168.0.0/16    # RFC1918
+              - 169.254.0.0/16    # link-local incl. cloud metadata
+      ports:
+        - protocol: TCP
+          port: 443

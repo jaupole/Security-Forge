@@ -100,6 +100,15 @@ spec:
           required: true
           mutateDigest: false
           verifyDigest: false
+          # SecForge GHCR packages are PRIVATE. Kyverno pulls the cosign
+          # signature artifact with this read-only credential (rendered by
+          # the kyverno-vso VSO binding, 03-vso-binding.yaml). The CNPG /
+          # SPIFFE rules above need no credential — those packages are
+          # public and pull anonymously.
+          imageRegistryCredentials:
+            allowInsecureRegistry: false
+            secrets:
+              - ghcr-pull-secret
           attestors:
             - entries:
                 - keyless:
