@@ -6,7 +6,7 @@
 # is in scope for the local go.mod replace directive that landed in
 # Fix-after-07 §A.6.
 
-FROM golang:1.25-alpine AS build
+FROM golang:1.25-alpine@sha256:8d22e29d960bc50cd025d93d5b7c7d220b1ee9aa7a239b3c8f55a57e987e8d45 AS build
 
 # Build-time deps. We use go modules; CA certs are baked in for module
 # downloads over HTTPS.
@@ -37,7 +37,7 @@ RUN go build \
 # distroless/static — no shell, no package manager, no /tmp by default.
 # Container is unprivileged (UID 65532 'nonroot').
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639
 
 USER 65532:65532
 

@@ -84,7 +84,7 @@ spec:
               # kubectl to list Pods, jq to parse + filter by date, wget
               # to POST to the collector. busybox `date -d` accepts the
               # ISO date format we receive from the annotation.
-              image: alpine/k8s:1.31.0
+              image: alpine/k8s:1.31.0@sha256:66dd3f7db6c4cf152b688d83aad11ceed9eb2da0c4e7de1034c7d4ccea1b55ef
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
