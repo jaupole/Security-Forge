@@ -27,6 +27,14 @@
     "ghcr.io/secforge/keycloak",
     "public.ecr.aws/curl/curl"
   ],
+  "hostRules": [
+    {
+      "description": "Docker Hub login — clears the anonymous pull-rate limit that fails Mend Renovate's docker.io image lookups. The dockerHub_token secret is uploaded in the Mend UI (not stored here).",
+      "matchHost": "docker.io",
+      "username": "jaupole",
+      "password": "{{ secrets.dockerHub_token }}"
+    }
+  ],
   "kubernetes": {
     "managerFilePatterns": [
       "platform/manifests/**/*.yaml",
