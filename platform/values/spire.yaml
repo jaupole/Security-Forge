@@ -229,14 +229,18 @@ spiffe-csi-driver:
   # + pollers + buffers OOM-killed the spiffe-csi-driver process every few
   # minutes, breaking the CSI socket and cascading "MountVolume.SetUp failed
   # for volume spiffe-workload-api" errors across every pod that mounts an
-  # SVID (Keycloak, OpenBao, future apps). Bumped 2026-05-08.
+  # SVID (Keycloak, OpenBao, future apps). Bumped 2026-05-08 to 256Mi, then
+  # 2026-05-12 to 512Mi after a runc-init OOM at 256Mi — the runc init
+  # process itself can map ~1.2GB virtual, so 256Mi was still too low.
+  # (Live cluster has carried 128Mi/512Mi since 2026-05-12; this repo file
+  # was stale until reconciled 2026-05-21 — operator-backlog #47.)
   resources:
     requests:
       cpu: 25m
-      memory: 64Mi
+      memory: 128Mi
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 512Mi
 
 # ============================================================================
 # OIDC discovery provider — exposes SPIRE's JWKS so OpenBao auth/jwt
