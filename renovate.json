@@ -25,7 +25,8 @@
     "ghcr.io/jaupole/control",
     "ghcr.io/jaupole/portal",
     "ghcr.io/secforge/keycloak",
-    "public.ecr.aws/curl/curl"
+    "public.ecr.aws/curl/curl",
+    "ghcr.io/authzed/spicedb-operator"
   ],
   "hostRules": [
     {
@@ -108,11 +109,10 @@
       "enabled": false
     },
     {
-      "description": "jwx: park major (v3/v4) updates — security-critical JWT/DPoP code in apps/lib/api-auth. Dashboard-approve + 2-month soak; v2 minor/patch still flow. See operator-backlog #44.",
+      "description": "jwx: major (v3/v4) updates disabled — security-critical JWT/DPoP code in apps/lib/api-auth; the migration is parked + tracked in operator-backlog #44 (revisit ~2026-07-21). v2 minor/patch updates still flow normally. To resume, set enabled to true (or delete this rule).",
       "matchPackageNames": ["github.com/lestrrat-go/jwx/v2"],
       "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true,
-      "minimumReleaseAge": "60 days"
+      "enabled": false
     },
     {
       "description": "Wazuh SIEM images: coordinated multi-image upgrade — own dashboard entry, not folded into the non-major sweep. See operator-backlog #45.",
