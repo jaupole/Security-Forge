@@ -15,8 +15,9 @@
 #
 # Listens on :3000 (Hono default). Reverse-proxied by ingress-nginx via
 # the member-hub Service (10-services.yaml). Single deployment — Hono
-# serves both /api/* (handlers) and /(.*) (server-rendered HTMX via
-# views.tsx). No separate portal/SPA Deployment.
+# serves both /api/* (JSON handlers) and the React+Vite SPA built to
+# client/dist, with SPA-fallback to index.html. No separate portal/SPA
+# Deployment.
 
 apiVersion: apps/v1
 kind: Deployment

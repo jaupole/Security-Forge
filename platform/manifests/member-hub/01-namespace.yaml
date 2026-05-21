@@ -1,7 +1,9 @@
-# Control namespace — houses the member-hub-plane API backend + portal SPA
-# Deployments behind a single Ingress (path-routing: / → portal, /api/* →
-# member-hub). One CNPG cluster per ADR-0029. Tailnet-only access for now
-# (no public DNS record; operator's hosts file → tailnet IP).
+# member-hub namespace — single Hono Deployment plus a CNPG cluster
+# (member-hub-db). The Hono process serves both the JSON API (/api/*)
+# and the React+Vite SPA built to client/dist — no separate SPA
+# Deployment. Tailnet-only access for now: no public DNS record;
+# operator's hosts file → tailnet IP per the deferred-DNS-exposure
+# decision. PSS restricted across all three modes — no exemption.
 apiVersion: v1
 kind: Namespace
 metadata:
