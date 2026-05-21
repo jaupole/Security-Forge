@@ -75,6 +75,10 @@ spec:
             app.kubernetes.io/component: audit-verifier
         spec:
           serviceAccountName: member-hub-audit-verifier
+          # The verifier only reads the audit DB (creds via a VSO-rendered
+          # Secret) — it calls neither the Kubernetes API nor OpenBao, so the
+          # default SA token is not mounted (checkov CKV_K8S_38).
+          automountServiceAccountToken: false
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
