@@ -16,7 +16,7 @@ metadata:
     secforge.platform/edition: prod
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
   primaryUpdateStrategy: unsupervised
 
   enableSuperuserAccess: false
@@ -65,3 +65,7 @@ spec:
       isWALArchiver: true
       parameters:
         barmanObjectName: minio-backup
+        # Archive path separated from the pre-upgrade PG16 backups: a major
+        # upgrade resets the WAL timeline, so PG17 archives under a fresh
+        # serverName (added with the 2026-05-21 16->17 upgrade).
+        serverName: control-db-pg17
