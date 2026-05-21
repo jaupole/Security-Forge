@@ -17,6 +17,13 @@
   "prHourlyLimit": 4,
   "prConcurrentLimit": 8,
   "labels": ["dependencies", "renovate"],
+  "pinDigests": true,
+  "kubernetes": {
+    "managerFilePatterns": [
+      "^platform/manifests/.+\\.ya?ml$",
+      "^apps/[^/]+/deploy/.+\\.ya?ml$"
+    ]
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security", "dependencies"],
