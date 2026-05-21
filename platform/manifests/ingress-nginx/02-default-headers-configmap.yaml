@@ -1,0 +1,30 @@
+# Default security headers merged into every ingress response.
+#
+# Consumed by ingress-nginx's controller.config.add-headers (see
+# platform/values/ingress-nginx.yaml). nginx applies these via
+# more_set_headers, which OVERRIDES whatever the upstream app set — it
+# does NOT defer to the app. So this ConfigMap may contain ONLY headers
+# correct for EVERY app behind the ingress, with no per-app variation.
+#
+# Scoped to two headers 2026-05-14: a global Content-Security-Policy
+# (`default-src 'self'`) broke the Wazuh / OpenSearch dashboard, which
+# needs `script-src 'unsafe-eval'` for its webpack bundle. App-specific
+# headers — Content-Security-Policy, Permissions-Policy, X-Frame-Options,
+# Cross-Origin-Opener-Policy — are deliberately NOT global; each app owns
+# those itself (forcing them globally clobbers the app's own value).
+# Only universally-safe headers belong here.
+#
+# Codified as a repo manifest 2026-05-21 (operator-backlog #49): the
+# ConfigMap had been live-only (kubectl apply, no repo source), and the
+# ingress-nginx chart ignores the `extraObjects:` block that used to
+# carry it in values/ingress-nginx.yaml — that block was dead config.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: secforge-default-headers
+  namespace: ingress-nginx
+  labels:
+    secforge.platform/component: ingress-nginx
+data:
+  Referrer-Policy: "strict-origin-when-cross-origin"
+  X-Content-Type-Options: "nosniff"

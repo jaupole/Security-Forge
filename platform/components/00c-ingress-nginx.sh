@@ -19,7 +19,10 @@ NS=ingress-nginx
 # 1. Namespace
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/ingress-nginx/01-namespace.yaml"
 
-# 2. Helm install
+# 2. Default security-headers ConfigMap (consumed by controller.config.add-headers)
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/ingress-nginx/02-default-headers-configmap.yaml"
+
+# 3. Helm install
 "$LIB/install-helm.sh" \
   --release ingress-nginx --namespace "$NS" \
   --repo-name ingress-nginx --repo-url https://kubernetes.github.io/ingress-nginx \

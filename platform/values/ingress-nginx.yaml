@@ -60,21 +60,9 @@ controller:
     ssl-ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
     enable-ocsp: "true"
 
-# ConfigMap consumed by controller.config.add-headers above. nginx merges
-# these into every response.
-extraObjects:
-  - apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: secforge-default-headers
-      namespace: ingress-nginx
-    data:
-      # No Content-Security-Policy / X-Frame-Options here on purpose —
-      # more_set_headers would clobber each app's own (often nonce-based)
-      # policy. Apps set those themselves. See the comment on
-      # controller.config.add-headers above.
-      Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
-      Referrer-Policy: "strict-origin-when-cross-origin"
-      X-Content-Type-Options: "nosniff"
-      X-Frame-Options: "DENY"
-      Cross-Origin-Opener-Policy: "same-origin"
+# NOTE: the `secforge-default-headers` ConfigMap referenced by
+# controller.config.add-headers above is NOT defined here. The
+# ingress-nginx chart has no `extraObjects` support — a block here would
+# be silently ignored (it was, until 2026-05-21). The ConfigMap is a
+# standalone manifest applied by 00c-ingress-nginx.sh:
+#   platform/manifests/ingress-nginx/02-default-headers-configmap.yaml
