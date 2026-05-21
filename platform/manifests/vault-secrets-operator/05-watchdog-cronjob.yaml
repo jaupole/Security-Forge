@@ -58,10 +58,13 @@ subjects:
 ---
 apiVersion: batch/v1
 kind: CronJob
-# checkov:skip=CKV_K8S_38: runs kubectl (get pod/logs, rollout restart) against the VSO controller — the ServiceAccount token is required, not optional.
 metadata:
   name: vso-watchdog
   namespace: vault-secrets-operator
+  annotations:
+    # Runs kubectl (get pod/logs, rollout restart) against the VSO
+    # controller — the SA token is required, so CKV_K8S_38 is N/A.
+    checkov.io/skip1: "CKV_K8S_38=runs kubectl against the VSO controller; the ServiceAccount token is required"
   labels:
     app.kubernetes.io/name: vso-watchdog
     secforge.platform/component: vault-secrets-operator

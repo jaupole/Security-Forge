@@ -198,10 +198,13 @@ data:
 ---
 apiVersion: batch/v1
 kind: CronJob
-# checkov:skip=CKV_K8S_38: signs audit roots via OpenBao Transit, authenticating with the pod ServiceAccount token (Kubernetes auth) — the token is required.
 metadata:
   name: audit-anchor
   namespace: member-hub
+  annotations:
+    # Authenticates to OpenBao Transit with the pod SA token (Kubernetes
+    # auth) to sign audit roots — the token is required; CKV_K8S_38 N/A.
+    checkov.io/skip1: "CKV_K8S_38=authenticates to OpenBao Transit via the pod ServiceAccount token; required"
   labels:
     app.kubernetes.io/name: member-hub
     app.kubernetes.io/component: audit-signer

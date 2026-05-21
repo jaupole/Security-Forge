@@ -16,10 +16,13 @@
 
 apiVersion: batch/v1
 kind: CronJob
-# checkov:skip=CKV_K8S_38: runs `kubectl get vulnerabilityreports` against the cluster API — the ServiceAccount token is required, not optional.
 metadata:
   name: trivy-wazuh-reporter
   namespace: trivy-system
+  annotations:
+    # Runs `kubectl get vulnerabilityreports` cluster-wide — the SA token
+    # is genuinely required, so CKV_K8S_38 (disable token automount) is N/A.
+    checkov.io/skip1: "CKV_K8S_38=runs kubectl against the cluster API; the ServiceAccount token is required"
   labels:
     secforge.platform/component: trivy-wazuh
 spec:
