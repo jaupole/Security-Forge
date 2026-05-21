@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout (for ZAP rules config)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Resolve target URL
         id: target
@@ -70,7 +70,7 @@ jobs:
 
       - name: ZAP baseline scan
         if: steps.target.outputs.skip == 'false'
-        uses: zaproxy/action-baseline@v0.13.0
+        uses: zaproxy/action-baseline@0619037bb784a56e2e06b104f0ebe157e076f075 # v0.13.0
         with:
           target: ${{ steps.target.outputs.url }}
           # -I: warnings non-fatal (only HIGH/MEDIUM fail the run).

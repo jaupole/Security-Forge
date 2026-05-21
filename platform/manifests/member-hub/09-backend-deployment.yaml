@@ -164,7 +164,7 @@ spec:
         # JWT auth role's bound_audiences). Sidecar runs in daemon
         # mode; on cert/SVID expiry it re-fetches and overwrites the file.
         - name: spiffe-helper
-          image: ghcr.io/spiffe/spiffe-helper:0.11.0
+          image: ghcr.io/spiffe/spiffe-helper:0.11.0@sha256:1c92e5998ad3621e3323f25aabe40f5a88ba730ee0edb248aa8c943ca504e8a2
           imagePullPolicy: IfNotPresent
           args:
             - "-config"

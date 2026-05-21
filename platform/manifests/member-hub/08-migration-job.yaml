@@ -48,7 +48,7 @@ spec:
       # accepting connections.
       initContainers:
         - name: wait-for-db
-          image: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
+          image: ghcr.io/cloudnative-pg/postgresql:16.10-bookworm@sha256:bf0b0ec764b26fbb9136476ed29ad92abdc1277d0465194b8bf420f0116b974d
           imagePullPolicy: IfNotPresent
           command:
             - sh

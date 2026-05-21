@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 2
 
@@ -50,7 +50,7 @@ jobs:
 
       - name: Post stamp/invalid check (red)
         if: steps.detect.outputs.forced == 'true' || steps.detect.outputs.digest_mismatch == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const conclusion = 'failure';
@@ -71,7 +71,7 @@ jobs:
 
       - name: Post stamp/ok check (green)
         if: steps.detect.outputs.forced != 'true' && steps.detect.outputs.digest_mismatch != 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             await github.rest.checks.create({
