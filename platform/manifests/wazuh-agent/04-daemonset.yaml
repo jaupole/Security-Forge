@@ -104,7 +104,7 @@ spec:
         # Uses the SAME wazuh-agent image (already cached on the node)
         # so the cp source is available.
         - name: customize-ossec-conf
-          image: "wazuh/wazuh-agent@sha256:085aac688d372f6243a679b87ca98135be37b12bb7733c7b5f92041517e6800e"
+          image: "wazuh/wazuh-agent@sha256:1ef7cc9f13231ad21c07ffb86d579a9d183ffc25136b2316ef4968c742b01f0f"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -174,7 +174,7 @@ spec:
             limits:   { cpu: 200m, memory: 128Mi }
       containers:
         - name: wazuh-agent
-          image: "wazuh/wazuh-agent@sha256:085aac688d372f6243a679b87ca98135be37b12bb7733c7b5f92041517e6800e"
+          image: "wazuh/wazuh-agent@sha256:1ef7cc9f13231ad21c07ffb86d579a9d183ffc25136b2316ef4968c742b01f0f"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

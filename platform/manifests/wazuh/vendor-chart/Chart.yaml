@@ -106,7 +106,7 @@ annotations:
       description: "Template permissions added to manage_wazuh_index role"
   artifacthub.io/license: MIT
 apiVersion: v2
-appVersion: 4.14.4
+appVersion: 4.14.5
 description: Production-ready Wazuh SIEM deployment for Kubernetes with Vault/ESO
   integration (optimized for EKS Auto Mode)
 home: https://github.com/ileonelperea/wazuh-helm

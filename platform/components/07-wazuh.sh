@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 07 — Wazuh stack (manager + indexer + dashboard).
 #
-# Vendored chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.4).
+# Vendored chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.5).
 # Mitigations + design notes: see platform/values/wazuh.yaml.
 #
 # Order:

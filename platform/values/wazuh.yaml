@@ -10,7 +10,7 @@
 #     platform/manifests/wazuh/static-pvs.yaml. Apply via 00d-wazuh-storage.sh
 #     BEFORE 07-wazuh.sh on fresh installs.)
 #
-# Chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.4) — vendored.
+# Chart: ileonelperea/wazuh-helm v1.2.10 (App 4.14.5) — vendored.
 
 storageClass:
   create: false

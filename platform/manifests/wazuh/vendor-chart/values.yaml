@@ -180,7 +180,7 @@ indexer:
   enabled: true
   image:
     repository: wazuh/wazuh-indexer
-    tag: "4.14.4"
+    tag: "4.14.5"
     pullPolicy: IfNotPresent
   # -- Number of indexer replicas (3 recommended for HA with quorum)
   replicas: 3
@@ -265,7 +265,7 @@ manager:
   enabled: true
   image:
     repository: wazuh/wazuh-manager
-    tag: "4.14.4"
+    tag: "4.14.5"
     pullPolicy: IfNotPresent
   # -- Number of manager replicas
   replicas: 1
@@ -358,7 +358,7 @@ dashboard:
   enabled: true
   image:
     repository: wazuh/wazuh-dashboard
-    tag: "4.14.4"
+    tag: "4.14.5"
     pullPolicy: IfNotPresent
   # -- Number of dashboard replicas
   replicas: 1
@@ -436,7 +436,7 @@ agent:
   externalManagerAddress: ""
   image:
     repository: wazuh/wazuh-agent
-    tag: "4.14.4"
+    tag: "4.14.5"
     pullPolicy: IfNotPresent
   # -- Agent group for centralized configuration
   group: "default"
