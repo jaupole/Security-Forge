@@ -135,7 +135,6 @@ ADRs are the project's append-only decision log. The numbering matters as much a
 | How a component works | [docs/01-architecture/](./docs/01-architecture/) |
 | Operational procedures | [docs/03-runbooks/](./docs/03-runbooks/) |
 | Open follow-ups not yet cleared | [docs/06-reference/operator-backlog.md](./docs/06-reference/operator-backlog.md) |
-| Hello World integration reference (Phase 9) | [docs/01-architecture/10-helloworld-demo.md](./docs/01-architecture/10-helloworld-demo.md); reference source at [apps/helloworld-{frontend,backend,bff}/](./apps/) |
 | Migration paths off local | [docs/06-reference/migration-to-vps.md](./docs/06-reference/migration-to-vps.md) and [migration-to-aws.md](./docs/06-reference/migration-to-aws.md) |
 | Glossary | [docs/00-getting-started/00-glossary.md](./docs/00-getting-started/00-glossary.md) |
 | Which Claude model to use for which task | [docs/06-reference/claude-model-selection.md](./docs/06-reference/claude-model-selection.md) |

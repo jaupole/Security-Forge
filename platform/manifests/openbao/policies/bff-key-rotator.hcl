@@ -15,14 +15,6 @@ path "secret/data/keycloak/clients/kcadm-admin" {
   capabilities = ["read"]
 }
 
-# helloworld-bff
-path "secret/data/keycloak/clients/helloworld-bff" {
-  capabilities = ["read", "create", "update"]
-}
-path "secret/metadata/keycloak/clients/helloworld-bff" {
-  capabilities = ["read"]
-}
-
 # proposal-forge-bff (BFF deployment lands in Phase 9+; CronJob is
 # pre-provisioned suspend:true until then)
 path "secret/data/keycloak/clients/proposal-forge-bff" {
