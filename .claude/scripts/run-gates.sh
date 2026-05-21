@@ -279,8 +279,11 @@ gate_iac() {
   runtime=$(date +%s)
 
   set +e
+  # Scope (skip-path) and the CKV_SECRET_6 suppression live in
+  # .checkov.yaml at the repo root — single source of truth, auto-loaded
+  # by checkov. Keeping --skip-path off the CLI avoids a CLI-vs-config
+  # precedence ambiguity.
   raw=$(checkov --directory . --output json --compact \
-    --skip-path 'node_modules,.venv,dist,build,.terraform' \
     --soft-fail-on LOW,MEDIUM --quiet 2>/dev/null)
   set -e
   runtime=$(( $(date +%s) - runtime ))

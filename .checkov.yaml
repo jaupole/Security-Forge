@@ -1,12 +1,35 @@
-# Checkov configuration — SecForge repo.
+# Checkov configuration — SecForge repo. Auto-loaded by `checkov` when the
+# IaC gate (run-gates.sh gate_iac) runs `checkov --directory .`.
 #
-# CKV_SECRET_6 ("Base64 High Entropy String") is checkov's entropy
-# heuristic. Verified 2026-05-21: all 12 hits on this repo were ordinary
-# kebab-case config tokens and Kubernetes Secret *name* references
-# (scram-sha-256, minio-root-credentials, spicedb-grpc-tls,
-# barman-cloud-client-tls, openbao-ca-bundle, …) — never secret material.
-# Real secret detection is covered precisely by gitleaks (gate_secrets,
-# 200+ rules) plus the pre-commit hook; this heuristic is pure
-# false-positive noise here, so it is skipped.
+# skip-check
+#   CKV_SECRET_6 — "Base64 High Entropy String", checkov's entropy
+#     heuristic. Verified 2026-05-21: all 12 hits were ordinary kebab-case
+#     config tokens and Kubernetes Secret *name* references
+#     (scram-sha-256, minio-root-credentials, spicedb-grpc-tls,
+#     barman-cloud-client-tls, openbao-ca-bundle, …) — never secret
+#     material. Real secret detection is gitleaks' job (gate_secrets,
+#     200+ rules) + the pre-commit hook; this heuristic is pure noise here.
+#
+# skip-path  (regex, matched against file paths — single source of gate
+#             scope; the first five moved here from the run-gates.sh CLI)
+#   node_modules / .venv / dist / build / .terraform — build + throwaway.
+#   infrastructure/ — the retired Local-Edition tree (operator-backlog
+#     #38; not deployed, pending deletion).
+#   keycloak/operator, spicedb/operator, wazuh/vendor-chart — vendored
+#     upstream operator bundles + Helm chart. The IaC gate scans
+#     SecForge-authored manifests; upstream workload security is enforced
+#     at admission by Kyverno regardless.
+
 skip-check:
   - CKV_SECRET_6
+
+skip-path:
+  - node_modules
+  - .venv
+  - dist
+  - build
+  - .terraform
+  - infrastructure/
+  - platform/manifests/keycloak/operator
+  - platform/manifests/spicedb/operator
+  - platform/manifests/wazuh/vendor-chart
