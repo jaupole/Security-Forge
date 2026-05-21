@@ -1,7 +1,7 @@
 # Build, push, and Cosign-keyless-sign the SecForge custom Keycloak image.
 #
 # Triggers:
-#   - push to main/master if anything under infrastructure/keycloak/image/ changes
+#   - push to main/master if anything under platform/manifests/keycloak/image/ changes
 #   - manual (workflow_dispatch) for ad-hoc rebuild
 #   - PR (build-only, no push, no sign) for review feedback
 #
@@ -17,11 +17,11 @@ on:
   push:
     branches: [main, master]
     paths:
-      - infrastructure/keycloak/image/**
+      - platform/manifests/keycloak/image/**
       - .github/workflows/keycloak-image-build.yml
   pull_request:
     paths:
-      - infrastructure/keycloak/image/**
+      - platform/manifests/keycloak/image/**
       - .github/workflows/keycloak-image-build.yml
   workflow_dispatch:
     inputs:
@@ -81,7 +81,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: infrastructure/keycloak/image
+          context: platform/manifests/keycloak/image
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
