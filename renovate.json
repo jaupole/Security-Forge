@@ -20,8 +20,10 @@
   "pinDigests": true,
   "kubernetes": {
     "managerFilePatterns": [
-      "^platform/manifests/.+\\.ya?ml$",
-      "^apps/[^/]+/deploy/.+\\.ya?ml$"
+      "platform/manifests/**/*.yaml",
+      "platform/manifests/**/*.yml",
+      "apps/*/deploy/**/*.yaml",
+      "apps/*/deploy/**/*.yml"
     ]
   },
   "vulnerabilityAlerts": {
@@ -93,7 +95,7 @@
     {
       "description": "Keycloak base image digest in custom Dockerfile",
       "customType": "regex",
-      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile$"],
+      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile"],
       "matchStrings": [
         "ARG KEYCLOAK_BASE_DIGEST=(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
@@ -104,7 +106,7 @@
     {
       "description": "SecLists HIBP blacklist commit pin in Keycloak Dockerfile",
       "customType": "regex",
-      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile$"],
+      "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile"],
       "matchStrings": [
         "ARG PWDB_COMMIT=(?<currentDigest>[a-f0-9]{40})"
       ],
@@ -116,7 +118,7 @@
     {
       "description": "CHART_VER pins in platform/components/*.sh helm install scripts",
       "customType": "regex",
-      "managerFilePatterns": ["^platform/components/.+\\.sh$"],
+      "managerFilePatterns": ["platform/components/*.sh"],
       "matchStrings": [
         "CHART_VER=\"\\$\\{[A-Z_]+:-(?<currentValue>[0-9.]+)\\}\"\\s*\\n.*helm.*--chart\\s+(?<depName>[\\w./-]+)"
       ],
