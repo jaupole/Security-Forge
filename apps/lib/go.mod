@@ -1,12 +1,13 @@
 module github.com/secforge/lib
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/authzed/authzed-go v1.9.0
 	github.com/authzed/grpcutil v0.0.0-20260105210157-e237581949c2
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
+	github.com/lestrrat-go/jwx/v4 v4.0.2
 	google.golang.org/grpc v1.80.0
 )
 
