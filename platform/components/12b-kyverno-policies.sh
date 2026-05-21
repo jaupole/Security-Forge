@@ -35,7 +35,8 @@ echo
 echo "Soak for ~1 week. Then flip one policy at a time:"
 echo "  kubectl patch clusterpolicy <name> --type=merge -p '{\"spec\":{\"validationFailureAction\":\"Enforce\"}}'"
 echo
-echo "Cosign image-signature policy is in stub mode — needs:"
-echo "  1. cosign keypair generation"
-echo "  2. private key in OpenBao + public in policy file"
-echo "  3. switch to Enforce when first signed app deploys"
+echo "Image-signature verification (05-image-signature-verification.yaml):"
+echo "  verify-image-signature-secforge  Enforce  SecForge images (keyless)"
+echo "  verify-image-signature-vendors   Audit    CloudNativePG + SPIFFE"
+echo "  6 vendor images ship no signature — see operator-backlog #41."
+echo "  Registry creds + egress are wired by 12c-kyverno-image-verify-creds.sh."

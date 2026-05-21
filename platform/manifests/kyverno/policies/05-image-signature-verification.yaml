@@ -1,49 +1,108 @@
 # Image signature verification (cosign keyless via Sigstore Fulcio + Rekor).
 #
-# Verifies that images from vendors known to sign their releases via
-# GitHub Actions OIDC carry valid cosign signatures. The verification
-# checks the signature was produced by a GitHub Actions workflow in
-# the expected upstream repository, transparency-logged in Rekor.
+# Split into TWO policies because the enforcement decision differs by who
+# controls the signing:
 #
-# Status: **Audit mode**. Findings appear in ClusterPolicyReports and
-# admission events but are not blocked. After observing a clean week of
-# scans (no false positives from mirror-pulls or rotated keys), flip
-# validationFailureAction to Enforce.
+#   verify-image-signature-secforge  — Enforce. SecForge-built images
+#     (ghcr.io/{secforge,jaupole}/*). Our CI signs every image keyless via
+#     GitHub Actions OIDC; portal + control are confirmed verifying. A
+#     future unsigned or tampered SecForge image is blocked at admission.
 #
-# Verified vendors as of 2026-05-14 (via `cosign verify` on a sample
-# image from each registry):
-#   - ghcr.io/cloudnative-pg/*    — signed by GitHub Actions on
-#                                   github.com/cloudnative-pg/cloudnative-pg
-#   - ghcr.io/spiffe/*            — signed by GitHub Actions on
-#                                   github.com/spiffe/spire
+#   verify-image-signature-vendors   — Audit. Third-party images
+#     (CloudNativePG + SPIFFE). We cannot make vendors sign, and 6 of the
+#     10 in-scope vendor images carry NO cosign signature (all 4
+#     CloudNativePG — the operator ships SLSA attestations only; postgresql
+#     + barman have nothing — plus spiffe-helper + spire-controller-manager;
+#     confirmed 2026-05-21 via cosign verify / cosign tree). Enforcing would
+#     block CloudNativePG and parts of SPIRE cluster-wide. Audit keeps
+#     visibility into which vendor images are unsigned without the outage
+#     risk. Tracked as operator-backlog #41.
 #
-# Adding more vendors:
-#   1. Verify a sample image on the host:
-#        cosign verify ghcr.io/<vendor>/<image>:<tag> \
-#          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#          --certificate-identity-regexp '^https://github.com/<vendor>/'
-#   2. If verification succeeds, append a new rule mirroring the
-#      CNPG/SPIFFE pattern below.
+# Registry auth: ghcr.io/{secforge,jaupole}/* packages are PRIVATE — the
+# secforge rule pulls signatures with the kyverno-vso-rendered
+# ghcr-pull-secret (imageRegistryCredentials, see 03-vso-binding.yaml).
+# Vendor packages are public and pull anonymously. The network path
+# (egress to ghcr.io + sigstore) is the NetworkPolicy in
+# 06-egress-image-verification.yaml.
+#
+# Vetting a new vendor image before adding it to a rule:
+#   cosign verify ghcr.io/<vendor>/<image>:<tag> \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     --certificate-identity-regexp '^https://github.com/<vendor>/'
 #
 # References:
 #   - https://kyverno.io/docs/writing-policies/verify-images/sigstore/
 #   - https://docs.sigstore.dev/cosign/verifying/verify/
 
+---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: verify-image-signature
+  name: verify-image-signature-secforge
   annotations:
-    policies.kyverno.io/title: "Verify vendor image signatures"
+    policies.kyverno.io/title: "Verify SecForge image signatures"
     policies.kyverno.io/category: "Supply Chain"
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Pod
 spec:
   background: false                    # admission-time only; Rekor lookups
                                        # are too slow to scan every pod
-  validationFailureAction: Audit       # flip to Enforce after observation
+  validationFailureAction: Enforce     # our CI signs every image — block unsigned
   webhookConfiguration:
-    failurePolicy: Ignore              # don't block if Sigstore is unreachable
+    failurePolicy: Ignore              # don't wedge admission if Kyverno is down
+  rules:
+    # SecForge-owned images: control + portal today (same keyless CI as the
+    # keycloak overlay — see .github/workflows/*-image-build.yml). The
+    # subject regex covers both the `secforge` org and `jaupole/` user repos
+    # so additional SecForge-built images inherit verification automatically.
+    # IMPORTANT: if you fork this repo to a different GitHub owner, update
+    # the regex to match your own org/user.
+    - name: verify-secforge
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/secforge/*"
+            - "ghcr.io/jaupole/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          # SecForge GHCR packages are PRIVATE. Kyverno pulls the cosign
+          # signature artifact with this read-only credential (rendered by
+          # the kyverno-vso VSO binding, 03-vso-binding.yaml).
+          imageRegistryCredentials:
+            allowInsecureRegistry: false
+            secrets:
+              - ghcr-pull-secret
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/(secforge|jaupole)/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature-vendors
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  background: false
+  # Audit, NOT Enforce: 6 of 10 in-scope vendor images ship no cosign
+  # signature (all CloudNativePG; spiffe-helper; spire-controller-manager).
+  # Enforcing would block CloudNativePG + parts of SPIRE. See
+  # operator-backlog #41 for the path to narrowing/enforcing a true subset.
+  validationFailureAction: Audit
+  webhookConfiguration:
+    failurePolicy: Ignore
   rules:
     - name: verify-cloudnative-pg
       match:
@@ -79,44 +138,5 @@ spec:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
                     subjectRegExp: "^https://github\\.com/spiffe/"
-                    rekor:
-                      url: "https://rekor.sigstore.dev"
-    # SecForge-owned images (currently: keycloak overlay with HIBP blacklist
-    # + recovery-codes/dpop pre-built — see .github/workflows/keycloak-image-build.yml).
-    # The subject regex is intentionally broad against the secforge org so
-    # additional SecForge-built images (member-hub, control, portal, etc.)
-    # automatically inherit verification when CI starts publishing them.
-    # IMPORTANT: if you fork this repo to a different GitHub owner, update
-    # the regex to match your own org/user.
-    - name: verify-secforge
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-      verifyImages:
-        - imageReferences:
-            - "ghcr.io/secforge/*"
-            - "ghcr.io/jaupole/*"
-          required: true
-          mutateDigest: false
-          verifyDigest: false
-          # SecForge GHCR packages are PRIVATE. Kyverno pulls the cosign
-          # signature artifact with this read-only credential (rendered by
-          # the kyverno-vso VSO binding, 03-vso-binding.yaml). The CNPG /
-          # SPIFFE rules above need no credential — those packages are
-          # public and pull anonymously.
-          imageRegistryCredentials:
-            allowInsecureRegistry: false
-            secrets:
-              - ghcr-pull-secret
-          attestors:
-            - entries:
-                - keyless:
-                    issuer: "https://token.actions.githubusercontent.com"
-                    # Accepts signatures from either the `secforge` org repos
-                    # OR `jaupole/` user repos (Security-Forge, ecosystem-control,
-                    # ecosystem-portal as of 2026-05-16). Expand the alternation
-                    # if more SecForge-authored repos start publishing images.
-                    subjectRegExp: "^https://github\\.com/(secforge|jaupole)/"
                     rekor:
                       url: "https://rekor.sigstore.dev"
