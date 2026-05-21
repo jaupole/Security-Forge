@@ -98,6 +98,24 @@
       "description": "k3s + Kubernetes version: never auto-bump; gated by maintenance window",
       "matchPackageNames": ["k3s-io/k3s"],
       "enabled": false
+    },
+    {
+      "description": "jwx: park major (v3/v4) updates — security-critical JWT/DPoP code in apps/lib/api-auth. Dashboard-approve + 2-month soak; v2 minor/patch still flow. See operator-backlog #44.",
+      "matchPackageNames": ["github.com/lestrrat-go/jwx/v2"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "minimumReleaseAge": "60 days"
+    },
+    {
+      "description": "Wazuh SIEM images: coordinated multi-image upgrade — own dashboard entry, not folded into the non-major sweep. See operator-backlog #45.",
+      "matchPackageNames": [
+        "wazuh/wazuh-agent",
+        "wazuh/wazuh-dashboard",
+        "wazuh/wazuh-indexer",
+        "wazuh/wazuh-manager"
+      ],
+      "groupName": "wazuh SIEM images",
+      "dependencyDashboardApproval": true
     }
   ],
   "customManagers": [
