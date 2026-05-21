@@ -36,17 +36,20 @@ metadata:
     nginx.ingress.kubernetes.io/limit-rps: "10"
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
     nginx.ingress.kubernetes.io/limit-connections: "20"
-    # Per-app CSP / Permissions-Policy / X-Frame-Options owned HERE, not
-    # in the cluster-wide secforge-default-headers ConfigMap (per the
-    # 2026-05-14 Wazuh dashboard CSP incident lesson — global CM only
-    # owns nosniff + Referrer-Policy).
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
-      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self 'https://js.stripe.com')";
-      more_set_headers "X-Frame-Options: DENY";
-      more_set_headers "Cross-Origin-Opener-Policy: same-origin";
-    # CORS handled at the application layer (Hono cors middleware).
-    # Setting it here would override the app's per-route policy.
+    # Security response headers (CSP, Permissions-Policy, X-Frame-Options,
+    # Cross-Origin-Opener-Policy) are NOT set on this Ingress.
+    #
+    # They were previously injected with an nginx `configuration-snippet`
+    # annotation — removed 2026-05-21. Snippet annotations are the
+    # CVE-2021-25742 surface (checkov CKV_K8S_153) and, since this cluster
+    # runs ingress-nginx 1.15 with the default `allow-snippet-annotations:
+    # false`, the snippet was silently ignored anyway.
+    #
+    # Per-app security headers belong in the app — Member Hub must serve
+    # them via Hono `secureHeaders()` middleware, the same in-app pattern
+    # control + portal use. The cluster-wide `secforge-default-headers`
+    # add-headers ConfigMap still applies nosniff + Referrer-Policy to
+    # every response. CORS is likewise handled in-app (Hono cors).
 spec:
   ingressClassName: nginx
   tls:
