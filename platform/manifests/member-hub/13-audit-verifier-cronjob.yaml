@@ -54,6 +54,10 @@ kind: CronJob
 metadata:
   name: audit-verifier
   namespace: member-hub
+  annotations:
+    # seccompProfile RuntimeDefault is set at pod + container level;
+    # checkov CKV_K8S_31 does not detect it inside a CronJob jobTemplate.
+    checkov.io/skip1: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
   labels:
     app.kubernetes.io/name: member-hub
     app.kubernetes.io/component: audit-verifier

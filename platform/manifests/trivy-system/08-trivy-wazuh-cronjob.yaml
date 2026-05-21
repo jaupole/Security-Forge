@@ -25,6 +25,7 @@ metadata:
     checkov.io/skip1: "CKV_K8S_38=runs kubectl against the cluster API; the ServiceAccount token is required"
     checkov.io/skip2: "CKV_K8S_22=the reporter runs kubectl (writes a ~/.kube cache); a read-only rootfs is part of the purpose-built-image CVE-backlog follow-up"
     checkov.io/skip3: "CKV_K8S_25=the ensure-output-dir initContainer adds DAC_OVERRIDE to manage the shared output dir written by the non-root reporter"
+    checkov.io/skip4: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
   labels:
     secforge.platform/component: trivy-wazuh
 spec:
