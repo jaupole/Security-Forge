@@ -1,0 +1,12 @@
+# Checkov configuration — SecForge repo.
+#
+# CKV_SECRET_6 ("Base64 High Entropy String") is checkov's entropy
+# heuristic. Verified 2026-05-21: all 12 hits on this repo were ordinary
+# kebab-case config tokens and Kubernetes Secret *name* references
+# (scram-sha-256, minio-root-credentials, spicedb-grpc-tls,
+# barman-cloud-client-tls, openbao-ca-bundle, …) — never secret material.
+# Real secret detection is covered precisely by gitleaks (gate_secrets,
+# 200+ rules) plus the pre-commit hook; this heuristic is pure
+# false-positive noise here, so it is skipped.
+skip-check:
+  - CKV_SECRET_6
