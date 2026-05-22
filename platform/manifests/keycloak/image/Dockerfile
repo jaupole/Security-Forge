@@ -40,14 +40,22 @@ ADD --chmod=0444 --chown=1000:0 --checksum=sha256:${PWDB_SHA256} \
     ${PWDB_URL} \
     /opt/keycloak/data/password-blacklists/Pwdb_top-100000.txt
 
-# Pre-build with the features used by the live deployment so the runtime
-# pod starts with `--optimized` (no per-start Quarkus re-augmentation, no
-# writable rootfs requirement).
+# Pre-build (`kc.sh build`) with EVERY build-time option the live Keycloak CR
+# relies on, so the runtime pod can start with `--optimized`. With --optimized
+# Keycloak skips augmentation and REJECTS any build-time option supplied at
+# runtime that differs from what is baked here — a mismatch crash-loops the
+# pod. KC_HEALTH/METRICS/TRACING_ENABLED + KC_CACHE must stay in lockstep with
+# the CR's additionalOptions (health-enabled, metrics-enabled, tracing-enabled).
 #
-# Adding a feature here: update both this ENV and the live Keycloak CR's
-# kc-features arg if specified; rebuild + rotate image digest.
+# Only build-time options belong here; adding one means updating the CR too.
+# Runtime options (log-level, tracing-endpoint, spi-*, db-url-properties, …)
+# stay in the CR alone.
 ENV KC_FEATURES=recovery-codes,dpop
 ENV KC_DB=postgres
+ENV KC_CACHE=ispn
+ENV KC_HEALTH_ENABLED=true
+ENV KC_METRICS_ENABLED=true
+ENV KC_TRACING_ENABLED=true
 RUN /opt/keycloak/bin/kc.sh build
 
 # ENTRYPOINT + CMD are inherited from the base image; the Keycloak Operator
