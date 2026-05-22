@@ -1,6 +1,6 @@
 # SecForge custom Keycloak image
 
-Produces `ghcr.io/secforge/keycloak@sha256:<digest>` — an overlay of the
+Produces `ghcr.io/jaupole/keycloak@sha256:<digest>` — an overlay of the
 upstream Keycloak base with:
 
 1. **HIBP top-100k password blacklist** baked at
@@ -27,7 +27,7 @@ the GitHub Actions OIDC issuer + this repo's identity regex.
 2. Edit `Dockerfile` — bump `KEYCLOAK_BASE_DIGEST`.
 3. PR. GHA builds + signs. Merge.
 4. Bump `platform/manifests/keycloak/04-keycloak-cr.yaml` `spec.image` to
-   the new `ghcr.io/secforge/keycloak@sha256:<built-digest>` (digest is
+   the new `ghcr.io/jaupole/keycloak@sha256:<built-digest>` (digest is
    in the GHA run summary).
 5. `kubectl apply` the CR. Operator handles the rollout.
 
@@ -61,7 +61,7 @@ Tamper-evident by construction.
 # Requires Docker Buildx ≥ 0.10 (for ADD --checksum support)
 docker buildx build \
   --platform linux/amd64 \
-  --tag ghcr.io/secforge/keycloak:local-test \
+  --tag ghcr.io/jaupole/keycloak:local-test \
   --load \
   platform/manifests/keycloak/image/
 ```

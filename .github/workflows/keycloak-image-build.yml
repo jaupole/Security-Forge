@@ -7,9 +7,14 @@
 #
 # OIDC identity for the Cosign signature is automatic from the
 # permissions.id-token: write claim. The cluster's Kyverno
-# verify-image-signature ClusterPolicy enforces that ghcr.io/secforge/keycloak
+# verify-image-signature ClusterPolicy enforces that ghcr.io/jaupole/keycloak
 # images carry a Cosign signature whose subject regex matches this repo —
 # update the policy if you fork this repo to a different owner.
+#
+# Cosign is pinned to the v2 line: v2.x stores the signature on the legacy
+# sha256-<digest>.sig tag that the cluster's Kyverno reads. Cosign v3 defaults
+# to OCI 1.1 referrer-stored signatures the cluster cannot find. See
+# operator-backlog #48.
 
 name: keycloak-image-build
 
@@ -60,6 +65,12 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pin the cosign binary to the v2 line (the installer action stays
+          # current). v2.6.0 is the final v2 release; it signs to the legacy
+          # sha256-<digest>.sig tag the cluster's Kyverno verifies. Revisit
+          # when the cluster can verify OCI 1.1 referrer signatures.
+          cosign-release: 'v2.6.0'
 
       - name: Resolve image metadata (tags, labels)
         id: meta
@@ -93,7 +104,6 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-          COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"

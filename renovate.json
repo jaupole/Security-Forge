@@ -24,7 +24,7 @@
     "local/security-events-collector",
     "ghcr.io/jaupole/control",
     "ghcr.io/jaupole/portal",
-    "ghcr.io/secforge/keycloak",
+    "ghcr.io/jaupole/keycloak",
     "public.ecr.aws/curl/curl",
     "ghcr.io/authzed/spicedb-operator"
   ],
