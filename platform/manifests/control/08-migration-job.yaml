@@ -74,7 +74,7 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          image: ghcr.io/jaupole/control@sha256:214a95955ca85aad680e76c6f0ad7ce36be7700e32449d8b9d7366814b8ff537
+          image: ghcr.io/jaupole/control@sha256:7448e54226a6620d57ea01c65ae9f31fcd7d100a48d7ae10f92b4616f952c5ab
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint
