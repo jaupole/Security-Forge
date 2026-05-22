@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-image-build
+  namespace: image-builds
+  labels:
+    secforge.platform/component: image-build
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      annotations:
+        backup.velero.io/backup-volumes-excludes: workspace,output
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 0  # kaniko needs root in container for build chown ops
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kaniko
+          image: gcr.io/kaniko-project/executor:v1.23.2
+          args:
+            - --dockerfile=/workspace/Dockerfile
+            - --context=dir:///workspace
+            - --no-push
+            - --tar-path=/output/keycloak-optimized.tar
+            - --destination=localhost/secforge/keycloak:26.3.3-optimized
+            - --single-snapshot
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          resources:
+            requests: { cpu: 200m, memory: 1Gi }
+            limits:   { cpu: 2, memory: 4Gi }
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: output
+              mountPath: /output
+      volumes:
+        - name: workspace
+          configMap:
+            name: keycloak-optimized-dockerfile
+        - name: output
+          hostPath:
+            path: /var/lib/secforge/image-builds/keycloak
+            type: DirectoryOrCreate

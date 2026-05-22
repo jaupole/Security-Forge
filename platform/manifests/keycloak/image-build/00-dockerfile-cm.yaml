@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-optimized-dockerfile
+  namespace: image-builds
+data:
+  Dockerfile: |
+    # Two-stage build: run kc.sh build in stage 1 with all features baked
+    # in, copy the optimized result into a clean runtime stage.
+    FROM quay.io/keycloak/keycloak:26.3.3 as builder
+
+    ENV KC_DB=postgres
+    ENV KC_CACHE=ispn
+    ENV KC_HEALTH_ENABLED=true
+    ENV KC_METRICS_ENABLED=true
+    ENV KC_TRACING_ENABLED=true
+    ENV KC_FEATURES=recovery-codes,dpop
+
+    RUN /opt/keycloak/bin/kc.sh build
+
+    FROM quay.io/keycloak/keycloak:26.3.3
+    COPY --from=builder /opt/keycloak/lib/quarkus/ /opt/keycloak/lib/quarkus/
+    COPY --from=builder /opt/keycloak/conf/ /opt/keycloak/conf/
