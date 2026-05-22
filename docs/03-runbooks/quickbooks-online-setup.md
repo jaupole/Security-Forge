@@ -35,11 +35,15 @@ So there are two credential layers:
 3. Under **Redirect URIs**, add — exactly, no trailing slash:
 
    ```
-   https://control.secforge.dev/api/v1/accounting/qbo/callback
+   https://qbo.secforge.dev/callback
    ```
 
+   The callback runs on the dedicated public host `qbo.secforge.dev` —
+   `control.secforge.dev` is tailnet-only, so Intuit can't reach it.
    This must byte-match `QBO_REDIRECT_URI` in
-   `platform/manifests/control/09-backend-deployment.yaml`.
+   `platform/manifests/control/09-backend-deployment.yaml`; the
+   `qbo.secforge.dev` ingress (`13-qbo-ingress.yaml`) rewrites
+   `/callback` to the real internal API route.
 
 ### 2. Write the credentials to OpenBao
 

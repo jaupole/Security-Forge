@@ -61,7 +61,7 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          image: ghcr.io/jaupole/control@sha256:fd0cd7e321484f95c3f88c3775caeafeddbe8c4779a563b00c89d9f87540bee6
+          image: ghcr.io/jaupole/control@sha256:6a7ff2c6aca7bc497f9ff8eb503f8efa733040e714017b69ca1e75087af4488b
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
@@ -118,13 +118,21 @@ spec:
             # and this holds a Transit key *name*, not key material.
             - { name: TRANSIT_KEYNAME, value: pii-encryption }
             - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
-            # QuickBooks Online — non-secret config. The callback URL must
-            # match the redirect URI registered in the Intuit app exactly.
+            # QuickBooks Online — non-secret config. The QBO OAuth
+            # callback runs on a dedicated PUBLIC host (qbo.${DOMAIN}) —
+            # control.${DOMAIN} is tailnet-only and Intuit can't reach it.
+            # QBO_REDIRECT_URI is the value to register in the Intuit app,
+            # exactly; the qbo.${DOMAIN} ingress (13-qbo-ingress.yaml)
+            # rewrites /callback to the real API route. The OAuth state
+            # cookie is set during connect (on control.${DOMAIN}) and read
+            # on the callback (qbo.${DOMAIN}) — different subdomains — so
+            # QBO_STATE_COOKIE_DOMAIN scopes it to the shared parent.
             # QBO_CLIENT_ID / QBO_CLIENT_SECRET arrive via the optional
             # control-qbo-secrets envFrom below. Flip QBO_ENVIRONMENT to
             # `production` when going live. See
             # docs/03-runbooks/quickbooks-online-setup.md.
-            - { name: QBO_REDIRECT_URI, value: "https://control.${DOMAIN}/api/v1/accounting/qbo/callback" }
+            - { name: QBO_REDIRECT_URI, value: "https://qbo.${DOMAIN}/callback" }
+            - { name: QBO_STATE_COOKIE_DOMAIN, value: "${DOMAIN}" }
             - { name: QBO_ENVIRONMENT, value: sandbox }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,

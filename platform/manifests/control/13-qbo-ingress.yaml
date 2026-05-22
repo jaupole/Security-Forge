@@ -1,0 +1,61 @@
+# Public ingress for the QuickBooks OAuth callback — qbo.${DOMAIN}.
+#
+# WHY A SEPARATE PUBLIC HOST: control.${DOMAIN} is tailnet-only (no
+# public DNS — see 12-ingress.yaml). The QBO OAuth flow ends with Intuit
+# redirecting the operator's browser to a redirect URI that Intuit must
+# accept and the browser must reach, so the callback gets its own host
+# with a PUBLIC DNS A/AAAA record: qbo.${DOMAIN} → the node IP.
+#
+# SCOPE: deliberately one path — /callback. nginx rewrites it to the
+# real internal API route on the control backend; every other path on
+# this host falls through to a 404. The callback is a public,
+# unauthenticated-by-design route (CSRF-protected by an encrypted,
+# single-use OAuth state cookie — see routes/accounting-config.ts), so
+# this narrow exposure matches its threat model. There is deliberately
+# NO source-range allowlist: Intuit's redirect lands an ordinary browser
+# here, so it must be publicly reachable.
+#
+# TLS: per-host Let's Encrypt via DNS01 (Cloudflare), same cluster
+# issuer as the control ingress — cert-manager issues into `qbo-tls`.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qbo-callback
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+  annotations:
+    cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Rewrite the clean public path to the control API's real callback
+    # route. Static target (no capture group) — every request under
+    # /callback maps to this one route; nginx preserves the query string
+    # (Intuit appends ?code=…&state=…&realmId=…).
+    nginx.ingress.kubernetes.io/rewrite-target: /api/v1/accounting/qbo/callback
+    # The encrypted OAuth state cookie rides on the callback request —
+    # give nginx header headroom, matching the control ingress.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Tight rate limit — this path sees only occasional OAuth redirects.
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - qbo.${DOMAIN}
+      secretName: qbo-tls
+  rules:
+    - host: qbo.${DOMAIN}
+      http:
+        paths:
+          - path: /callback
+            pathType: Prefix
+            backend:
+              service:
+                name: control
+                port:
+                  number: 80
