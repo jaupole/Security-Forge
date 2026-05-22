@@ -30,9 +30,10 @@ automountServiceAccountToken: false
 # distinguish dry-run. A ClusterRole (not a Role in `control`) is used
 # deliberately: it carries NO namespace-ordering dependency, so this
 # manifest applies cleanly on a fresh cluster regardless of when the
-# `control` namespace is created. The grant is one verb on one resource
-# (`create pods`) — narrow, and nowhere near the cluster-admin / *:*
-# bright line. The CronJob only ever issues dry-run creates.
+# `control` namespace is created. The grant is narrow — `create pods`
+# plus read-only `get namespaces` (used by the self-test's fresh-install
+# guard) — and nowhere near the cluster-admin / *:* bright line. The
+# CronJob only ever issues dry-run creates.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -44,6 +45,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
