@@ -1,0 +1,26 @@
+# Wazuh dashboard's OIDC plugin calls Keycloak's token endpoint at the
+# public URL (auth.secforge.dev), which resolves to 65.21.25.40:443.
+# Traffic hairpins through the host's external interface into
+# ingress-nginx hostPort 443. The egress NP needs to allow the public
+# IP destination explicitly — pod-CIDR / service-CIDR allows don't
+# cover ipBlocks pointing at the host's own public IP.
+#
+# Cleaner future: change Wazuh OIDC connect_url to
+# https://keycloak-service.keycloak.svc.cluster.local:8443/... so the
+# backchannel stays in-cluster. Defer until ready to touch wazuh chart.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-public-443
+  namespace: wazuh
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - {port: 443, protocol: TCP}

@@ -1,0 +1,18 @@
+# Grafana SSO calls Keycloak via the public URL too. Same hairpin
+# pattern as wazuh.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-public-443
+  namespace: observability
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - {port: 443, protocol: TCP}

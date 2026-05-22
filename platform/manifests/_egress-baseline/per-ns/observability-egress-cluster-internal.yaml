@@ -1,0 +1,26 @@
+# Observability needs to scrape pods cluster-wide (kube-prometheus-stack
+# ServiceMonitors with namespaceSelector={} match every ns). Loki and
+# Tempo write to MinIO via ClusterIP service. Grafana queries Keycloak
+# for OIDC. Rather than enumerate every legitimate destination, this NP
+# allows egress to the pod-CIDR + service-CIDR while default-deny-egress
+# still blocks external internet.
+#
+# What this blocks: external Internet from observability pods (no
+# webhooks, no external SMTP, no SaaS exfil paths).
+# What this allows: any pod-to-pod or pod-to-service inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-cluster-internal
+  namespace: observability
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.42.0.0/16   # k3s pod CIDR
+        - ipBlock:
+            cidr: 10.43.0.0/16   # k3s service CIDR

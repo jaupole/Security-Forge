@@ -1,0 +1,24 @@
+# Added 2026-05-12 — Wazuh dashboard fetches OIDC well-known + JWKS
+# from Keycloak as a backchannel during token validation.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-keycloak
+  namespace: wazuh
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - {port: 8080, protocol: TCP}
+        - {port: 443, protocol: TCP}    # keycloak-auth-internal Service (443->8443) for in-cluster OIDC backchannel
+        - {port: 8443, protocol: TCP}   # keycloak-service direct

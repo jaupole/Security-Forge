@@ -1,0 +1,26 @@
+# CNPG postgres instance pushes WAL archives + base backups to MinIO
+# via the barman-cloud-cnpg.io plugin. Added 2026-05-13 — the default
+# egress baseline didn't include this destination, so WAL archive was
+# failing every few seconds (errors visible in Loki: 'Error invoking
+# barman-cloud-wal-archive', 'Failed archiving WAL: PostgreSQL will
+# retry'). Same pattern as velero/allow-egress-to-minio.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: keycloak
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+          podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - {port: 9000, protocol: TCP}
