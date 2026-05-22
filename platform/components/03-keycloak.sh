@@ -85,8 +85,12 @@ fi
 kubectl apply -f "$M/03-serviceaccount.yaml"
 
 # 7. Keycloak CR (envsubst for ${DOMAIN})
-echo ">>> Applying Keycloak CR"
-"$LIB/apply-manifest.sh" "$M/04-keycloak-cr.yaml"
+# Server-side apply: the live CR's kubectl.kubernetes.io/last-applied-
+# configuration annotation is corrupt (carries metadata.resourceVersion from a
+# past apply of a raw `kubectl get -o yaml` dump), which breaks client-side
+# apply's 3-way merge. SSA does not use that annotation. See operator-backlog #52.
+echo ">>> Applying Keycloak CR (server-side)"
+"$LIB/apply-manifest.sh" --server-side "$M/04-keycloak-cr.yaml"
 
 # 8. Ingress (envsubst for ${DOMAIN}, ${LE_ISSUER})
 echo ">>> Applying Ingress"
