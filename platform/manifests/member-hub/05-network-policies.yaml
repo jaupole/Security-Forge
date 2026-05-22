@@ -257,6 +257,46 @@ spec:
         - { protocol: TCP, port: 9000 }
 
 ---
+# Egress to the public internet on HTTPS for outbound third-party API
+# calls — Stripe API (api.stripe.com) for payment operations, Postmark
+# and other transactional-email providers, and the natural home for any
+# future outbound integration.
+#
+# Standard k8s NetworkPolicies don't support FQDN-based egress, so this
+# is by IP CIDR: 0.0.0.0/0 on TCP/443 EXCEPT private + link-local
+# ranges, so internal traffic still has to go through the explicit
+# allow rules above. Future hardening (post Istio Ambient): replace
+# with FQDN egress through an egress gateway.
+#
+# Scoped to the API container (app.kubernetes.io/name=member-hub) only —
+# the CNPG postgres pod has no legitimate reason to reach the public
+# internet (its barman→MinIO traffic is handled by allow-egress-to-minio).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: member-hub
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+
+---
 # CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
 # the member-hub-db pod for reconciliation, probes, and barman metrics.
 apiVersion: networking.k8s.io/v1

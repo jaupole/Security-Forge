@@ -24,6 +24,17 @@ path "secret/metadata/apps/member-hub/runtime" {
   capabilities = ["read"]
 }
 
+# barman-cloud → MinIO credentials for the member-hub-db CNPG cluster's
+# WAL archiving + base backups. Same shared path as every other CNPG
+# cluster's barman; the cnpg-minio-credentials-vso VaultStaticSecret in
+# 04-vso-bindings.yaml reads it under this app's K8s-auth role.
+path "secret/data/minio/cnpg/credentials" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/cnpg/credentials" {
+  capabilities = ["read"]
+}
+
 # Field-level PII encryption — member emails, future invitations, etc.
 # Closes audit rule 38 once .Encrypt() call sites land in code.
 path "transit/encrypt/pii-encryption" {
