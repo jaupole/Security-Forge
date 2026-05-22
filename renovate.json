@@ -160,6 +160,17 @@
       ],
       "datasourceTemplate": "helm",
       "registryUrlTemplate": "https://kubernetes-charts.storage.googleapis.com/"
+    },
+    {
+      "description": "MinIO chart version pin in 07a-minio.sh — the generic CHART_VER customManager above can't infer the chart's actual repo URL (https://charts.min.io) from the surrounding script context, so it falls through to the deprecated google bucket and silently never matches. This pins MinIO explicitly. (Operator-backlog #55 / #56 — without this, MinIO has gone 17 months stale unnoticed.)",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07a-minio.sh"],
+      "matchStrings": [
+        "CHART_VER=\"\\$\\{MINIO_CHART_VER:-(?<currentValue>[0-9.]+)\\}\""
+      ],
+      "depNameTemplate": "minio",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://charts.min.io"
     }
   ]
 }
