@@ -96,6 +96,9 @@ kubectl apply -f "$M/04-certificate.yaml"
 # 6. NetworkPolicies
 echo ">>> Applying NetworkPolicies"
 kubectl apply -f "$M/05-networkpolicies.yaml"
+# Layer-A egress baseline — per-namespace allows (operator-backlog #51).
+kubectl apply -f "$M/09-egress-otel.yaml"
+kubectl apply -f "$M/10-egress-to-minio.yaml"
 
 # 7. SpiceDBCluster CR
 echo ">>> Applying SpiceDBCluster CR"

@@ -53,6 +53,9 @@ bao() {
 green "==> apply observability namespace + base NetworkPolicies"
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/01-namespace.yaml"
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/02-default-deny-ingress.yaml"
+# Layer-A egress baseline — per-namespace allows (operator-backlog #51).
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/11-egress-cluster-internal.yaml"
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/12-egress-to-public-443.yaml"
 
 # 2. Provision (or reuse) Tempo MinIO user + scoped policy
 green "==> provision MinIO user tempo-user (scoped to tempo-traces)"

@@ -32,6 +32,10 @@ set -a; source "$PLATFORM_DIR/globals.env"; set +a
 echo ">>> Creating keycloak namespace"
 kubectl apply -f "$M/01-namespace.yaml"
 
+# 1b. Layer-A egress baseline — per-namespace allows (operator-backlog #51).
+kubectl apply -f "$M/09-egress-otel.yaml"
+kubectl apply -f "$M/10-egress-to-minio.yaml"
+
 # 2. Operator CRDs
 echo ">>> Installing Keycloak Operator CRDs"
 kubectl apply -f "$M/operator/keycloaks.crd.yaml"

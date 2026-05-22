@@ -32,6 +32,9 @@ kubectl apply -f "$M/01-namespace.yaml"
 # 2. NetworkPolicies (BEFORE workloads to avoid race)
 echo ">>> Applying NetworkPolicies"
 kubectl apply -f "$M/02-networkpolicies.yaml"
+# Layer-A egress baseline — per-namespace allows (operator-backlog #51).
+kubectl apply -f "$M/04-egress-keycloak.yaml"
+kubectl apply -f "$M/05-egress-to-public-443.yaml"
 
 # 3. Pre-create credentials Secrets (idempotent; preserves existing).
 # Wazuh enforces 8-64 chars / mixed case / digit / special. We restrict

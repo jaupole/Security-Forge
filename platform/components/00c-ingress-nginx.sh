@@ -22,6 +22,9 @@ NS=ingress-nginx
 # 2. Default security-headers ConfigMap (consumed by controller.config.add-headers)
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/ingress-nginx/02-default-headers-configmap.yaml"
 
+# 2b. Layer-A egress baseline — per-namespace allow (operator-backlog #51).
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/ingress-nginx/03-egress-cluster-internal.yaml"
+
 # 3. Helm install
 "$LIB/install-helm.sh" \
   --release ingress-nginx --namespace "$NS" \
