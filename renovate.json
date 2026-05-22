@@ -78,18 +78,11 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Keycloak base image — operator review before merge (manual flip + image-build pipeline)",
+      "description": "Keycloak base image — operator review before merge. Both version and digest updates surface on the dependency dashboard and merge only on operator approval; merging runs the keycloak-image-build pipeline, then the CR digest is cut over by hand (operator-backlog #48).",
       "matchManagers": ["regex"],
       "matchPackageNames": ["quay.io/keycloak/keycloak"],
       "dependencyDashboardApproval": true,
       "labels": ["keycloak", "manual-review"]
-    },
-    {
-      "description": "Keycloak base image — digest refreshes only, NO version bumps. The customManager templates currentValue (26.3.3) instead of capturing it from the Dockerfile (which carries only the digest), so Renovate cannot apply a version change and fails the branch with 'update failure'. A Keycloak version bump is a deliberate operator action: edit the Dockerfile ARG + currentValueTemplate by hand, through the image-build pipeline (operator-backlog #48).",
-      "matchManagers": ["regex"],
-      "matchPackageNames": ["quay.io/keycloak/keycloak"],
-      "matchUpdateTypes": ["major", "minor", "patch"],
-      "enabled": false
     },
     {
       "description": "SecLists HIBP password blacklist: yearly cadence is fine",
@@ -135,15 +128,16 @@
   ],
   "customManagers": [
     {
-      "description": "Keycloak base image digest in custom Dockerfile",
+      "description": "Keycloak version + base-image digest in the custom Dockerfile. matchStringsStrategy 'combination' builds one dependency from the KEYCLOAK_VERSION (currentValue) and KEYCLOAK_BASE_DIGEST (currentDigest) ARGs, so Renovate can apply both version and digest updates rather than only the digest.",
       "customType": "regex",
       "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile"],
+      "matchStringsStrategy": "combination",
       "matchStrings": [
+        "ARG KEYCLOAK_VERSION=(?<currentValue>\\S+)",
         "ARG KEYCLOAK_BASE_DIGEST=(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "depNameTemplate": "quay.io/keycloak/keycloak",
-      "datasourceTemplate": "docker",
-      "currentValueTemplate": "26.3.3"
+      "datasourceTemplate": "docker"
     },
     {
       "description": "SecLists HIBP blacklist commit pin in Keycloak Dockerfile",

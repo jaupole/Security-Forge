@@ -11,12 +11,18 @@
 #   - per-start cost: without `kc.sh build` pre-augmentation, Quarkus
 #     re-augments on every pod start (slow + needs writable rootfs)
 #
-# Output image: ghcr.io/secforge/keycloak@sha256:<digest> (signed via Cosign
+# Output image: ghcr.io/jaupole/keycloak@sha256:<digest> (signed via Cosign
 # keyless from GitHub Actions OIDC — see .github/workflows/keycloak-image-build.yml).
 
-ARG KEYCLOAK_BASE_DIGEST=sha256:5afd40414096432903a5374ba4ba70b931dcca598a6bd9f44239fe66ef8d9737
-# checkov:skip=CKV_DOCKER_7: the base image is digest-pinned via the KEYCLOAK_BASE_DIGEST ARG above — stronger than a version tag; checkov cannot resolve the ARG-based digest.
-FROM quay.io/keycloak/keycloak@${KEYCLOAK_BASE_DIGEST}
+# Keycloak version + base-image digest. KEYCLOAK_VERSION is a real ARG (not a
+# Renovate-only template) so Renovate's customManager can surface AND apply
+# Keycloak version bumps; KEYCLOAK_BASE_DIGEST pins the exact build of that
+# version. Bump them together. FROM uses tag@digest — the digest still wins
+# for what is pulled; the tag is for human + Renovate readability.
+ARG KEYCLOAK_VERSION=26.3.3
+ARG KEYCLOAK_BASE_DIGEST=sha256:6a7217a100bd3e5de4063a27a538ef999a3c5a88c4b4ec0ffc0a642aee7b2597
+# checkov:skip=CKV_DOCKER_7: the base image is pinned by digest via KEYCLOAK_BASE_DIGEST (stronger than any tag); the :${KEYCLOAK_VERSION} tag is for readability/Renovate tracking only. checkov cannot resolve the ARG-based digest.
+FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}@${KEYCLOAK_BASE_DIGEST}
 
 # HIBP-derived top-100k password blacklist. Source: danielmiessler/SecLists
 # (de facto reference set used by the security community). Pinned to a
