@@ -1,0 +1,179 @@
+# ADR-0013 outbound-secrets guardrail self-test (operator-backlog #54).
+#
+# Once a week, prove the no-secret-shaped-env-vars Kyverno policy still
+# bites: server-dry-run a Pod carrying a secret-shaped env var (TEST_SECRET)
+# into the `control` namespace and assert Kyverno REJECTS it. If the Pod is
+# admitted, the guardrail has silently regressed (policy deleted, disabled,
+# scoped away, or flipped back to Audit) and the CronJob fails — surfacing
+# the regression instead of letting it go unnoticed.
+#
+# The probe Pod is otherwise fully PSS-restricted-compliant and uses an
+# allow-listed image, so the only admission failure it can trigger is the
+# secret-shaped-env policy; the test greps the denial for the policy name
+# to be sure the rejection is the one it expects.
+#
+# Nothing is ever created — the probe is a server-side dry-run.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: guardrail-selftest
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/name: guardrail-selftest
+    secforge.platform/component: kyverno
+automountServiceAccountToken: false
+
+---
+# A server-dry-run create still requires the `create` verb — RBAC does not
+# distinguish dry-run. A ClusterRole (not a Role in `control`) is used
+# deliberately: it carries NO namespace-ordering dependency, so this
+# manifest applies cleanly on a fresh cluster regardless of when the
+# `control` namespace is created. The grant is one verb on one resource
+# (`create pods`) — narrow, and nowhere near the cluster-admin / *:*
+# bright line. The CronJob only ever issues dry-run creates.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: guardrail-selftest-probe
+  labels:
+    app.kubernetes.io/name: guardrail-selftest
+    secforge.platform/component: kyverno
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: guardrail-selftest-probe
+  labels:
+    app.kubernetes.io/name: guardrail-selftest
+    secforge.platform/component: kyverno
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: guardrail-selftest-probe
+subjects:
+  - kind: ServiceAccount
+    name: guardrail-selftest
+    namespace: kyverno
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: guardrail-selftest
+  namespace: kyverno
+  annotations:
+    checkov.io/skip1: "CKV_K8S_38=the job runs kubectl; the ServiceAccount token is required"
+    checkov.io/skip2: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+  labels:
+    app.kubernetes.io/name: guardrail-selftest
+    secforge.platform/component: kyverno
+spec:
+  # Mondays 07:00 UTC — weekly, per operator-backlog #54.
+  schedule: "0 7 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: guardrail-selftest
+        spec:
+          serviceAccountName: guardrail-selftest
+          restartPolicy: Never
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: selftest
+              # chainguard/kubectl :latest-dev — wolfi-based, near-zero CVE,
+              # ships /bin/sh + busybox alongside kubectl. Digest-pinned;
+              # cgr.dev/chainguard/* is on the restrict-image-registries
+              # allow-list.
+              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:6fce6215d0b84c5c4a686858fd46cec7c978608bbd4abff864800f0e168bef1d
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 200m, memory: 128Mi }
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  echo "ADR-0013 guardrail self-test — asserting no-secret-shaped-env-vars"
+                  echo "rejects a secret-shaped-env Pod in the control namespace."
+
+                  # Fresh-install guard: if the control namespace does not
+                  # exist yet, there is nothing to test — skip cleanly.
+                  if ! kubectl get namespace control >/dev/null 2>&1; then
+                    echo "control namespace not present yet; skipping self-test."
+                    exit 0
+                  fi
+
+                  # An otherwise fully-compliant Pod whose ONLY admission
+                  # violation is a secret-shaped env name (TEST_SECRET).
+                  PROBE='apiVersion: v1
+                  kind: Pod
+                  metadata:
+                    name: guardrail-selftest-probe
+                    namespace: control
+                  spec:
+                    automountServiceAccountToken: false
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 65532
+                      seccompProfile: { type: RuntimeDefault }
+                    containers:
+                      - name: probe
+                        image: cgr.dev/chainguard/kubectl:latest-dev@sha256:6fce6215d0b84c5c4a686858fd46cec7c978608bbd4abff864800f0e168bef1d
+                        command: ["true"]
+                        env:
+                          - { name: TEST_SECRET, value: guardrail-selftest-dummy }
+                        resources:
+                          requests: { cpu: 10m, memory: 16Mi }
+                          limits:   { cpu: 50m, memory: 32Mi }
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          runAsNonRoot: true
+                          capabilities: { drop: ["ALL"] }
+                          seccompProfile: { type: RuntimeDefault }'
+
+                  # Server-side dry-run — goes through Kyverno admission,
+                  # creates nothing. `if` suspends set -e so a rejection
+                  # (non-zero) is captured rather than aborting the script.
+                  if OUT=$(printf '%s\n' "$PROBE" \
+                      | kubectl create --dry-run=server -f - 2>&1); then
+                    echo "$OUT"
+                    echo "FAIL: guardrail REGRESSED — a Pod with a secret-shaped env"
+                    echo "      (TEST_SECRET) was ADMITTED to the control namespace."
+                    exit 1
+                  fi
+                  echo "$OUT"
+                  if printf '%s' "$OUT" | grep -q 'no-secret-shaped-env-vars'; then
+                    echo "PASS: no-secret-shaped-env-vars rejected the probe — guardrail intact."
+                    exit 0
+                  fi
+                  echo "FAIL: the probe was rejected, but NOT by no-secret-shaped-env-vars"
+                  echo "      — guardrail status could not be confirmed."
+                  exit 1

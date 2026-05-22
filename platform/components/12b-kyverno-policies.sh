@@ -24,6 +24,11 @@ for f in "$PLATFORM_DIR/manifests/kyverno/policies/"*.yaml; do
   "$LIB/apply-manifest.sh" "$f"
 done
 
+# Weekly guardrail self-test CronJob (operator-backlog #54) — proves the
+# no-secret-shaped-env-vars policy still rejects a secret-shaped Pod.
+green "==> apply guardrail self-test CronJob"
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/kyverno/07-guardrail-selftest.yaml"
+
 echo
 green "✓ Kyverno policies applied (Audit mode)."
 echo
