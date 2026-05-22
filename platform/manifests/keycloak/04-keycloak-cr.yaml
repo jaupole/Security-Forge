@@ -142,11 +142,9 @@ spec:
       spec:
         serviceAccountName: keycloak
         automountServiceAccountToken: true
-        # Private GHCR image — the kubelet needs the pull credential.
-        # ghcr-pull-secret lives in the keycloak namespace (operator-backlog
-        # #48; a VSO-rendered VaultStaticSecret is a tracked follow-up).
-        imagePullSecrets:
-          - name: ghcr-pull-secret
+        # imagePullSecrets for the private GHCR image are on the keycloak
+        # ServiceAccount (03-serviceaccount.yaml), NOT here — the Keycloak
+        # Operator does not propagate imagePullSecrets from this podTemplate.
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
