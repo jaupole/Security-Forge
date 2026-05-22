@@ -1,0 +1,71 @@
+# Inject safe default resource requests/limits into any container that
+# doesn't declare them. Pairs with 02-require-resource-limits.yaml:
+# this mutate fires at admission BEFORE the validate, so any pod that
+# reaches the validate already has full requests+limits.
+#
+# Defaults are conservative — small enough that they won't displace
+# legitimate workloads, large enough that lightweight sidecars
+# (config-reloaders, log shippers) run comfortably:
+#   requests: cpu 10m, memory 32Mi
+#   limits:   cpu 500m, memory 512Mi
+#
+# Why these numbers:
+#   - cpu 10m: ~1% of a core — kube scheduler treats it as 'fits anywhere'
+#   - memory 32Mi: minimum for any Go/Java/Node sidecar
+#   - cpu 500m: half a core ceiling; a misbehaving sidecar can't run
+#     away with the whole node
+#   - memory 512Mi: enough headroom for most reloader/sidecar workloads
+#
+# Excludes match the validate policy + adds default ns (we lock that
+# down with pod-security.kubernetes.io/enforce=restricted, so anything
+# landing there is suspicious anyway and shouldn't get free defaults).
+#
+# Added 2026-05-12.
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-default-resources
+  annotations:
+    policies.kyverno.io/title: 'Default Resource Requests/Limits'
+    policies.kyverno.io/category: 'Best Practices'
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: 'Pod'
+spec:
+  background: false              # mutate fires at admission only
+  rules:
+    - name: inject-default-resources
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kyverno
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - default
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              - (name): '*'
+                resources:
+                  requests:
+                    +(cpu): 10m
+                    +(memory): 32Mi
+                  limits:
+                    +(cpu): 500m
+                    +(memory): 512Mi
+            initContainers:
+              - (name): '*'
+                resources:
+                  requests:
+                    +(cpu): 10m
+                    +(memory): 32Mi
+                  limits:
+                    +(cpu): 500m
+                    +(memory): 512Mi

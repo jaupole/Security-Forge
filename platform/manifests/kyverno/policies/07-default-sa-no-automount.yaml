@@ -1,0 +1,29 @@
+# Auto-mutate: every default ServiceAccount has automountServiceAccountToken=false.
+# Pods that explicitly need a SA token must declare their own ServiceAccount with
+# automountServiceAccountToken=true (or set the field on the pod spec).
+#
+# Closes kube-bench 5.1.5 / 5.1.6 — default SA tokens should not be auto-mounted.
+# Applied 2026-05-14 via checklist-auditor follow-up.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-sa-no-automount
+  annotations:
+    policies.kyverno.io/title: "Disable token automount on default ServiceAccounts"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/category: "Security"
+    policies.kyverno.io/subject: ServiceAccount
+spec:
+  background: true
+  rules:
+    - name: patch-default-sa
+      match:
+        any:
+          - resources:
+              kinds:
+                - ServiceAccount
+              names:
+                - default
+      mutate:
+        patchStrategicMerge:
+          automountServiceAccountToken: false
