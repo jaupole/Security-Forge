@@ -47,11 +47,18 @@
     <group>openbao,audit,</group>
   </rule>
 
-  <!-- Auth/policy denial (response side carries the error). -->
+  <!-- Auth/policy denial for an authenticated actor. The error string is
+       at the TOP LEVEL of the OpenBao audit event, not nested under
+       `response` — the original `response.error` path never matched, so
+       this rule never fired (operator-backlog #28). Uses the same `error`
+       path as rule 100306. 100300's auth.display_name sentinel scopes
+       this to known-actor errors (policy denial on a write, permission
+       error, …); anonymous read-side failures carry no display_name and
+       are handled by 100306 instead. -->
   <rule id="100301" level="8">
     <if_sid>100300</if_sid>
-    <field name="response.error">\.+</field>
-    <description>OpenBao auth/policy error: actor=$(auth.display_name) path=$(request.path) error=$(response.error)</description>
+    <field name="error">\.+</field>
+    <description>OpenBao auth/policy error: actor=$(auth.display_name) path=$(request.path) error=$(error)</description>
     <group>openbao,audit,authentication_failed,</group>
   </rule>
 
