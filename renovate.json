@@ -85,6 +85,13 @@
       "labels": ["keycloak", "manual-review"]
     },
     {
+      "description": "Keycloak base image — digest refreshes only, NO version bumps. The customManager templates currentValue (26.3.3) instead of capturing it from the Dockerfile (which carries only the digest), so Renovate cannot apply a version change and fails the branch with 'update failure'. A Keycloak version bump is a deliberate operator action: edit the Dockerfile ARG + currentValueTemplate by hand, through the image-build pipeline (operator-backlog #48).",
+      "matchManagers": ["regex"],
+      "matchPackageNames": ["quay.io/keycloak/keycloak"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "enabled": false
+    },
+    {
       "description": "SecLists HIBP password blacklist: yearly cadence is fine",
       "matchManagers": ["regex"],
       "matchPackageNames": ["danielmiessler/SecLists"],
