@@ -1,0 +1,47 @@
+# Line-ending policy for the Security Forge repo.
+#
+# The working copy is edited on Windows; the deploy box (~/secforge) is a Linux
+# git checkout that runs `git pull --ff-only`. Forcing LF everywhere keeps the
+# repo, the Windows working tree, and the box byte-identical, and stops the
+# mixed-line-ending pre-commit hook from firing on nearly every commit.
+#
+# These attributes override per-machine core.autocrlf, so behaviour is the same
+# regardless of how any contributor's git is configured.
+
+# Default: auto-detect text vs binary; normalize detected text to LF in the
+# repo and on checkout.
+* text=auto eol=lf
+
+# Files executed or parsed on the Linux box — CRLF here is a real bug
+# (a CRLF in a `#!/usr/bin/env bash` line breaks the shebang). Mark them as
+# text explicitly so git never mis-detects them as binary.
+*.sh         text eol=lf
+*.bash       text eol=lf
+*.py         text eol=lf
+*.go         text eol=lf
+Dockerfile   text eol=lf
+
+# Binary file types — never normalize line endings, never diff as text.
+# None are tracked today; declared defensively so a future image, font, or
+# keystore added to the repo is handled correctly without another edit here.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.tar    binary
+*.tgz    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.jar    binary
+*.p12    binary
+*.pfx    binary
+*.jks    binary
+*.der    binary
+*.wasm   binary
