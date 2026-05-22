@@ -1,0 +1,39 @@
+# NetworkPolicy: allow the wazuh-manager pod to reach the public internet
+# on TCP/443. The vulnerability-scanner module's content-updater pulls
+# from cti.wazuh.com (Cloudflare CDN) and packages.wazuh.com (AWS CDN);
+# both have rotating IPs, so pinning CIDRs would break daily. We instead
+# allow 0.0.0.0/0:443 with private ranges excluded, scoped to ONE pod
+# (the manager) — limited blast radius vs blanket egress.
+#
+# Without this, content-updater errors out with:
+#   "Couldn't run full content download: Error -1 from server: Could not
+#    connect to server"
+# and vulnerability-detection silently stops working.
+#
+# Lives outside the vendored chart so helm upgrade can't drop it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-manager-internet-https
+  namespace: wazuh
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: manager
+      app.kubernetes.io/name: wazuh
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

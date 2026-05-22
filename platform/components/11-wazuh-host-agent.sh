@@ -59,9 +59,9 @@ AGENT_VERSION_PIN="4.14.4-1"
 #     but resolving the FQDN to that IP requires DNS access we don't have.
 #   - NodePort 31514/31515 are bound on every node interface including
 #     loopback; localhost works trivially.
-# This is the same approach component 11 uses to enroll via authd at :31515.
-# wazuh-manager-agents Service must be NodePort with these port mappings
-# (handled by 11-wazuh-host-agent.sh's NodePort patch step, if not already).
+# This is the same approach used to enroll via authd at :31515.
+# A separate NodePort Service (manifests/wazuh/standalone/wazuh-manager-nodeport.yaml)
+# exposes manager 1514/1515 as 31514/31515. ensure_manager_nodeport() applies it.
 WAZUH_MANAGER_HOST="${WAZUH_MANAGER_HOST:-127.0.0.1}"
 WAZUH_MANAGER_PORT="${WAZUH_MANAGER_PORT:-31514}"
 
@@ -305,10 +305,21 @@ teardown_daemonset() {
 
 # ── Main ──────────────────────────────────────────────────────────────────
 
+ensure_manager_nodeport() {
+    local manifest="$PLATFORM_DIR/manifests/wazuh/standalone/wazuh-manager-nodeport.yaml"
+    if [[ ! -f "$manifest" ]]; then
+        echo "ERROR: NodePort manifest not found at $manifest" >&2
+        exit 1
+    fi
+    echo ">>> Applying wazuh-manager-nodeport Service (exposes 31514/31515 on localhost)"
+    kubectl apply -f "$manifest" >/dev/null
+}
+
 main() {
     require_root
     require_host_tools
     require_cluster_access
+    ensure_manager_nodeport
 
     ensure_apt_repo
     install_agent_pkg
