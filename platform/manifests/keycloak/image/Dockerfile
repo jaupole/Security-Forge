@@ -14,7 +14,7 @@
 # Output image: ghcr.io/secforge/keycloak@sha256:<digest> (signed via Cosign
 # keyless from GitHub Actions OIDC — see .github/workflows/keycloak-image-build.yml).
 
-ARG KEYCLOAK_BASE_DIGEST=sha256:5afd40414096432903a5374ba4ba70b931dcca598a6bd9f44239fe66ef8d9737
+ARG KEYCLOAK_BASE_DIGEST=sha256:6a7217a100bd3e5de4063a27a538ef999a3c5a88c4b4ec0ffc0a642aee7b2597
 # checkov:skip=CKV_DOCKER_7: the base image is digest-pinned via the KEYCLOAK_BASE_DIGEST ARG above — stronger than a version tag; checkov cannot resolve the ARG-based digest.
 FROM quay.io/keycloak/keycloak@${KEYCLOAK_BASE_DIGEST}
 
