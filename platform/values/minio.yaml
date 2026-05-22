@@ -42,7 +42,7 @@ persistence:
   #   platform/manifests/minio/static-pv.yaml
   # Apply via 00e-minio-storage.sh BEFORE this chart on fresh installs.
   storageClass: minio-local
-  size: 50Gi  # request only; bound PV size is 200Gi (see static-pv.yaml)
+  size: 200Gi  # matches the live PVC (auto-resized to the bound PV's 200Gi capacity); shrinking is forbidden by Kubernetes — keep this in sync with `static-pv.yaml` spec.capacity.storage
   accessMode: ReadWriteOnce
 
 resources:
