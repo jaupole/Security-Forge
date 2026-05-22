@@ -16,7 +16,7 @@ Component 11 sidesteps the problem by running the agent natively on the host. On
 |---|---|
 | `11-wazuh-host-agent.sh` | Adds Wazuh apt repo, installs `wazuh-agent` (version pinned), renders `ossec.conf` from the template here, registers with the in-cluster manager, starts the systemd unit, deletes the old DaemonSet once the native agent is reporting. |
 | `11a-auditd.sh` | Installs `auditd` + `audispd-plugins`, drops the curated ruleset (`secforge.audit.rules`), restarts `auditd`. The agent's `<localfile>` for `/var/log/audit/audit.log` (already in the rendered `ossec.conf`) starts producing audit events on the next read cycle. |
-| `11b-fail2ban.sh` | Installs `fail2ban`, drops `jail.local`, enables sshd jail, restarts. The agent's `<localfile>` for `/var/log/fail2ban.log` (already in the rendered `ossec.conf`) feeds Wazuh both failed-attempt and ban events. |
+| `11b-fail2ban.sh` | Installs `fail2ban`, drops the `fail2ban/secforge.local` sshd jail config, restarts. The agent's `<localfile>` for `/var/log/fail2ban.log` (already in the rendered `ossec.conf`) feeds Wazuh both failed-attempt and ban events. |
 
 `install-all.sh` runs them in the alphanumeric order above. Each is idempotent.
 

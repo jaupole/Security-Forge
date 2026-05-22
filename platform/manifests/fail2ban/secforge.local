@@ -1,0 +1,25 @@
+[DEFAULT]
+# Tailscale CGNAT range (100.64.0.0/10) plus loopback. With operator access
+# happening over the tailnet, public SSH bans no longer risk locking out
+# the operator's rotating DHCP IP — so the relaxed thresholds we used
+# before are no longer needed. See project memory:
+# project_teleport_stopped_tailscale.md.
+ignoreip = 127.0.0.1/8 ::1 100.64.0.0/10
+
+# Escalate bans for repeat offenders: 1h → 2h → 4h → 8h → 16h → …
+bantime           = 1h
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 7d
+bantime.rndtime   = 60
+
+findtime = 10m
+maxretry = 5
+
+banaction          = nftables
+banaction_allports = nftables[type=allports]
+backend            = systemd
+
+[sshd]
+enabled  = true
+# Inherits DEFAULT block above (1h base ban, escalating to 7d).
