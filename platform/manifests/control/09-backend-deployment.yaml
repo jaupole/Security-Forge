@@ -118,6 +118,14 @@ spec:
             # and this holds a Transit key *name*, not key material.
             - { name: TRANSIT_KEYNAME, value: pii-encryption }
             - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
+            # QuickBooks Online — non-secret config. The callback URL must
+            # match the redirect URI registered in the Intuit app exactly.
+            # QBO_CLIENT_ID / QBO_CLIENT_SECRET arrive via the optional
+            # control-qbo-secrets envFrom below. Flip QBO_ENVIRONMENT to
+            # `production` when going live. See
+            # docs/03-runbooks/quickbooks-online-setup.md.
+            - { name: QBO_REDIRECT_URI, value: "https://control.${DOMAIN}/api/v1/accounting/qbo/callback" }
+            - { name: QBO_ENVIRONMENT, value: sandbox }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
@@ -126,6 +134,14 @@ spec:
             # VaultStaticSecret in 04-vso-bindings.yaml.
             - secretRef:
                 name: control-app-secrets
+            # QBO_CLIENT_ID + QBO_CLIENT_SECRET — the ecosystem QBO app's
+            # OAuth credentials. optional:true so the pod starts cleanly
+            # before the operator writes secret/apps/control/qbo to
+            # OpenBao; until then the QBO connect routes return a clean
+            # "not configured" 503. See 04-vso-bindings.yaml + the runbook.
+            - secretRef:
+                name: control-qbo-secrets
+                optional: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }

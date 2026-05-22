@@ -154,3 +154,45 @@ spec:
           text: '{{ .Secrets.access_key }}'
         ACCESS_SECRET_KEY:
           text: '{{ .Secrets.secret_key }}'
+
+---
+# QuickBooks Online — credentials for the ecosystem's single registered
+# QBO app (Intuit OAuth2 client_id + client_secret). Consumed via an
+# OPTIONAL envFrom on the control Deployment (09-backend-deployment.yaml):
+# until the operator writes the OpenBao path below, this VaultStaticSecret
+# has no source, the control-qbo-secrets K8s Secret is not created, and
+# Control's QBO connect routes return a clean "not configured" 503 —
+# no crash. Activating the integration is a runbook step:
+# docs/03-runbooks/quickbooks-online-setup.md.
+#
+# OpenBao path: secret/data/apps/control/qbo  (covered by control.hcl's
+# `secret/data/apps/control/+` grant — no policy change needed)
+#   - client_id     : the Intuit app's OAuth2 client id
+#   - client_secret : the Intuit app's OAuth2 client secret
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: control-qbo-secrets
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/qbo
+  refreshAfter: 60s
+  destination:
+    name: control-qbo-secrets
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        QBO_CLIENT_ID:
+          text: '{{ .Secrets.client_id }}'
+        QBO_CLIENT_SECRET:
+          text: '{{ .Secrets.client_secret }}'
