@@ -24,19 +24,17 @@ spec:
   #   - HIBP top-100k password blacklist at /opt/keycloak/data/password-blacklists/
   #   - `kc.sh build --features=recovery-codes,dpop --db=postgres` augmentation
   # Built + Cosign-keyless-signed by .github/workflows/keycloak-image-build.yml.
-  # Verified at admission by Kyverno verify-image-signature policy
-  # (rule: verify-secforge).
+  # Verified at admission by the Kyverno verify-image-signature-secforge
+  # policy (rule: verify-secforge).
   #
   # Refresh procedure: bump platform/manifests/keycloak/image/Dockerfile, merge,
   # GHA outputs the new digest in its run summary, then replace the digest
   # below and `kubectl apply`. The Keycloak Operator handles the rollout.
   #
-  # Placeholder digest below — replace with the first GHA build's output.
-  # While unset (i.e., still pointing at the placeholder), the live cluster
-  # continues running localhost/secforge/keycloak:26.3.3-optimized (drift
-  # from this file — to be cut over once the GHA pipeline produces the
-  # first signed digest).
-  image: ghcr.io/secforge/keycloak@sha256:0000000000000000000000000000000000000000000000000000000000000000  # TODO: replace after first GHA build
+  # operator-backlog #48 cutover (2026-05-22): moved the IdP off the unsigned
+  # in-cluster build localhost/secforge/keycloak:26.3.3-optimized onto this
+  # GHA-built, cosign-v2-signed image (base 6a7217a — CVE-refreshed).
+  image: ghcr.io/jaupole/keycloak@sha256:8f5e059dbdb446e3443313a4a1dec000ac02320f52d41c59a96365a290ffc084
   startOptimized: true    # using the pre-built optimized image
 
   db:
@@ -56,7 +54,12 @@ spec:
     strict: true
 
   http:
-    httpEnabled: true
+    # Internal listener is HTTPS-only. The public edge terminates TLS at the
+    # Ingress; this keeps the in-cluster hop encrypted too, served from the
+    # internal-CA cert in keycloak-internal-tls (05-internal-tls-cert.yaml).
+    # httpEnabled:true would regress the internal listener to plaintext.
+    httpEnabled: false
+    tlsSecret: keycloak-internal-tls
   proxy:
     headers: xforwarded
 
@@ -139,6 +142,11 @@ spec:
       spec:
         serviceAccountName: keycloak
         automountServiceAccountToken: true
+        # Private GHCR image — the kubelet needs the pull credential.
+        # ghcr-pull-secret lives in the keycloak namespace (operator-backlog
+        # #48; a VSO-rendered VaultStaticSecret is a tracked follow-up).
+        imagePullSecrets:
+          - name: ghcr-pull-secret
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
@@ -148,6 +156,8 @@ spec:
             type: RuntimeDefault
         containers:
           - name: keycloak
+            # Digest-pinned image — no re-pull needed on restart.
+            imagePullPolicy: IfNotPresent
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: false   # Quarkus build writes JARs at startup with startOptimized:false
