@@ -515,3 +515,98 @@ The helper's error message points at three likely causes; verify each in order:
 1. **Stale secret in OpenBao** — someone rotated the Keycloak-side secret without running this runbook's rotation procedure. Symptom: `kcadm config credentials` returns `401 unauthorized: Invalid client credentials`. Fix: rotate via the runbook procedure above (the rotation procedure handles the regenerate-and-write-back atomically).
 2. **kcadm-admin client doesn't exist** — fresh install where the bootstrap UI step hasn't been done. Symptom: `kcadm config credentials` returns `401: Invalid client credentials` AND the master realm's admin console shows no `kcadm-admin` client. Fix: do the one-time bootstrap procedure above.
 3. **`serviceAccountsEnabled=false`** — someone toggled the client setting via the UI. Symptom: `kcadm config credentials` returns `401: Invalid grant: client requires service-account flow`. Fix: re-enable in the master-realm admin console under Clients → kcadm-admin → Settings → Service accounts roles.
+
+---
+
+## Signed-image cutover & rollback — platform / bare-metal edition
+
+> **Edition note.** This section covers the bare-metal `platform/` deployment
+> (`platform/manifests/keycloak/`, host `auth.secforge.dev`, single-node k3s on
+> the Hetzner box). Everything above predates that edition and still describes
+> the retired Local Edition (`infrastructure/keycloak/`, `auth.secforge.local`,
+> Docker Desktop) — treat it as historical until this runbook is rewritten.
+
+The IdP runs the GHA-built, cosign-signed image pinned by digest in
+`04-keycloak-cr.yaml` (`spec.image` → `ghcr.io/jaupole/keycloak@sha256:…`),
+verified at admission by the Kyverno `verify-image-signature-secforge` policy.
+Build + deploy + refresh is operator-backlog #48.
+
+### Deploying an image change
+
+1. Edit `platform/manifests/keycloak/image/Dockerfile`, merge — the
+   `keycloak-image-build` GHA workflow builds, pushes and cosign-signs
+   `ghcr.io/jaupole/keycloak`, printing the digest in its run summary.
+2. Set `spec.image` in `04-keycloak-cr.yaml` to that digest; commit; push.
+3. On the box: `cd ~/secforge && git pull --ff-only`, then
+   `platform/lib/apply-manifest.sh platform/manifests/keycloak/04-keycloak-cr.yaml`.
+   The Keycloak Operator rolls the StatefulSet (~1–3 min IdP downtime).
+
+### Pre-cutover safety net — run every time, before step 3
+
+```bash
+# 1. Snapshot the LIVE CR — this is the exact rollback target. Snapshot the
+#    live object, NOT the repo file: the repo file can be drifted from live.
+sudo kubectl -n keycloak get keycloak keycloak -o yaml --show-managed-fields=false \
+  > ~/keycloak-cr-rollback-$(date +%Y%m%d-%H%M).yaml
+
+# 2. Fresh DB backup. Wait for PHASE=completed before proceeding.
+sudo kubectl -n keycloak create -f - <<'EOF'
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  generateName: secforge-keycloak-db-precutover-
+  namespace: keycloak
+spec:
+  cluster: { name: secforge-keycloak-db }
+  method: plugin
+  pluginConfiguration: { name: barman-cloud.cloudnative-pg.io }
+EOF
+sudo kubectl -n keycloak get backup   # confirm the new one reaches 'completed'
+
+# 3. Confirm the previous image is still on the node (Layer-1 rollback needs
+#    no rebuild) and the blacklist ConfigMap still exists.
+sudo k3s ctr images ls | grep -E 'secforge/keycloak|jaupole/keycloak'
+sudo kubectl -n keycloak get cm keycloak-password-blacklist
+```
+
+### Layer 1 — revert the CR (seconds, non-destructive)
+
+For "the new pod won't start / Kyverno rejects it / Keycloak misbehaves".
+Re-apply the snapshot taken above:
+
+```bash
+sudo kubectl -n keycloak apply -f ~/keycloak-cr-rollback-<TIMESTAMP>.yaml
+sudo kubectl -n keycloak rollout status statefulset/keycloak --timeout=600s
+```
+
+The snapshot carries the previous `spec.image` *and* — if rolling back from
+the baked-blacklist image to one that expects the ConfigMap mount — the
+`password-blacklist` volume/mount. That is why the snapshot, not a git
+revert of the repo file, is the rollback artifact. If `apply` reports a
+conflict, strip `status:` and `metadata.resourceVersion` from the file.
+
+### Layer 2 — restore the database
+
+For database-state damage — relevant mainly to a Keycloak *version* bump,
+which runs schema migrations; a same-version base-digest refresh runs none.
+Restore via the CNPG recovery flow: bootstrap a replacement Cluster with
+`.spec.bootstrap.recovery` pointing at the pre-cutover `Backup`
+(`secforge-keycloak-db-pre-48-cutover` or the latest `…-precutover-…`).
+Planned, IdP-down operation.
+
+### Layer 3 — full DR
+
+Velero/kopia cluster backup + `platform/components/03a-keycloak-realm-hardening.sh`
+to replay realm hardening. Last resort.
+
+### Post-cutover verification
+
+```bash
+sudo kubectl -n keycloak get keycloak keycloak -o jsonpath='{.status.conditions}'
+curl -s https://auth.secforge.dev/realms/master/.well-known/openid-configuration | jq -r .issuer
+# Password blacklist still enforced: a known-pwned password must be rejected
+# on a test password-set / reset flow.
+```
+
+Only once verified: delete the `keycloak-password-blacklist` ConfigMap and
+remove the kaniko `image-build/` manifests (operator-backlog #48 cleanup).
