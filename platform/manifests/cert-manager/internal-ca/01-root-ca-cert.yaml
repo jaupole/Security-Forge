@@ -1,0 +1,22 @@
+# Root CA for in-cluster internal TLS (Keycloak’s internal listener,
+# future BFF mTLS, etc.). 10-year duration, ECDSA P-256.
+# The Secret it creates becomes the issuer for downstream certs.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: secforge-internal-ca
+  namespace: cert-manager
+  labels:
+    secforge.platform/component: internal-ca
+spec:
+  isCA: true
+  commonName: 'SecForge Internal CA'
+  secretName: secforge-internal-ca-tls
+  duration: 87600h    # 10 years
+  renewBefore: 8760h  # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer

@@ -1,0 +1,33 @@
+# Internal TLS cert for Keycloak's container-side listener.
+# Used when spec.http.httpEnabled=false on the Keycloak CR — operator
+# mounts this Secret and Keycloak terminates HTTPS internally. ingress
+# -nginx then upstream-TLS to this cert.
+#
+# SANs cover the Service DNS names that ingress-nginx targets.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-internal-tls
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+    secforge.platform/cert-source: internal-ca
+spec:
+  secretName: keycloak-internal-tls
+  duration: 8760h        # 1 year
+  renewBefore: 720h      # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - keycloak-service.keycloak.svc.cluster.local
+    - keycloak-service.keycloak.svc
+    - keycloak-service
+    # 2026-05-13: added auth.secforge.dev so in-cluster pods that resolve
+    # this hostname (via CoreDNS rewrite) get a TLS handshake that
+    # matches the SNI they sent. Without this SAN, Wazuh dashboard's
+    # OIDC plugin sees cert mismatch and fails the backchannel.
+    - auth.secforge.dev
+  issuerRef:
+    name: secforge-internal-ca
+    kind: ClusterIssuer

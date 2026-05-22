@@ -1,0 +1,9 @@
+# Self-signed bootstrap issuer — only used to create the root CA below.
+# Not used for any real cert. Anything signed by this is treated as
+# 'cert-manager creating its own keypair before pivoting to the CA issuer'.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}

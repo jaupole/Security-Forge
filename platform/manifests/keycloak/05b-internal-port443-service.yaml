@@ -1,0 +1,26 @@
+# Cluster-internal Service that exposes keycloak's 8443 listener on
+# port 443. Selector matches the operator-managed StatefulSet labels so
+# this Service routes to the same pods as keycloak-service but without
+# colliding with the operator's management of that Service.
+#
+# CoreDNS rewrites auth.secforge.dev to this Service's name so
+# in-cluster OIDC backchannel calls (Wazuh, Grafana, etc.) that default
+# to port 443 reach Keycloak correctly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-auth-internal
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+    app.kubernetes.io/instance: keycloak
+    app.kubernetes.io/managed-by: keycloak-operator
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
