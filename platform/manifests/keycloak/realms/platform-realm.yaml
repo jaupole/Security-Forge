@@ -190,6 +190,131 @@ spec:
         priority: 50
         config: {}
 
+    # ─── Custom authentication flow: browser-webauthn-required ─────
+    # Closes the last remaining gap from 03a stages [04]+[05]. This is
+    # a from-scratch declaration of the entire flow tree (NOT a "copy
+    # from built-in browser" — realm-import doesn't support that). The
+    # shape mirrors the live flow created by 03a on 2026-05-14, with
+    # OTP Form removed and WebAuthn + Recovery-Code added as alternatives
+    # under the Conditional 2FA subflow.
+    #
+    # Flow hierarchy:
+    #   browser-webauthn-required (top-level)
+    #     ├── auth-cookie (ALTERNATIVE)
+    #     ├── auth-spnego (DISABLED — not used)
+    #     ├── identity-provider-redirector (ALTERNATIVE)
+    #     ├── Organization subflow (ALTERNATIVE)
+    #     │   └── Conditional Organization (CONDITIONAL)
+    #     │       ├── conditional-user-configured (REQUIRED)
+    #     │       └── organization (ALTERNATIVE)
+    #     └── forms subflow (ALTERNATIVE)
+    #         ├── auth-username-password-form (REQUIRED)
+    #         └── Conditional 2FA (CONDITIONAL)
+    #             ├── conditional-user-configured (REQUIRED)
+    #             ├── webauthn-authenticator (ALTERNATIVE)
+    #             └── auth-recovery-authn-code-form (ALTERNATIVE)
+    #
+    # NOTE: realm-import's flow-import support is per-Keycloak-version;
+    # the 03a script remains available as the day-2 idempotent replay
+    # for live drift recovery. If you change one, mirror it in the other.
+    browserFlow: browser-webauthn-required
+    authenticationFlows:
+      - alias: browser-webauthn-required
+        description: Browser based authentication
+        providerId: basic-flow
+        topLevel: true
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: auth-cookie
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: auth-spnego
+            authenticatorFlow: false
+            requirement: DISABLED
+            priority: 20
+            userSetupAllowed: false
+          - authenticator: identity-provider-redirector
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 25
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-required Organization
+            authenticatorFlow: true
+            requirement: ALTERNATIVE
+            priority: 26
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-required forms
+            authenticatorFlow: true
+            requirement: ALTERNATIVE
+            priority: 30
+            userSetupAllowed: false
+      - alias: browser-webauthn-required forms
+        description: Username, password, otp and other auth forms.
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: auth-username-password-form
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-required Browser - Conditional 2FA
+            authenticatorFlow: true
+            requirement: CONDITIONAL
+            priority: 20
+            userSetupAllowed: false
+      - alias: browser-webauthn-required Browser - Conditional 2FA
+        description: Flow to determine if any 2FA is required for the authentication
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: conditional-user-configured
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: webauthn-authenticator
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 30
+            userSetupAllowed: false
+          - authenticator: auth-recovery-authn-code-form
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 40
+            userSetupAllowed: false
+      - alias: browser-webauthn-required Organization
+        description: ""
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - flowAlias: browser-webauthn-required Browser - Conditional Organization
+            authenticatorFlow: true
+            requirement: CONDITIONAL
+            priority: 10
+            userSetupAllowed: false
+      - alias: browser-webauthn-required Browser - Conditional Organization
+        description: Flow to determine if the organization identity-first login is to be used
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: conditional-user-configured
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: organization
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 20
+            userSetupAllowed: false
+
     # ─── WebAuthn policy ───────────────────────────────────────────
     # Hardening landed 2026-05-14 (cross-reference:
     # project_keycloak_passkeys_mandatory). RpId is the eTLD+1 so
