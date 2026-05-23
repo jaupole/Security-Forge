@@ -688,6 +688,7 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - https://portal.${DOMAIN}/auth/callback
+          - https://portal.${DOMAIN}/
           - http://portal.localhost:5173/auth/callback
         webOrigins:
           - "+"

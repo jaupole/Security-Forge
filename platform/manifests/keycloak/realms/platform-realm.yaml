@@ -698,6 +698,7 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - https://admin.${DOMAIN}/auth/callback
+          - https://admin.${DOMAIN}/
           - https://control.${DOMAIN}/auth/callback
           - http://portal.localhost:5173/auth/callback
         webOrigins:
