@@ -225,6 +225,15 @@ spec:
       ttlSecondsAfterFinished: 86400
       template:
         metadata:
+          annotations:
+            # ADR-0013 escape hatch — this cronjob shells out to `psql` (needs
+            # PGPASSWORD env per libpq convention) and the GitHub CLI/curl
+            # (needs GH_TOKEN). Both are vendor-fixed names; renaming isn't
+            # possible without rewriting the script to pre-fetch via OpenBao
+            # API + pass on stdin, which is the proper long-term fix.
+            # Ticket: operator-backlog #58 (Member-Hub audit-anchor vendor envs)
+            secforge.local/legacy-secret-env: "operator-backlog#58-member-hub-audit-anchor-vendor-envs"
+            secforge.local/legacy-secret-env-expires: "2026-08-20"
           labels:
             app.kubernetes.io/name: member-hub
             app.kubernetes.io/component: audit-signer
