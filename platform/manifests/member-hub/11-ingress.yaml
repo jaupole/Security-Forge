@@ -1,12 +1,23 @@
-# Ingress for the member-hub plane — member-hub.${DOMAIN}.
+# Single public ingress for Member Hub — members.${DOMAIN}.
 #
-# TAILNET-ONLY. The hostname has no public DNS A/AAAA record (deliberately,
-# 2026-05-14 cleanup of wildcards). Operator reaches it via the local
-# hosts file:
-#   100.77.117.112  member-hub.secforge.dev
+# Consolidated 2026-05-23: previously split into a tailnet-only admin
+# host (member-hub.${DOMAIN}, this file's original purpose) and a
+# public webhook host (members.${DOMAIN}, old 14-public-ingress.yaml).
+# Per operator decision, the split is gone — Member Hub lives on
+# ONE public host that serves admin UI + webhooks + everything else.
 #
-# Single-route Ingress: Member Hub is a single Hono app (server-rendered
-# HTMX via views.tsx), no separate SPA. All paths go to the same Service.
+# Security posture:
+#   - Admin UI is fronted by Keycloak OIDC (AuthCode+PKCE), passkeys
+#     mandatory on the platform realm. Brute-force risk is bounded
+#     by passkey auth + Kyverno-enforced password policy at the IdP.
+#   - Webhook handlers verify each provider's signature (Stripe's
+#     whsec_… HMAC against the body) — they don't rely on transport
+#     auth, so the public exposure is correct by design.
+#   - Cluster-wide `secforge-default-headers` ConfigMap injects nosniff
+#     + Referrer-Policy on every response. Per-app CSP/CORS/etc. are
+#     served by the Hono `secureHeaders()` middleware inside the app.
+#
+# TLS: per-host LE via DNS01 (Cloudflare).
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -17,51 +28,27 @@ metadata:
     app.kubernetes.io/name: member-hub
     secforge.platform/component: member-hub
   annotations:
-    # Per-host LE issuance via DNS01 (Cloudflare). Works even though
-    # member-hub.${DOMAIN} has no public A record — DNS01 only needs the
-    # _acme-challenge TXT record, which cert-manager creates via the
-    # Cloudflare API regardless of A-record presence.
     cert-manager.io/cluster-issuer: ${LE_ISSUER}
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
-    # Defense-in-depth: even with the SNAT-bypass bug on the existing
-    # whitelist annotation (every external request appears as
-    # 10.42.0.1), this annotation kicks in once nginx is flipped to
-    # hostNetwork mode (deferred). Until then the DNS-removal is the
-    # real gate.
-    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.42.0.0/16,65.21.25.40/32"
-    # Rate limit — slightly stricter than keycloak (5 rps) because the
-    # member-hub API has fewer legitimate burst patterns.
+    # Rate limit — modest; Stripe retries on backoff, OIDC flow is
+    # short-burst, normal browsing is well under this.
     nginx.ingress.kubernetes.io/limit-rps: "10"
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
     nginx.ingress.kubernetes.io/limit-connections: "20"
-    # Security response headers (CSP, Permissions-Policy, X-Frame-Options,
-    # Cross-Origin-Opener-Policy) are NOT set on this Ingress.
-    #
-    # They were previously injected with an nginx `configuration-snippet`
-    # annotation — removed 2026-05-21. Snippet annotations are the
-    # CVE-2021-25742 surface (checkov CKV_K8S_153) and, since this cluster
-    # runs ingress-nginx 1.15 with the default `allow-snippet-annotations:
-    # false`, the snippet was silently ignored anyway.
-    #
-    # Per-app security headers belong in the app — Member Hub must serve
-    # them via Hono `secureHeaders()` middleware, the same in-app pattern
-    # control + portal use. The cluster-wide `secforge-default-headers`
-    # add-headers ConfigMap still applies nosniff + Referrer-Policy to
-    # every response. CORS is likewise handled in-app (Hono cors).
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - member-hub.${DOMAIN}
-      secretName: member-hub-tls
+        - members.${DOMAIN}
+      secretName: members-tls
   rules:
-    - host: member-hub.${DOMAIN}
+    - host: members.${DOMAIN}
       http:
         paths:
-          # All paths → Hono app (single deployment, no SPA split).
-          # /api/* routes are Hono handlers, /(.*) is server-rendered HTMX.
+          # All paths → Hono app (single backend; SPA bundle is served
+          # via Hono's serveStatic from the same image).
           - path: /
             pathType: Prefix
             backend:
