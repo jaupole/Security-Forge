@@ -131,6 +131,35 @@ spec:
         - { protocol: TCP, port: 8080 }   # portal nginx
 
 ---
+# Cross-ns ingress: ecosystem apps that consume Control's API directly
+# (skipping the public ingress for in-cluster latency / fewer hops).
+# Member Hub calls `getMe()` against control.control.svc on the OIDC
+# callback path; future ecosystem apps that need the same lookup go
+# in this list. Pairs with each app's own allow-egress-to-control NP.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-ecosystem-apps
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: control
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [member-hub]
+      ports:
+        - { protocol: TCP, port: 4000 }
+
+---
 # Egress to Keycloak for OIDC discovery + JWKS fetch + (rare) admin API.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
