@@ -178,9 +178,10 @@ spec:
 ---
 # Egress to Ecosystem Control's API. Used by lib/ecosystem-control.ts
 # (getMe + per-org info) to fetch the active-org context on sign-in
-# and on subsequent requests. Control's Service in the `control` ns
-# listens on port 80 (HTTP — TLS is added by ingress at the edge,
-# not in-cluster).
+# and on subsequent requests. The Service in `control` ns exposes
+# port 80 → targetPort 4000 (Hono containerPort). NetworkPolicies
+# in this cluster (Cilium) are evaluated POST-NAT, so the allow must
+# be on port 4000 (the pod port), not 80 (the service port).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -200,7 +201,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: control
       ports:
-        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 4000 }
 
 ---
 # Egress to OpenBao for Transit encrypt/decrypt + KV reads. VSO uses a
