@@ -311,7 +311,12 @@ spec:
                 defaultMode: 0755
             - name: openbao-ca
               configMap:
-                name: openbao-ca
+                # The ConfigMap is named `openbao-internal-ca-cert` per
+                # 08a-openbao-ca-configmap.yaml (matching the convention
+                # the backend deployment uses). Pre-existing rename gap
+                # surfaced 2026-05-23 during the ADR-0013 refactor test
+                # run — the nightly CronJob would have failed silently.
+                name: openbao-internal-ca-cert
             - name: db-creds
               secret:
                 secretName: member-hub-db-app
