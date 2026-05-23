@@ -1,25 +1,27 @@
 # Member Hub — nightly audit anchor CronJob.
-# operator-backlog #33 Part 2.
+# operator-backlog #33 Part 2 (initial deploy) + #61 (ADR-0013 escape hatch
+# removed) + #62 (rewritten from anchor.sh to TS worker in the Member Hub
+# image).
 #
 # Each run:
 #   1. Reads the last anchored row ID from secforge-audit-anchors:member-hub/
-#      (clones a fresh tip — git history is the source of truth, not local
-#       cluster state).
-#   2. Queries audit.event for MAX(id), MAX(full_hash) WHERE id > last anchored.
-#   3. Signs the full_hash with OpenBao Transit (`transit/sign/audit-signing`,
+#      via the GitHub Contents API (no working directory / git clone).
+#   2. Queries audit.event for MAX(id), encode(full_hash) WHERE id > last.
+#   3. Signs the full_hash hex via OpenBao Transit (transit/sign/audit-signing,
 #      Ed25519, key version 1+).
-#   4. Writes `member-hub/YYYY-MM-DD.json` with the anchor payload + signature.
-#   5. Commits + pushes via a write-scoped PAT.
+#   4. PUTs `member-hub/YYYY-MM-DD.json` with the anchor payload + signature
+#      via the GitHub Contents API — creates a commit on `main` in one
+#      request.
 #
-# The PAT is stored at OpenBao path `secret/data/apps/member-hub/audit-anchors-push-token`
-# with key `token`. Operator one-time setup (see commit message + the closing
-# section of `docs/03-runbooks/audit-anchors.md`).
+# The PAT is in OpenBao at `secret/data/apps/member-hub/audit-anchors-push-token`
+# (key `token`). VSO renders it into `audit-anchors-push-token` k8s Secret;
+# this CronJob mounts that Secret as a file (not env — see #61).
 #
 # Failure modes (any of these halts THIS run; next night's run tries again):
-#   - DB unreachable → exit 1, no commit.
+#   - DB unreachable → exit 2, no commit.
 #   - OpenBao unreachable → exit 1, no commit.
-#   - audit.event MAX(id) == last anchored id → exit 0 with "no new rows" log.
-#   - git push fails (auth, conflict) → exit 1, no commit; next run picks up.
+#   - audit.event empty / no new rows → exit 0 with "no new rows" log.
+#   - GitHub API auth/conflict → exit 1, no commit; next run picks up.
 
 ---
 apiVersion: v1
@@ -35,7 +37,7 @@ metadata:
 ---
 # VSO binding: GitHub push token (operator-provisioned in OpenBao).
 # Path: secret/apps/member-hub/audit-anchors-push-token
-# Key:  token (the fine-grained PAT with contents:write on
+# Key:  token (fine-grained PAT with contents:write on
 #       jaupole/secforge-audit-anchors only)
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
@@ -58,7 +60,7 @@ spec:
     type: Opaque
 
 ---
-# Reused VaultAuth: lets the audit-signer SA log into OpenBao under its
+# VaultAuth: lets the audit-signer SA log into OpenBao under its
 # own role (member-hub-audit-signer, policy `audit-signer`) so it can
 # call transit/sign/audit-signing without needing the broader
 # member-hub-vso scope.
@@ -82,131 +84,6 @@ spec:
       - https://kubernetes.default.svc.cluster.local
 
 ---
-# The signer script itself, mounted into the Job pod.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: member-hub-audit-anchor-script
-  namespace: member-hub
-  labels:
-    app.kubernetes.io/name: member-hub
-    app.kubernetes.io/component: audit-signer
-    secforge.platform/component: audit-anchors
-data:
-  anchor.sh: |
-    #!/bin/sh
-    set -eu
-    apk add --no-cache --quiet postgresql-client git curl jq >/dev/null
-
-    : "${OPENBAO_ADDR:?OPENBAO_ADDR required}"
-    : "${PGHOST:?PGHOST required}"
-    : "${PGUSER:?PGUSER required}"
-    : "${PGDATABASE:?PGDATABASE required}"
-    APP_SLUG="${APP_SLUG:-member-hub}"
-    ANCHORS_REPO="${ANCHORS_REPO:-jaupole/secforge-audit-anchors}"
-
-    # ADR-0013 — read vendor-named credentials from file mounts at
-    # runtime instead of pod-spec env vars (avoids the Kyverno
-    # outbound-secrets guardrail without the legacy-secret-env escape
-    # hatch). The Secrets are still in etcd (CNPG + VSO render them
-    # there), so this is a guardrail-compliance fix, not a defense-
-    # in-depth fix — same security posture as before, just no longer
-    # tripping the lint. The annotations on the pod template are gone
-    # as of this change (backlog #61 close).
-    [ -f /run/secrets/db/password ] || { echo "PG password file missing at /run/secrets/db/password" >&2; exit 1; }
-    [ -f /run/secrets/gh/token   ] || { echo "GH token file missing at /run/secrets/gh/token" >&2; exit 1; }
-    export PGPASSWORD="$(cat /run/secrets/db/password)"
-    GH_TOKEN="$(cat /run/secrets/gh/token)"
-
-    # 1. Login to OpenBao via the projected SA token.
-    SA_JWT="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
-    LOGIN_BODY="$(printf '{"role":"member-hub-audit-signer","jwt":"%s"}' "$SA_JWT")"
-    BAO_TOKEN="$(curl -fsS --max-time 10 \
-        -X POST -H 'Content-Type: application/json' --data "$LOGIN_BODY" \
-        --cacert /etc/ssl/openbao-ca/ca.crt \
-        "${OPENBAO_ADDR}/v1/auth/kubernetes/login" \
-      | jq -r '.auth.client_token')"
-    [ -n "$BAO_TOKEN" ] && [ "$BAO_TOKEN" != "null" ] || { echo "bao login failed" >&2; exit 1; }
-
-    # 2. Find latest audit row.
-    LATEST_JSON="$(psql -qAtX -v ON_ERROR_STOP=1 -c \
-      "SELECT json_build_object('id', id, 'full_hash_hex', encode(full_hash, 'hex')) FROM audit.event WHERE full_hash IS NOT NULL ORDER BY id DESC LIMIT 1")"
-    LATEST_ID="$(echo "$LATEST_JSON"  | jq -r '.id')"
-    LATEST_HEX="$(echo "$LATEST_JSON" | jq -r '.full_hash_hex')"
-    if [ -z "$LATEST_ID" ] || [ "$LATEST_ID" = "null" ]; then
-      echo "no chained audit rows yet — skipping anchor commit" >&2
-      exit 0
-    fi
-
-    # 3. Sign latest_hex via Transit.
-    SIGN_BODY="$(jq -nc --arg in "$(printf '%s' "$LATEST_HEX" | base64 -w0)" '{input:$in}')"
-    SIG_RESP="$(curl -fsS --max-time 10 \
-        -X POST -H "X-Vault-Token: $BAO_TOKEN" -H 'Content-Type: application/json' \
-        --data "$SIGN_BODY" \
-        --cacert /etc/ssl/openbao-ca/ca.crt \
-        "${OPENBAO_ADDR}/v1/transit/sign/audit-signing")"
-    SIG_VAULT="$(echo "$SIG_RESP" | jq -r '.data.signature')"
-    # vault:v<n>:<base64sig> — strip the vault:v<n>: prefix for verifiers.
-    SIG_VERSION="$(printf '%s' "$SIG_VAULT" | cut -d: -f2 | sed 's/^v//')"
-    SIG_B64="$(printf '%s' "$SIG_VAULT" | cut -d: -f3-)"
-
-    # 4. Read the Transit pubkey so verifiers can cross-check key swaps.
-    KEY_RESP="$(curl -fsS --max-time 10 \
-        -X GET -H "X-Vault-Token: $BAO_TOKEN" \
-        --cacert /etc/ssl/openbao-ca/ca.crt \
-        "${OPENBAO_ADDR}/v1/transit/keys/audit-signing")"
-    PUBKEY_B64="$(echo "$KEY_RESP" | jq -r ".data.keys.\"$SIG_VERSION\".public_key")"
-
-    # 5. Clone the anchors repo, write the daily anchor file, push.
-    git config --global user.email "audit-signer@member-hub.secforge.dev"
-    git config --global user.name  "Member Hub Audit Signer"
-    REPO_DIR="$(mktemp -d)"
-    git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${ANCHORS_REPO}.git" "$REPO_DIR"
-    cd "$REPO_DIR"
-
-    DATE_TODAY="$(date -u +%Y-%m-%d)"
-    PREV_ID="$(jq -s 'map(.covers_through_id) | max // 0' ${APP_SLUG}/*.json 2>/dev/null || echo 0)"
-    if [ "$LATEST_ID" = "$PREV_ID" ]; then
-      echo "no new rows since previous anchor (id=$PREV_ID) — skipping commit" >&2
-      exit 0
-    fi
-
-    mkdir -p "$APP_SLUG"
-    ANCHOR_FILE="$APP_SLUG/${DATE_TODAY}.json"
-    jq -n \
-      --arg app "$APP_SLUG" \
-      --arg date "$DATE_TODAY" \
-      --argjson covers "$LATEST_ID" \
-      --argjson prev "$PREV_ID" \
-      --arg hash "$LATEST_HEX" \
-      --arg sig "$SIG_B64" \
-      --argjson keyver "$SIG_VERSION" \
-      --arg pub "$PUBKEY_B64" \
-      '{
-        app:$app, date:$date,
-        covers_through_id:$covers, previous_anchor_id:$prev,
-        full_hash_hex:$hash, signature_b64:$sig,
-        transit_key_version:$keyver, transit_pubkey_b64:$pub,
-        schema_version:1
-      }' > "$ANCHOR_FILE"
-
-    git add "$ANCHOR_FILE"
-    if git diff --staged --quiet; then
-      echo "anchor file unchanged (idempotent re-run) — no commit" >&2
-      exit 0
-    fi
-    git commit -m "anchor(${APP_SLUG}): ${DATE_TODAY} through id=${LATEST_ID}"
-    git push origin HEAD:main
-
-    # 6. Persist the signed_root on the row so DB queries can show
-    #    "this row was anchored at ...". Best-effort — failure here does
-    #    not invalidate the just-pushed anchor.
-    psql -qAtX -v ON_ERROR_STOP=1 -c \
-      "UPDATE audit.event SET signed_root = decode('$LATEST_HEX', 'hex') WHERE id = $LATEST_ID AND signed_root IS NULL" || true
-
-    echo "✓ anchor pushed: $APP_SLUG/$DATE_TODAY.json covers_through_id=$LATEST_ID"
-
----
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -216,8 +93,7 @@ metadata:
     # Authenticates to OpenBao Transit with the pod SA token (Kubernetes
     # auth) to sign audit roots — the token is required; CKV_K8S_38 N/A.
     checkov.io/skip1: "CKV_K8S_38=authenticates to OpenBao Transit via the pod ServiceAccount token; required"
-    checkov.io/skip2: "CKV_K8S_22=installs git/openbao/psql via apk add at runtime — the root filesystem must be writable (see readOnlyRootFilesystem below)"
-    checkov.io/skip3: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+    checkov.io/skip2: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
   labels:
     app.kubernetes.io/name: member-hub
     app.kubernetes.io/component: audit-signer
@@ -236,12 +112,9 @@ spec:
       ttlSecondsAfterFinished: 86400
       template:
         metadata:
-          # ADR-0013 escape hatch REMOVED 2026-05-23 (backlog #61). The
-          # PG password + GH token are now mounted as files at
-          # /run/secrets/db/password and /run/secrets/gh/token, read by
-          # anchor.sh into shell-local vars at runtime, never declared
-          # in the pod spec env. Kyverno outbound-secrets guardrail no
-          # longer trips. See script body for the file-read.
+          # ADR-0013 escape hatch was removed in #61 — the pod spec env
+          # block carries only non-credential vars; PG password + GH token
+          # are mounted as files (see volumes below).
           labels:
             app.kubernetes.io/name: member-hub
             app.kubernetes.io/component: audit-signer
@@ -250,6 +123,10 @@ spec:
             audit-signer: "true"
         spec:
           serviceAccountName: member-hub-audit-signer
+          # GHCR pull credential — VSO-rendered dockerconfigjson Secret
+          # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+          imagePullSecrets:
+            - name: ghcr-pull-secret
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
@@ -258,25 +135,65 @@ spec:
             fsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
+          # Wait for DB rw service to actually answer — same pattern as
+          # 13-audit-verifier-cronjob.yaml. Avoids Cilium endpoint cold-start
+          # ECONNREFUSED on the very first attempt.
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h member-hub-db-rw.member-hub.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
+                    echo "waiting for member-hub-db-rw..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
           containers:
             - name: anchor
-              image: mirror.gcr.io/alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+              # The anchor is part of the member-hub backend image — same
+              # one audit-verifier (13-...yaml) uses. Ships
+              # workers/audit-anchor/anchor.ts as a tsx entrypoint.
+              # Renovate / digest-bump cadence: in lockstep with the backend
+              # image bumps.
+              image: ghcr.io/jaupole/member-hub@sha256:e4692efa025e41b45d8ced2922f488fa0ad2de5535dc1bc0742a251d68a0ff4d
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: false  # apk add needs writes
+                readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
                 seccompProfile:
                   type: RuntimeDefault
               resources:
-                requests: { cpu: 50m, memory: 64Mi }
-                limits:   { cpu: 500m, memory: 256Mi }
-              command: ["/bin/sh", "/scripts/anchor.sh"]
+                requests: { cpu: 50m, memory: 96Mi }
+                limits:   { cpu: 500m, memory: 320Mi }
+              # distroless nodejs22 has no PATH-resolved `node`; binary
+              # lives at /nodejs/bin/node. --import tsx loads TypeScript
+              # source via the tsx loader at runtime; matches the
+              # audit-verifier invocation in 13-audit-verifier-cronjob.yaml.
+              command:
+                - /nodejs/bin/node
+                - --import
+                - tsx
+                - /app/workers/audit-anchor/anchor.ts
               env:
-                # ADR-0013 — only non-credential env vars here. PGPASSWORD
-                # and GH_TOKEN moved to file mounts (see volumeMounts +
-                # volumes below + the script body's file-read).
+                # No credential-named env vars (Kyverno outbound-secrets
+                # policy). PG password + GH token + SA token are read from
+                # file mounts at runtime by anchor.ts.
                 - name: OPENBAO_ADDR
                   value: https://openbao.openbao.svc.cluster.local:8200
                 - name: PGHOST
@@ -288,34 +205,40 @@ spec:
                     secretKeyRef:
                       name: member-hub-db-app
                       key: username
+                # Node trusts the OpenBao internal CA via this env (read
+                # at process startup, before any TLS). The CA cert lives
+                # at /etc/ssl/openbao-ca/ca.crt — same path the original
+                # shell script's curl --cacert read from.
+                - name: NODE_EXTRA_CA_CERTS
+                  value: /etc/ssl/openbao-ca/ca.crt
+                # Hard-coded slug + repo for the canonical anchors path.
+                - name: APP_SLUG
+                  value: member-hub
+                - name: ANCHORS_REPO
+                  value: jaupole/secforge-audit-anchors
+                - name: ANCHORS_BRANCH
+                  value: main
               volumeMounts:
-                - name: anchor-script
-                  mountPath: /scripts
-                  readOnly: true
                 - name: openbao-ca
                   mountPath: /etc/ssl/openbao-ca
                   readOnly: true
-                # ADR-0013 file mounts (replace the deleted PGPASSWORD +
-                # GH_TOKEN env vars). Both Secrets are tmpfs-backed by
-                # kubelet — never written to disk.
+                # File-mounted credentials (per #61). tmpfs-backed by
+                # kubelet; readOnlyRootFilesystem above doesn't conflict.
                 - name: db-creds
                   mountPath: /run/secrets/db
                   readOnly: true
                 - name: gh-creds
                   mountPath: /run/secrets/gh
                   readOnly: true
+                # readOnlyRootFilesystem=true on distroless means /tmp must
+                # be a writable emptyDir. tsx writes its source-map cache
+                # here.
+                - name: tmp
+                  mountPath: /tmp
           volumes:
-            - name: anchor-script
-              configMap:
-                name: member-hub-audit-anchor-script
-                defaultMode: 0755
             - name: openbao-ca
               configMap:
-                # The ConfigMap is named `openbao-internal-ca-cert` per
-                # 08a-openbao-ca-configmap.yaml (matching the convention
-                # the backend deployment uses). Pre-existing rename gap
-                # surfaced 2026-05-23 during the ADR-0013 refactor test
-                # run — the nightly CronJob would have failed silently.
+                # CM is `openbao-internal-ca-cert` per 08a-openbao-ca-configmap.yaml.
                 name: openbao-internal-ca-cert
             - name: db-creds
               secret:
@@ -331,3 +254,5 @@ spec:
                   - key: token
                     path: token
                 defaultMode: 0400
+            - name: tmp
+              emptyDir: {}
