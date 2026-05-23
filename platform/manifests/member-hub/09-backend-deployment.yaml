@@ -108,6 +108,10 @@ spec:
             # KEYCLOAK_ADMIN_CLIENT_SECRET comes from VSO-rendered
             # member-hub-app-secrets via envFrom below.
             - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: member-hub-admin }
+            # Ecosystem Control — in-cluster Service in the `control` ns.
+            # lib/ecosystem-control.ts calls getMe() to fetch the active-org
+            # context after OIDC sign-in. HTTP (TLS is at ingress edge).
+            - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The member-hub-db-app Secret has
