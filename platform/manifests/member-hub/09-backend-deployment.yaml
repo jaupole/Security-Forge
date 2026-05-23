@@ -55,6 +55,10 @@ spec:
     spec:
       serviceAccountName: member-hub
       automountServiceAccountToken: false
+      # GHCR pull credential — VSO-rendered dockerconfigjson Secret
+      # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
