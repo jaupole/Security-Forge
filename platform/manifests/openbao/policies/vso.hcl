@@ -174,3 +174,14 @@ path "secret/data/apps/control/+" {
 path "secret/metadata/apps/control/+" {
   capabilities = ["read", "list"]
 }
+
+# Member Hub (member-hub ns) - apps/member-hub/runtime bundle.
+# Aggregates oidc_client_secret, admin_client_secret, spicedb_psk,
+# session_signing_key, email_hmac_key for the member-hub-app-secrets
+# K8s Secret consumed via envFrom in the backend Deployment.
+path "secret/data/apps/member-hub/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/member-hub/+" {
+  capabilities = ["read", "list"]
+}
