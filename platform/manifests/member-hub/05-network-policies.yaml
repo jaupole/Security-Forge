@@ -127,8 +127,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
-        - { protocol: TCP, port: 4000 }   # member-hub API
-        - { protocol: TCP, port: 8080 }   # portal nginx
+        - { protocol: TCP, port: 3000 }   # member-hub API (Hono backend, 09-backend-deployment.yaml containerPort)
 
 ---
 # Egress to Keycloak for OIDC discovery + JWKS fetch + (rare) admin API.
