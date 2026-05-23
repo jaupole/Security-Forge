@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 # 07d — Create the `grafana` OIDC client in the Keycloak `platform` realm.
 #
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  DEPRECATED 2026-05-23 (backlog #59).                            ║
+# ║                                                                  ║
+# ║  Now declared in platform/manifests/keycloak/realms/              ║
+# ║  platform-realm.yaml (`spec.realm.clients[]`); operator creates  ║
+# ║  it at realm-import on greenfield. Like 05h, this script's       ║
+# ║  kcadm auth path is broken since the 2026-05-21 temp-admin       ║
+# ║  deletion. See project_keycloak_realm_import_codification for    ║
+# ║  the new pattern and #60 for the secret-publishing follow-up.    ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# ━━━━ Historical documentation (when this script DID work) ━━━━
+#
 # Modeled after 05h-keycloak-openbao-client.sh — same bootstrap-admin auth
 # pattern, no master-realm UI step needed.
 #
@@ -10,6 +23,14 @@
 #
 # Idempotent — if the client already exists, regenerates its secret and
 # updates the K8s Secret.
+
+echo "ERROR: 07d-keycloak-grafana-client.sh is DEPRECATED (backlog #59)." >&2
+echo "       The grafana client is now declared in platform-realm.yaml." >&2
+echo "       This script's kcadm auth path is broken since temp-admin" >&2
+echo "       deletion (2026-05-21). See script header for full context." >&2
+exit 1
+
+# ━━━━ Original implementation preserved below for reference only ━━━━
 
 set -euo pipefail
 

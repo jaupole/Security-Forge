@@ -2,6 +2,25 @@
 # 07i — Create the `wazuh-dashboard` OIDC client in Keycloak's `platform`
 # realm + stage the OIDC config bundle in OpenBao for VSO consumption.
 #
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  PARTIALLY DEPRECATED 2026-05-23 (backlog #59).                  ║
+# ║                                                                  ║
+# ║  The Keycloak client portion of this script is now declared in   ║
+# ║  platform/manifests/keycloak/realms/platform-realm.yaml          ║
+# ║  (`spec.realm.clients[]` → `wazuh-dashboard`); operator creates  ║
+# ║  it at realm-import on greenfield. Like 05h/07d, this script's   ║
+# ║  kcadm auth path is broken since the 2026-05-21 temp-admin       ║
+# ║  deletion.                                                       ║
+# ║                                                                  ║
+# ║  HOWEVER: this script ALSO stages the OIDC config bundle in      ║
+# ║  OpenBao for VSO to render into the wazuh-dashboard pod's        ║
+# ║  config. That side-effect is NOT covered by the realm-import     ║
+# ║  alone — backlog #60 will rework it. For now this script will    ║
+# ║  fail at the kcadm step; the OpenBao side has been done          ║
+# ║  out-of-band.                                                    ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+#
 # Deltas from the retired local-edition client script:
 #   - Auth via keycloak-initial-admin Secret (no kcadm-admin-tmp pattern)
 #   - secforge.local → ${DOMAIN}
@@ -24,6 +43,15 @@
 #   - openbao-root-token-tmp Secret in openbao ns
 #
 # Idempotent.
+
+echo "ERROR: 07i-keycloak-wazuh-client.sh is PARTIALLY DEPRECATED (backlog #59)." >&2
+echo "       The wazuh-dashboard client is now declared in platform-realm.yaml." >&2
+echo "       The OpenBao OIDC-bundle staging step still has no replacement;" >&2
+echo "       backlog #60 will refactor that. This script's kcadm auth path" >&2
+echo "       is broken since temp-admin deletion (2026-05-21)." >&2
+exit 1
+
+# ━━━━ Original implementation preserved below for reference only ━━━━
 
 set -euo pipefail
 

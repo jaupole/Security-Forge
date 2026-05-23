@@ -1,6 +1,38 @@
 #!/usr/bin/env bash
 # 05h — Create the `openbao` OIDC client in the Keycloak `platform` realm.
 #
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  DEPRECATED 2026-05-23 (backlog #59).                            ║
+# ║                                                                  ║
+# ║  The `openbao` client is now declared in                         ║
+# ║  platform/manifests/keycloak/realms/platform-realm.yaml          ║
+# ║  (`spec.realm.clients[]`) and gets created by the Keycloak       ║
+# ║  Operator at realm-import time on greenfield install.            ║
+# ║                                                                  ║
+# ║  This script is preserved for historical reference only. It      ║
+# ║  WILL FAIL when run, because the kcadm auth path below reads     ║
+# ║  the `keycloak-initial-admin` Secret which holds `temp-admin`    ║
+# ║  credentials — and that user was DB-deleted on 2026-05-21 by     ║
+# ║  `99-cleanup-2026-05-21-temp-admin.sh`. There is no scriptable   ║
+# ║  admin path remaining (jaupole's WebAuthn requirement blocks     ║
+# ║  kcadm direct-grant). See project_keycloak_admin_db_only.        ║
+# ║                                                                  ║
+# ║  Greenfield bootstrap of openbao OIDC:                           ║
+# ║    1. Realm-import creates the client with an operator-          ║
+# ║       generated random secret.                                   ║
+# ║    2. (Future #60) A secret-publishing step extracts that        ║
+# ║       value into the consumer Secret                             ║
+# ║       `openbao/keycloak-openbao-client-secret`.                  ║
+# ║    3. `05i-openbao-oidc-auth.sh` reads from that consumer        ║
+# ║       Secret to wire up OpenBao's OIDC auth method.              ║
+# ║                                                                  ║
+# ║  DR (Velero restore) bootstrap of openbao OIDC: the consumer     ║
+# ║  Secret already exists in backup; restored Keycloak DB has the   ║
+# ║  matching CLIENT.secret row — no scripting needed.               ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# ━━━━ Historical documentation (when this script DID work) ━━━━
+#
 # Stores the auto-generated client_secret into K8s Secret
 # `openbao/keycloak-openbao-client-secret` (consumed by 05i for OpenBao
 # OIDC auth method config).
@@ -11,6 +43,15 @@
 #
 # Idempotent — if the client already exists, regenerates its secret and
 # updates the K8s Secret.
+
+echo "ERROR: 05h-keycloak-openbao-client.sh is DEPRECATED (backlog #59)." >&2
+echo "       The openbao client is now declared in platform-realm.yaml" >&2
+echo "       and gets created by the Keycloak Operator at realm-import." >&2
+echo "       This script's kcadm auth path is broken since temp-admin" >&2
+echo "       deletion (2026-05-21). See script header for full context." >&2
+exit 1
+
+# ━━━━ Original implementation preserved below for reference only ━━━━
 
 set -euo pipefail
 

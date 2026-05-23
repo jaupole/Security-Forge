@@ -1,15 +1,42 @@
 #!/usr/bin/env bash
 # 03a — Keycloak `platform` realm hardening replay (DR-safe + idempotent)
 #
+# ─── Status as of 2026-05-23 (backlog #59 partial close) ──────────────────
+#
+# Stages [02] (realm-level hardening fields), [03] (WebAuthn policy), and
+# [06]+[07]+[08] (required actions: TOTP off-default, webauthn-register
+# on-default, recovery codes on-default) are now ALSO declared in
+# platform/manifests/keycloak/realms/platform-realm.yaml. That is the
+# source of truth for greenfield install. THIS SCRIPT remains the
+# source of truth for day-2 drift recovery — both must stay aligned;
+# if you change one, change the other.
+#
+# Stages [04]+[05] (custom `browser-webauthn-required` authentication
+# flow with WebAuthn + recovery-code subflow) are NOT yet codified in
+# the realm-import — the realm-export JSON shape for nested
+# `authenticationFlows` + `authenticationExecutions` is complex enough
+# to warrant its own follow-up (backlog #60).
+#
+# WHEN TO RUN THIS SCRIPT:
+#   - On a greenfield install AFTER realm-import has completed, to apply
+#     stages [04]+[05] (the custom flow). Realm-import's flow-import
+#     handling is partial; the explicit kcadm copy+modify here is the
+#     reliable path.
+#   - On any day-2 cluster where drift is suspected (someone weakened
+#     a setting via the admin UI).
+#   - NOT on every install — most fields are now declarative.
+#
 # Depends on: 03-keycloak.sh (Keycloak Operator + Keycloak CR + initial
 # KeycloakRealmImport CR creating the `platform` realm with the baseline
 # config from `keycloak-platform-realm` Secret).
 #
-# Why this exists: KeycloakRealmImport is one-shot — the operator imports
-# the realm at first reconcile and then ignores subsequent CR updates. The
-# hardening flips performed during the 2026-05-14 sprint were applied LIVE
-# via kcadm and were NOT reflected back into the import Secret. Without
-# this script, a DR rebuild would come up with the pre-hardening config:
+# ─── Original rationale (pre-codification context) ────────────────────────
+#
+# KeycloakRealmImport is one-shot — the operator imports the realm at
+# first reconcile and then ignores subsequent CR updates. The hardening
+# flips performed during the 2026-05-14 sprint were applied LIVE via
+# kcadm and were NOT reflected back into the import Secret. Without this
+# script, a DR rebuild would come up with the pre-hardening config:
 #
 #   - browserFlow:   `browser` (TOTP-permitting) instead of `browser-webauthn-required`
 #   - failureFactor: 5 / 900s wait / 60s increment  (way too lenient)
@@ -17,8 +44,10 @@
 #   - webAuthnPolicy: defaults, no RpId, preferred user verification
 #   - requiredActions: CONFIGURE_TOTP=defaultAction, webauthn-register=not-default
 #
-# This script applies all the hardening idempotently. Safe to re-run; each
-# stage checks current state before mutating.
+# That has now been fixed for most fields by codifying them in
+# platform-realm.yaml directly. This script still applies the custom
+# flow (stages 04+05) and remains useful as a day-2 idempotent replay
+# tool.
 #
 # AUTH PREREQUISITE: kcadm credentials must already be cached in the
 # keycloak-0 pod's ~/.keycloak/kcadm.config. Run:
