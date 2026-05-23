@@ -663,8 +663,12 @@ spec:
       # Tenant-facing Portal frontend. Public client with PKCE S256.
       # Tenant admins log in here to manage their org (activate apps,
       # define role bundles, configure integrations, etc.). The
-      # equivalent SPA in the `platform` realm is what staff /
-      # operators use (will become the Admin Console).
+      # equivalent SPA in the `platform` realm is the operator-facing
+      # Admin Console — same clientId, the realm is the discriminator.
+      #
+      # rootUrl points at portal.${DOMAIN} (Shape B Track 3 — tenant
+      # face has its own subdomain, distinct from the admin/legacy
+      # control.${DOMAIN} URL operators use).
       #
       # Cross-audience mapper: Portal's tokens also carry `aud=control`
       # so Portal can call Control's API directly with the same token
@@ -674,8 +678,8 @@ spec:
         description: Ecosystem Portal SPA — tenant face — public client with PKCE S256.
         enabled: true
         protocol: openid-connect
-        rootUrl: https://control.${DOMAIN}
-        baseUrl: https://control.${DOMAIN}
+        rootUrl: https://portal.${DOMAIN}
+        baseUrl: https://portal.${DOMAIN}
         publicClient: true
         clientAuthenticatorType: client-secret
         standardFlowEnabled: true
@@ -683,13 +687,13 @@ spec:
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
         redirectUris:
-          - https://control.${DOMAIN}/auth/callback
+          - https://portal.${DOMAIN}/auth/callback
           - http://portal.localhost:5173/auth/callback
         webOrigins:
           - "+"
         attributes:
           pkce.code.challenge.method: S256
-          post.logout.redirect.uris: https://control.${DOMAIN}/##http://portal.localhost:5173
+          post.logout.redirect.uris: https://portal.${DOMAIN}/##http://portal.localhost:5173
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"

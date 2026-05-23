@@ -1,20 +1,32 @@
-# Ingress for the control plane — control.${DOMAIN}.
+# Ingress for the control plane — three hosts, single backing image.
 #
-# TAILNET-ONLY. The hostname has no public DNS A/AAAA record (deliberately,
-# 2026-05-14 cleanup of wildcards). Operator reaches it via the local
-# hosts file:
+# Shape B Track 3 — the Portal SPA now serves TWO shells (tenant +
+# operator) from one image, picked by Host header in nginx.conf:
+#
+#   portal.${DOMAIN}   →  tenant face   (Portal shell,  `secforge-tenants` realm)
+#   admin.${DOMAIN}    →  operator face (Admin Console, `platform` realm)
+#   control.${DOMAIN}  →  legacy URL,   serves the Admin Console too
+#
+# TAILNET-ONLY. None of the hostnames have public DNS A/AAAA records
+# (deliberately, 2026-05-14 cleanup of wildcards). Operator reaches
+# them via the local hosts file:
 #   100.77.117.112  control.secforge.dev
+#   100.77.117.112  admin.secforge.dev
+#   100.77.117.112  portal.secforge.dev
 #
 # The wildcard cert `secforge-wildcard` (in cert-manager ns) covers
 # *.secforge.dev — Kubernetes Ingress can't cross-namespace reference a
 # TLS Secret directly, so cert-manager-secret-syncer (or a manual
 # CopySecret CR) keeps a copy in the control namespace named
-# `control-tls`. If you'd prefer per-host LE issuance instead, change
-# the cert-manager.io/cluster-issuer annotation back on.
+# `control-tls`. The same secret is reused across all three hosts
+# because the wildcard covers them all. If you'd prefer per-host LE
+# issuance instead, change the cert-manager.io/cluster-issuer
+# annotation back on.
 #
-# Path routing pattern: /api/* → control (backend API), everything else
-# → portal (static SPA + react-router fallback to index.html). The order
-# of rules matters — nginx-ingress chooses the longest matching prefix.
+# Path routing pattern (identical per host): /api/* → control (backend
+# API), everything else → portal (static SPA + react-router fallback
+# to index.html). The order of rules matters — nginx-ingress chooses
+# the longest matching prefix.
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -51,8 +63,11 @@ spec:
   tls:
     - hosts:
         - control.${DOMAIN}
+        - admin.${DOMAIN}
+        - portal.${DOMAIN}
       secretName: control-tls
   rules:
+    # ── control.${DOMAIN} (legacy) — serves the Admin Console shell ──
     - host: control.${DOMAIN}
       http:
         paths:
@@ -67,7 +82,45 @@ spec:
                   number: 80
           # Everything else → portal (nginx SPA on :8080). react-router
           # handles client-side routing; the in-pod nginx.conf serves
-          # /index.html as the SPA fallback for unknown paths.
+          # the right shell based on Host header.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80
+
+    # ── admin.${DOMAIN} — operator-facing Admin Console shell ────────
+    - host: admin.${DOMAIN}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: control
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80
+
+    # ── portal.${DOMAIN} — tenant-facing Portal shell ────────────────
+    - host: portal.${DOMAIN}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: control
+                port:
+                  number: 80
           - path: /
             pathType: Prefix
             backend:

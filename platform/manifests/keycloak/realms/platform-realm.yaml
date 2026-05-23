@@ -675,14 +675,21 @@ spec:
           oidc.ciba.grant.enabled: "false"
           standard.token.exchange.enabled: "false"
 
-      # ─── control-portal (Ecosystem Portal SPA, PKCE) ─────────────
+      # ─── control-portal (Admin Console SPA, PKCE) ────────────────
+      # In the `platform` realm this client serves the OPERATOR-FACING
+      # Admin Console shell (Shape B Track 3). Same clientId as the
+      # secforge-tenants version — the realm is the discriminator.
+      #
+      # rootUrl points at the canonical admin.${DOMAIN} host; the
+      # legacy control.${DOMAIN} entry below is kept so existing
+      # operator bookmarks keep working until full cutover.
       - clientId: control-portal
-        name: Ecosystem Portal SPA
-        description: Ecosystem Portal SPA — public client with PKCE S256.
+        name: Admin Console SPA
+        description: Admin Console (operator-facing Portal shell) — public client with PKCE S256.
         enabled: true
         protocol: openid-connect
-        rootUrl: https://control.${DOMAIN}
-        baseUrl: https://control.${DOMAIN}
+        rootUrl: https://admin.${DOMAIN}
+        baseUrl: https://admin.${DOMAIN}
         publicClient: true
         clientAuthenticatorType: client-secret
         standardFlowEnabled: true
@@ -690,6 +697,7 @@ spec:
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
         redirectUris:
+          - https://admin.${DOMAIN}/auth/callback
           - https://control.${DOMAIN}/auth/callback
           - http://portal.localhost:5173/auth/callback
         webOrigins:
@@ -698,7 +706,7 @@ spec:
           # PKCE S256 mandatory — public clients with no client_secret
           # need PKCE to be safe.
           pkce.code.challenge.method: S256
-          post.logout.redirect.uris: https://control.${DOMAIN}/##http://portal.localhost:5173
+          post.logout.redirect.uris: https://admin.${DOMAIN}/##https://control.${DOMAIN}/##http://portal.localhost:5173
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"
