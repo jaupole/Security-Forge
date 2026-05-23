@@ -101,11 +101,22 @@ data:
     : "${OPENBAO_ADDR:?OPENBAO_ADDR required}"
     : "${PGHOST:?PGHOST required}"
     : "${PGUSER:?PGUSER required}"
-    : "${PGPASSWORD:?PGPASSWORD required}"
     : "${PGDATABASE:?PGDATABASE required}"
-    : "${GH_TOKEN:?GH_TOKEN required (audit-anchors push)}"
     APP_SLUG="${APP_SLUG:-member-hub}"
     ANCHORS_REPO="${ANCHORS_REPO:-jaupole/secforge-audit-anchors}"
+
+    # ADR-0013 — read vendor-named credentials from file mounts at
+    # runtime instead of pod-spec env vars (avoids the Kyverno
+    # outbound-secrets guardrail without the legacy-secret-env escape
+    # hatch). The Secrets are still in etcd (CNPG + VSO render them
+    # there), so this is a guardrail-compliance fix, not a defense-
+    # in-depth fix — same security posture as before, just no longer
+    # tripping the lint. The annotations on the pod template are gone
+    # as of this change (backlog #61 close).
+    [ -f /run/secrets/db/password ] || { echo "PG password file missing at /run/secrets/db/password" >&2; exit 1; }
+    [ -f /run/secrets/gh/token   ] || { echo "GH token file missing at /run/secrets/gh/token" >&2; exit 1; }
+    export PGPASSWORD="$(cat /run/secrets/db/password)"
+    GH_TOKEN="$(cat /run/secrets/gh/token)"
 
     # 1. Login to OpenBao via the projected SA token.
     SA_JWT="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
@@ -225,15 +236,12 @@ spec:
       ttlSecondsAfterFinished: 86400
       template:
         metadata:
-          annotations:
-            # ADR-0013 escape hatch — this cronjob shells out to `psql` (needs
-            # PGPASSWORD env per libpq convention) and the GitHub CLI/curl
-            # (needs GH_TOKEN). Both are vendor-fixed names; renaming isn't
-            # possible without rewriting the script to pre-fetch via OpenBao
-            # API + pass on stdin, which is the proper long-term fix.
-            # Ticket: operator-backlog #58 (Member-Hub audit-anchor vendor envs)
-            secforge.local/legacy-secret-env: "operator-backlog#58-member-hub-audit-anchor-vendor-envs"
-            secforge.local/legacy-secret-env-expires: "2026-08-20"
+          # ADR-0013 escape hatch REMOVED 2026-05-23 (backlog #61). The
+          # PG password + GH token are now mounted as files at
+          # /run/secrets/db/password and /run/secrets/gh/token, read by
+          # anchor.sh into shell-local vars at runtime, never declared
+          # in the pod spec env. Kyverno outbound-secrets guardrail no
+          # longer trips. See script body for the file-read.
           labels:
             app.kubernetes.io/name: member-hub
             app.kubernetes.io/component: audit-signer
@@ -266,6 +274,9 @@ spec:
                 limits:   { cpu: 500m, memory: 256Mi }
               command: ["/bin/sh", "/scripts/anchor.sh"]
               env:
+                # ADR-0013 — only non-credential env vars here. PGPASSWORD
+                # and GH_TOKEN moved to file mounts (see volumeMounts +
+                # volumes below + the script body's file-read).
                 - name: OPENBAO_ADDR
                   value: https://openbao.openbao.svc.cluster.local:8200
                 - name: PGHOST
@@ -277,22 +288,21 @@ spec:
                     secretKeyRef:
                       name: member-hub-db-app
                       key: username
-                - name: PGPASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: member-hub-db-app
-                      key: password
-                - name: GH_TOKEN
-                  valueFrom:
-                    secretKeyRef:
-                      name: audit-anchors-push-token
-                      key: token
               volumeMounts:
                 - name: anchor-script
                   mountPath: /scripts
                   readOnly: true
                 - name: openbao-ca
                   mountPath: /etc/ssl/openbao-ca
+                  readOnly: true
+                # ADR-0013 file mounts (replace the deleted PGPASSWORD +
+                # GH_TOKEN env vars). Both Secrets are tmpfs-backed by
+                # kubelet — never written to disk.
+                - name: db-creds
+                  mountPath: /run/secrets/db
+                  readOnly: true
+                - name: gh-creds
+                  mountPath: /run/secrets/gh
                   readOnly: true
           volumes:
             - name: anchor-script
@@ -302,3 +312,17 @@ spec:
             - name: openbao-ca
               configMap:
                 name: openbao-ca
+            - name: db-creds
+              secret:
+                secretName: member-hub-db-app
+                items:
+                  - key: password
+                    path: password
+                defaultMode: 0400
+            - name: gh-creds
+              secret:
+                secretName: audit-anchors-push-token
+                items:
+                  - key: token
+                    path: token
+                defaultMode: 0400
