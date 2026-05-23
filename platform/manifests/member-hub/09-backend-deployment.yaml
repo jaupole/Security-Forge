@@ -78,7 +78,12 @@ spec:
             - { name: API_PORT, value: "3000" }
             - { name: API_HOST, value: "0.0.0.0" }
             - { name: TRUST_PROXY, value: "1" }
-            - { name: PORTAL_ORIGIN, value: "https://member-hub.${DOMAIN}" }
+            # Note: PORTAL_ORIGIN was set here historically pointing at
+            # the old tailnet host (member-hub.${DOMAIN}); removed during
+            # 2026-05-23 single-host consolidation. No app code reads it;
+            # public origin is derived from request headers at runtime
+            # (see src/lib/public-url.ts publicOrigin + src/modules/auth/
+            # routes.ts callbackUri).
             # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
             # which presents its INTERNAL cert (signed by secforge-internal-ca,
             # not Let's Encrypt). Point NODE_EXTRA_CA_CERTS at the
