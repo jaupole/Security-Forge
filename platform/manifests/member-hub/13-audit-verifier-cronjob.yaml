@@ -112,7 +112,9 @@ spec:
                 requests: { cpu: 50m, memory: 64Mi }
                 limits:   { cpu: 500m, memory: 256Mi }
               command:
-                - node
+                # distroless nodejs22 has no PATH-resolved `node`; the binary
+                # lives at /nodejs/bin/node (matches the backend's migrate Job).
+                - /nodejs/bin/node
                 - --import
                 - tsx
                 - /app/workers/audit-verifier/verify.ts
