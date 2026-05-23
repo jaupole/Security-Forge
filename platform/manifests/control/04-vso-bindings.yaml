@@ -69,6 +69,16 @@ spec:
         # view-clients, view-realm.
         KEYCLOAK_ADMIN_CLIENT_SECRET:
           text: '{{ .Secrets.admin_client_secret }}'
+        # Tenants-realm admin-API client_secret (Shape B Track 3 +
+        # tenant signup wizard). Same clientId (`control-admin`) but
+        # in the `secforge-tenants` realm — separate service account
+        # with manage-organizations + view-organizations in addition
+        # to the manage-users / view-* roles. Required by the
+        # signup wizard at /api/v1/signup to create the new tenant's
+        # Keycloak Organization + first administrator user.
+        # When unset, /api/v1/signup returns 503 "signup_not_configured".
+        KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET:
+          text: '{{ .Secrets.tenants_admin_client_secret }}'
         # SpiceDB pre-shared key for gRPC auth (same value also rendered
         # into the spicedb pod from its own VSO binding — we just
         # consume it here, not own it).

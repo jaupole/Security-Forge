@@ -98,6 +98,14 @@ spec:
             # KEYCLOAK_ADMIN_CLIENT_SECRET comes from VSO-rendered
             # control-app-secrets via envFrom below.
             - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
+            # Tenants-realm admin-API client (signup wizard). Same
+            # clientId as KEYCLOAK_ADMIN_CLIENT_ID but the service
+            # account is in the secforge-tenants realm and adds
+            # manage-organizations + view-organizations realm-management
+            # roles. KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET comes from
+            # VSO-rendered control-app-secrets (the `tenants_admin_client_secret`
+            # key in OpenBao at secret/apps/control/runtime).
+            - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The control-db-app Secret has
