@@ -1,0 +1,47 @@
+# Internal-CA trust bundle consumed by the Member Hub backend
+# (09-backend-deployment.yaml mounts this at /etc/secforge/openbao-ca.crt).
+#
+# Member Hub makes outbound in-cluster TLS calls to:
+#   - Keycloak  (auth.${DOMAIN} → keycloak ClusterIP)  → "SecForge Internal CA"
+#   - OpenBao   (openbao.openbao.svc:8200, Transit)    → "SecForge OpenBao Internal CA"
+#
+# Both Deployment env vars point at the single rendered file:
+#   NODE_EXTRA_CA_CERTS   — jose's createRemoteJWKSet / global fetch (Keycloak)
+#   OPENBAO_CA_CERT_PATH  — the Transit client's https.Agent (OpenBao)
+# so this ConfigMap must carry BOTH CA certs.
+#
+# Source of truth: control/08a-openbao-ca-configmap.yaml — the CAs are
+# cluster-wide so the cert blob is identical, only the namespace differs.
+# On CA rotation, refresh both manifests together.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-internal-ca-cert
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBgjCCASigAwIBAgIUTmHjrPJ49XeBAPBatZ+BogyKcfYwCgYIKoZIzj0EAwIw
+    HzEdMBsGA1UEAxMUU2VjRm9yZ2UgSW50ZXJuYWwgQ0EwHhcNMjYwNTEzMjAyNjA1
+    WhcNMzYwNTEwMjAyNjA1WjAfMR0wGwYDVQQDExRTZWNGb3JnZSBJbnRlcm5hbCBD
+    QTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHveqJvL2AT0Y8yMnfwxcplEFE5h
+    K9eEtlNeYpnZCyyDEAwetNDuTn32MP1TT5PWTjzu2sCqokX7sMWd3j7LXtyjQjBA
+    MA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRv0NX8
+    EeLc9/aIOLvplkzpbJRyiDAKBggqhkjOPQQDAgNIADBFAiEA38x1k5TLa87keT9M
+    KXu9ajnxxJEQVl1pLPZWpIoL3Z8CIBbvH0fPyYWetk+wfW8BfM/xURuQpEWUPhYX
+    UVPw4DCf
+    -----END CERTIFICATE-----
+    -----BEGIN CERTIFICATE-----
+    MIIBkjCCATigAwIBAgIUSxY4mtG5eG/cQNuuAIRNvCj0d5owCgYIKoZIzj0EAwIw
+    JzElMCMGA1UEAxMcU2VjRm9yZ2UgT3BlbkJhbyBJbnRlcm5hbCBDQTAeFw0yNjA1
+    MDcyMDA0MTdaFw0zNjA1MDQyMDA0MTdaMCcxJTAjBgNVBAMTHFNlY0ZvcmdlIE9w
+    ZW5CYW8gSW50ZXJuYWwgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASrlOS/
+    ttWVln7sYQNA0Yuz4Aok9uxQVeouoK5S7/VuocFWCVKxgRYnL6y4gOTUY/gGte+E
+    65qKqdXgbalQRDUxo0IwQDAOBgNVHQ8BAf8EBAMCAqQwDwYDVR0TAQH/BAUwAwEB
+    /zAdBgNVHQ4EFgQU27dXVI51Z1oSpaeRwklEryJS0owwCgYIKoZIzj0EAwIDSAAw
+    RQIgTkq8ozvK3Pk1XzId4CV8KKe3przlRPYF11dVroXocrgCIQCGA2qlq8lG2mbJ
+    UCtcbA0KtYtSZdYn+sINAIFAAoniSQ==
+    -----END CERTIFICATE-----

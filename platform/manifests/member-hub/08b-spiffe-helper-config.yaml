@@ -1,0 +1,27 @@
+# Config for the spiffe-helper sidecar in 09-backend-deployment.yaml.
+#
+# The helper connects to the SPIRE agent unix socket, requests a
+# JWT-SVID for audience `openbao`, and writes it to
+# /run/spiffe/jwt-svid.token (shared volume with the backend api
+# container). The backend then POSTs that JWT to OpenBao's
+# auth/jwt/login (role: member-hub) to mint a short-lived bao token for
+# Transit encrypt/decrypt of PII.
+#
+# Same shape as control's control-spiffe-helper-config; the audience
+# is the same ("openbao") because the OpenBao JWT auth role matches
+# on subject (the SPIFFE ID), not audience.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: member-hub-spiffe-helper-config
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+data:
+  helper.conf: |
+    agent_address = "/spiffe-workload-api/spire-agent.sock"
+    cert_dir = "/run/spiffe"
+    jwt_svids = [
+        { jwt_audience = "openbao", jwt_svid_file_name = "jwt-svid.token" }
+    ]
