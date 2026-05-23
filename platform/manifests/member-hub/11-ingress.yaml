@@ -32,11 +32,15 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
     nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
-    # Rate limit — modest; Stripe retries on backoff, OIDC flow is
-    # short-burst, normal browsing is well under this.
-    nginx.ingress.kubernetes.io/limit-rps: "10"
-    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
-    nginx.ingress.kubernetes.io/limit-connections: "20"
+    # Rate limits — relaxed for SPA traffic. The previous tight values
+    # (rps:10, burst:3, connections:20) tripped on dashboard/members
+    # page loads because the SPA fires 20+ parallel chunk fetches over
+    # HTTP/2 multiplexing → nginx 503'd asset requests past the limit.
+    # Stripe webhooks tolerate this easily; the limit was sized for the
+    # tight webhook-only era of this ingress and is now too tight.
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "200"
 spec:
   ingressClassName: nginx
   tls:
