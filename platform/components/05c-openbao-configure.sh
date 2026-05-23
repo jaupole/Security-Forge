@@ -81,6 +81,19 @@ bao bao read transit/keys/pii-encryption >/dev/null 2>&1 \
   && echo "    already exists" \
   || bao bao write -f transit/keys/pii-encryption type=aes256-gcm96 2>&1 | tail -1
 
+# audit-signing (ed25519, non-deletable) — signs audit-anchor checkpoints
+# emitted by member-hub-audit-signer and future per-app audit signers.
+# Bound via the `audit-signer` policy + per-app k8s-auth roles in 05j.
+# deletion_allowed=false because losing this key invalidates the entire
+# anchor chain back to genesis — accidental delete is unrecoverable.
+echo ">>> transit/keys/audit-signing (ed25519, deletion_allowed=false)"
+if bao bao read transit/keys/audit-signing >/dev/null 2>&1; then
+  echo "    already exists"
+else
+  bao bao write -f transit/keys/audit-signing type=ed25519 2>&1 | tail -1
+  bao bao write transit/keys/audit-signing/config deletion_allowed=false 2>&1 | tail -1
+fi
+
 # ─── 4. Kubernetes auth method ─────────────────────────────────────────────
 echo ">>> Enabling kubernetes auth"
 if bao bao auth list -format=json 2>/dev/null | grep -q '"kubernetes/":'; then
@@ -116,9 +129,10 @@ cat <<EOF
 ✓ OpenBao Layer 1 configuration complete.
 
   Loaded $(ls "$POLICIES_DIR"/*.hcl | wc -l) policies.
-  Enabled engines: kv-v2 (at secret/), transit (with pii-encryption key).
+  Enabled engines: kv-v2 (at secret/), transit (with pii-encryption + audit-signing keys).
   Enabled auth methods: kubernetes.
   Created roles: admin-break-glass (k8s SA openbao/openbao → admin policy, 1h ttl).
 
   Next: bash $SCRIPT_DIR/05d-vso-install.sh
+  (App-level k8s-auth roles for control, member-hub, ... are in 05j.)
 EOF
