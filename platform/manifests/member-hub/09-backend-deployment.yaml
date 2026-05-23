@@ -95,8 +95,16 @@ spec:
             # Keycloak — config.ts wants KEYCLOAK_URL (the base; it builds
             # /realms/<realm> internally), KEYCLOAK_REALM, and a SEPARATE
             # admin-API client (NOT the OIDC user-login client).
+            #
+            # KEYCLOAK_TENANTS_REALM (Shape B) — when set, the token
+            # verifier accepts tokens from BOTH realms. The sign-in
+            # flow still targets KEYCLOAK_REALM only. The same
+            # clientIds are registered in both realms (the realm is
+            # the issuer-layer discriminator). See
+            # docs/01-architecture/01a-realm-to-app-matrix.md.
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
+            - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
             # User-login OIDC client (AuthCode + PKCE). Confidential, with
             # an oidc-audience-mapper adding `member-hub` to access-token
             # `aud`. OIDC_CLIENT_SECRET comes from VSO-rendered
