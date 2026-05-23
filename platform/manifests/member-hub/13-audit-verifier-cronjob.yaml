@@ -70,7 +70,11 @@ spec:
   startingDeadlineSeconds: 60
   jobTemplate:
     spec:
-      backoffLimit: 0
+      # 1 retry — Cilium/CNI cold-start delay can cause the FIRST
+      # connect from a fresh pod to ECONNREFUSED before endpoint maps
+      # are programmed. backoffLimit:1 plus the wait-for-db init
+      # container below makes this self-healing.
+      backoffLimit: 1
       ttlSecondsAfterFinished: 1800
       template:
         metadata:
@@ -94,6 +98,35 @@ spec:
             runAsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
+          # Mirrors 08-migration-job.yaml's wait-for-db pattern: hold
+          # the main container until the rw Service actually answers,
+          # so transient Cilium endpoint propagation hiccups during pod
+          # spawn don't fail the job. Uses the cnpg postgres image (same
+          # one the db pod runs) — has pg_isready, already cached on node.
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h member-hub-db-rw.member-hub.svc.cluster.local -p 5432 -U audit_verifier -d member_hub -t 3; do
+                    echo "waiting for member-hub-db-rw..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
           containers:
             - name: verify
               # The verifier is part of the member-hub backend image —
