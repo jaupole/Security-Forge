@@ -1,0 +1,838 @@
+# KeycloakRealmImport for the `secforge-tenants` realm.
+#
+# Architecture: docs/01-architecture/01-iam-platform.md  (three-tier realm
+#               model: platform / secforge-tenants / enterprise-{name})
+# Sibling file: platform-realm.yaml  (staff realm — read it first for full
+#               rationale on every shared policy field; this file documents
+#               only the per-realm differences from that baseline)
+#
+# REALM PURPOSE — every SaaS customer (organization + its end-users) lives
+# here. Operators / staff do NOT. The two-realm split enforces the
+# staff↔tenant boundary at the IdP layer (not just in app code), so a
+# misconfigured client redirect or role mapper in one realm cannot leak
+# access into the other.
+#
+# IMPORT BEHAVIOR — same as platform-realm.yaml: realm-import is ONE-SHOT
+# (operator skips re-apply if realm already exists). Day-2 drift recovery
+# goes through the equivalent of 03a-keycloak-realm-hardening.sh — see
+# follow-up: extend that script (or add 03b-…) to also harden this realm.
+#
+# DIFFERENCES FROM PLATFORM REALM (cross-reference with platform-realm.yaml):
+#   - organizationsEnabled: true                — Keycloak Organizations is
+#                                                 the first-class tenant-org
+#                                                 entity within this realm
+#                                                 (per-org IdP federation,
+#                                                 branding, themes scope
+#                                                 cleanly to one org)
+#   - ssoSessionIdleTimeout: 1800 (30 min)      — tenants get a longer
+#     ssoSessionMaxLifespan: 43200 (12 h)         working session than
+#                                                 staff (per the architecture
+#                                                 doc; staff is 15 min / 8 h)
+#   - verifyEmail: true                          — tenant accounts must
+#                                                 prove email ownership;
+#                                                 staff accounts trust own
+#                                                 email
+#   - resetPasswordAllowed: true                 — tenants need self-service
+#                                                 password reset; the
+#                                                 "Forgot password" link
+#                                                 is surfaced on the
+#                                                 tenant login page
+#   - VERIFY_EMAIL requiredAction defaultAction  — flows from the
+#                                                 verifyEmail flip above
+#   - browserFlow: browser-webauthn-OPTIONAL     — tenants choose their
+#                                                 own 2FA (TOTP, passkey,
+#                                                 recovery codes — all
+#                                                 ALTERNATIVE under the
+#                                                 Conditional 2FA subflow,
+#                                                 none defaultAction).
+#                                                 Platform realm enforces
+#                                                 passkeys at first login;
+#                                                 tenants do not.
+#   - webauthn-register requiredAction           — enabled but NOT
+#     defaultAction=false                          defaultAction (vs
+#                                                 platform's true). New
+#                                                 tenant users sign up
+#                                                 with password only.
+#                                                 They can self-enroll a
+#                                                 passkey from the Account
+#                                                 Console at any time.
+#   - CONFIGURE_RECOVERY_AUTHN_CODES defaultAction=false
+#                                                — same reasoning: recovery
+#                                                 codes only matter if you
+#                                                 have a 2FA factor to
+#                                                 recover from. Available
+#                                                 for opt-in enrollment.
+#   - default realm role: default-roles-secforge-tenants
+#   - Tenant-facing app clients only             — control-portal, control,
+#                                                 member-hub, plus the
+#                                                 service-account clients
+#                                                 that manage tenant users
+#                                                 (member-hub-admin,
+#                                                 member-hub-system,
+#                                                 control-admin). The
+#                                                 platform-component
+#                                                 clients (openbao, grafana,
+#                                                 wazuh-dashboard) stay in
+#                                                 the platform realm
+#                                                 because only operators
+#                                                 sign into those
+#
+# CLIENT-ID CONVENTION — clients share the SAME clientId across both realms
+# (e.g. `member-hub` exists in both `platform` and `secforge-tenants`).
+# The issuer URL is the realm discriminator; the clientId is the app
+# identifier. App backends decide which (issuer, clientId) pairs they
+# trust. This keeps app code's OIDC_CLIENT_ID env-var realm-agnostic.
+
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: secforge-tenants-realm-import
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    secforge.platform/component: keycloak
+    secforge.platform/realm: secforge-tenants
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: secforge-tenants
+    displayName: SecForge
+    displayNameHtml: "<strong>SecForge</strong>"
+    enabled: true
+
+    # ─── Keycloak Organizations ────────────────────────────────────
+    # First-class tenant-org entity inside this realm. Each SaaS
+    # customer is a Keycloak Organization with its own optional IdP
+    # federation, branding/themes, and member scope. See
+    # docs/01-architecture/01-iam-platform.md §"Realm architecture"
+    # and the three-layer org identity model (Keycloak Organization ↔
+    # SpiceDB org ↔ control_db.organizations, all sharing org_id).
+    organizationsEnabled: true
+
+    # ─── Session and token lifetimes ───────────────────────────────
+    # Tenants: 30 min idle / 12 h absolute (longer than staff's 15 min /
+    # 8 h — see architecture doc). Remember-me still capped to 8 h idle
+    # / 24 h absolute (a passkey re-tap is cheap, multi-day session is
+    # not). Offline tokens disabled (we don't issue them).
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 43200
+    ssoSessionIdleTimeoutRememberMe: 28800
+    ssoSessionMaxLifespanRememberMe: 86400
+    offlineSessionIdleTimeout: 0
+    offlineSessionMaxLifespan: 0
+    offlineSessionMaxLifespanEnabled: false
+    accessTokenLifespan: 300
+    accessTokenLifespanForImplicitFlow: 0
+    accessCodeLifespan: 60
+    accessCodeLifespanUserAction: 1800
+    accessCodeLifespanLogin: 1800
+    actionTokenGeneratedByAdminLifespan: 43200
+    actionTokenGeneratedByUserLifespan: 300
+
+    # ─── Refresh-token rotation with reuse detection ───────────────
+    revokeRefreshToken: true
+    refreshTokenMaxReuse: 0
+
+    # ─── Sign-in policy ────────────────────────────────────────────
+    # registrationAllowed: false — tenant org creation goes through
+    # the Portal signup wizard (calls Keycloak Admin API via
+    # control-admin / member-hub-admin service accounts); we do NOT
+    # surface Keycloak's built-in self-registration page. Same for
+    # new-member onboarding into an existing org — invite-driven.
+    #
+    # verifyEmail: true — tenant accounts must prove email
+    # ownership. Admin-created users (via invite link) can be marked
+    # emailVerified=true at creation time to skip the verify step.
+    #
+    # resetPasswordAllowed: true — the "Forgot password" link is
+    # surfaced on the tenant login page so customers can recover
+    # their own accounts without operator support. Staff in the
+    # platform realm do not get this (operators have admin recovery
+    # paths).
+    registrationAllowed: false
+    registrationEmailAsUsername: false
+    rememberMe: true
+    verifyEmail: true
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: true
+    editUsernameAllowed: false
+
+    # ─── Brute-force protection ────────────────────────────────────
+    # Same values as platform realm — tenants get identical
+    # brute-force defenses. See platform-realm.yaml for tuning
+    # rationale (2026-05-14 hardening sprint).
+    bruteForceProtected: true
+    permanentLockout: false
+    maxFailureWaitSeconds: 3600
+    minimumQuickLoginWaitSeconds: 60
+    waitIncrementSeconds: 120
+    quickLoginCheckMilliSeconds: 1000
+    maxDeltaTimeSeconds: 43200
+    failureFactor: 10
+
+    # ─── Password policy ───────────────────────────────────────────
+    # Same policy as platform realm. The HIBP blacklist
+    # (Pwdb_top-100000.txt) is baked into the custom Keycloak image —
+    # if a fresh cluster comes up on the stock upstream image, this
+    # password policy will throw at evaluation time. The image-build
+    # invariant is checked at 03a-keycloak-realm-hardening.sh:87.
+    passwordPolicy: "length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"
+
+    # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
+    # Same TOTP config as platform realm — kept for opt-in users who
+    # cannot or will not enroll a passkey. Default is passkey-only
+    # (see requiredActions below).
+    otpPolicyType: totp
+    otpPolicyAlgorithm: HmacSHA1
+    otpPolicyDigits: 6
+    otpPolicyPeriod: 30
+    otpPolicyLookAheadWindow: 1
+    otpPolicyInitialCounter: 0
+    otpSupportedApplications:
+      - totpAppFreeOTPName
+      - totpAppGoogleName
+      - totpAppMicrosoftAuthenticatorName
+
+    # ─── Required actions ──────────────────────────────────────────
+    # Tenant 2FA model: OPT-IN.
+    #
+    #   - VERIFY_EMAIL defaultAction=true              — mandatory
+    #     (tenant accounts must verify email)
+    #   - CONFIGURE_TOTP enabled, defaultAction=false  — opt-in via Account Console
+    #   - webauthn-register enabled, defaultAction=false — opt-in via Account Console
+    #   - CONFIGURE_RECOVERY_AUTHN_CODES enabled, defaultAction=false — opt-in
+    #
+    # The custom `browser-webauthn-optional` authentication flow has
+    # Conditional 2FA with auth-otp-form, webauthn-authenticator, and
+    # auth-recovery-authn-code-form ALL as ALTERNATIVE under the
+    # CONDITIONAL parent — so a tenant with no 2FA enrolled signs in
+    # with password alone, and once they enroll any factor, that
+    # factor's challenge fires on subsequent logins.
+    #
+    # vs. platform realm: passkeys mandatory at first login;
+    # webauthn-register + CONFIGURE_RECOVERY_AUTHN_CODES both
+    # defaultAction=true.
+    requiredActions:
+      - alias: CONFIGURE_TOTP
+        name: Configure OTP
+        providerId: CONFIGURE_TOTP
+        enabled: true
+        defaultAction: false
+        priority: 10
+        config: {}
+      # webauthn-register: enabled but NOT defaultAction for tenants.
+      # New tenant users sign up with password only; they can self-
+      # enroll a passkey from the Account Console (auth.${DOMAIN}/
+      # realms/secforge-tenants/account → Signing In → Set up
+      # Authenticator app / Security key). The "Set up" button in
+      # Account Console triggers the webauthn-register required
+      # action on-demand, so the enabled+available config here is
+      # what makes self-enrollment work at all.
+      - alias: webauthn-register
+        name: Webauthn Register
+        providerId: webauthn-register
+        enabled: true
+        defaultAction: false
+        priority: 70
+        config: {}
+      # Recovery codes: enabled and available for self-enrollment via
+      # Account Console, but NOT defaultAction for tenants. Recovery
+      # codes only matter if you have a 2FA factor to recover from —
+      # since 2FA is optional for tenants, forcing recovery-code
+      # generation on every new user is noise. A user who enrolls a
+      # passkey gets prompted to set up recovery codes next.
+      - alias: CONFIGURE_RECOVERY_AUTHN_CODES
+        name: Recovery Authentication Codes
+        providerId: CONFIGURE_RECOVERY_AUTHN_CODES
+        enabled: true
+        defaultAction: false
+        priority: 20
+        config: {}
+      - alias: UPDATE_PASSWORD
+        name: Update Password
+        providerId: UPDATE_PASSWORD
+        enabled: true
+        defaultAction: false
+        priority: 30
+        config: {}
+      - alias: VERIFY_PROFILE
+        name: Verify Profile
+        providerId: VERIFY_PROFILE
+        enabled: true
+        defaultAction: false
+        priority: 90
+        config: {}
+      - alias: TERMS_AND_CONDITIONS
+        name: Terms and Conditions
+        providerId: TERMS_AND_CONDITIONS
+        enabled: false
+        defaultAction: false
+        priority: 100
+        config: {}
+      - alias: VERIFY_EMAIL
+        name: Verify Email
+        providerId: VERIFY_EMAIL
+        enabled: true
+        defaultAction: true   # DIFFERENCE FROM PLATFORM — tenant accounts verify email
+        priority: 50
+        config: {}
+
+    # ─── Custom authentication flow: browser-webauthn-optional ────
+    # Same shape as platform's `browser-webauthn-required` flow
+    # (auth-cookie / IdP redirector / Organization subflow / forms-
+    # with-Conditional-2FA) BUT with two tenant-specific differences
+    # inside the Conditional 2FA subflow:
+    #
+    #   1. auth-otp-form is included as an ALTERNATIVE alongside
+    #      webauthn-authenticator and auth-recovery-authn-code-form
+    #      (platform-realm omitted OTP Form because passkeys are
+    #      mandatory there)
+    #   2. None of the 2FA authenticators are forced enrollment —
+    #      Conditional 2FA's conditional-user-configured gates the
+    #      entire subflow, so a tenant with zero 2FA factors enrolled
+    #      signs in with password alone. Once they self-enroll any
+    #      factor via Account Console, that factor's challenge fires
+    #      on subsequent logins.
+    #
+    # Each realm has its own independent copy of the flow — Keycloak
+    # does not share flows across realms. When shared structure
+    # (auth-cookie, IdP redirector, Organization subflow) is edited
+    # in either realm, mirror to the other.
+    browserFlow: browser-webauthn-optional
+    authenticationFlows:
+      - alias: browser-webauthn-optional
+        description: Browser based authentication
+        providerId: basic-flow
+        topLevel: true
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: auth-cookie
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: auth-spnego
+            authenticatorFlow: false
+            requirement: DISABLED
+            priority: 20
+            userSetupAllowed: false
+          - authenticator: identity-provider-redirector
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 25
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-optional Organization
+            authenticatorFlow: true
+            requirement: ALTERNATIVE
+            priority: 26
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-optional forms
+            authenticatorFlow: true
+            requirement: ALTERNATIVE
+            priority: 30
+            userSetupAllowed: false
+      - alias: browser-webauthn-optional forms
+        description: Username, password, otp and other auth forms.
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: auth-username-password-form
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          - flowAlias: browser-webauthn-optional Browser - Conditional 2FA
+            authenticatorFlow: true
+            requirement: CONDITIONAL
+            priority: 20
+            userSetupAllowed: false
+      - alias: browser-webauthn-optional Browser - Conditional 2FA
+        description: Flow to determine if any 2FA is required for the authentication
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: conditional-user-configured
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          # Three 2FA alternatives — user picks one (or none) via Account
+          # Console self-enroll. None of these are defaultAction; the
+          # CONDITIONAL parent skips entirely if the user has configured
+          # none. Once at least one is enrolled, this subflow fires and
+          # the user is challenged with whichever method they hold.
+          - authenticator: auth-otp-form
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 20
+            userSetupAllowed: false
+          - authenticator: webauthn-authenticator
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 30
+            userSetupAllowed: false
+          - authenticator: auth-recovery-authn-code-form
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 40
+            userSetupAllowed: false
+      - alias: browser-webauthn-optional Organization
+        description: ""
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - flowAlias: browser-webauthn-optional Browser - Conditional Organization
+            authenticatorFlow: true
+            requirement: CONDITIONAL
+            priority: 10
+            userSetupAllowed: false
+      - alias: browser-webauthn-optional Browser - Conditional Organization
+        description: Flow to determine if the organization identity-first login is to be used
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: conditional-user-configured
+            authenticatorFlow: false
+            requirement: REQUIRED
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: organization
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 20
+            userSetupAllowed: false
+
+    # ─── WebAuthn policy ───────────────────────────────────────────
+    # Same RpId (eTLD+1) as platform — a passkey enrolled at
+    # auth.${DOMAIN} for one realm can NOT cross-validate to the other
+    # (Keycloak scopes WebAuthn credentials per realm + user). RpId
+    # just controls which subdomains may submit assertions, not
+    # cross-realm sharing.
+    webAuthnPolicyRpId: ${DOMAIN}
+    webAuthnPolicyRpEntityName: SecForge
+    webAuthnPolicyUserVerificationRequirement: required
+    webAuthnPolicyAttestationConveyancePreference: none
+    webAuthnPolicyCreateTimeout: 60
+    webAuthnPolicySignatureAlgorithms:
+      - ES256
+      - RS256
+
+    # ─── Events / audit logging ────────────────────────────────────
+    # Same event list as platform — every tenant authentication event
+    # is logged + streamed via jboss-logging → STDOUT → Loki/Wazuh.
+    # 7-day DB retention; durable copy in Loki.
+    eventsEnabled: true
+    eventsExpiration: 604800
+    eventsListeners:
+      - jboss-logging
+    enabledEventTypes:
+      - LOGIN
+      - LOGIN_ERROR
+      - LOGOUT
+      - LOGOUT_ERROR
+      - CODE_TO_TOKEN
+      - CODE_TO_TOKEN_ERROR
+      - CLIENT_LOGIN
+      - CLIENT_LOGIN_ERROR
+      - REFRESH_TOKEN
+      - REFRESH_TOKEN_ERROR
+      - INTROSPECT_TOKEN
+      - INTROSPECT_TOKEN_ERROR
+      - VALIDATE_ACCESS_TOKEN
+      - USER_INFO_REQUEST
+      - REVOKE_GRANT
+      - REVOKE_GRANT_ERROR
+      - UPDATE_TOTP
+      - UPDATE_TOTP_ERROR
+      - REMOVE_TOTP
+      - REMOVE_TOTP_ERROR
+      - UPDATE_PASSWORD
+      - UPDATE_PASSWORD_ERROR
+      - RESET_PASSWORD
+      - RESET_PASSWORD_ERROR
+      - SEND_RESET_PASSWORD
+      - GRANT_CONSENT
+      - REVOKE_GRANT
+      - IDENTITY_PROVIDER_LOGIN
+      - IDENTITY_PROVIDER_LOGIN_ERROR
+      - IDENTITY_PROVIDER_FIRST_LOGIN
+      - IDENTITY_PROVIDER_LINK_ACCOUNT
+      - REMOVE_FEDERATED_IDENTITY
+      - FEDERATED_IDENTITY_OVERRIDE_LINK
+      - IMPERSONATE
+      - EXECUTE_ACTIONS
+      - EXECUTE_ACTION_TOKEN
+      - CUSTOM_REQUIRED_ACTION
+    adminEventsEnabled: true
+    adminEventsDetailsEnabled: true
+
+    # ─── Realm signing keys (ADR-0006) ─────────────────────────────
+    # Each realm has its own independently-generated key material —
+    # a token issued by platform CANNOT be validated against
+    # secforge-tenants' JWKS and vice versa. This is the realm
+    # boundary at the cryptographic layer.
+    components:
+      org.keycloak.keys.KeyProvider:
+        - name: rsa-generated
+          providerId: rsa-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["RS256"]
+            keySize: ["2048"]
+        - name: rsa-enc-generated
+          providerId: rsa-enc-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["RSA-OAEP"]
+            keySize: ["2048"]
+        - name: hmac-generated-hs512
+          providerId: hmac-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+            algorithm: ["HS512"]
+        - name: aes-generated
+          providerId: aes-generated
+          subComponents: {}
+          config:
+            priority: ["100"]
+            active: ["true"]
+            enabled: ["true"]
+
+    defaultSignatureAlgorithm: RS256
+
+    # ─── Realm attributes ──────────────────────────────────────────
+    attributes:
+      cibaBackchannelTokenDeliveryMode: poll
+      cibaExpiresIn: "120"
+      cibaInterval: "5"
+      cibaAuthRequestedUserHint: login_hint
+      parRequestUriLifespan: "60"
+      "frontendUrl": "https://auth.${DOMAIN}"
+      "acr.loa.map": "{}"
+
+    # ─── Internationalization ──────────────────────────────────────
+    # English-only for now; per-org locale customization is a future
+    # Keycloak-Organizations feature once we have international
+    # customers.
+    internationalizationEnabled: false
+    supportedLocales:
+      - en
+    defaultLocale: en
+
+    # ─── Realm role hygiene ────────────────────────────────────────
+    defaultRoles:
+      - default-roles-secforge-tenants
+
+    # ─── Service-account users for confidential clients ────────────
+    #
+    # Each confidential client with `serviceAccounts.enabled=true`
+    # needs a backing USER_ENTITY row named `service-account-<clientId>`.
+    # Same pattern as platform-realm.yaml. The realm-management roles
+    # here grant the service account permission to manage users WITHIN
+    # secforge-tenants — so member-hub-admin and control-admin can
+    # create/manage tenant users (NOT staff users in platform).
+    users:
+      - username: service-account-control-admin
+        enabled: true
+        serviceAccountClientId: control-admin
+        clientRoles:
+          realm-management:
+            - manage-users
+            - view-users
+            - query-users
+            - view-clients
+            - view-realm
+            # manage-organizations enables Control to provision new
+            # tenant Keycloak Organizations at signup time (the
+            # Portal signup wizard's first write of the three-layer
+            # org identity model).
+            - manage-organizations
+            - view-organizations
+      - username: service-account-member-hub-admin
+        enabled: true
+        serviceAccountClientId: member-hub-admin
+        clientRoles:
+          realm-management:
+            - manage-users
+            - view-users
+            - query-users
+            - view-clients
+            - view-realm
+            - view-organizations
+      - username: service-account-member-hub-system
+        enabled: true
+        serviceAccountClientId: member-hub-system
+        # No clientRoles — Control gates this by the JWT's `azp`
+        # claim, not by realm roles. Default-roles-secforge-tenants
+        # is auto-applied.
+
+    # ─── Custom realm clients ──────────────────────────────────────
+    #
+    # Tenant-facing app clients only. The platform-component clients
+    # (openbao, grafana, wazuh-dashboard) intentionally do NOT exist
+    # here — they are operator tools, accessed only from `platform`.
+    #
+    # Client secrets for every confidential client are auto-generated
+    # by the operator on realm-import. After fresh-cluster install,
+    # run the rotation pattern
+    # (project_keycloak_client_secret_rotation_pattern) to sync
+    # OpenBao kv / consumer k8s Secrets with the operator-generated
+    # values. Backlog #60 tracks the proper secret-injection refactor.
+    clients:
+      # ─── control (Ecosystem Control backend, audience target) ────
+      # Tenant tokens from Portal / Member Hub carry `aud=control` via
+      # the cross-audience mappers below — Control's API can then
+      # strict-audience-check incoming tokens regardless of which
+      # client requested them. `control` exists here primarily as a
+      # registered audience, but also supports direct sign-in if a
+      # future tenant-facing surface needs it.
+      - clientId: control
+        name: Ecosystem Control
+        description: Ecosystem Control backend OIDC client (server-side, auth-code).
+        enabled: true
+        protocol: openid-connect
+        rootUrl: https://control.${DOMAIN}
+        baseUrl: https://control.${DOMAIN}
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://control.${DOMAIN}/api/auth/callback
+        webOrigins:
+          - "+"
+        attributes:
+          post.logout.redirect.uris: https://control.${DOMAIN}/
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          - name: control-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "true"
+
+      # ─── control-admin (Keycloak Admin API service-account) ──────
+      # Control → Keycloak Admin API for tenant-user management. Used
+      # by the Portal signup wizard to create tenant Keycloak users +
+      # Organizations on org creation. Separate from the platform-realm
+      # `control-admin` (which manages staff users in platform).
+      - clientId: control-admin
+        name: Ecosystem Control Admin API Client
+        description: Control → Keycloak Admin API service-account (client_credentials).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+
+      # ─── control-portal (Ecosystem Portal SPA, PKCE) ─────────────
+      # Tenant-facing Portal frontend. Public client with PKCE S256.
+      # Tenant admins log in here to manage their org (activate apps,
+      # define role bundles, configure integrations, etc.). The
+      # equivalent SPA in the `platform` realm is what staff /
+      # operators use (will become the Admin Console).
+      #
+      # Cross-audience mapper: Portal's tokens also carry `aud=control`
+      # so Portal can call Control's API directly with the same token
+      # (no token-exchange dance needed).
+      - clientId: control-portal
+        name: Ecosystem Portal SPA
+        description: Ecosystem Portal SPA — tenant face — public client with PKCE S256.
+        enabled: true
+        protocol: openid-connect
+        rootUrl: https://control.${DOMAIN}
+        baseUrl: https://control.${DOMAIN}
+        publicClient: true
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://control.${DOMAIN}/auth/callback
+          - http://portal.localhost:5173/auth/callback
+        webOrigins:
+          - "+"
+        attributes:
+          pkce.code.challenge.method: S256
+          post.logout.redirect.uris: https://control.${DOMAIN}/##http://portal.localhost:5173
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          client_credentials.use_refresh_token: "false"
+          dpop.bound.access.tokens: "false"
+          use.refresh.tokens: "true"
+          access.token.header.type.rfc9068: "false"
+          acr.loa.map: "{}"
+          client.introspection.response.allow.jwt.claim.enabled: "false"
+          client.use.lightweight.access.token.enabled: "false"
+          display.on.consent.screen: "false"
+          require.pushed.authorization.requests: "false"
+          request.object.required: not required
+          request.object.signature.alg: any
+          request.object.encryption.alg: any
+          request.object.encryption.enc: any
+          realm_client: "false"
+          tls.client.certificate.bound.access.tokens: "false"
+          token.response.type.bearer.lower-case: "false"
+        protocolMappers:
+          # Cross-audience: Portal tokens also carry `aud=control` so
+          # the Portal SPA can call Control's API directly with the
+          # same session token (no separate exchange).
+          - name: control-audience-for-portal
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+
+      # ─── member-hub (browser auth-code + PKCE, tenant-facing) ────
+      # Tenant users log into Member Hub here. Cross-audience mapper
+      # to `control` so Member Hub can call Control's `/api/v1/me`
+      # for active-org context (same pattern as the platform-realm
+      # client).
+      - clientId: member-hub
+        name: Member Hub
+        description: Member Hub user-facing OIDC (browser auth-code + PKCE).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://members.${DOMAIN}/*
+        webOrigins:
+          - https://members.${DOMAIN}
+        attributes:
+          post.logout.redirect.uris: https://members.${DOMAIN}/*
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: member-hub-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: member-hub
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          - name: control-audience-for-getme
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+
+      # ─── member-hub-admin (Keycloak Admin API service-account) ───
+      # Member Hub → Keycloak Admin API for tenant-user management
+      # (creating tenant users on invite, resetting passkey enrollment,
+      # etc.). Distinct from the platform-realm member-hub-admin
+      # (which exists in the live cluster today but, post-cutover,
+      # serves no tenant traffic from this realm).
+      - clientId: member-hub-admin
+        name: Member Hub Admin API Client
+        description: Member Hub → Keycloak Admin API service-account (client_credentials).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+
+      # ─── member-hub-system (Ecosystem Control service-account) ───
+      # Member Hub backend → Control backend for backend-to-backend
+      # calls (anonymous enroll path, etc.). Control gates this by
+      # `azp=member-hub-system` (not by realm roles or audience), so
+      # only default-roles-secforge-tenants is needed.
+      - clientId: member-hub-system
+        name: Member Hub → Control System Client
+        description: Member Hub → Control service-account for backend-to-backend (anonymous enroll path).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          - name: aud-self
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: member-hub-system
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "false"
+              lightweight.claim: "false"

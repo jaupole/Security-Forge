@@ -5,6 +5,9 @@
 > - [ADR-0007 — TOTP instead of passkeys for local development](../02-decisions/0007-totp-instead-of-passkeys-locally.md) (supersedes [ADR-0002](../02-decisions/0002-local-passkey-via-windows-hello.md) for the local-dev window)
 > - [ADR-0001 — Local-first build](../02-decisions/0001-local-first.md)
 >
+> Companion docs:
+> - [01a-realm-to-app-matrix.md](./01a-realm-to-app-matrix.md) — operational reference for "which realm does my new app go in," the live client-per-realm distribution, audience-mapper cheat sheet, and the checklist for adding a new app
+>
 > Runbooks: [keycloak-operations.md](../03-runbooks/keycloak-operations.md), [realm-signing-key-rotation.md](../03-runbooks/realm-signing-key-rotation.md).
 
 This document describes the Keycloak deployment, realm architecture, authentication factors, client model, and admin-console isolation for the SecForge platform's local edition. The architecture is identical to the cloud edition; only the substrate beneath it changes.
