@@ -526,11 +526,7 @@ spec:
       # ─── openbao (OIDC auth for the OpenBao UI/CLI) ──────────────
       - clientId: openbao
         name: OpenBao
-        description: >-
-          OpenBao OIDC auth for the platform realm. Confidential client
-          used by operators signing into the bao UI and CLI helper.
-          Secret is rendered into K8s Secret `openbao/keycloak-openbao-client-secret`
-          (key `client_secret`); consumed by `05i-openbao-oidc-auth.sh`.
+        description: OpenBao OIDC auth — operators sign into bao UI/CLI via this client.
         enabled: true
         protocol: openid-connect
         publicClient: false
@@ -553,10 +549,7 @@ spec:
       # ─── grafana (OIDC for Grafana UI) ───────────────────────────
       - clientId: grafana
         name: Grafana
-        description: >-
-          OIDC client for Grafana UI sign-in. Secret rendered into K8s
-          Secret `observability/grafana-oidc-client-secret` (consumed by
-          Grafana as `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` via envFrom).
+        description: OIDC client for Grafana UI sign-in.
         enabled: true
         protocol: openid-connect
         rootUrl: https://grafana.${DOMAIN}
@@ -589,13 +582,7 @@ spec:
       # ─── wazuh-dashboard (OIDC for OpenSearch Dashboards) ────────
       - clientId: wazuh-dashboard
         name: Wazuh Dashboard
-        description: >-
-          OIDC client for Wazuh's OpenSearch Dashboards UI. Secret is
-          template-substituted into ConfigMap
-          `wazuh/wazuh-dashboard-config` at pod start (placeholder
-          `__OIDC_CLIENT_SECRET__` in `opensearch_dashboards.yml`).
-          See `07i-keycloak-wazuh-client.sh` (deprecated) for the
-          historical creation flow.
+        description: OIDC client for Wazuh's OpenSearch Dashboards UI.
         enabled: true
         protocol: openid-connect
         rootUrl: https://wazuh.${DOMAIN}
@@ -625,12 +612,7 @@ spec:
       # ─── control (Ecosystem Control backend, server-side OIDC) ───
       - clientId: control
         name: Ecosystem Control
-        description: >-
-          Server-side confidential OIDC client backing Ecosystem
-          Control's user sign-in (Portal proxies the auth code through
-          to Control's /api/auth/callback). Secret rendered into K8s
-          Secret `control/control-app-secrets` (key OIDC_CLIENT_SECRET)
-          via VSO from OpenBao kv `apps/control/runtime`.
+        description: Ecosystem Control backend OIDC client (server-side, auth-code).
         enabled: true
         protocol: openid-connect
         rootUrl: https://control.${DOMAIN}
@@ -673,12 +655,7 @@ spec:
       # ─── control-admin (Keycloak Admin API service-account) ──────
       - clientId: control-admin
         name: Ecosystem Control Admin API Client
-        description: >-
-          Service-account-only confidential client. Control's backend
-          uses client_credentials to mint a token and call Keycloak's
-          admin REST API (member create, role mgmt, etc.). Matches the
-          member-hub-admin pattern. Secret rendered into K8s Secret
-          `control/control-app-secrets` (key KEYCLOAK_ADMIN_CLIENT_SECRET).
+        description: Control → Keycloak Admin API service-account (client_credentials).
         enabled: true
         protocol: openid-connect
         publicClient: false
@@ -701,13 +678,7 @@ spec:
       # ─── control-portal (Ecosystem Portal SPA, PKCE) ─────────────
       - clientId: control-portal
         name: Ecosystem Portal SPA
-        description: >-
-          Public client (NO client_secret) for the Ecosystem Portal
-          SPA. Uses Authorization Code + PKCE (S256). Confidential
-          ChannelType marked NON-confidential by publicClient=true.
-          Both production (https://control.${DOMAIN}/auth/callback)
-          and local hybrid-dev (http://portal.localhost:5173/auth/callback)
-          redirects are allowed.
+        description: Ecosystem Portal SPA — public client with PKCE S256.
         enabled: true
         protocol: openid-connect
         rootUrl: https://control.${DOMAIN}
@@ -754,12 +725,7 @@ spec:
       # ─── member-hub (browser auth-code + PKCE, user-facing) ──────
       - clientId: member-hub
         name: Member Hub
-        description: >-
-          User-facing OIDC client. Browser auth-code + PKCE flow against
-          the platform realm. Confidential (has client_secret, stored in
-          OpenBao at apps/member-hub/runtime#oidc_client_secret and
-          rendered by VSO into the member-hub-app-secrets K8s Secret
-          as OIDC_CLIENT_SECRET).
+        description: Member Hub user-facing OIDC (browser auth-code + PKCE).
         enabled: true
         protocol: openid-connect
         publicClient: false
@@ -815,12 +781,7 @@ spec:
       # ─── member-hub-admin (Keycloak Admin API service-account) ───
       - clientId: member-hub-admin
         name: Member Hub Admin API Client
-        description: >-
-          Service-account-only confidential client. The Member Hub
-          backend uses client_credentials to mint a token and call
-          Keycloak's admin REST API (member create, role mgmt). Roles
-          attached to the service-account user above grant the
-          minimum realm-management scope needed.
+        description: Member Hub → Keycloak Admin API service-account (client_credentials).
         enabled: true
         protocol: openid-connect
         publicClient: false
@@ -845,13 +806,7 @@ spec:
       # ─── member-hub-system (Ecosystem Control service-account) ───
       - clientId: member-hub-system
         name: Member Hub → Control System Client
-        description: >-
-          Service-account-only confidential client for backend-to-backend
-          calls from member-hub to Ecosystem Control's /api/v1/system/*
-          endpoints (anonymous public enrollment submit path). Control
-          gates by inspecting the JWT's `azp` claim equals
-          "member-hub-system" — no realm roles needed beyond
-          default-roles-platform.
+        description: Member Hub → Control service-account for backend-to-backend (anonymous enroll path).
         enabled: true
         protocol: openid-connect
         publicClient: false
