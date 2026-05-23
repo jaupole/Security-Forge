@@ -105,6 +105,42 @@ spec:
           port: 8200
 
 # ──────────────────────────────────────────────────────────────────────
+# Ingress: member-hub ns → openbao API. Member Hub backend pods use
+# OpenBao for Transit field-level PII encryption (lib/openbao* +
+# spiffe-helper); the audit-anchor CronJob uses Transit-sign for
+# audit-chain anchoring. Both run under the `app.kubernetes.io/name:
+# member-hub` label (the backend has component=app, the cronjob has
+# component=audit-signer — name label is shared).
+# Gap surfaced 2026-05-23 when audit-anchor was first actually invoked
+# (backlog #62) — ECONNREFUSED at TCP connect, classic Cilium REJECT.
+# Backend's failure mode was silent up to now because lib/openbao is
+# lazy-initialized + the PII encrypt path hasn't been triggered yet.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-member-hub-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: member-hub
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: member-hub
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
 # Ingress: spicedb ns (specifically the spicedb-datastore-refresher
 # CronJob pod) → openbao API. Phase 7d.2.c — the refresher mints a
 # dynamic Postgres cred + writes the composed config Secret as a new
