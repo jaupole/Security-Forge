@@ -108,6 +108,12 @@ spec:
             - { name: PGUSER, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: username } } }
             - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: dbname } } }
+            # Member Hub's env validator requires DATABASE_URL specifically
+            # (Control composes its own from PG* vars; member-hub doesn't).
+            # CNPG renders the full postgresql:// URI in the `uri` field of
+            # member-hub-db-app. The URI's password segment will rotate with
+            # CNPG password rotation, picked up on next pod restart.
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: uri } } }
             # OTLP exporter (Wazuh / Tempo collection point).
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: member-hub }
