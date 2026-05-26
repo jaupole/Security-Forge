@@ -66,7 +66,13 @@ spec:
     verifyEmail: false
     loginWithEmailAllowed: true
     duplicateEmailsAllowed: false
-    resetPasswordAllowed: false
+    # Self-service "Forgot password" is enabled for every realm so the
+    # operator/staff can recover without a manual reset by the platform
+    # admin. The flow uses Keycloak's reset-credentials action over the
+    # realm-configured SMTP (jaupole@googlemail.com Gmail App Password).
+    # The tenant realm enables the same flow at line 158 of
+    # secforge-tenants-realm.yaml.
+    resetPasswordAllowed: true
     editUsernameAllowed: false
 
     # ─── Brute-force protection ────────────────────────────────────
