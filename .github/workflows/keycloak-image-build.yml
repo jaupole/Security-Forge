@@ -42,6 +42,11 @@ env:
 jobs:
   build-sign-push:
     runs-on: [self-hosted, secforge]
+    # Self-hosted runner: GHA bind-mounts /home read-only at job
+    # runtime; point DOCKER_CONFIG at RUNNER_TEMP so buildx state
+    # lands somewhere writable.
+    env:
+      DOCKER_CONFIG: ${{ runner.temp }}/.docker
     permissions:
       contents: read
       packages: write   # push to ghcr.io
@@ -54,8 +59,6 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
         with:
           driver-opts: image=moby/buildkit:v0.18.2
-          # Self-hosted runner: cleanup step trips EROFS on Docker 29+.
-          cleanup: false
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
