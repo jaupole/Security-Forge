@@ -68,8 +68,14 @@ spec:
 
   features:
     enabled:
+      # Must match what's baked into the custom image at build time
+      # (see image/Dockerfile KC_FEATURES). With startOptimized=true,
+      # Keycloak refuses to start (exit 2 with
+      # "kc.features differs from what is persisted") if the runtime
+      # feature list doesn't match the baked set.
       - recovery-codes
       - dpop
+      - organization
 
   truststores:
     pg-ca:
