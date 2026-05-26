@@ -50,7 +50,7 @@ ADD --chmod=0444 --chown=1000:0 --checksum=sha256:${PWDB_SHA256} \
 # Only build-time options belong here; adding one means updating the CR too.
 # Runtime options (log-level, tracing-endpoint, spi-*, db-url-properties, …)
 # stay in the CR alone.
-ENV KC_FEATURES=recovery-codes,dpop,organizations
+ENV KC_FEATURES=recovery-codes,dpop,organization
 ENV KC_DB=postgres
 ENV KC_CACHE=ispn
 ENV KC_HEALTH_ENABLED=true
