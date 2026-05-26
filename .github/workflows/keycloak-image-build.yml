@@ -104,16 +104,24 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cosign sign --yes \
+            --registry-username "${REGISTRY_USERNAME}" \
+            --registry-password "${REGISTRY_PASSWORD}" \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
 
       - name: Verify signature (smoke test)
         if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cosign verify \
+            --registry-username "${REGISTRY_USERNAME}" \
+            --registry-password "${REGISTRY_PASSWORD}" \
             --certificate-identity-regexp "^https://github\\.com/${{ github.repository }}/" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
