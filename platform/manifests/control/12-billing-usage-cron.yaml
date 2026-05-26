@@ -1,0 +1,107 @@
+# Nightly CronJob that pushes Stripe usage records for every active
+# subscription. Runs at 02:00 UTC; iterates `org_app_subscription`
+# rows with status ∈ {active, past_due, trialing, unpaid} and pushes
+# the current sub-org + member counts via Stripe usage_record events
+# (action='set' — last-write-wins per cycle).
+#
+# Per-run failures are logged but do not abort the loop; the Job
+# exits non-zero on partial failure so `kubectl get jobs` surfaces it.
+# The Pod runs against the same image + env as the API + migration
+# Job (same DATABASE_URL, same Transit/OpenBao bindings, same
+# imagePullSecrets), with the CLI entrypoint flipped.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-billing-usage-sync
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: billing-usage-sync
+spec:
+  # Nightly at 02:00 UTC. Quiet window for the box; well clear of the
+  # daily Velero backup at 03:00 and the morning operator activity.
+  schedule: "0 2 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid                 # one at a time; skip overlap
+  startingDeadlineSeconds: 600              # if the controller misses the
+                                            # window by more than 10 min, skip
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0                       # one shot — operator inspects logs
+      ttlSecondsAfterFinished: 86400        # GC after 24h
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: billing-usage-sync
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: sync
+              # Digest-pinned. Same image as the backend Deployment.
+              # When the operator bumps `09-backend-deployment.yaml`
+              # they should bump this manifest too (same SHA).
+              image: ghcr.io/jaupole/control@sha256:3805bc6d9fe954840d74929bc9e2d9fce9f91137176addb97e948957c6bf2702
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "billing:sync-usage"]
+              env:
+                - { name: NODE_ENV,                 value: production }
+                - { name: API_PORT,                 value: "4000" }
+                - { name: API_HOST,                 value: "0.0.0.0" }
+                - { name: TRUST_PROXY,              value: "1" }
+                - { name: PORTAL_ORIGIN,            value: "https://control.${DOMAIN}" }
+                - { name: KEYCLOAK_URL,             value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,           value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
+                - { name: SPICEDB_ENDPOINT,         value: "spicedb.spicedb.svc.cluster.local:50051" }
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
