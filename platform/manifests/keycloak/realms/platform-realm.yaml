@@ -745,10 +745,12 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - https://members.${DOMAIN}/*
+          - http://member-hub.localhost:5173/auth/callback
         webOrigins:
           - https://members.${DOMAIN}
+          - http://member-hub.localhost:5173
         attributes:
-          post.logout.redirect.uris: https://members.${DOMAIN}/*
+          post.logout.redirect.uris: https://members.${DOMAIN}/*##http://member-hub.localhost:5173
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"
