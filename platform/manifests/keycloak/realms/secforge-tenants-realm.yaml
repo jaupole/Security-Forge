@@ -562,6 +562,15 @@ spec:
             # org identity model).
             - manage-organizations
             - view-organizations
+            # GOTCHA: The Keycloak v26 Organizations REST endpoint
+            # ALSO requires the `realm-admin` composite role — the
+            # finer-grained `manage-organizations`/`view-organizations`
+            # roles alone return 403. Caught live 2026-05-23 + 26
+            # debugging the signup wizard V2. Until upstream tightens
+            # the check, the service account needs the broader
+            # composite. Adding here keeps fresh imports working
+            # without the post-import DB-write fix.
+            - realm-admin
       - username: service-account-member-hub-admin
         enabled: true
         serviceAccountClientId: member-hub-admin
