@@ -1,0 +1,51 @@
+# Allow Keycloak to reach the realm-configured SMTP server.
+#
+# Background — Layer A egress filtering (project_egress_filtering_layer_a)
+# default-denies all egress from the keycloak namespace and re-adds
+# narrow allows per use case. Without this rule, Keycloak's
+# DefaultEmailSenderProvider gets `Connection refused` on every
+# attempt to reach smtp.gmail.com:587 — the realm's SMTP config is
+# fine, the outbound TCP connection is what's blocked.
+#
+# Scope — outbound TCP/587 (SMTP submission, STARTTLS) and TCP/465
+# (SMTP SSL, in case the realm is ever flipped to ssl=true) to any
+# IP outside the cluster's pod + service CIDRs. Tight enough that a
+# compromised Keycloak pod can't pivot to arbitrary services; loose
+# enough that we don't have to track Gmail's SMTP IP ranges (which
+# change). DNS resolution itself is already allowed by
+# allow-egress-essentials → kube-dns.
+#
+# Tightening path (later) — Cilium L7 NetworkPolicy (CiliumNetworkPolicy
+# `fqdnSelector: smtp.gmail.com`) would restrict the destination to
+# exactly that hostname. Pending Ambient/L7 enablement.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-smtp
+  namespace: keycloak
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Pod CIDR — block lateral movement to other pods via SMTP port.
+              - 10.42.0.0/16
+              # Service CIDR — block reach into cluster services.
+              - 10.43.0.0/16
+              # Private RFC1918 ranges — defense in depth against
+              # accidental routes to the host's LAN.
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        # SMTP submission with STARTTLS (Keycloak's smtp.starttls=true).
+        - { port: 587, protocol: TCP }
+        # SMTP over implicit SSL (if smtp.ssl=true is ever set).
+        - { port: 465, protocol: TCP }
