@@ -1,0 +1,80 @@
+# Public ingress for the PLATFORM's Stripe webhook receiver.
+#
+# Distinct from control.${DOMAIN} (tailnet-only operator surface)
+# because Stripe lives on the public internet and physically cannot
+# reach a tailscale-locked endpoint. This ingress exposes EXACTLY
+# ONE path — /api/v1/webhooks/stripe-platform — and rejects every
+# other path with 404.
+#
+# Defense-in-depth stack:
+#   1. nginx `whitelist-source-range` restricts ingress to Stripe's
+#      published outbound webhook IPs + tailnet CIDRs (so the operator
+#      can curl-test the endpoint over Tailscale). The Stripe IP set
+#      below is from https://stripe.com/files/ips/ips_webhooks.json
+#      fetched 2026-05-26 — refresh annually and on any Stripe
+#      networking announcement.
+#   2. Per-route bodyLimit 64KB inside Fastify (see
+#      webhooks-stripe-platform.ts).
+#   3. HMAC signature verification against the encrypted webhook
+#      signing secret (the canonical Stripe defense).
+#   4. Event-id idempotency via billing_webhook_event PK.
+#
+# DNS REQUIREMENT — billing.${DOMAIN} needs a PUBLIC A/AAAA record
+# pointing at the cluster's public IP. The wildcard *.secforge.dev
+# cert (cert-manager DNS01) covers it. cert-manager Order on first
+# apply.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: control-billing-webhook
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: stripe-webhook
+  annotations:
+    cert-manager.io/cluster-issuer: ${LE_ISSUER}
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Restrict ingress to Stripe's published webhook source IPs
+    # plus our tailnet CIDRs (operator curl-testing) + cluster pod
+    # CIDR (in-cluster smoke tests). Annual refresh from
+    # https://stripe.com/files/ips/ips_webhooks.json (current as of
+    # 2026-05-26).
+    nginx.ingress.kubernetes.io/whitelist-source-range: "100.64.0.0/10,10.42.0.0/16,3.18.12.63/32,3.69.109.8/32,3.120.168.93/32,3.130.192.231/32,13.235.14.237/32,13.235.122.149/32,18.211.135.69/32,35.154.171.200/32,35.157.207.129/32,52.15.183.38/32,54.88.130.119/32,54.88.130.237/32,54.187.174.169/32,54.187.205.235/32,54.187.216.72/32"
+
+    # Rate limit — webhooks should arrive at a low cadence (a few per
+    # minute in steady state, bursty during dunning). 30 rps with a
+    # 3× burst gives Stripe room for retry storms without inviting
+    # abuse from anything that bypasses the IP allowlist.
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+
+    # Defense-in-depth: shrink the max body we accept at the ingress
+    # too, so junk payloads die before they reach Fastify. Stripe
+    # events are typically <16KB; 64KB cap matches the per-route
+    # Fastify limit.
+    nginx.ingress.kubernetes.io/proxy-body-size: "64k"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - billing.${DOMAIN}
+      secretName: billing-tls
+  rules:
+    - host: billing.${DOMAIN}
+      http:
+        paths:
+          # ONLY the platform-Stripe webhook path is exposed. Anything
+          # else returns 404 — the default deny.
+          - path: /api/v1/webhooks/stripe-platform
+            pathType: Exact
+            backend:
+              service:
+                name: control
+                port:
+                  number: 80
