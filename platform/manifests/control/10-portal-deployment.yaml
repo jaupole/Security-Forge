@@ -52,7 +52,7 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          image: ghcr.io/jaupole/portal@sha256:6060edb695361a61aa976675a801bfa8be7ac7ca4f04e14ff3802db6ab70062c
+          image: ghcr.io/jaupole/portal@sha256:f9c4931df4e612f3af9fe9642c9147cd1341e2971b980a35a6aea14e492a999d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
