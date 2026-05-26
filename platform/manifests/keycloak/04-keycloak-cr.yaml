@@ -34,7 +34,7 @@ spec:
   # operator-backlog #48 cutover (2026-05-22): moved the IdP off the unsigned
   # in-cluster build localhost/secforge/keycloak:26.3.3-optimized onto this
   # GHA-built, cosign-v2-signed image (base 6a7217a — CVE-refreshed).
-  image: ghcr.io/jaupole/keycloak@sha256:90bbcd9dd270372f2899c8400dddf779a8c6a440af97bf1cc8dabdf103a8bfa3
+  image: ghcr.io/jaupole/keycloak@sha256:b9948b68c1a90d216736c6fd9c9d2e496afebdd66243d507df7e53d52d727793
   startOptimized: true    # using the pre-built optimized image
 
   db:
