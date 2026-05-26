@@ -46,7 +46,7 @@ permissions:
 
 jobs:
   zap-baseline:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, secforge]
     timeout-minutes: 15
 
     steps:

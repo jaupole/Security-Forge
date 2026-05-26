@@ -41,7 +41,7 @@ env:
 
 jobs:
   build-sign-push:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, secforge]
     permissions:
       contents: read
       packages: write   # push to ghcr.io

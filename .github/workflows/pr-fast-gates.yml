@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   fast-gates:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, secforge]
     timeout-minutes: 5
 
     steps:
