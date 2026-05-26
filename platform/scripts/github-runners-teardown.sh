@@ -44,7 +44,7 @@ sudo systemctl daemon-reload
 echo ">>> deregistering each runner from GitHub"
 for slug in "${!REPOS[@]}"; do
   REPO="${REPOS[$slug]}"
-  RUNNER_DIR="/home/github-runner/runners/${slug}"
+  RUNNER_DIR="/opt/github-runner/runners/${slug}"
   if [ ! -d "$RUNNER_DIR" ]; then
     echo "  ${REPO}: no runner dir, skipping"
     continue
@@ -64,7 +64,7 @@ done
 
 echo ">>> removing github-runner user + workspace"
 sudo userdel -r github-runner 2>/dev/null || true
-sudo rm -rf /home/github-runner
+sudo rm -rf /opt/github-runner
 
 echo ">>> uninstalling Docker"
 sudo systemctl disable --now docker.service docker.socket 2>/dev/null || true
