@@ -42,11 +42,6 @@ env:
 jobs:
   build-sign-push:
     runs-on: [self-hosted, secforge]
-    # Self-hosted runner: GHA bind-mounts /home read-only at job
-    # runtime; point DOCKER_CONFIG at RUNNER_TEMP so buildx state
-    # lands somewhere writable.
-    env:
-      DOCKER_CONFIG: ${{ runner.temp }}/.docker
     permissions:
       contents: read
       packages: write   # push to ghcr.io
