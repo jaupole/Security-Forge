@@ -707,6 +707,13 @@ spec:
           - https://admin.${DOMAIN}/
           - https://control.${DOMAIN}/auth/callback
           - http://portal.localhost:5173/auth/callback
+          # Dedicated silent-renew iframe target — see Portal
+          # `silent-callback.html` + `src/silent-callback.ts`. Must
+          # be registered separately from the SPA's main /auth/callback
+          # because Keycloak validates redirect_uri exactly.
+          - https://admin.${DOMAIN}/silent-callback.html
+          - https://control.${DOMAIN}/silent-callback.html
+          - http://portal.localhost:5173/silent-callback.html
         webOrigins:
           - "+"
         attributes:
