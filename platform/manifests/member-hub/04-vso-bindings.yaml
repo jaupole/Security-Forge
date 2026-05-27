@@ -87,6 +87,21 @@ spec:
         # every row that needs to remain searchable.
         EMAIL_HMAC_KEY:
           text: '{{ .Secrets.email_hmac_key }}'
+        # Keycloak `member-hub-system` client_credentials grant — a
+        # third Keycloak client (separate from `member-hub` user-login
+        # and `member-hub-admin` admin-API). Service-account-only; the
+        # backend mints a short-lived access token via
+        # `lib/service-token.ts` and uses it to call Control's
+        # /api/v1/system/* endpoints (stripe-config, accounting-config,
+        # email-config, etc.) when there's no user session behind the
+        # request (Stripe webhooks, automation rule dispatcher, etc.).
+        # WITHOUT THIS the Stripe checkout-session-create endpoint
+        # 500s with StripeNotConfiguredError. The secret is published
+        # to OpenBao by platform/components/05l-keycloak-secret-publish.sh.
+        MH_SYSTEM_CLIENT_ID:
+          text: 'member-hub-system'
+        MH_SYSTEM_CLIENT_SECRET:
+          text: '{{ .Secrets.system_client_secret }}'
 
 ---
 # GHCR image-pull credential. Renders into a kubernetes.io/dockerconfigjson
