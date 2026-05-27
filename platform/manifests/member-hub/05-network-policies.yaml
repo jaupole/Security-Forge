@@ -260,8 +260,9 @@ spec:
 # but no data was actually shipped, and the retention pass can't list existing
 # backups to enforce its policy. Discovered during 2026-05-16 drift sweep —
 # member-hub-db ScheduledBackups had been firing daily with hidden failure.
-# Scope: only the CNPG-managed postgres pods (label cnpg.io/cluster=member-hub-db),
-# not the app pods — the app shouldn't talk to MinIO directly from this ns.
+# Scope: only the CNPG-managed postgres pods (label cnpg.io/cluster=member-hub-db).
+# The API pod has its own egress rule below (allow-egress-app-to-minio) since
+# document-upload landed 2026-05-27.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -274,6 +275,34 @@ spec:
   podSelector:
     matchLabels:
       cnpg.io/cluster: member-hub-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
+# App-pod egress to MinIO — required by the member-documents API to
+# upload/download file attachments to the member-hub-documents bucket.
+# Distinct from the CNPG egress above (different pod selector); same
+# destination ns + port. Without this, uploads return 500 with
+# ECONNREFUSED because the default-deny-egress baseline blocks the
+# connection at L3.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-app-to-minio
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: member-hub
   policyTypes: [Egress]
   egress:
     - to:
