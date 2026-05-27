@@ -71,7 +71,7 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          image: ghcr.io/jaupole/member-hub@sha256:a8807a51d0892b6ade9af0ef4bf29686c8352f998ac5fdf18ecb902d519ee4f3
+          image: ghcr.io/jaupole/member-hub@sha256:c18eb85fa90515a5e1bffbc1785bfc29fc1890ca4f2d464de11bb7562fa33b31
           imagePullPolicy: IfNotPresent
           command: ["/nodejs/bin/node", "dist/db/migrate.js"]
           env:
