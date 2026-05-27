@@ -353,6 +353,51 @@ spec:
         - { protocol: TCP, port: 443 }
 
 ---
+# Egress to the public internet on SMTP submission ports for
+# outbound transactional email when an org configures
+# provider='smtp' on its email-config (Gmail, Outlook 365, custom
+# SMTP relays). Postmark uses HTTPS and goes through the
+# allow-egress-internet-https policy above; this is specifically the
+# SMTP code path through nodemailer.
+#
+# Port set:
+#   587 — SMTP submission with STARTTLS upgrade (most common; Gmail
+#         smtp.gmail.com:587, Outlook smtp.office365.com:587).
+#   465 — SMTP over implicit TLS (legacy but still in active use).
+# Same CIDR pattern as the HTTPS policy — 0.0.0.0/0 minus private +
+# link-local ranges — so internal traffic still has to use the
+# explicit allow rules.
+#
+# Discovered 2026-05-27 when a Bob Co invoice-paid rule blew up with
+# ECONNREFUSED 64.233.165.109:587 on the rendered Gmail SMTP send —
+# the policy stack had every component EXCEPT the SMTP egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-smtp
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: member-hub
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 587 }
+        - { protocol: TCP, port: 465 }
+
+---
 # CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
 # the member-hub-db pod for reconciliation, probes, and barman metrics.
 apiVersion: networking.k8s.io/v1
