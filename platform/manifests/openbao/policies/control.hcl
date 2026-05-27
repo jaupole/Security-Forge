@@ -42,3 +42,26 @@ path "transit/encrypt/pii-encryption" {
 path "transit/decrypt/pii-encryption" {
   capabilities = ["update"]
 }
+
+# Per-tenant Transit keys for vendor credentials (Stripe / QBO / SMTP /
+# Postmark / OIDC) — every org's *_enc columns wrap onto its own
+# `pii-org-<orgId>` key so compromise of one org's plaintext (via an
+# attacker reading the ciphertext from the DB + calling our decrypt
+# path with that org's keyName) does not extend to other orgs.
+#
+# The key is minted at org-create time by the signup/admin/sub-org
+# routes via the TransitClient.createKey() helper; the create capability
+# below is what lets that mint succeed. Rotation walks the same paths
+# (rotateKey + rewrap).
+path "transit/keys/pii-org-*" {
+  capabilities = ["create", "read", "update"]
+}
+path "transit/encrypt/pii-org-*" {
+  capabilities = ["update"]
+}
+path "transit/decrypt/pii-org-*" {
+  capabilities = ["update"]
+}
+path "transit/rewrap/pii-org-*" {
+  capabilities = ["update"]
+}
