@@ -45,17 +45,22 @@ path "transit/decrypt/pii-encryption" {
 
 # Per-tenant Transit keys for vendor credentials (Stripe / QBO / SMTP /
 # Postmark / OIDC) — every org's *_enc columns wrap onto its own
-# `pii-org-<orgId>` key.
+# `pii-org-<orgId>` key so compromise of one org's plaintext (via an
+# attacker reading the ciphertext from the DB + calling our decrypt
+# path with that org's keyName) does not extend to other orgs.
 #
-# The wildcard encrypt/decrypt/rewrap capabilities below are used by
-# BACKGROUND workers (rewrap script, rotation script, signup wizard's
-# initial key mint) where cross-org access is legitimate. Per-REQUEST
-# code paths (the user-facing API handling one active org per request)
-# mint a short-TTL child token via `auth/token/create` below, which
-# inherits the `pii-org-request` policy — narrowing decrypt rights to
-# the active org's key for the duration of that request. See the
-# `auth/token/create` block at the bottom of this file + the
-# `pii-org-request.hcl` policy in the same directory.
+# The key is minted at org-create time by the signup/admin/sub-org
+# routes via the TransitClient.createKey() helper; the create capability
+# below is what lets that mint succeed. Rotation walks the same paths
+# (rotateKey + rewrap).
+#
+# Per-REQUEST scoping (narrowing the in-process decrypt token to one
+# org per request) was attempted via `pii-org-request` + `auth/token/
+# create` but rolled back 2026-05-27 — OpenBao's policy template
+# system does not expose token-creation-time metadata to templates,
+# so the scoped policy can't resolve to the active org's key. Deferred
+# to a JWT-claim-mapping rewrite (see project_per_request_token_scoping
+# memory entry).
 path "transit/keys/pii-org-*" {
   capabilities = ["create", "read", "update"]
 }
@@ -66,15 +71,5 @@ path "transit/decrypt/pii-org-*" {
   capabilities = ["update"]
 }
 path "transit/rewrap/pii-org-*" {
-  capabilities = ["update"]
-}
-
-# Per-request token scoping — Control mints short-TTL child tokens
-# bearing `pii-org-request` policy + `active_org_id` metadata, so
-# the in-process decrypt path used by user-facing requests is bound
-# to the active org's Transit key only. Without this capability the
-# parent token still works (cross-org) but the per-request hardening
-# can't operate.
-path "auth/token/create" {
   capabilities = ["update"]
 }
