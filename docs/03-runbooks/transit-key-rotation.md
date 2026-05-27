@@ -124,6 +124,85 @@ ciphertext, etc.), Member Hub's read path will throw a decrypt-error
 against the rewrap target until you UPDATE that row through the
 admin UI to mint fresh ciphertext on the latest version.
 
+## Cipher orphan recovery (post-OpenBao-restore)
+
+Different failure mode from rotation. When the per-org Transit key
+has been **destroyed and recreated** — most likely after an OpenBao
+admin recovery flow (the 2026-05-19 incident is the canonical
+example) — the previously-stored ciphertext is unrecoverable.
+`transit/rewrap` cannot help here: the new key is unrelated to the
+old one, so OpenBao can't decrypt the old ciphertext to re-encrypt
+it. There IS no plaintext-on-disk to read; the rotation script
+will fail with "cipher: message authentication failed" on the
+first decrypt attempt.
+
+**Recovery path is operator-driven via the admin Integrations UI.**
+Migration 054 + 055 added a `needs_reconnect` column to every
+vendor-credential table; the system endpoints (`system-accounting-
+config`, `system-stripe-config`, `system-email-config`) flip this
+flag to TRUE when their decrypt call throws. The admin Integrations
+page (admin.${DOMAIN}/admin/integrations) renders an affected row
+with a yellow **Reconnection Required** pill + an inline banner
+explaining what happened.
+
+Per-integration recovery:
+
+| Integration | Operator action | Result |
+|---|---|---|
+| **QuickBooks Online** | Click **Reconnect QuickBooks** — same OAuth flow as initial connect. | Fresh tokens encrypted under the current key; `needs_reconnect` cleared. |
+| **Stripe** | Paste a fresh Stripe Secret Key + **Save Changes**. Webhook signing secret too if Stripe also rotated. | Fresh ciphertext under current key; flag cleared on save. |
+| **Email (Postmark or SMTP)** | Type the Postmark server token OR the SMTP password into the affected ConfigForm + **Save**. | Fresh ciphertext under current key; flag cleared on save. The org default and each app override carry independent flags. |
+
+The opportunistic verify on every `/raw` and status read also flips
+the flag forward when the system endpoint hasn't been hit yet — so
+the operator sees the badge on first page-load, no waiting for a
+send to fail. Until the operator clicks Reconnect / re-saves the
+secret, the underlying system endpoint returns null credentials and
+sends are skipped with a truthful audit reason (`system_email_config_
+fetch_failed`, `provider:none`, etc.) — Member Hub's rule engine
+honestly reports the skip rather than claiming the send succeeded
+(see Member Hub commit `fd00ff8`).
+
+If the cipher orphan affects orgs that no operator is reachable for
+(e.g., bulk recovery of a dead realm), the only option is to clear
+the affected ciphertext columns by hand:
+
+```sql
+-- Per-org, after confirming the operator cannot recover via UI.
+-- NOTE: this loses the stored credential — they MUST be re-entered
+-- by the operator or via a separate provisioning channel.
+UPDATE organization_stripe_config
+   SET stripe_secret_key_enc = NULL,
+       stripe_webhook_secret_enc = NULL,
+       needs_reconnect = FALSE,
+       updated_at = now()
+ WHERE org_id = '<orgId>';
+```
+
+Same shape for `organization_accounting_config` (qbo_*_enc),
+`organization_email_config` (postmark_server_token_enc, smtp_
+password_enc), and `organization_app_email_config`.
+
+## Aging check (proactive rotation signal)
+
+The age-report script lists every per-org Transit key with the
+number of days since its LATEST version was created. Operators wire
+it into either a daily CronJob (alert on exit code 1) or a one-off
+run when reviewing key hygiene:
+
+```bash
+ssh secforge "cd ~/secforge && sudo -n kubectl -n control exec -i deploy/control -- \
+  /nodejs/bin/node --import tsx /app/src/scripts/transit-key-age-report.ts --threshold-days 365"
+```
+
+`--json` swaps the human report for a machine-readable payload
+suitable for piping into other tooling. Exits 1 when at least one
+key crosses the threshold OR when an OpenBao read fails (so a
+wrapping alert can fire on either condition).
+
+Default threshold is 365 days — the lower bound of the 12-24 month
+application-key rotation cadence in § When to rotate.
+
 ## Audit trail
 
 Every Transit operation (`encrypt`, `decrypt`, `rewrap`, `rotate`,
@@ -140,11 +219,13 @@ Control also audits each per-org rewrap into `audit.event` via
 ## Not covered
 
 - **CronJob automation.** Today rotation is operator-driven. A
-  `transit-key-rotation-monthly` CronJob in the `control` namespace
-  is in the backlog — would walk every org whose key.creation_time
-  is older than a configured threshold, rotate + rewrap, and emit
-  metrics. Open it when the operator burden of running this
-  manually outweighs the audit-trail clarity of explicit invocation.
+  `transit-key-age-report-daily` CronJob in the `control` namespace
+  is the next obvious step — it would run the age-report script
+  above on a schedule and Alertmanager-fire on a non-zero exit.
+  Auto-rotation (run `rotate-org-transit-key.ts --all --rewrap` on
+  a cadence) stays operator-confirmed for now; the audit-trail
+  clarity of explicit invocation is worth more than the convenience
+  while tenant count is small.
 - **Cross-org rewrap (i.e., rotating the wrap KEY of an org's
   data).** The cross-key rewrap path is in `rewrap-org-vendor-keys.ts`
   (the migration-052 back-fill). That's different from same-key
