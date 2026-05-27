@@ -1,45 +1,46 @@
-# Nightly CronJob that pushes Stripe usage records for every active
-# subscription. Runs at 02:00 UTC; iterates `org_app_subscription`
-# rows with status ∈ {active, past_due, trialing, unpaid} and pushes
-# the current sub-org + member counts via Stripe usage_record events
-# (action='set' — last-write-wins per cycle).
+# Hourly CronJob that deletes tenant signups stuck in the "temp
+# password emailed but never used" state for >24h. Iterates Keycloak
+# users in the secforge-tenants realm that still carry the
+# `signup_pending_at` attribute (set by POST /api/v1/signup, cleared
+# by the /me handler on the user's first authenticated call) AND
+# whose stamp is older than 24h, then deletes the user + their
+# Keycloak Organization + the control_db organizations row + every
+# SpiceDB tuple where the org is the resource.
 #
-# Per-run failures are logged but do not abort the loop; the Job
-# exits non-zero on partial failure so `kubectl get jobs` surfaces it.
-# The Pod runs against the same image + env as the API + migration
-# Job (same DATABASE_URL, same Transit/OpenBao bindings, same
-# imagePullSecrets), with the CLI entrypoint flipped.
+# Same image + DB env as the API Deployment — only the CLI entrypoint
+# differs ("signup:cleanup-stale"). When the backend deployment image
+# digest is bumped, this manifest should be bumped to match (the
+# billing-usage cron has the same convention).
 
 ---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: control-billing-usage-sync
+  name: control-signup-cleanup
   namespace: control
   labels:
     app.kubernetes.io/name: control
     secforge.platform/component: control
-    secforge.platform/role: billing-usage-sync
+    secforge.platform/role: signup-cleanup
 spec:
-  # Nightly at 02:00 UTC. Quiet window for the box; well clear of the
-  # daily Velero backup at 03:00 and the morning operator activity.
-  schedule: "0 2 * * *"
+  # Hourly at :17. Off the round-hour to avoid the noise band where
+  # everything else fires at :00.
+  schedule: "17 * * * *"
   timeZone: UTC
-  concurrencyPolicy: Forbid                 # one at a time; skip overlap
-  startingDeadlineSeconds: 600              # if the controller misses the
-                                            # window by more than 10 min, skip
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 0                       # one shot — operator inspects logs
-      ttlSecondsAfterFinished: 86400        # GC after 24h
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
       template:
         metadata:
           labels:
             app.kubernetes.io/name: control
             secforge.platform/component: control
-            secforge.platform/role: billing-usage-sync
+            secforge.platform/role: signup-cleanup
         spec:
           restartPolicy: Never
           serviceAccountName: control
@@ -73,23 +74,30 @@ spec:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits:   { cpu: 100m, memory: 128Mi }
           containers:
-            - name: sync
+            - name: cleanup
               # Digest-pinned. Same image as the backend Deployment.
-              # When the operator bumps `09-backend-deployment.yaml`
-              # they should bump this manifest too (same SHA).
+              # Bump in lockstep with 09-backend-deployment.yaml.
               image: ghcr.io/jaupole/control@sha256:e74938c7b9b04f0cbabadd7df6ebe3d2b5a2be01fe373878e01288ef685557d3
               imagePullPolicy: IfNotPresent
-              command: ["/nodejs/bin/node", "dist/cli/index.js", "billing:sync-usage"]
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "signup:cleanup-stale"]
               env:
-                - { name: NODE_ENV,                 value: production }
-                - { name: API_PORT,                 value: "4000" }
-                - { name: API_HOST,                 value: "0.0.0.0" }
-                - { name: TRUST_PROXY,              value: "1" }
-                - { name: PORTAL_ORIGIN,            value: "https://control.${DOMAIN}" }
-                - { name: KEYCLOAK_URL,             value: "https://auth.${DOMAIN}" }
-                - { name: KEYCLOAK_REALM,           value: platform }
-                - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
-                - { name: SPICEDB_ENDPOINT,         value: "spicedb.spicedb.svc.cluster.local:50051" }
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                # Platform realm context for any platform-admin checks the
+                # CLI happens to load on import (the cleanup itself only
+                # touches secforge-tenants).
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                # Tenants realm — REQUIRED for this CronJob (the cleanup
+                # operates on tenant users). KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET
+                # arrives via VSO-rendered control-app-secrets.
+                - { name: KEYCLOAK_TENANTS_REALM,           value: secforge-tenants }
+                - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
                 - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
