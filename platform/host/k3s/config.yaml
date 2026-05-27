@@ -18,3 +18,27 @@ kube-apiserver-arg:
   - "audit-log-maxbackup=10"          # rotate, keep 10 backups
   - "audit-log-maxsize=100"           # 100 MB per file before rotation
   - "audit-log-format=json"           # one JSON object per line
+
+# ─── kubelet hardening (kube-bench 4.2.6, added 2026-05-14) ──────────
+# With --protect-kernel-defaults the kubelet refuses to start if any of
+# its expected sysctls differ from the values it would set. We've
+# hardened sysctls deliberately (kptr_restrict=2, dmesg_restrict=1,
+# unprivileged_bpf_disabled=1, etc.) — this flag tells kubelet to leave
+# them alone rather than reset them on start.
+kubelet-arg:
+  - "protect-kernel-defaults=true"
+
+
+# ─── etcd Secrets encryption-at-rest (added 2026-05-28) ──────────────
+# Closes the offline-disk attack where MinIO SSE master key + Velero
+# kopia passphrase + OpenBao seal token were recoverable via
+# strings /var/lib/rancher/k3s/server/db/state.db.
+# k3s generates an AES-CBC key, writes an encryption-provider-config,
+# and passes it to kube-apiserver as --encryption-provider-config.
+# After enable, run: sudo k3s secrets-encrypt reencrypt --force
+# to rewrite existing Secrets with the new key.
+# CAVEAT: the AES key sits in /var/lib/rancher/k3s/server/cred/ on the
+# same disk. Real disk-theft protection still needs LUKS on vg0-*.
+# Historical plaintext from kine MVCC remains in state.db until the
+# previously-leaked Secret values are rotated.
+secrets-encryption: true
