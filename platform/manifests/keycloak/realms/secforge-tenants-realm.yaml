@@ -39,42 +39,64 @@
 #                                                 tenant login page
 #   - VERIFY_EMAIL requiredAction defaultAction  — flows from the
 #                                                 verifyEmail flip above
-#   - browserFlow: browser-webauthn-REQUIRED     — passkey is mandatory
-#                                                 at first login (mirrors
-#                                                 platform realm). The
-#                                                 Conditional 2FA subflow
-#                                                 has webauthn-authenticator
-#                                                 + auth-recovery-authn-code-form
-#                                                 as ALTERNATIVE — OTP Form
-#                                                 removed. Hardened
-#                                                 2026-05-27 (was
-#                                                 -OPTIONAL — see
+#   - browserFlow: browser-FLEXIBLE              — password OR passkey at
+#                                                 first factor (tenant's
+#                                                 choice each sign-in).
+#                                                 2FA is optional, fires
+#                                                 only when the user has
+#                                                 enrolled a 2FA factor.
+#                                                 Diverges from platform's
+#                                                 strict "password +
+#                                                 mandatory passkey 2FA"
+#                                                 posture. Final shape
+#                                                 landed 2026-05-27 (third
+#                                                 pass of the day — see
 #                                                 03b-keycloak-tenants-
-#                                                 passkey-required.sh for
-#                                                 the live replay).
-#   - webauthn-register requiredAction           — enabled AND defaultAction
-#     defaultAction=true                           (matches platform). New
-#                                                 tenant users are prompted
-#                                                 to enroll a passkey at
-#                                                 first login. Existing
-#                                                 users without a passkey
-#                                                 get the same prompt on
-#                                                 next sign-in.
-#   - CONFIGURE_RECOVERY_AUTHN_CODES enabled=false (2026-05-27 second pass)
-#                                                — diverges from platform.
-#                                                 Tenants do NOT get
-#                                                 recovery codes. The
-#                                                 recovery path is email
-#                                                 password-reset; if email
-#                                                 access is also lost, the
-#                                                 operator clears the
-#                                                 passkey via help-desk
-#                                                 ticket so the user can
-#                                                 re-enroll. This avoids
-#                                                 the support cost of
-#                                                 onboarding every tenant
-#                                                 through a "store these
-#                                                 codes" step.
+#                                                 flexible-flow.sh for the
+#                                                 live replay; previous
+#                                                 passes mistakenly
+#                                                 mirrored platform's
+#                                                 "mandatory passkey at
+#                                                 first login" posture
+#                                                 before the operator's
+#                                                 intended UX model was
+#                                                 confirmed).
+#   - webauthn-register-passwordless             — opt-in. First-factor
+#     enabled=true, defaultAction=false            passkey enrollment via
+#                                                 Account Console; the
+#                                                 result is a credential
+#                                                 of type
+#                                                 `webauthn-passwordless`
+#                                                 usable on the passkey
+#                                                 branch of First-factor.
+#   - webauthn-register requiredAction           — opt-in (was forced
+#     enabled=true, defaultAction=false            briefly 2026-05-27;
+#                                                 reverted same day).
+#                                                 Enrolls a 2FA-typed
+#                                                 webauthn credential
+#                                                 used inside Conditional
+#                                                 2FA. Tenants choose
+#                                                 whether to harden their
+#                                                 account this way.
+#   - CONFIGURE_TOTP enabled=true, defaultAction=false
+#                                                — opt-in. TOTP is one of
+#                                                 the ALTERNATIVE 2FA
+#                                                 factors in Conditional
+#                                                 2FA, available to
+#                                                 tenants who prefer TOTP
+#                                                 over a 2FA passkey.
+#   - CONFIGURE_RECOVERY_AUTHN_CODES enabled=false
+#                                                — disabled. Recovery
+#                                                 path is email password-
+#                                                 reset (always available
+#                                                 via resetPasswordAllowed)
+#                                                 with operator help-desk
+#                                                 ticket as fallback.
+# Org-admin enforced 2FA (future): Keycloak required-actions are realm-
+# scoped, not org-scoped. Plan to add per-org enforcement — likely a
+# Portal feature that calls Keycloak Admin API to add CONFIGURE_TOTP /
+# webauthn-register / webauthn-register-passwordless to the targeted
+# tenant user's required-actions — is tracked separately.
 #   - default realm role: default-roles-secforge-tenants
 #   - Tenant-facing app clients only             — control-portal, control,
 #                                                 member-hub, plus the
@@ -193,12 +215,9 @@ spec:
     passwordPolicy: "length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"
 
     # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
-    # Same TOTP config as platform realm. NOTE: post-2026-05-27 hardening
-    # the browser flow no longer includes auth-otp-form as a 2FA
-    # alternative (passkey is mandatory). The OTP policy stays declared
-    # so that the CONFIGURE_TOTP required action remains addressable
-    # by users who held legacy TOTP — but in this realm no such users
-    # exist, so the block is essentially vestigial.
+    # Same TOTP config as platform realm. Used by the auth-otp-form
+    # alternative under Conditional 2FA — TOTP is one of the optional
+    # 2FA factors a tenant can choose to enrol via Account Console.
     otpPolicyType: totp
     otpPolicyAlgorithm: HmacSHA1
     otpPolicyDigits: 6
@@ -211,37 +230,15 @@ spec:
       - totpAppMicrosoftAuthenticatorName
 
     # ─── Required actions ──────────────────────────────────────────
-    # Tenant 2FA model: PASSKEY MANDATORY, NO RECOVERY CODES.
-    # Hardened 2026-05-27 (two passes — see "Recovery path" below).
+    # Tenant model: FLEXIBLE first factor, OPTIONAL 2FA, NO RECOVERY CODES.
+    # Both passkey-type required actions are registered and enabled, but
+    # neither is defaultAction — tenants choose to enrol via Account
+    # Console (see also `project_keycloak_tenants_passkey_required` memo).
     #
-    #   - VERIFY_EMAIL defaultAction=true              — mandatory
-    #     (tenant accounts must verify email)
-    #   - webauthn-register defaultAction=true         — mandatory passkey
-    #     enabled=true                                   at first login
-    #   - CONFIGURE_RECOVERY_AUTHN_CODES enabled=false — NOT offered. The
-    #     defaultAction=false                            row stays in DB
-    #                                                   so we can re-enable
-    #                                                   later without a
-    #                                                   migration, but no
-    #                                                   path currently
-    #                                                   triggers it.
-    #   - CONFIGURE_TOTP enabled, defaultAction=false  — vestigial; no
-    #                                                   flow path uses TOTP
-    #                                                   on this realm any
-    #                                                   more (see flow
-    #                                                   commentary below)
-    #
-    # Recovery path for tenants (decided 2026-05-27):
-    #   1. Email password-reset (resetPasswordAllowed=true + verifyEmail=true
-    #      + realm SMTP) — primary path. Survives lost passkey: user
-    #      resets password, then on next login re-enrolls a passkey via
-    #      the webauthn-register required action (passkey is re-prompted
-    #      because the old passkey credential is unchanged; operator may
-    #      need to clear the stale webauthn credential first if the user
-    #      cannot complete 2FA with the lost device).
-    #   2. Help-desk ticket — fallback when email is also lost.
-    #      Operator clears the user's webauthn credential via direct DB
-    #      (no recovery-code shortcut available).
+    # Final shape decided 2026-05-27 — final pass of the day. See realm-
+    # level comment block at the top of this file for the full
+    # architectural rationale (password OR passkey, optional 2FA,
+    # email-only recovery path with operator help-desk fallback).
     requiredActions:
       - alias: CONFIGURE_TOTP
         name: Configure OTP
@@ -250,20 +247,30 @@ spec:
         defaultAction: false
         priority: 10
         config: {}
-      # webauthn-register: defaultAction=true (mandatory passkey at first
-      # login). Mirrors platform realm. Existing tenant users without a
-      # passkey get the prompt on their next sign-in.
+      # webauthn-register: enrols a 2FA-typed `webauthn` credential.
+      # Opt-in via Account Console — used inside Conditional 2FA when
+      # the tenant chooses to harden their account with a 2FA passkey.
       - alias: webauthn-register
         name: Webauthn Register
         providerId: webauthn-register
         enabled: true
-        defaultAction: true
+        defaultAction: false
         priority: 70
         config: {}
-      # Recovery codes: enabled=false on tenants. The recovery path here is
-      # email password-reset (and operator-driven help-desk ticket if email
-      # is also lost). Row is kept so the action stays registered and we
-      # can re-enable without a migration if the policy changes.
+      # webauthn-register-passwordless: enrols a `webauthn-passwordless`
+      # credential, usable on the First-factor branch as an alternative
+      # to password. Opt-in via Account Console.
+      - alias: webauthn-register-passwordless
+        name: Webauthn Register Passwordless
+        providerId: webauthn-register-passwordless
+        enabled: true
+        defaultAction: false
+        priority: 80
+        config: {}
+      # Recovery codes: disabled on this realm. Email password-reset is
+      # the recovery primary path; operator-driven help-desk ticket is
+      # the fallback if email access is also lost. Row is kept so the
+      # action stays registered, but no flow path triggers it.
       - alias: CONFIGURE_RECOVERY_AUTHN_CODES
         name: Recovery Authentication Codes
         providerId: CONFIGURE_RECOVERY_AUTHN_CODES
@@ -300,15 +307,12 @@ spec:
         priority: 50
         config: {}
 
-    # ─── Custom authentication flow: browser-webauthn-required ─────
-    # Identical shape to platform realm's flow of the same name EXCEPT
-    # that auth-recovery-authn-code-form is NOT under Conditional 2FA
-    # (tenants have no recovery codes — see "Recovery path" in the
-    # Required Actions block above). auth-otp-form is also absent —
-    # TOTP is not an accepted 2FA factor on this realm.
+    # ─── Custom authentication flow: browser-flexible ──────────────
+    # Tenant-specific flow — password OR passkey as first-factor
+    # alternatives, optional 2FA layered on top.
     #
     # Hierarchy:
-    #   browser-webauthn-required (top-level)
+    #   browser-flexible (top-level)
     #     ├── auth-cookie (ALTERNATIVE)
     #     ├── auth-spnego (DISABLED)
     #     ├── identity-provider-redirector (ALTERNATIVE)
@@ -317,21 +321,31 @@ spec:
     #     │       ├── conditional-user-configured (REQUIRED)
     #     │       └── organization (ALTERNATIVE)
     #     └── forms subflow (ALTERNATIVE)
-    #         ├── auth-username-password-form (REQUIRED)
-    #         └── Conditional 2FA (CONDITIONAL)
+    #         ├── auth-username-form (REQUIRED)            ← username only
+    #         ├── First-factor subflow (REQUIRED)
+    #         │   ├── auth-password-form (ALTERNATIVE)         ← password
+    #         │   └── webauthn-authenticator-passwordless (ALT)← passkey
+    #         └── Conditional 2FA subflow (CONDITIONAL)
     #             ├── conditional-user-configured (REQUIRED)
-    #             └── webauthn-authenticator (ALTERNATIVE)
+    #             ├── auth-otp-form (ALTERNATIVE)             ← TOTP 2FA
+    #             └── webauthn-authenticator (ALTERNATIVE)    ← 2FA passkey
+    #
+    # Conditional 2FA's `conditional-user-configured` gate means the 2FA
+    # step only fires for users who have enrolled at least one 2FA
+    # factor (TOTP or `webauthn`-typed credential). Users with neither
+    # complete sign-in at the First-factor step.
     #
     # Each realm has its own independent copy of the flow — Keycloak
-    # does not share flows across realms. When this structure is
-    # edited in either realm, mirror the change to the other.
+    # does not share flows across realms. The platform realm uses
+    # `browser-webauthn-required` (strict). Do not mirror this flow
+    # to platform; they target different audiences.
     #
-    # Day-2 drift recovery: 03b-keycloak-tenants-passkey-required.sh
+    # Day-2 drift recovery: 03b-keycloak-tenants-flexible-flow.sh
     # (DB-write idempotent replay — kcadm is a non-starter per
     # project_keycloak_admin_db_only).
-    browserFlow: browser-webauthn-required
+    browserFlow: browser-flexible
     authenticationFlows:
-      - alias: browser-webauthn-required
+      - alias: browser-flexible
         description: Browser based authentication
         providerId: basic-flow
         topLevel: true
@@ -352,33 +366,54 @@ spec:
             requirement: ALTERNATIVE
             priority: 25
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-required Organization
+          - flowAlias: browser-flexible Organization
             authenticatorFlow: true
             requirement: ALTERNATIVE
             priority: 26
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-required forms
+          - flowAlias: browser-flexible forms
             authenticatorFlow: true
             requirement: ALTERNATIVE
             priority: 30
             userSetupAllowed: false
-      - alias: browser-webauthn-required forms
-        description: Username, password, otp and other auth forms.
+      - alias: browser-flexible forms
+        description: Username, then password or passkey, optional 2FA.
         providerId: basic-flow
         topLevel: false
         builtIn: false
         authenticationExecutions:
-          - authenticator: auth-username-password-form
+          - authenticator: auth-username-form
             authenticatorFlow: false
             requirement: REQUIRED
             priority: 10
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-required Browser - Conditional 2FA
+          - flowAlias: browser-flexible First-factor
             authenticatorFlow: true
-            requirement: CONDITIONAL
+            requirement: REQUIRED
             priority: 20
             userSetupAllowed: false
-      - alias: browser-webauthn-required Browser - Conditional 2FA
+          - flowAlias: browser-flexible Browser - Conditional 2FA
+            authenticatorFlow: true
+            requirement: CONDITIONAL
+            priority: 30
+            userSetupAllowed: false
+      - alias: browser-flexible First-factor
+        description: Password OR passkey as first factor (tenant choice)
+        providerId: basic-flow
+        topLevel: false
+        builtIn: false
+        authenticationExecutions:
+          - authenticator: auth-password-form
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 10
+            userSetupAllowed: false
+          - authenticator: webauthn-authenticator-passwordless
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 20
+            userSetupAllowed: false
+      - alias: browser-flexible Browser - Conditional 2FA
         description: Flow to determine if any 2FA is required for the authentication
         providerId: basic-flow
         topLevel: false
@@ -389,23 +424,28 @@ spec:
             requirement: REQUIRED
             priority: 10
             userSetupAllowed: false
+          - authenticator: auth-otp-form
+            authenticatorFlow: false
+            requirement: ALTERNATIVE
+            priority: 20
+            userSetupAllowed: false
           - authenticator: webauthn-authenticator
             authenticatorFlow: false
             requirement: ALTERNATIVE
             priority: 30
             userSetupAllowed: false
-      - alias: browser-webauthn-required Organization
+      - alias: browser-flexible Organization
         description: ""
         providerId: basic-flow
         topLevel: false
         builtIn: false
         authenticationExecutions:
-          - flowAlias: browser-webauthn-required Browser - Conditional Organization
+          - flowAlias: browser-flexible Browser - Conditional Organization
             authenticatorFlow: true
             requirement: CONDITIONAL
             priority: 10
             userSetupAllowed: false
-      - alias: browser-webauthn-required Browser - Conditional Organization
+      - alias: browser-flexible Browser - Conditional Organization
         description: Flow to determine if the organization identity-first login is to be used
         providerId: basic-flow
         topLevel: false
@@ -428,12 +468,29 @@ spec:
     # (Keycloak scopes WebAuthn credentials per realm + user). RpId
     # just controls which subdomains may submit assertions, not
     # cross-realm sharing.
+    #
+    # Two parallel policy blocks: the "regular" policy applies to
+    # `webauthn-authenticator` (2FA) and `webauthn-register`; the
+    # "Passwordless" policy applies to `webauthn-authenticator-
+    # passwordless` (first-factor) and `webauthn-register-passwordless`.
+    # Both are aligned: same RpId, same UV=required, same algs. The
+    # Passwordless block sets `requireResidentKey: Yes` so passkey
+    # autofill / cross-device QR sign-in works on supporting browsers.
     webAuthnPolicyRpId: ${DOMAIN}
     webAuthnPolicyRpEntityName: SecForge
     webAuthnPolicyUserVerificationRequirement: required
     webAuthnPolicyAttestationConveyancePreference: none
     webAuthnPolicyCreateTimeout: 60
     webAuthnPolicySignatureAlgorithms:
+      - ES256
+      - RS256
+    webAuthnPolicyPasswordlessRpId: ${DOMAIN}
+    webAuthnPolicyPasswordlessRpEntityName: SecForge
+    webAuthnPolicyPasswordlessUserVerificationRequirement: required
+    webAuthnPolicyPasswordlessAttestationConveyancePreference: none
+    webAuthnPolicyPasswordlessCreateTimeout: 60
+    webAuthnPolicyPasswordlessRequireResidentKey: "Yes"
+    webAuthnPolicyPasswordlessSignatureAlgorithms:
       - ES256
       - RS256
 
