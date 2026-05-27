@@ -4,10 +4,11 @@
 # `restricted` PSA. Same end result, our hardening.
 #
 # Buckets created (idempotent):
-#   - tempo-traces       (no Object Lock; Tempo enforces 7d retention)
-#   - loki-chunks        (no Object Lock; Loki enforces 14d retention)
-#   - backups            (versioned)
-#   - wazuh-archive      (versioned)
+#   - tempo-traces             (no Object Lock; Tempo enforces 7d retention)
+#   - loki-chunks              (no Object Lock; Loki enforces 14d retention)
+#   - backups                  (versioned)
+#   - wazuh-archive            (versioned)
+#   - member-hub-documents     (versioned + SSE-S3; member file attachments)
 #
 # Re-run safe: `mb --ignore-existing` and repeated `version enable` are no-ops.
 ---
@@ -92,6 +93,17 @@ spec:
               # wazuh-archive: versioned (Phase 7-rest will populate).
               mc mb --ignore-existing local/wazuh-archive
               mc version enable local/wazuh-archive
+
+              # member-hub-documents: versioned + SSE-S3 server-side encryption.
+              # Holds member file attachments uploaded via Member Hub's
+              # member-documents API. Versioning protects against accidental
+              # operator DELETE; SSE-S3 encrypts at rest. The MinIO service
+              # account that the app uses is provisioned out-of-band (see
+              # docs/03-runbooks/member-hub-documents-bucket.md) — this Job
+              # only owns bucket creation, never credentials.
+              mc mb --ignore-existing local/member-hub-documents
+              mc version enable local/member-hub-documents
+              mc encrypt set sse-s3 local/member-hub-documents
 
               echo "--- buckets ---"
               mc ls local/

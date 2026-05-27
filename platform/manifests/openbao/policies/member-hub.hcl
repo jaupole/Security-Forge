@@ -35,6 +35,20 @@ path "secret/metadata/minio/cnpg/credentials" {
   capabilities = ["read"]
 }
 
+# App-level MinIO credentials for the member-hub-documents bucket
+# (member file attachments). Distinct from the CNPG barman creds
+# above — this is a bucket-scoped service account with rw on the
+# documents bucket only, no access to backups/loki/etc. Provisioned
+# imperatively via `mc admin policy create` + `mc admin user svcacct
+# add`; rotate by issuing a new svc account, writing it here, and
+# bouncing the member-hub pod.
+path "secret/data/minio/member-hub-documents" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/member-hub-documents" {
+  capabilities = ["read"]
+}
+
 # Field-level PII encryption — member emails, future invitations, etc.
 # Closes audit rule 38 once .Encrypt() call sites land in code.
 path "transit/encrypt/pii-encryption" {

@@ -125,6 +125,43 @@ spec:
             {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
 
 ---
+# App-level MinIO credentials for the member-hub-documents bucket.
+# Distinct from the CNPG barman creds below — those grant access to
+# the shared `backups` bucket for WAL archive; this set grants rw on
+# the per-app `member-hub-documents` bucket only, used by the
+# member-documents API to store member file attachments.
+#
+# Rendered as MINIO_ACCESS_KEY + MINIO_SECRET_KEY, consumed via
+# envFrom on the backend Deployment (09-backend-deployment.yaml).
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: member-hub-documents-minio-vso
+  namespace: member-hub
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: member-hub-vso
+  mount: secret
+  type: kv-v2
+  path: minio/member-hub-documents
+  refreshAfter: 60s
+  destination:
+    name: member-hub-documents-minio
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        MINIO_ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        MINIO_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'
+
+---
 # barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
 # Same VSO consumer SA, same OpenBao path as keycloak's CNPG cluster.
 apiVersion: secrets.hashicorp.com/v1beta1

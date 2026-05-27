@@ -153,6 +153,17 @@ spec:
             # and this holds a Transit key *name*, not key material.
             - { name: TRANSIT_KEYNAME, value: pii-encryption }
             - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
+            # ─── Object storage (member document attachments) ─────────
+            # MinIO is in-cluster; HTTP (no TLS) — the mesh + namespace
+            # NetworkPolicy keep traffic on the cluster network. SSE-S3
+            # encryption-at-rest is set on the bucket itself, so the
+            # app uploads plaintext and MinIO encrypts.
+            # MINIO_ACCESS_KEY + MINIO_SECRET_KEY come from the
+            # member-hub-documents-minio Secret via envFrom below.
+            - { name: MINIO_ENDPOINT, value: "minio.minio.svc.cluster.local" }
+            - { name: MINIO_PORT,     value: "9000" }
+            - { name: MINIO_USE_SSL,  value: "false" }
+            - { name: MINIO_BUCKET,   value: member-hub-documents }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
@@ -161,6 +172,11 @@ spec:
             # VaultStaticSecret in 04-vso-bindings.yaml.
             - secretRef:
                 name: member-hub-app-secrets
+            # Adds MINIO_ACCESS_KEY + MINIO_SECRET_KEY rendered from
+            # secret/minio/member-hub-documents (bucket-scoped svc
+            # account; rw on member-hub-documents only).
+            - secretRef:
+                name: member-hub-documents-minio
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }
