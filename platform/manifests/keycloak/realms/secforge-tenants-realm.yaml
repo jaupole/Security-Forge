@@ -39,29 +39,34 @@
 #                                                 tenant login page
 #   - VERIFY_EMAIL requiredAction defaultAction  — flows from the
 #                                                 verifyEmail flip above
-#   - browserFlow: browser-webauthn-OPTIONAL     — tenants choose their
-#                                                 own 2FA (TOTP, passkey,
-#                                                 recovery codes — all
-#                                                 ALTERNATIVE under the
-#                                                 Conditional 2FA subflow,
-#                                                 none defaultAction).
-#                                                 Platform realm enforces
-#                                                 passkeys at first login;
-#                                                 tenants do not.
-#   - webauthn-register requiredAction           — enabled but NOT
-#     defaultAction=false                          defaultAction (vs
-#                                                 platform's true). New
-#                                                 tenant users sign up
-#                                                 with password only.
-#                                                 They can self-enroll a
-#                                                 passkey from the Account
-#                                                 Console at any time.
-#   - CONFIGURE_RECOVERY_AUTHN_CODES defaultAction=false
-#                                                — same reasoning: recovery
-#                                                 codes only matter if you
-#                                                 have a 2FA factor to
-#                                                 recover from. Available
-#                                                 for opt-in enrollment.
+#   - browserFlow: browser-webauthn-REQUIRED     — passkey is mandatory
+#                                                 at first login (mirrors
+#                                                 platform realm). The
+#                                                 Conditional 2FA subflow
+#                                                 has webauthn-authenticator
+#                                                 + auth-recovery-authn-code-form
+#                                                 as ALTERNATIVE — OTP Form
+#                                                 removed. Hardened
+#                                                 2026-05-27 (was
+#                                                 -OPTIONAL — see
+#                                                 03b-keycloak-tenants-
+#                                                 passkey-required.sh for
+#                                                 the live replay).
+#   - webauthn-register requiredAction           — enabled AND defaultAction
+#     defaultAction=true                           (matches platform). New
+#                                                 tenant users are prompted
+#                                                 to enroll a passkey at
+#                                                 first login. Existing
+#                                                 users without a passkey
+#                                                 get the same prompt on
+#                                                 next sign-in.
+#   - CONFIGURE_RECOVERY_AUTHN_CODES defaultAction=true
+#                                                — matches platform. Every
+#                                                 tenant gets recovery
+#                                                 codes alongside their
+#                                                 passkey so a lost
+#                                                 authenticator does not
+#                                                 mean a locked account.
 #   - default realm role: default-roles-secforge-tenants
 #   - Tenant-facing app clients only             — control-portal, control,
 #                                                 member-hub, plus the
@@ -180,9 +185,12 @@ spec:
     passwordPolicy: "length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"
 
     # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
-    # Same TOTP config as platform realm — kept for opt-in users who
-    # cannot or will not enroll a passkey. Default is passkey-only
-    # (see requiredActions below).
+    # Same TOTP config as platform realm. NOTE: post-2026-05-27 hardening
+    # the browser flow no longer includes auth-otp-form as a 2FA
+    # alternative (passkey is mandatory). The OTP policy stays declared
+    # so that the CONFIGURE_TOTP required action remains addressable
+    # by users who held legacy TOTP — but in this realm no such users
+    # exist, so the block is essentially vestigial.
     otpPolicyType: totp
     otpPolicyAlgorithm: HmacSHA1
     otpPolicyDigits: 6
@@ -195,24 +203,23 @@ spec:
       - totpAppMicrosoftAuthenticatorName
 
     # ─── Required actions ──────────────────────────────────────────
-    # Tenant 2FA model: OPT-IN.
+    # Tenant 2FA model: PASSKEY MANDATORY (mirrors platform realm).
+    # Hardened 2026-05-27 — was previously opt-in; the
+    # browser-webauthn-required flow + defaultAction=true on
+    # webauthn-register together enforce passkey enrollment at first
+    # login. Existing tenants without a passkey hit the same prompt
+    # on next sign-in.
     #
     #   - VERIFY_EMAIL defaultAction=true              — mandatory
     #     (tenant accounts must verify email)
-    #   - CONFIGURE_TOTP enabled, defaultAction=false  — opt-in via Account Console
-    #   - webauthn-register enabled, defaultAction=false — opt-in via Account Console
-    #   - CONFIGURE_RECOVERY_AUTHN_CODES enabled, defaultAction=false — opt-in
-    #
-    # The custom `browser-webauthn-optional` authentication flow has
-    # Conditional 2FA with auth-otp-form, webauthn-authenticator, and
-    # auth-recovery-authn-code-form ALL as ALTERNATIVE under the
-    # CONDITIONAL parent — so a tenant with no 2FA enrolled signs in
-    # with password alone, and once they enroll any factor, that
-    # factor's challenge fires on subsequent logins.
-    #
-    # vs. platform realm: passkeys mandatory at first login;
-    # webauthn-register + CONFIGURE_RECOVERY_AUTHN_CODES both
-    # defaultAction=true.
+    #   - webauthn-register defaultAction=true         — mandatory passkey
+    #   - CONFIGURE_RECOVERY_AUTHN_CODES defaultAction=true — paired with
+    #                                                   passkey enrollment
+    #   - CONFIGURE_TOTP enabled, defaultAction=false  — vestigial; no
+    #                                                   flow path uses TOTP
+    #                                                   on this realm any
+    #                                                   more (see flow
+    #                                                   commentary below)
     requiredActions:
       - alias: CONFIGURE_TOTP
         name: Configure OTP
@@ -221,32 +228,24 @@ spec:
         defaultAction: false
         priority: 10
         config: {}
-      # webauthn-register: enabled but NOT defaultAction for tenants.
-      # New tenant users sign up with password only; they can self-
-      # enroll a passkey from the Account Console (auth.${DOMAIN}/
-      # realms/secforge-tenants/account → Signing In → Set up
-      # Authenticator app / Security key). The "Set up" button in
-      # Account Console triggers the webauthn-register required
-      # action on-demand, so the enabled+available config here is
-      # what makes self-enrollment work at all.
+      # webauthn-register: defaultAction=true (mandatory passkey at first
+      # login). Mirrors platform realm. Existing tenant users without a
+      # passkey get the prompt on their next sign-in.
       - alias: webauthn-register
         name: Webauthn Register
         providerId: webauthn-register
         enabled: true
-        defaultAction: false
+        defaultAction: true
         priority: 70
         config: {}
-      # Recovery codes: enabled and available for self-enrollment via
-      # Account Console, but NOT defaultAction for tenants. Recovery
-      # codes only matter if you have a 2FA factor to recover from —
-      # since 2FA is optional for tenants, forcing recovery-code
-      # generation on every new user is noise. A user who enrolls a
-      # passkey gets prompted to set up recovery codes next.
+      # Recovery codes: defaultAction=true so every tenant has a recovery
+      # factor paired with their passkey. Losing an authenticator must
+      # not mean a locked account.
       - alias: CONFIGURE_RECOVERY_AUTHN_CODES
         name: Recovery Authentication Codes
         providerId: CONFIGURE_RECOVERY_AUTHN_CODES
         enabled: true
-        defaultAction: false
+        defaultAction: true
         priority: 20
         config: {}
       - alias: UPDATE_PASSWORD
@@ -278,30 +277,40 @@ spec:
         priority: 50
         config: {}
 
-    # ─── Custom authentication flow: browser-webauthn-optional ────
-    # Same shape as platform's `browser-webauthn-required` flow
-    # (auth-cookie / IdP redirector / Organization subflow / forms-
-    # with-Conditional-2FA) BUT with two tenant-specific differences
-    # inside the Conditional 2FA subflow:
+    # ─── Custom authentication flow: browser-webauthn-required ─────
+    # Identical shape to platform realm's flow of the same name —
+    # password REQUIRED + Conditional 2FA with webauthn-authenticator
+    # and auth-recovery-authn-code-form as ALTERNATIVE. auth-otp-form
+    # is NOT included — TOTP is not an accepted 2FA factor on this
+    # realm post-2026-05-27 hardening (mirrors platform's passkey-only
+    # 2FA stance).
     #
-    #   1. auth-otp-form is included as an ALTERNATIVE alongside
-    #      webauthn-authenticator and auth-recovery-authn-code-form
-    #      (platform-realm omitted OTP Form because passkeys are
-    #      mandatory there)
-    #   2. None of the 2FA authenticators are forced enrollment —
-    #      Conditional 2FA's conditional-user-configured gates the
-    #      entire subflow, so a tenant with zero 2FA factors enrolled
-    #      signs in with password alone. Once they self-enroll any
-    #      factor via Account Console, that factor's challenge fires
-    #      on subsequent logins.
+    # Hierarchy:
+    #   browser-webauthn-required (top-level)
+    #     ├── auth-cookie (ALTERNATIVE)
+    #     ├── auth-spnego (DISABLED)
+    #     ├── identity-provider-redirector (ALTERNATIVE)
+    #     ├── Organization subflow (ALTERNATIVE)
+    #     │   └── Conditional Organization (CONDITIONAL)
+    #     │       ├── conditional-user-configured (REQUIRED)
+    #     │       └── organization (ALTERNATIVE)
+    #     └── forms subflow (ALTERNATIVE)
+    #         ├── auth-username-password-form (REQUIRED)
+    #         └── Conditional 2FA (CONDITIONAL)
+    #             ├── conditional-user-configured (REQUIRED)
+    #             ├── webauthn-authenticator (ALTERNATIVE)
+    #             └── auth-recovery-authn-code-form (ALTERNATIVE)
     #
     # Each realm has its own independent copy of the flow — Keycloak
-    # does not share flows across realms. When shared structure
-    # (auth-cookie, IdP redirector, Organization subflow) is edited
-    # in either realm, mirror to the other.
-    browserFlow: browser-webauthn-optional
+    # does not share flows across realms. When this structure is
+    # edited in either realm, mirror the change to the other.
+    #
+    # Day-2 drift recovery: 03b-keycloak-tenants-passkey-required.sh
+    # (DB-write idempotent replay — kcadm is a non-starter per
+    # project_keycloak_admin_db_only).
+    browserFlow: browser-webauthn-required
     authenticationFlows:
-      - alias: browser-webauthn-optional
+      - alias: browser-webauthn-required
         description: Browser based authentication
         providerId: basic-flow
         topLevel: true
@@ -322,17 +331,17 @@ spec:
             requirement: ALTERNATIVE
             priority: 25
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-optional Organization
+          - flowAlias: browser-webauthn-required Organization
             authenticatorFlow: true
             requirement: ALTERNATIVE
             priority: 26
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-optional forms
+          - flowAlias: browser-webauthn-required forms
             authenticatorFlow: true
             requirement: ALTERNATIVE
             priority: 30
             userSetupAllowed: false
-      - alias: browser-webauthn-optional forms
+      - alias: browser-webauthn-required forms
         description: Username, password, otp and other auth forms.
         providerId: basic-flow
         topLevel: false
@@ -343,12 +352,12 @@ spec:
             requirement: REQUIRED
             priority: 10
             userSetupAllowed: false
-          - flowAlias: browser-webauthn-optional Browser - Conditional 2FA
+          - flowAlias: browser-webauthn-required Browser - Conditional 2FA
             authenticatorFlow: true
             requirement: CONDITIONAL
             priority: 20
             userSetupAllowed: false
-      - alias: browser-webauthn-optional Browser - Conditional 2FA
+      - alias: browser-webauthn-required Browser - Conditional 2FA
         description: Flow to determine if any 2FA is required for the authentication
         providerId: basic-flow
         topLevel: false
@@ -358,16 +367,6 @@ spec:
             authenticatorFlow: false
             requirement: REQUIRED
             priority: 10
-            userSetupAllowed: false
-          # Three 2FA alternatives — user picks one (or none) via Account
-          # Console self-enroll. None of these are defaultAction; the
-          # CONDITIONAL parent skips entirely if the user has configured
-          # none. Once at least one is enrolled, this subflow fires and
-          # the user is challenged with whichever method they hold.
-          - authenticator: auth-otp-form
-            authenticatorFlow: false
-            requirement: ALTERNATIVE
-            priority: 20
             userSetupAllowed: false
           - authenticator: webauthn-authenticator
             authenticatorFlow: false
@@ -379,18 +378,18 @@ spec:
             requirement: ALTERNATIVE
             priority: 40
             userSetupAllowed: false
-      - alias: browser-webauthn-optional Organization
+      - alias: browser-webauthn-required Organization
         description: ""
         providerId: basic-flow
         topLevel: false
         builtIn: false
         authenticationExecutions:
-          - flowAlias: browser-webauthn-optional Browser - Conditional Organization
+          - flowAlias: browser-webauthn-required Browser - Conditional Organization
             authenticatorFlow: true
             requirement: CONDITIONAL
             priority: 10
             userSetupAllowed: false
-      - alias: browser-webauthn-optional Browser - Conditional Organization
+      - alias: browser-webauthn-required Browser - Conditional Organization
         description: Flow to determine if the organization identity-first login is to be used
         providerId: basic-flow
         topLevel: false
