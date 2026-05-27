@@ -119,6 +119,37 @@
     <group>openbao,audit,brute_force,</group>
   </rule>
 
+  <!-- Base: any Transit decrypt event. Anchored on 100300 (which
+       requires auth.display_name); narrowed via <match> on the
+       path prefix. Surfaced at level 3 so a single decrypt does
+       NOT page — only the burst-correlation rule 100308 below
+       fires at alert level. -->
+  <rule id="100307" level="3">
+    <if_sid>100300</if_sid>
+    <match>"path":"transit/decrypt/</match>
+    <description>OpenBao Transit decrypt: actor=$(auth.display_name) path=$(request.path)</description>
+    <group>openbao,audit,transit_decrypt,</group>
+  </rule>
+
+  <!-- Burst correlation: 30+ Transit decrypts in 60s by the SAME
+       actor (display_name). Two legitimate causes:
+         (1) Operator-driven rewrap pass (cross-key) — the migration-
+             052 backfill script + the rotation script both decrypt-
+             then-encrypt across many *_enc rows in a tight loop.
+         (2) A captured-token attacker iterating through every org's
+             ciphertext to exfiltrate plaintext.
+       At level 13 oncall gets paged either way; the operator
+       confirms by checking concurrent audit context (is the
+       operator's rewrap session running right now?). False-positive
+       suppression is operator-driven (silence the alert during the
+       known rewrap window); detection latency is ~60s. -->
+  <rule id="100308" level="13" frequency="30" timeframe="60">
+    <if_matched_sid>100307</if_matched_sid>
+    <same_field>auth.display_name</same_field>
+    <description>OpenBao: 30+ Transit decrypts in 60s by $(auth.display_name) — possible captured-token exfil OR legitimate rewrap; confirm</description>
+    <group>openbao,audit,suspicious_decrypt,</group>
+  </rule>
+
   <!-- ====================================================== -->
   <!-- Keycloak JBoss logger + audit events                   -->
   <!-- Sentinel: loggerName starts with org.keycloak.         -->
