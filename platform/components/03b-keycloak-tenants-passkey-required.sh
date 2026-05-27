@@ -16,14 +16,21 @@
 #      to `browser-webauthn-required*` (5 flows: top-level + 4 subflows).
 #      realm.browser_flow already references the top-level flow by UUID, so
 #      this rename re-binds it implicitly with no FK churn.
-#   2. Deletes the `auth-otp-form` execution from the Conditional 2FA
-#      subflow — TOTP is no longer a 2FA alternative on this realm. The
-#      remaining alternatives are webauthn-authenticator + recovery codes.
+#   2. Deletes the `auth-otp-form` AND `auth-recovery-authn-code-form`
+#      executions from the Conditional 2FA subflow — neither TOTP nor
+#      recovery codes are accepted 2FA factors on this realm. The only
+#      alternative left under Conditional 2FA is webauthn-authenticator.
 #   3. Flips `webauthn-register` to default_action=true so new tenants are
 #      forced to enroll a passkey at first login (mirrors platform).
-#   4. Flips `CONFIGURE_RECOVERY_AUTHN_CODES` to default_action=true so a
-#      lost passkey doesn't mean a locked tenant account.
-#   5. Bounces keycloak-0 to flush Infinispan cache — direct DB writes
+#   4. Disables `CONFIGURE_RECOVERY_AUTHN_CODES` (enabled=false,
+#      default_action=false). Tenants do NOT get recovery codes. The
+#      recovery path is email password-reset (resetPasswordAllowed=true +
+#      verifyEmail=true on the realm) with operator-driven help-desk
+#      ticket as fallback if email is also lost.
+#   5. Defensive: removes any pre-existing recovery-authn-codes credentials
+#      and any user_required_action rows pointing at the disabled action
+#      (safe no-op on fresh installs).
+#   6. Bounces keycloak-0 to flush Infinispan cache — direct DB writes
 #      don't trigger cache invalidation
 #      (project_keycloak_client_secret_rotation_pattern).
 #
@@ -111,7 +118,7 @@ psql_exec -c "
     JOIN authentication_flow af ON af.id = ae.flow_id
    WHERE af.realm_id = '$REALM_ID'
      AND af.alias LIKE '%Conditional 2FA'
-     AND ae.authenticator = 'auth-otp-form';
+     AND ae.authenticator IN ('auth-otp-form','auth-recovery-authn-code-form');
 "
 
 # ─── Apply changes in one transaction ─────────────────────────────────────
@@ -129,12 +136,13 @@ UPDATE authentication_flow
  WHERE realm_id = '$REALM_ID'
    AND alias LIKE 'browser-webauthn-optional%';
 
--- (2) Drop the OTP Form execution from the Conditional 2FA subflow. After
---     step (1) the subflow alias is 'browser-webauthn-required Browser -
---     Conditional 2FA'; before step (1) it was the -optional variant.
---     The DELETE matches either — safe on partial re-run.
+-- (2) Drop both the OTP Form AND the Recovery Code Form executions from
+--     the Conditional 2FA subflow. After step (1) the subflow alias is
+--     'browser-webauthn-required Browser - Conditional 2FA'; before step
+--     (1) it was the -optional variant. The DELETE matches either — safe
+--     on partial re-run.
 DELETE FROM authentication_execution
- WHERE authenticator = 'auth-otp-form'
+ WHERE authenticator IN ('auth-otp-form','auth-recovery-authn-code-form')
    AND flow_id IN (
      SELECT id FROM authentication_flow
       WHERE realm_id = '$REALM_ID'
@@ -149,12 +157,29 @@ UPDATE required_action_provider
  WHERE realm_id = '$REALM_ID'
    AND alias = 'webauthn-register';
 
--- (4) Recovery codes defaultAction=true
+-- (4) CONFIGURE_RECOVERY_AUTHN_CODES disabled (tenants have no recovery
+--     codes — email password-reset + operator help-desk ticket are the
+--     recovery paths).
 UPDATE required_action_provider
-   SET default_action = true,
-       enabled = true
+   SET default_action = false,
+       enabled = false
  WHERE realm_id = '$REALM_ID'
    AND alias = 'CONFIGURE_RECOVERY_AUTHN_CODES';
+
+-- (5) Defensive: clean any residual recovery-codes credentials and any
+--     pending CONFIGURE_RECOVERY_AUTHN_CODES required-action assignments
+--     on tenant users. No-op on a fresh realm-import.
+DELETE FROM credential
+ WHERE type = 'recovery-authn-codes'
+   AND user_id IN (
+     SELECT id FROM user_entity WHERE realm_id = '$REALM_ID'
+   );
+
+DELETE FROM user_required_action
+ WHERE required_action = 'CONFIGURE_RECOVERY_AUTHN_CODES'
+   AND user_id IN (
+     SELECT id FROM user_entity WHERE realm_id = '$REALM_ID'
+   );
 
 COMMIT;
 SQL
@@ -195,19 +220,19 @@ if [[ "$RIGHT_ALIAS_COUNT" != "5" ]]; then
   FAIL=1
 fi
 
-# No more OTP form in Conditional 2FA
-OTP_COUNT=$(psql_exec -tAc "
+# No more OTP form OR recovery-code form in Conditional 2FA
+STRAY_2FA_COUNT=$(psql_exec -tAc "
   SELECT count(*) FROM authentication_execution ae
     JOIN authentication_flow af ON af.id = ae.flow_id
    WHERE af.realm_id = '$REALM_ID'
      AND af.alias LIKE '%Conditional 2FA'
-     AND ae.authenticator = 'auth-otp-form'" | tr -d '[:space:]')
-if [[ "$OTP_COUNT" != "0" ]]; then
-  echo "VERIFY FAIL: auth-otp-form still present in Conditional 2FA ($OTP_COUNT rows)" >&2
+     AND ae.authenticator IN ('auth-otp-form','auth-recovery-authn-code-form')" | tr -d '[:space:]')
+if [[ "$STRAY_2FA_COUNT" != "0" ]]; then
+  echo "VERIFY FAIL: auth-otp-form / auth-recovery-authn-code-form still present in Conditional 2FA ($STRAY_2FA_COUNT rows)" >&2
   FAIL=1
 fi
 
-# webauthn-register + recovery codes both default_action=true
+# webauthn-register default_action=true
 WR_DEF=$(psql_exec -tAc "
   SELECT default_action FROM required_action_provider
    WHERE realm_id = '$REALM_ID' AND alias = 'webauthn-register'" | tr -d '[:space:]')
@@ -216,11 +241,25 @@ if [[ "$WR_DEF" != "t" ]]; then
   FAIL=1
 fi
 
+# Recovery codes: enabled=false AND default_action=false
+RC_ENABLED=$(psql_exec -tAc "
+  SELECT enabled FROM required_action_provider
+   WHERE realm_id = '$REALM_ID' AND alias = 'CONFIGURE_RECOVERY_AUTHN_CODES'" | tr -d '[:space:]')
 RC_DEF=$(psql_exec -tAc "
   SELECT default_action FROM required_action_provider
    WHERE realm_id = '$REALM_ID' AND alias = 'CONFIGURE_RECOVERY_AUTHN_CODES'" | tr -d '[:space:]')
-if [[ "$RC_DEF" != "t" ]]; then
-  echo "VERIFY FAIL: CONFIGURE_RECOVERY_AUTHN_CODES default_action = '$RC_DEF' (expected t)" >&2
+if [[ "$RC_ENABLED" != "f" || "$RC_DEF" != "f" ]]; then
+  echo "VERIFY FAIL: CONFIGURE_RECOVERY_AUTHN_CODES enabled='$RC_ENABLED' default_action='$RC_DEF' (expected both f)" >&2
+  FAIL=1
+fi
+
+# No leaked recovery-codes credentials on tenant users
+RC_CRED_COUNT=$(psql_exec -tAc "
+  SELECT count(*) FROM credential c
+    JOIN user_entity u ON u.id = c.user_id
+   WHERE u.realm_id = '$REALM_ID' AND c.type = 'recovery-authn-codes'" | tr -d '[:space:]')
+if [[ "$RC_CRED_COUNT" != "0" ]]; then
+  echo "VERIFY FAIL: $RC_CRED_COUNT recovery-authn-codes credential(s) still present" >&2
   FAIL=1
 fi
 
