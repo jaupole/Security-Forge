@@ -8,7 +8,7 @@
 # NPs are additive (UNION of allow rules), so this co-exists with the
 # chart's policy without removing same-namespace clients.
 #
-# Allowlist namespaces: observability, app, wazuh.
+# Allowlist namespaces: observability, app, wazuh, velero, member-hub.
 # Add to the `from:` block when a new namespace needs MinIO access.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -30,7 +30,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [observability, app, wazuh, velero]
+                values: [observability, app, wazuh, velero, member-hub]
           podSelector:
             matchLabels:
               minio-client: "true"
