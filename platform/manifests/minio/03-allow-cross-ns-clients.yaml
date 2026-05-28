@@ -30,7 +30,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [observability, app, wazuh, velero, member-hub]
+                values: [observability, app, wazuh, velero, member-hub, control]
           podSelector:
             matchLabels:
               minio-client: "true"

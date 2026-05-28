@@ -105,6 +105,16 @@ spec:
               mc version enable local/member-hub-documents
               mc encrypt set sse-s3 local/member-hub-documents
 
+              # ecosystem-graphics: per-org branded graphics library
+              # (ADR-0001 Phase A in Member Hub/docs/02-decisions/).
+              # Owned by Ecosystem Control; consumed cross-app by Member
+              # Hub's invoice-PDF + email rendering and future ecosystem
+              # apps. Versioned (operator DELETE protection) + SSE-S3.
+              # Caps live at the app layer: 8 graphics/org, 512 KB each.
+              mc mb --ignore-existing local/ecosystem-graphics
+              mc version enable local/ecosystem-graphics
+              mc encrypt set sse-s3 local/ecosystem-graphics
+
               echo "--- buckets ---"
               mc ls local/
               echo "Bootstrap complete."

@@ -166,6 +166,54 @@ spec:
           text: '{{ .Secrets.secret_key }}'
 
 ---
+# App-level MinIO credentials for the ecosystem-graphics bucket
+# (ADR-0001 Phase A in Member Hub/docs/02-decisions/). Distinct from
+# the CNPG barman creds above (shared `backups` bucket); this set
+# grants rw on the per-app `ecosystem-graphics` bucket only, used by
+# Control's graphics CRUD endpoints to store cross-app org branded
+# imagery.
+#
+# OpenBao path: secret/minio/ecosystem-graphics
+#   - access_key : MinIO service-account access key (~16 char)
+#   - secret_key : matching secret key (40 char)
+#
+# Operator-provisioned out of band (one-time): see runbook
+# docs/03-runbooks/ecosystem-graphics-bucket.md (to be authored).
+# Mirrors the pattern used for member-hub-documents-minio.
+#
+# Until the operator writes the OpenBao path, this VaultStaticSecret
+# has no source, the K8s Secret is not created, and Control's
+# graphics routes return a clean 503 "object_storage_unconfigured"
+# — no crash.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ecosystem-graphics-minio-vso
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: minio/ecosystem-graphics
+  refreshAfter: 60s
+  destination:
+    name: ecosystem-graphics-minio
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        MINIO_ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        MINIO_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'
+
+---
 # QuickBooks Online — credentials for the ecosystem's single registered
 # QBO app (Intuit OAuth2 client_id + client_secret). Consumed via an
 # OPTIONAL envFrom on the control Deployment (09-backend-deployment.yaml):

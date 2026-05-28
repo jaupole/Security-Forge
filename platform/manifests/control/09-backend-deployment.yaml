@@ -42,6 +42,12 @@ spec:
         app.kubernetes.io/component: api
         secforge.platform/component: control
         spiffe.io/spire-managed-identity: "true"
+        # Required by the MinIO chart's cross-ns NetworkPolicy
+        # (minio/03-allow-cross-ns-clients.yaml) — gates ingress on
+        # the `minio-client=true` source label. Used by Control's
+        # graphics CRUD endpoints to read/write the ecosystem-graphics
+        # bucket (ADR-0001 Phase A).
+        minio-client: "true"
     spec:
       serviceAccountName: control
       automountServiceAccountToken: false
@@ -149,6 +155,16 @@ spec:
             - { name: QBO_REDIRECT_URI, value: "https://qbo.${DOMAIN}/callback" }
             - { name: QBO_STATE_COOKIE_DOMAIN, value: "${DOMAIN}" }
             - { name: QBO_ENVIRONMENT, value: sandbox }
+            # ─── Object storage (ecosystem-graphics bucket, ADR-0001) ─
+            # In-cluster MinIO; HTTP. SSE-S3 encryption-at-rest set on the
+            # bucket itself. MINIO_ACCESS_KEY + MINIO_SECRET_KEY arrive
+            # via the optional ecosystem-graphics-minio envFrom below —
+            # until the operator writes the OpenBao path, the graphics
+            # routes return a clean 503 instead of crashing.
+            - { name: MINIO_ENDPOINT,         value: "minio.minio.svc.cluster.local" }
+            - { name: MINIO_PORT,             value: "9000" }
+            - { name: MINIO_USE_SSL,          value: "false" }
+            - { name: MINIO_GRAPHICS_BUCKET,  value: ecosystem-graphics }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
@@ -164,6 +180,14 @@ spec:
             # "not configured" 503. See 04-vso-bindings.yaml + the runbook.
             - secretRef:
                 name: control-qbo-secrets
+                optional: true
+            # MINIO_ACCESS_KEY + MINIO_SECRET_KEY — rendered from
+            # secret/minio/ecosystem-graphics (bucket-scoped svc account;
+            # rw on ecosystem-graphics only). optional:true so the pod
+            # starts cleanly before the operator provisions the MinIO
+            # credentials; graphics routes return 503 until then.
+            - secretRef:
+                name: ecosystem-graphics-minio
                 optional: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }

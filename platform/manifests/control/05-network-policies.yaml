@@ -286,6 +286,34 @@ spec:
         - { protocol: TCP, port: 9000 }
 
 ---
+# Egress to MinIO from the Control app pod (ADR-0001 Phase A).
+# Distinct from the CNPG egress above (which covers WAL/barman
+# backups). Control's graphics CRUD endpoints read/write the
+# ecosystem-graphics bucket via this path. Selector targets the
+# app pod by its `minio-client=true` label so future Control pods
+# that don't need MinIO access don't pick up the egress allowance.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio-from-app
+  namespace: control
+  labels:
+    secforge.platform/component: control
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      minio-client: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
 # Egress to the public internet on HTTPS for outbound third-party API
 # calls — initially the QuickBooks Online OAuth flow (token exchange at
 # oauth.platform.intuit.com, revoke at developer.api.intuit.com — see
