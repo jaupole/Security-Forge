@@ -8,6 +8,16 @@ Findings from the 2026-05-28 user-foothold audit. Source: `ops`-shell read-only 
 - [ ] Pending
 - [~] Partial / verification done, change still pending
 
+## Workstation hardening (operator side, post-#2 highest leverage)
+
+The Tailnet boundary is only as strong as the device authenticated to it. After tracker #2 closed public :22, the operator workstation is the single trust anchor. These items live outside `secforge-prod` but should be tracked alongside it.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| W1 | Passphrase `~/.ssh/hetzner_secforge` on the Windows workstation; load via `ssh-agent` with `AddKeysToAgent confirm` | [ ] | Stops on-disk key theft (malware reading user profile) from being directly usable. Confirm prompt forces tap-to-use. |
+| W2 | Migrate `hetzner_secforge` to a hardware-backed equivalent — Yubikey `ed25519-sk` or Windows Hello / Secure Enclave-backed `ed25519-sk` | [ ] | Strongest single change. Key material never leaves the secure element; physical-presence required per signature. |
+| W3 | Tighten Tailscale ACL: tag operator workstation specifically; restrict box `:22` reachability to that tag only | [ ] | Without this, any future tailnet-joined device implicitly inherits SSH access. Per-tag ACL means new devices need explicit opt-in. |
+
 ## P0 — root-equivalent paths
 
 | # | Item | Status | Notes |
