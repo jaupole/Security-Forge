@@ -185,3 +185,16 @@ path "secret/data/apps/member-hub/+" {
 path "secret/metadata/apps/member-hub/+" {
   capabilities = ["read", "list"]
 }
+
+# MinIO scoped-user credentials for Member Hub document uploads
+# (member-hub-documents bucket — versioned, SSE-S3). Rendered by the
+# `member-hub-documents-minio-vso` VaultStaticSecret in
+# platform/manifests/member-hub/04-vso-bindings.yaml into the
+# member-hub-documents-minio K8s Secret, consumed via envFrom in the
+# backend Deployment.
+path "secret/data/minio/member-hub-documents" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/member-hub-documents" {
+  capabilities = ["read"]
+}
