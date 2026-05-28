@@ -198,3 +198,16 @@ path "secret/data/minio/member-hub-documents" {
 path "secret/metadata/minio/member-hub-documents" {
   capabilities = ["read"]
 }
+
+# MinIO scoped-user credentials for Control's ecosystem-graphics bucket
+# (ADR-0001 Phase A: per-org graphics library — versioned, SSE-S3).
+# Rendered by the `ecosystem-graphics-minio-vso` VaultStaticSecret in
+# platform/manifests/control/04-vso-bindings.yaml into the
+# ecosystem-graphics-minio K8s Secret, consumed via envFrom in the
+# control Deployment.
+path "secret/data/minio/ecosystem-graphics" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/ecosystem-graphics" {
+  capabilities = ["read"]
+}

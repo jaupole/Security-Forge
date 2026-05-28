@@ -34,6 +34,17 @@ path "secret/metadata/apps/control/+" {
   capabilities = ["read", "list"]
 }
 
+# MinIO bucket credentials — Control owns the `ecosystem-graphics`
+# bucket (ADR-0001 Phase A: per-org graphics library consumed cross-app
+# by Member Hub + future ecosystem apps). Same shape as member-hub.hcl's
+# bucket clauses for member-hub-documents / cnpg/credentials.
+path "secret/data/minio/ecosystem-graphics" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/ecosystem-graphics" {
+  capabilities = ["read"]
+}
+
 # Field-level PII encryption — invitations, member emails, etc.
 # (Closes audit rule 38 once the .Encrypt() call sites land in code.)
 path "transit/encrypt/pii-encryption" {
