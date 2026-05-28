@@ -1,9 +1,41 @@
-# ADR-0031: MinIO KES for SSE-S3 key rotation
+# ADR-0031: MinIO KES for SSE-S3 key rotation — SUPERSEDED by drain-and-rotate (2026-05-28 evening amendment)
 
-**Status**: In progress — design captured 2026-05-28, deploy tracked at operator-backlog #70
+**Status**: Superseded for the 2026-05-28 rotation cycle — KES design retained as the fallback architecture if/when MinIO commercial offerings clarify the substrate decision (operator-backlog #56). Drain-and-rotate executed instead; see § "2026-05-28 evening amendment" below.
 **Date**: 2026-05-28
 **Decision-makers**: Project owner
 **Phase**: Hetzner bare-metal hardening (post-Phase C #2)
+
+## 2026-05-28 evening amendment
+
+Between the morning design pass (this ADR's original body) and the evening execution window, research surfaced that **`minio/kes` is archived upstream as of 2025-06-19**, with the last release being `2025-03-12T09-35-18Z`. Future security patches will not come from the upstream repo. This aligns with the broader MinIO commercialization signal logged in operator-backlog **#56** (MinIO has effectively stopped publishing public open-source MinIO server release images after `RELEASE.2025-09-07T16-13-09Z`).
+
+This changes the cost-benefit on deploying KES:
+- **Before this finding**: KES is the documented, supported MinIO pattern for SSE-S3 key rotation. Half-day cost to add it as a long-term platform component, gains forever-rotation.
+- **After this finding**: KES is a frozen-upstream codebase. Deploying it adds a permanent maintenance dependency on dead software. Real "long-term" rotation requires whatever substrate decision lands from #56 (Garage / SeaweedFS / Hetzner Object Storage / commercial MinIO).
+
+**Decision flipped:** for the 2026-05-28 rotation cycle, execute **drain-and-rotate** instead of deploying KES. Drain-and-rotate is a one-shot fix that closes the immediate historical-plaintext exposure (the previous master key value sitting in state.db kine MVCC) without committing to a frozen-upstream platform component. The KES design captured below is retained as the architecture-of-record IF the #56 substrate decision lands on continuing with MinIO (commercial or otherwise) — at which point we revisit and consider KES again with up-to-date maintenance signals.
+
+**Drain-and-rotate execution (2026-05-28 evening):**
+
+1. Inventory all SSE-encrypted MinIO data: `backups/` (1.2 GiB, regeneratable — CNPG barman + Velero resource backups), `member-hub-documents/` (3.6 KiB, 2 objects — real user data), 5 other empty buckets.
+2. Drain `member-hub-documents/` objects to local box disk via `mc cp` while the OLD master key is still active (MinIO decrypts on GET). sha256 the staged copies.
+3. Wipe SSE-encrypted prefixes: `mc rm --recursive --force` for `backups/cnpg/`, `backups/velero/`, `member-hub-documents/`, `backups/sse-verify/`. Other buckets are empty.
+4. Generate new 32-byte master key with new name (`secforge-minio-key-2026-05-28-<short-suffix>`).
+5. Write to OpenBao at `secret/data/platform/minio/sse-master-key` (`key_name=…`, `master_key_b64=…`) via break-glass admin token (#34 / #69-deferred).
+6. Wait for VSO to render new `minio-kms-creds` Secret (refreshAfter 60s).
+7. Restart MinIO Deployment; verify Ready + can encrypt a test write.
+8. Re-upload `member-hub-documents/` from local-disk stage; verify sha256 round-trip matches.
+9. Trigger fresh CNPG base backup per cluster (control, keycloak, member-hub, spicedb) — each generates a fresh barman base backup under the new key, restoring per-cluster RPO.
+10. Trigger immediate Velero backup to re-seed `backups/velero/` under the new key.
+11. Verify the OLD master key value (which was historically in state.db plaintext) is now functionally dead — no remaining encrypted objects reference it.
+
+**Risk window during rotation:** between step 3 (wipe) and step 9 (CNPG base backups re-established), the 4 CNPG clusters have no current barman backup. WAL archiving resumes the moment MinIO is back (step 7) but base backups don't exist until step 9. If a CNPG cluster's primary pod dies in that ~10-minute window AND WAL archiving was interrupted before completing the new base, point-in-time recovery is lost back to the last pre-rotation backup, which is also wiped. Mitigation: keep the window short (single bash batch executes steps 7–9 in <10 minutes), do during low-load period (executed 23:00 UTC 2026-05-28).
+
+**Why this is acceptable risk:** the CNPG primary pods have been running 8d+ with zero crashes; the probability of a primary failure in a 10-minute window is bounded. PV backup history via Velero kopia was already wiped earlier in the same session for the kopia passphrase rotation, so the overall data-loss-on-disaster posture is unchanged.
+
+---
+
+## Original KES design (retained as fallback architecture)
 
 ## Context
 
