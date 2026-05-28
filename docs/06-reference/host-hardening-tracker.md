@@ -50,6 +50,12 @@ Findings from the 2026-05-28 user-foothold audit. Source: `ops`-shell read-only 
 - Tailscale operator-access mesh present
 - Single SSH key authorized (`jaupole@googlemail.com`)
 
+## Sequencing decisions (2026-05-28)
+
+- **Do #2 (Tailscale-only SSH) before deciding on #1 + #4.** Once public `:22` is closed, the attack model that #1 defends against (stolen SSH key → internet brute-force → escalate via NOPASSWD) requires the attacker to first compromise a Tailnet-authorized device — at which point they have the operator's workstation and can keylog the sudo password anyway. For a solo operator, perimeter > internal privilege separation. Re-evaluate #1 + #4 after #2 lands.
+- **Skipped: separate `claude-bot` SSH account.** Considered as a way to keep narrow-NOPASSWD scope for automated diagnostics while making `ops` sudo password-required. Concluded the audit-trail and blast-radius benefits are weak for a solo operator once #2 is in place; not worth the two-account overhead.
+- **Investment pivot.** With #2 done, leverage moves to workstation hardening: SSH key passphrase, hardware-key auth (Yubikey / Secure Enclave), Tailscale ACL restricting `:22` reachability to the specific operator device. These are higher-yield than further sudoers segmentation on the box.
+
 ## Audit artifacts
 
 - `/tmp/openbao-seal-block.backup.yaml` (today 02:48) — **removed** as part of #5
