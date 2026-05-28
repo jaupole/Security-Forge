@@ -91,6 +91,20 @@ After the two fixes:
 
 ## Operator takeaways for an actual greenfield rebuild
 
+0. **Enable k3s etcd Secrets-encryption BEFORE any workload deploys.** Append
+   `secrets-encryption: true` to `/etc/rancher/k3s/config.yaml` (the platform
+   tree at `platform/host/k3s/config.yaml` already includes it as of commit
+   `e62a9bf`) and restart k3s before applying any manifests. **This is the
+   step that's easy to skip and very costly to retrofit later** — if workloads
+   accumulate Secrets before this is on, every Secret value (MinIO SSE master
+   key, kopia passphrase, OpenBao seal token, ghcr-pull-secret PATs, every
+   VSO-rendered value) sits plaintext in `state.db` until you rotate ALL of
+   them. The 2026-05-28 audit traced multiple master keys this way via
+   `strings state.db`. Verify post-restart:
+   ```bash
+   sudo k3s secrets-encrypt status
+   # Encryption Status: Enabled
+   ```
 1. **Boot the custom Keycloak image first**, NOT stock upstream — otherwise
    the password-blacklist prereq fails.
 2. **Run 03 + 03a as documented** — realm-import handles most of 03a now
@@ -100,9 +114,28 @@ After the two fixes:
    operator-generated secrets to the consumer destinations. Without it,
    apps fail auth.
 4. **Cluster-rebuild ordering matters**:
-   `kube → cnpg → vso → openbao operator+CR+05c+05j → keycloak operator+CR+realm-import → 05l → app deploys`.
+   `k3s+secrets-encryption → kube → cnpg → vso → openbao operator+CR+05c+05j → keycloak operator+CR+realm-import → 05l → app deploys`.
    The new ordering puts 05l AFTER realm-import, which is different from
    pre-#60 docs.
+5. **Populate three OpenBao paths that don't live in any bootstrap script** — these are
+   operator-driven population steps surfaced during the 2026-05-28 audit:
+   - `secret/data/apps/control/qbo` — needs `client_id` + `client_secret`
+     fields with the Intuit QuickBooks Developer Portal app credentials.
+     Without this, `control-qbo-secrets` VSS stays SYNCED=False (harmless,
+     `envFrom` is `optional: true`). See [quickbooks-online-setup.md](./quickbooks-online-setup.md).
+   - `secret/data/minio/member-hub-documents` — needs `access_key` +
+     `secret_key` for the MinIO service account scoped to the
+     `member-hub-documents` bucket. Created during 09f or generated on-demand;
+     stash the values in OpenBao after the bucket + service-account exist.
+   - `secret/data/platform/minio/sse-master-key` — auto-populated by 09f
+     (`platform/components/09f-minio-sse-encryption.sh`) on first run, but if
+     the SSE master key has been rotated post-bootstrap (as 2026-05-28),
+     verify the **current** key name + bytes are in OpenBao at the latest kv-v2
+     version. See [minio-sse-rotation.md](./minio-sse-rotation.md).
+6. **VSO `destination.overwrite: true`** for any VSS whose target K8s Secret
+   was created manually (not by VSO itself). Without it VSO sees the existing
+   Secret and refuses to manage it, leaving SYNCED=False forever. Surfaced
+   2026-05-28 on `member-hub-documents-minio-vso`.
 
 ## Bugs caught + fixed
 

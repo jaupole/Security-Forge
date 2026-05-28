@@ -47,7 +47,9 @@ The token expires in 1h, can't be renewed past `max_ttl=1h`. Use it to fix what'
 
 ## Generate a new root token via recovery keys
 
-> ⚠️ **Known gap on OpenBao 2.5.3 + Transit auto-unseal (local edition).** The post-Phase-7 audit observed `bao operator generate-root -init` returning `405 unsupported operation` against this configuration. The Transit-auto-unsealed branch may not expose the generate-root endpoint the way the Shamir-sealed branch does. **The [Kubernetes auth break-glass](#kubernetes-auth-break-glass) above is the canonical local-edition recovery path**; this section is retained as the cloud-edition + Shamir-sealed reference and as a fallback to attempt if the break-glass path is also unavailable. If you hit the 405, file an operator-backlog entry and prefer the rebuild path or the break-glass token.
+> ⚠️ **Known gap on OpenBao 2.5.3 — `generate-root` returns 405 on BOTH instances.** The post-Phase-7 audit originally observed `bao operator generate-root -init` returning `405 unsupported operation` against transit-auto-unsealed main OpenBao. The 2026-05-28 seal-token rotation session **re-confirmed the same 405 against the shamir-sealed openbao-seal instance** — generate-root is structurally unsupported on this OpenBao build, not just on the transit-auto-unsealed branch. **The [Kubernetes auth break-glass](#kubernetes-auth-break-glass) above is the canonical recovery path for MAIN OpenBao**; for openbao-seal there is **no equivalent break-glass today** (see operator-backlog #69). Until #69 lands, openbao-seal admin recovery depends on the operator-stored initial root token. If both that token AND a viable Velero backup are missing, the recovery path is destructive rebuild ([§ Rebuild the seal-OpenBao](#rebuild-the-seal-openbao)).
+>
+> The recovery-key generate-root procedure below is retained for the cloud-edition / future-OpenBao-version reference. If you hit the 405 on this build, jump directly to the break-glass on main OpenBao or — for openbao-seal — to the offline root or rebuild.
 
 Use this when the OpenBao initial root has been revoked AND your OIDC admin path is also broken (so you can't get *any* admin via the normal flows). You'll need 3 of the 5 **recovery keys** stored offline at Phase 5.3 Checkpoint 2.
 
@@ -83,47 +85,99 @@ Best practice: use this root only to fix the broken admin path, then revoke it t
 
 ## Rotate the Transit unseal token
 
-The seal-OpenBao mints a periodic token (`-period=720h`, no `-ttl`/`-renewable`) bound to `unseal-policy`. **Phase 7d Item 3 update (2026-05-02; operator-backlog #4 resolved):** the prior `-ttl=24h -renewable=true` design has been replaced by a periodic token. Periodic tokens refresh their TTL on every USE, and the main OpenBao's `transit/decrypt/unseal` call at boot counts as use. So any cluster reboot within 30 days transparently extends the token's life; cold-pause must exceed 30 days continuously before the token expires. See [ADR-0009 § Known local gaps #4](../02-decisions/0009-openbao-seal-strategy.md) for the trade-off table. (Clusters bootstrapped before 2026-05-02 still hold a `-ttl=24h` token and will see the original 24h ceiling until the next `rotate-transit-token.sh` run — which mints with the new period.)
+The seal-OpenBao mints a periodic token (`-period=720h`, no `-ttl`/`-renewable`) bound to `unseal-policy`. **Phase 7d Item 3 update (2026-05-02; operator-backlog #4 resolved):** the prior `-ttl=24h -renewable=true` design has been replaced by a periodic token. Periodic tokens refresh their TTL on every USE, and the main OpenBao's `transit/decrypt/unseal` call at boot counts as use. So any cluster reboot within 30 days transparently extends the token's life; cold-pause must exceed 30 days continuously before the token expires. See [ADR-0009 § Known local gaps #4](../02-decisions/0009-openbao-seal-strategy.md) for the trade-off table.
 
-### Canonical procedure — `rotate-transit-token.sh`
+> **2026-05-28 architecture note:** the seal config now lives in K8s Secret `openbao-seal-block` (the full `seal.hcl` content, including the token), mounted at `/openbao/userconfig/seal-block/openbao-seal-block/seal.hcl` on each main OpenBao pod. The older local-edition pattern with a separate `openbao-transit-token` Secret + `apply-main.sh` rendering job has been retired with the rest of the `infrastructure/` tree. The procedure below reflects the **current** platform-tree shape.
 
-```bash
-bash infrastructure/openbao/rotate-transit-token.sh
-```
+### Procedure (verified 2026-05-28)
 
-The script prompts for the seal-OpenBao initial root token (no echo; wiped from memory after use), then runs the full sequence: refuses to start unless the seal-OpenBao is up and unsealed → mints a fresh periodic Transit token (`-period=720h` as of Phase 7d Item 3) → patches the `openbao-transit-token` Secret → runs `apply-main.sh`, which re-renders the seal block, detects the content change, force-rolls existing main pods follower-first (`openbao-2 → 1 → 0`), and blocks until all three are Ready. The watchdog inside `apply-main.sh` tracks per-pod restart-count *delta* (only restarts that happen after watch-start count against the threshold), so pre-existing crashloops from the stale token don't trigger a false-positive bail; an overall 10-minute deadline is the backstop.
-
-If the script exits non-zero on the wait, inspect `kubectl logs -n openbao openbao-0 -c openbao --tail=30` and consult the troubleshooting section below or [§ Rebuild the seal-OpenBao](#rebuild-the-seal-openbao) if the seal-OpenBao is itself unhealthy.
-
-### Manual procedure (reference — what the script does)
-
-If the script is missing or you need to run the steps individually for troubleshooting:
+You need the **seal-OpenBao** initial root token from offline storage (admin-break-glass exists only on main OpenBao — see operator-backlog #69 for the seal-side gap).
 
 ```bash
-# 1. Get a token from the seal-OpenBao using its (offline) initial root.
 SEAL_ROOT=<seal-OpenBao initial root from offline storage>
 
-NEW_TRANSIT_TOKEN=$(kubectl exec -n openbao openbao-seal-0 -c openbao -- \
-    env BAO_SKIP_VERIFY=1 BAO_TOKEN="$SEAL_ROOT" \
+# 1. Validate the root token works on openbao-seal
+kubectl -n openbao exec openbao-seal-0 -c openbao -- \
+    env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 BAO_TOKEN="$SEAL_ROOT" \
+    bao token lookup
+# Should show policies=[root], expire_time=<nil>. If 403, the token has been revoked
+# — fall through to § Rebuild the seal-OpenBao or hunt for the right offline copy.
+
+# 2. Mint a new periodic transit token bound to unseal-policy
+NEW_TOKEN=$(kubectl -n openbao exec openbao-seal-0 -c openbao -- \
+    env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 BAO_TOKEN="$SEAL_ROOT" \
     bao token create -policy=unseal-policy -period=720h -format=json \
-    | jq -r '.auth.client_token')
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])')
 
-# 2. Update the openbao-transit-token Secret.
-kubectl -n openbao patch secret openbao-transit-token \
-    --type=merge \
-    -p "{\"stringData\":{\"token\":\"$NEW_TRANSIT_TOKEN\"}}"
+# 3. Verify the new token has transit/decrypt + transit/encrypt on the unseal key
+for cap in transit/decrypt/unseal transit/encrypt/unseal; do
+  kubectl -n openbao exec openbao-seal-0 -c openbao -- \
+      env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 BAO_TOKEN="$NEW_TOKEN" \
+      bao token capabilities "$cap"
+  # Each should print: update
+done
 
-# 3. Re-render the openbao-seal-block Secret with the new token, then
-#    helm-upgrade and roll the main OpenBao pods.
-bash infrastructure/openbao/apply-main.sh
+# 4. Backup the current openbao-seal-block Secret before mutation
+kubectl -n openbao get secret openbao-seal-block -o yaml \
+    > /tmp/openbao-seal-block.backup.$(date +%Y%m%d-%H%M%S).yaml
 
-# 4. (OnDelete strategy) — delete each main pod for the new seal config to load.
-kubectl delete pod -n openbao openbao-2 --wait=true --timeout=60s
-kubectl delete pod -n openbao openbao-1 --wait=true --timeout=60s
-kubectl delete pod -n openbao openbao-0 --wait=true --timeout=60s
+# 5. Extract the current seal.hcl, swap the token line, patch the Secret
+OLD_TOKEN=$(kubectl -n openbao get secret openbao-seal-block \
+    -o jsonpath='{.data.seal\.hcl}' | base64 -d | grep -oP '"\Ks\.[A-Za-z0-9]+(?=")')
+kubectl -n openbao get secret openbao-seal-block \
+    -o jsonpath='{.data.seal\.hcl}' | base64 -d \
+    | sed "s|$OLD_TOKEN|$NEW_TOKEN|" \
+    > /tmp/seal.hcl.new
+NEW_B64=$(base64 -w0 /tmp/seal.hcl.new)
+kubectl -n openbao patch secret openbao-seal-block --type=merge \
+    -p "{\"data\":{\"seal.hcl\":\"$NEW_B64\"}}"
+rm -f /tmp/seal.hcl.new
+
+# 6. Identify the leader pod (restart followers first, leader last)
+for p in openbao-0 openbao-1 openbao-2; do
+  ROLE=$(kubectl -n openbao exec $p -c openbao -- \
+      env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 \
+      bao status -format=json \
+      | python3 -c 'import json,sys;print("leader" if json.load(sys.stdin).get("is_self") else "follower")')
+  echo "$p: $ROLE"
+done
+
+# 7. Restart each pod (followers first, leader last). Wait for Ready + unsealed
+#    after each before continuing — raft tolerates 1/3 down; do not parallelize.
+for pod in <follower-1> <follower-2> <leader>; do
+  kubectl -n openbao delete pod $pod
+  for i in $(seq 1 20); do
+    READY=$(kubectl -n openbao get pod $pod -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "?")
+    [ "$READY" = "true" ] && break
+    sleep 5
+  done
+  kubectl -n openbao exec $pod -c openbao -- \
+      env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 \
+      bao status | grep -E '(Initialized|Sealed)'
+  # Both should show: Initialized=true, Sealed=false
+done
+
+# 8. Revoke the old periodic token (closes any state.db kine MVCC exposure)
+kubectl -n openbao exec openbao-seal-0 -c openbao -- \
+    env BAO_ADDR=https://localhost:8200 BAO_SKIP_VERIFY=1 BAO_TOKEN="$SEAL_ROOT" \
+    bao token revoke "$OLD_TOKEN"
+
+# 9. Sanity-check: an app-side VSS is still SYNCED (proves main OpenBao + VSO chain healthy)
+kubectl -n control get vaultstaticsecret control-app-secrets
 ```
 
-After the roll, all 3 pods auto-unseal via the new Transit token.
+After step 7, all 3 pods are using the new transit token. The OLD token is dead after step 8.
+
+### Gotchas surfaced during the 2026-05-28 rotation
+
+- **The seal config Secret is `openbao-seal-block`, NOT `openbao-transit-token`.** Older runbook references to `openbao-transit-token` reflect the retired local-edition pattern.
+- **Don't use `bao login`** with the seal root; use `BAO_TOKEN=` env var only. `bao login` enables the dangerous `bao token revoke -self` codepath (see [[feedback_no_bao_token_revoke_self]] in operator memory).
+- **`generate-root` returns 405 on openbao-seal too** (not just main openbao). The recovery-keys-based generate-root path is structurally broken on OpenBao 2.5.3 across both instances.
+- **The seal-OpenBao has no k8s-auth break-glass role today** (operator-backlog #69). If the offline seal root is lost AND `generate-root` is broken, the only recovery path is destructive rebuild.
+
+### Codified-script gap
+
+A `rotate-transit-token.sh` script under `platform/components/` would make this procedure idempotent + safer (avoid the manual sed step in #5, the manual leader-identification in #6). Tracked at operator-backlog #71 (filed alongside the 2026-05-28 rotation execution). Until that lands, the manual procedure above is the canonical reference.
 
 ---
 

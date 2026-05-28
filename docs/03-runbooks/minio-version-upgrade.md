@@ -3,6 +3,12 @@
 > Upgrade the in-cluster MinIO server (and the `mc` client image used by the
 > bucket-bootstrap Job) to a newer release. Single-node standalone deployment
 > only — Operator migration is a separate procedure.
+>
+> **Not what you want?** This runbook covers _version_ upgrades. Other MinIO
+> ops have dedicated runbooks:
+> - [minio-sse-rotation.md](./minio-sse-rotation.md) — rotate the SSE-S3 master key (drain-and-rotate procedure)
+> - [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token) — rotate the OpenBao seal token that gates main OpenBao (separate concern; MinIO is downstream)
+> - [transit-key-rotation.md](./transit-key-rotation.md) — per-tenant Transit field-level rotation (cipher-orphan recovery is in here too)
 
 ## When to use
 
