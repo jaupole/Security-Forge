@@ -32,6 +32,18 @@ spec:
       encoding: UTF8
       localeCollate: C
       localeCType: C
+      # SECURITY DEFINER functions (pg_event_checkin_meta,
+      # pg_checkin_public, pg_rsvp_event_public, pg_submit_enrollment,
+      # pg_*_invitation, etc.) are owned by member_hub and must read
+      # RLS-protected tables WITHOUT an active-org context. They rely
+      # on the function owner having BYPASSRLS. The runtime app role
+      # (`member_hub_app`, used after `SET LOCAL ROLE` in every withTx
+      # transaction) does NOT have BYPASSRLS, so day-to-day handlers
+      # still get RLS-scoped reads. Discovered 2026-05-28 when the
+      # first QR check-in scan in prod returned no rows from the meta
+      # function despite the row existing in events.
+      postInitSQL:
+        - ALTER ROLE member_hub BYPASSRLS
 
   postgresql:
     parameters:
