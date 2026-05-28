@@ -74,7 +74,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/jaupole/member-hub@sha256:b6bd78b9ef0a9dd05445b11023fc8c77dfca6b0074e5a4d8751ac5079875d222
+          image: ghcr.io/jaupole/member-hub@sha256:1b422dbb3431b0de111f8af7b5546a6369c86117d3a9cebe337ec244a7247921
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
