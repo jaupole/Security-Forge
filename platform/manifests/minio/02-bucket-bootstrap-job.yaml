@@ -9,6 +9,8 @@
 #   - backups                  (versioned)
 #   - wazuh-archive            (versioned)
 #   - member-hub-documents     (versioned + SSE-S3; member file attachments)
+#   - ecosystem-graphics       (versioned + SSE-S3; ADR-0001 graphics library)
+#   - ecosystem-brand-kit      (versioned + SSE-S3; ADR-0002 brand-kit fonts)
 #
 # Re-run safe: `mb --ignore-existing` and repeated `version enable` are no-ops.
 ---
@@ -114,6 +116,20 @@ spec:
               mc mb --ignore-existing local/ecosystem-graphics
               mc version enable local/ecosystem-graphics
               mc encrypt set sse-s3 local/ecosystem-graphics
+
+              # ecosystem-brand-kit: per-org public-website brand-kit
+              # fonts (ADR-0002 Phase A in Member Hub/docs/02-decisions/).
+              # Owned by Ecosystem Control; consumed cross-app by every
+              # public-page renderer (Member Hub today; PT/PF future).
+              # Stores ONLY uploaded font binaries — colours, logo data
+              # URLs, and other brand-kit metadata live in
+              # organizations.settings.branding JSONB. Versioned (operator
+              # DELETE protection) + SSE-S3. Object key pattern:
+              # {org_id}/fonts/{sha256}.{ext}. Caps at app layer: 3 fonts
+              # per org (one per slot), 200 KB each.
+              mc mb --ignore-existing local/ecosystem-brand-kit
+              mc version enable local/ecosystem-brand-kit
+              mc encrypt set sse-s3 local/ecosystem-brand-kit
 
               echo "--- buckets ---"
               mc ls local/
