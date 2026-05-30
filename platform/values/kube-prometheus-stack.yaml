@@ -75,6 +75,12 @@ prometheus:
 # ─── Alertmanager ──────────────────────────────────────────────────────
 alertmanager:
   alertmanagerSpec:
+    # secforge(2026-05-30): route namespaced AlertmanagerConfig CRs WITHOUT
+    # forcing a per-namespace matcher, so observability/13-alertmanager-email
+    # is a true catch-all (otherwise email would only cover alerts whose
+    # `namespace` label == observability). Required for the email receiver.
+    alertmanagerConfigMatcherStrategy:
+      type: None
     replicas: 1
     retention: 120h
     storage:
