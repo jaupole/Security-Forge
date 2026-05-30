@@ -4,11 +4,13 @@
 # to react. Rules land in the kube-prometheus-stack Prometheus via the
 # `release: kps` label selector.
 #
-# Notification: these alerts currently fire into Alertmanager's `null`
-# receiver (chart default). Visible in:
+# Notification: WIRED to email (2026-05-30). Alertmanager routes all
+# non-Watchdog alerts to jaupole@googlemail.com via the namespaced
+# AlertmanagerConfig `secforge-email` (see 13-alertmanager-email.yaml).
+# Also visible in:
 #   - Alertmanager UI:  kubectl -n observability port-forward svc/kps-alertmanager 9093:9093
 #   - Grafana → Alerting → Alert rules
-# Real notification (email / Discord / Wazuh-relay) is Phase-7-rest TODO.
+# Future: migrate SMTP secret to OpenBao/VSO; add Discord/Wazuh-relay if desired.
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -186,3 +188,54 @@ spec:
             description: |
               No OpenBao replica is ready. Secret access and platform identity are
               broken until at least one replica recovers.
+
+    # ─── Backups (added 2026-05-30; needs ServiceMonitor velero) ──────────
+    # So the 2026-05-28 SSE-rotation backup outage (stale BackupRepository CRs
+    # → "repository not initialized") can never silently recur again.
+    - name: secforge-backups
+      interval: 30s
+      rules:
+        - alert: VeleroBackupFailed
+          expr: max by (schedule) (velero_backup_last_status{schedule!=""}) != 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero schedule {{ $labels.schedule }} last backup FAILED/partial"
+            description: |
+              velero_backup_last_status != 0 — backups are not protecting data.
+              Check BackupRepository CRs (kubectl -n velero get backuprepositories)
+              and the kopia repo metadata in MinIO backups/velero/kopia/<ns>/.
+        - alert: VeleroBackupTooOld
+          expr: (time() - max by (schedule) (velero_backup_last_successful_timestamp{schedule!=""})) > 93600
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No successful Velero backup for {{ $labels.schedule }} in >26h"
+        - alert: VeleroMetricsDown
+          expr: absent(velero_backup_last_status)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero metrics not scraping (ServiceMonitor velero may be broken)"
+
+    # ─── Certificates (added 2026-05-30; needs ServiceMonitor cert-manager) ─
+    - name: secforge-certs
+      interval: 60s
+      rules:
+        - alert: CertExpiringSoon
+          expr: (min by (name, namespace) (certmanager_certificate_expiration_timestamp_seconds) - time()) < 1209600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in <14d"
+        - alert: CertNotReady
+          expr: certmanager_certificate_ready_status{condition="True"} == 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} not Ready"

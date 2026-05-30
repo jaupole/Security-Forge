@@ -1,0 +1,50 @@
+# Alertmanager → email notifications (added 2026-05-30).
+#
+# Routes all non-Watchdog alerts to the operator's inbox. Wired as a
+# namespaced AlertmanagerConfig (no Helm upgrade needed) — picked up
+# because the Alertmanager CR has alertmanagerConfigSelector/NamespaceSelector
+# = {} (matches all). Catch-all routing requires
+# alertmanagerConfigMatcherStrategy.type=None, set in
+# platform/values/kube-prometheus-stack.yaml (alertmanagerSpec).
+#
+# SECRET: the SMTP password (Gmail app password) is NOT in git. It lives in
+# the `alertmanager-smtp-gmail` Secret (key: password) in this namespace.
+# TODO: migrate it to OpenBao + a VSO binding (see README-alerting.md).
+#   Create manually (until VSO):
+#     printf '%s' '<app-password>' | kubectl create secret generic \
+#       alertmanager-smtp-gmail -n observability \
+#       --from-file=password=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: secforge-email
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  route:
+    receiver: email-ops
+    groupBy: [alertname, namespace, severity]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      # Dead-man's-switch + inhibitor are pure signal noise for email.
+      - receiver: blackhole
+        matchers:
+          - name: alertname
+            matchType: =~
+            value: "Watchdog|InfoInhibitor"
+  receivers:
+    - name: email-ops
+      emailConfigs:
+        - to: jaupole@googlemail.com
+          from: jaupole@googlemail.com
+          smarthost: smtp.gmail.com:587
+          authUsername: jaupole@googlemail.com
+          authPassword:
+            name: alertmanager-smtp-gmail
+            key: password
+          requireTLS: true
+          sendResolved: true
+    - name: blackhole

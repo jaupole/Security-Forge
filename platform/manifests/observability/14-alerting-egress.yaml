@@ -1,0 +1,49 @@
+# Egress for the alerting pipeline (added 2026-05-30). observability is
+# default-deny-egress; these open the two paths the pipeline needs.
+---
+# Prometheus must reach the node IP to scrape the host-network node-exporter
+# (:9100) and the kubelet (:10250). Without this, those targets are up==0 and
+# KubeletDown / TargetDown / node-exporter alerts fire perpetually. (UFW on
+# the host must also allow 10.42.0.0/16 → :9100,:10250 — see README-alerting.md.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-egress-node-metrics
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 65.21.25.40/32}
+      ports:
+        - {port: 9100, protocol: TCP}
+        - {port: 10250, protocol: TCP}
+---
+# Alertmanager must reach the public SMTP smarthost to send email. Scoped to
+# alertmanager pods and SMTP ports only; RFC1918 + link-local excluded
+# (SSRF defense-in-depth, matching the platform egress pattern).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alertmanager-egress-smtp
+  namespace: observability
+  labels:
+    secforge.platform/component: observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - {port: 587, protocol: TCP}
+        - {port: 465, protocol: TCP}
