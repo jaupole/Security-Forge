@@ -1,0 +1,31 @@
+# Scrape Kyverno's metrics (added 2026-05-30) so the image-trust alerts
+# (observability/09-platform-alerts.yaml, secforge-image-trust group) have
+# data. Kyverno already ships `allow-prometheus-to-kyverno-metrics`
+# (05-network-policies.yaml, :8000), so only the ServiceMonitor was missing —
+# same gap velero/cert-manager had before their ServiceMonitors were added.
+#
+# Selector `part-of: kyverno` + named port `metrics-port` matches all four
+# metrics Services (admission / background / cleanup / reports controllers);
+# the :443 webhook Services are selected but skipped (no metrics-port).
+# Picked up by Prometheus via serviceMonitorSelector={}.
+#
+# The key series this unlocks:
+#   kyverno_policy_results_total{policy_name="verify-image-signature-secforge",
+#                                rule_result="fail", policy_validation_mode="enforce"}
+# i.e. cosign signature verification BLOCKED a deploy — the #1 cause being an
+# expired/revoked ghcr-pull PAT (the 2026-05-30 deploy-block incident).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: kyverno
+    secforge.platform/component: kyverno
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: kyverno
+  endpoints:
+    - port: metrics-port
+      interval: 30s
