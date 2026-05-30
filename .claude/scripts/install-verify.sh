@@ -40,10 +40,21 @@ command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "curl required" >&2; exit 1; }
 
 mkdir -p "$INSTALL_DIR"
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) : ;;
-  *) echo "warn: $INSTALL_DIR is not on PATH" >&2 ;;
-esac
+# Each GitHub Actions `run:` step is a fresh shell that starts from the
+# runner-default PATH, so a tool installed into INSTALL_DIR is invisible to
+# later steps unless the directory is persisted via $GITHUB_PATH. Append it
+# UNCONDITIONALLY under Actions — the current step's $PATH says nothing about
+# what later steps inherit, so a current-PATH guard would wrongly skip it.
+# Outside Actions, just warn if INSTALL_DIR isn't already reachable.
+if [[ -n "${GITHUB_PATH:-}" ]]; then
+  printf '%s\n' "$INSTALL_DIR" >> "$GITHUB_PATH"
+  echo "note: appended $INSTALL_DIR to \$GITHUB_PATH for subsequent steps" >&2
+else
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) : ;;
+    *) echo "warn: $INSTALL_DIR is not on PATH" >&2 ;;
+  esac
+fi
 
 # ---------- platform detection ----------
 
@@ -152,7 +163,10 @@ install_one() {
       echo "pipx not installed; cannot install $tool" >&2
       return 1
     fi
-    pipx install --force "${tool}==${version}" >/dev/null 2>&1 \
+    # Pin pipx's binary dir to INSTALL_DIR so pipx-installed tools land in the
+    # same dir we persist onto $GITHUB_PATH (pipx's default PIPX_BIN_DIR may
+    # differ from INSTALL_DIR on some runners, which would silently re-break).
+    PIPX_BIN_DIR="$INSTALL_DIR" pipx install --force "${tool}==${version}" >/dev/null 2>&1 \
       || { echo "pipx install $tool==$version failed" >&2; return 1; }
     echo "    installed via pipx"
     return 0
