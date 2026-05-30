@@ -144,9 +144,22 @@ fi
 
 # ---------- install action ----------
 
+# Ensure a trusted cosign is on PATH before verifying any cosign-keyless tool.
+# cosign is pinned by SHA256 (it cannot verify itself on a clean runner), so we
+# bootstrap it once here; subsequent calls are no-ops.
+ensure_cosign() {
+  command -v cosign >/dev/null 2>&1 && return 0
+  if [[ -x "$INSTALL_DIR/cosign" ]]; then export PATH="$INSTALL_DIR:$PATH"; return 0; fi
+  echo "    (bootstrapping cosign — required to verify signatures)" >&2
+  install_one cosign || return 1
+  export PATH="$INSTALL_DIR:$PATH"
+  command -v cosign >/dev/null 2>&1
+}
+
 install_one() {
   local tool="$1"
   local version repo template install_via verify_with cosign_identity cosign_issuer
+  local checksums_template cosign_bundle cosign_identity_regexp
   version=$(jq -r --arg t "$tool" '.tools[$t].version // empty' "$VERSIONS_FILE")
   install_via=$(jq -r --arg t "$tool" '.tools[$t].install_via // empty' "$VERSIONS_FILE")
   repo=$(jq -r --arg t "$tool" '.tools[$t].repo // empty' "$VERSIONS_FILE")
@@ -154,6 +167,9 @@ install_one() {
   verify_with=$(jq -r --arg t "$tool" '.tools[$t].verify_with // empty' "$VERSIONS_FILE")
   cosign_identity=$(jq -r --arg t "$tool" '.tools[$t].cosign_identity // empty' "$VERSIONS_FILE")
   cosign_issuer=$(jq -r --arg t "$tool" '.tools[$t].cosign_issuer // empty' "$VERSIONS_FILE")
+  checksums_template=$(jq -r --arg t "$tool" '.tools[$t].checksums_template // empty' "$VERSIONS_FILE")
+  cosign_bundle=$(jq -r --arg t "$tool" '.tools[$t].cosign_bundle // empty' "$VERSIONS_FILE")
+  cosign_identity_regexp=$(jq -r --arg t "$tool" '.tools[$t].cosign_identity_regexp // empty' "$VERSIONS_FILE")
   cosign_identity="${cosign_identity//\{version\}/$version}"
 
   echo "==> $tool $version (verify_with=$verify_with)"
@@ -193,45 +209,73 @@ install_one() {
   # Verification path
   case "$verify_with" in
     cosign-keyless)
-      if ! command -v cosign >/dev/null 2>&1; then
-        echo "    warn: cosign not installed, cannot verify keyless signature; skipping verify" >&2
-      else
-        local sig_url cert_url
-        sig_url="${url}.sig"
-        cert_url="${url}.pem"
-        curl -fsSL --retry 3 "$sig_url"  -o "${tarball}.sig"  || sig_url=""
-        curl -fsSL --retry 3 "$cert_url" -o "${tarball}.pem" || cert_url=""
-        if [[ -f "${tarball}.sig" && -f "${tarball}.pem" && -n "$cosign_identity" ]]; then
-          if cosign verify-blob \
-                --signature "${tarball}.sig" \
-                --certificate "${tarball}.pem" \
-                --certificate-identity "$cosign_identity" \
-                --certificate-oidc-issuer "${cosign_issuer:-https://token.actions.githubusercontent.com}" \
-                "$tarball" >/dev/null 2>&1; then
-            echo "    cosign keyless verify: OK"
-          else
-            echo "    cosign keyless verify FAILED — refusing install" >&2
-            return 1
-          fi
+      # Signed artifact is the release CHECKSUMS file (per-tarball .sig/.pem do
+      # NOT exist). Verify the checksums file with cosign, then sha256-match the
+      # downloaded tarball against that verified file. Fail closed throughout.
+      ensure_cosign || { echo "    cosign unavailable — cannot verify $tool, refusing install" >&2; return 1; }
+      if [[ -z "$checksums_template" ]]; then
+        echo "    no checksums_template configured for $tool — refusing install" >&2; return 1
+      fi
+      local cs_asset cs_url cs_file want got
+      cs_asset="${checksums_template//\{version\}/$version}"
+      cs_url="https://github.com/$repo/releases/download/v$version/$cs_asset"
+      cs_file="$TMP_DIR/$cs_asset"
+      if ! curl -fsSL --retry 3 "$cs_url" -o "$cs_file"; then
+        echo "    checksums download failed ($cs_url)" >&2; return 1
+      fi
+      if [[ "$cosign_bundle" == "true" ]]; then
+        # Sigstore bundle (.sigstore.json) — e.g. trivy.
+        if ! curl -fsSL --retry 3 "${cs_url}.sigstore.json" -o "${cs_file}.sigstore.json"; then
+          echo "    checksums bundle download failed" >&2; return 1
+        fi
+        local idarg=()
+        if [[ -n "$cosign_identity_regexp" ]]; then
+          idarg=(--certificate-identity-regexp "$cosign_identity_regexp")
         else
-          echo "    warn: signature sidecar missing; cannot verify" >&2
+          idarg=(--certificate-identity "$cosign_identity")
+        fi
+        if ! cosign verify-blob --bundle "${cs_file}.sigstore.json" --new-bundle-format \
+              "${idarg[@]}" \
+              --certificate-oidc-issuer "${cosign_issuer:-https://token.actions.githubusercontent.com}" \
+              "$cs_file" >/dev/null 2>&1; then
+          echo "    cosign bundle verify FAILED — refusing install" >&2; return 1
+        fi
+      else
+        # Detached signature + cert sidecars on the checksums file — e.g. syft/grype.
+        if ! curl -fsSL --retry 3 "${cs_url}.sig" -o "${cs_file}.sig" \
+           || ! curl -fsSL --retry 3 "${cs_url}.pem" -o "${cs_file}.pem"; then
+          echo "    checksums sig/cert download failed" >&2; return 1
+        fi
+        if [[ -z "$cosign_identity" ]]; then echo "    no cosign_identity for $tool" >&2; return 1; fi
+        if ! cosign verify-blob \
+              --signature "${cs_file}.sig" --certificate "${cs_file}.pem" \
+              --certificate-identity "$cosign_identity" \
+              --certificate-oidc-issuer "${cosign_issuer:-https://token.actions.githubusercontent.com}" \
+              "$cs_file" >/dev/null 2>&1; then
+          echo "    cosign keyless verify FAILED — refusing install" >&2; return 1
         fi
       fi
+      want=$(grep -F "$asset" "$cs_file" | awk '{print $1}' | head -1 || true)
+      got=$(sha256sum "$tarball" | awk '{print $1}')
+      if [[ -z "$want" || "$want" != "$got" ]]; then
+        echo "    checksum mismatch vs cosign-verified checksums — refusing: want=${want:-<none>} got=$got" >&2; return 1
+      fi
+      echo "    cosign verify + checksum: OK"
       ;;
     sha256)
       local pinned
       pinned=$(jq -r --arg t "$tool" --arg key "${PLAT_OS}-${PLAT_ARCH}_sha256" '.tools[$t][$key] // .tools[$t].sha256 // empty' "$VERSIONS_FILE")
       if [[ -z "$pinned" || "$pinned" == "PINME" ]]; then
-        echo "    warn: no pinned SHA256 for $tool/${PLAT_OS}-${PLAT_ARCH} — run --capture-hashes" >&2
-      else
-        local got
-        got=$(sha256sum "$tarball" | awk '{print $1}')
-        if [[ "$got" != "${pinned#sha256:}" ]]; then
-          echo "    SHA256 MISMATCH — refusing install: got=$got pinned=${pinned#sha256:}" >&2
-          return 1
-        fi
-        echo "    sha256 verify: OK"
+        echo "    no pinned SHA256 for $tool/${PLAT_OS}-${PLAT_ARCH} — refusing install (run --capture-hashes)" >&2
+        return 1
       fi
+      local got
+      got=$(sha256sum "$tarball" | awk '{print $1}')
+      if [[ "$got" != "${pinned#sha256:}" ]]; then
+        echo "    SHA256 MISMATCH — refusing install: got=$got pinned=${pinned#sha256:}" >&2
+        return 1
+      fi
+      echo "    sha256 verify: OK"
       ;;
     self-bootstrap)
       echo "    self-bootstrap: skipping verify on first install (use cosign-keyless after)" ;;

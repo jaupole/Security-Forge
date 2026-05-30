@@ -1,8 +1,8 @@
 {
-  "_comment": "Pinned tool versions for the advisor loop. Re-pin quarterly, not on every release. Re-verify SHA256s when bumping. Some tools sign releases with cosign; we verify those too.",
-  "_schema_version": "1.0",
-  "_pinned_at": "2026-05-11",
-  "_re_pin_after": "2026-08-11",
+  "_comment": "Pinned tool versions for the advisor loop. Re-pin quarterly, not on every release. Re-verify SHA256s when bumping. cosign-keyless tools verify the SIGNED CHECKSUMS file (not a per-tarball sidecar — those don't exist), then sha256-match the tarball against it.",
+  "_schema_version": "1.1",
+  "_pinned_at": "2026-05-30",
+  "_re_pin_after": "2026-08-30",
 
   "platforms": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"],
 
@@ -12,27 +12,33 @@
       "repo": "aquasecurity/trivy",
       "_asset_naming": "trivy uses Linux-64bit / Linux-ARM64 (capital L, no underscore-amd64). Template hard-codes amd64; templatize when arm64 CI is added.",
       "asset_template": "trivy_{version}_Linux-64bit.tar.gz",
+      "checksums_template": "trivy_{version}_checksums.txt",
       "sigstore_signed": true,
       "verify_with": "cosign-keyless",
-      "cosign_identity": "https://github.com/aquasecurity/trivy/.github/workflows/release.yaml@refs/tags/v{version}",
+      "cosign_bundle": true,
+      "_cosign_note": "trivy signs the checksums file as a Sigstore bundle (.sigstore.json); verify with --bundle --new-bundle-format. Identity is goreleaser-built, matched by regexp.",
+      "cosign_identity_regexp": "^https://github\\.com/aquasecurity/trivy/\\.github/workflows/.*$",
       "cosign_issuer": "https://token.actions.githubusercontent.com"
     },
     "syft": {
       "version": "1.16.0",
       "repo": "anchore/syft",
       "asset_template": "syft_{version}_{os}_{arch}.tar.gz",
+      "checksums_template": "syft_{version}_checksums.txt",
       "sigstore_signed": true,
       "verify_with": "cosign-keyless",
-      "cosign_identity": "https://github.com/anchore/syft/.github/workflows/release.yaml@refs/tags/v{version}",
+      "_cosign_note": "anchore signs the checksums file; the signing identity is the release workflow on refs/heads/main (NOT the version tag).",
+      "cosign_identity": "https://github.com/anchore/syft/.github/workflows/release.yaml@refs/heads/main",
       "cosign_issuer": "https://token.actions.githubusercontent.com"
     },
     "grype": {
       "version": "0.83.0",
       "repo": "anchore/grype",
       "asset_template": "grype_{version}_{os}_{arch}.tar.gz",
+      "checksums_template": "grype_{version}_checksums.txt",
       "sigstore_signed": true,
       "verify_with": "cosign-keyless",
-      "cosign_identity": "https://github.com/anchore/grype/.github/workflows/release.yaml@refs/tags/v{version}",
+      "cosign_identity": "https://github.com/anchore/grype/.github/workflows/release.yaml@refs/heads/main",
       "cosign_issuer": "https://token.actions.githubusercontent.com"
     },
     "cosign": {
@@ -40,8 +46,9 @@
       "repo": "sigstore/cosign",
       "asset_template": "cosign-{os}-{arch}",
       "sigstore_signed": true,
-      "verify_with": "self-bootstrap",
-      "_comment": "Cosign verifies itself with a previous cosign. For first install, fall back to GitHub release SHA256."
+      "verify_with": "sha256",
+      "_comment": "Chicken-and-egg: cosign verifies the others, so it can't verify itself with cosign on a clean runner. Pin its release SHA256 instead; install-verify installs cosign FIRST so the cosign-keyless tools can be verified.",
+      "linux-amd64_sha256": "sha256:8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b"
     },
     "gitleaks": {
       "version": "8.30.1",
@@ -50,7 +57,8 @@
       "asset_template": "gitleaks_{version}_linux_x64.tar.gz",
       "sigstore_signed": false,
       "verify_with": "sha256",
-      "_comment": "Gitleaks doesn't sign releases with cosign yet; pin SHA256 from release notes."
+      "_comment": "Gitleaks doesn't sign releases with cosign; SHA256 captured 2026-05-30 from the official release asset.",
+      "linux-amd64_sha256": "sha256:551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
     },
     "semgrep": {
       "version": "1.163.0",
@@ -58,6 +66,7 @@
       "install_via": "pipx",
       "sigstore_signed": false,
       "verify_with": "pip-hash",
+      "_todo": "pip-hash not yet enforced (pipx lacks --require-hashes); relies on PyPI TLS + version pin. Follow-up: install via `pip install --require-hashes` with pinned wheel hashes.",
       "pip_hash_sha256": "PINME"
     },
     "checkov": {
@@ -65,6 +74,7 @@
       "install_via": "pipx",
       "sigstore_signed": false,
       "verify_with": "pip-hash",
+      "_todo": "pip-hash not yet enforced (see semgrep).",
       "pip_hash_sha256": "PINME"
     },
     "tfsec": {
@@ -72,13 +82,16 @@
       "repo": "aquasecurity/tfsec",
       "asset_template": "tfsec-{os}-{arch}",
       "sigstore_signed": false,
-      "verify_with": "sha256"
+      "verify_with": "sha256",
+      "_comment": "tfsec is archived/unsigned; SHA256 captured 2026-05-30 from the official release asset.",
+      "linux-amd64_sha256": "sha256:7f69c67a113c26da709723445a54e080744d7c09f0393ffc900117ca1d9144e1"
     },
     "pip-audit": {
       "version": "2.7.3",
       "install_via": "pipx",
       "sigstore_signed": false,
       "verify_with": "pip-hash",
+      "_todo": "pip-hash not yet enforced (see semgrep).",
       "pip_hash_sha256": "PINME"
     },
     "scorecard": {
@@ -87,9 +100,9 @@
       "_version_note": "v5.0.0 was never released; ossf jumped from 5.x prereleases to 5.5.0 (2026-04-23). Pinned at 5.5.0 on 2026-05-19.",
       "asset_template": "scorecard_{version}_{os}_{arch}.tar.gz",
       "sigstore_signed": true,
-      "verify_with": "cosign-keyless",
-      "cosign_identity": "https://github.com/ossf/scorecard/.github/workflows/goreleaser.yaml@refs/tags/v{version}",
-      "cosign_issuer": "https://token.actions.githubusercontent.com"
+      "verify_with": "sha256",
+      "_comment": "scorecard publishes SLSA provenance (multiple.intoto.jsonl), NOT a cosign-signed checksums sidecar — so the cosign-keyless path can't verify it. Interim: pin SHA256 (captured 2026-05-30). Follow-up: verify the SLSA provenance with slsa-verifier at install time.",
+      "linux-amd64_sha256": "sha256:83b90a05c1540ef1390db1cd5711e5fd04be9c1d8537fb84d39d02092d6a8dff"
     },
     "zap": {
       "_comment": "OWASP ZAP runs as a container. Pin by digest, not tag. Re-verify quarterly. Use docker pull zaproxy/zap-stable && docker inspect --format='{{index .RepoDigests 0}}' to capture the current digest.",
@@ -101,7 +114,8 @@
   },
 
   "_notes_on_pin_me": [
-    "Entries marked 'PINME' are placeholders. Run install-verify.sh --capture-hashes to populate them from the release artifact actually downloaded.",
-    "Each pin runs through a quarterly re-verify cycle. The CI installer refuses to proceed if a SHA256 doesn't match the pin."
+    "Entries marked 'PINME' are placeholders (pipx tools only). Run install-verify.sh --capture-hashes to populate them from the release artifact actually downloaded.",
+    "cosign-keyless tools (syft/grype/trivy) need no SHA256 pin: their tarball is checked against the cosign-VERIFIED checksums file at install time.",
+    "Each sha256 pin runs through a quarterly re-verify cycle. The CI installer refuses to proceed if a SHA256 doesn't match the pin."
   ]
 }
