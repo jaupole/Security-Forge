@@ -41,6 +41,8 @@ env:
 
 jobs:
   build-sign-push:
+    # sec(audit Wave 0): fork PRs must not execute on the self-hosted prod runner.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, secforge]
     permissions:
       contents: read
