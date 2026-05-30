@@ -165,6 +165,11 @@ spec:
             - { name: MINIO_PORT,             value: "9000" }
             - { name: MINIO_USE_SSL,          value: "false" }
             - { name: MINIO_GRAPHICS_BUCKET,  value: ecosystem-graphics }
+            # Brand-kit fonts bucket (ADR-0002). brand-kit-store.ts reuses the
+            # SAME MINIO_ACCESS_KEY/SECRET as graphics; the ecosystem-graphics-control
+            # MinIO svc account was widened (2026-05-30) to grant rw on
+            # ecosystem-brand-kit as well. See BRAND_KIT_DEPLOY_HANDOFF.md.
+            - { name: MINIO_BRAND_KIT_BUCKET, value: ecosystem-brand-kit }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
