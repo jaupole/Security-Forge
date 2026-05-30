@@ -239,3 +239,50 @@ spec:
             severity: warning
           annotations:
             summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} not Ready"
+
+    # ─── Image trust (added 2026-05-30; needs ServiceMonitor kyverno) ─────
+    # Closes the blind spot behind the 2026-05-30 deploy-block: the ghcr-pull
+    # PAT (used by Kyverno to pull + verify cosign signatures) expired and
+    # every deploy was DENIED at admission with no alert. Now we see it.
+    # Scoped to ENFORCE mode only — the Audit `verify-image-signature-vendors`
+    # policy records benign fails for non-matching vendor images by design.
+    - name: secforge-image-trust
+      interval: 30s
+      rules:
+        - alert: ImageSignatureVerificationFailing
+          expr: |
+            sum by (policy_name) (
+              increase(kyverno_policy_results_total{
+                policy_name=~"verify-image-signature.*",
+                rule_result="fail",
+                policy_validation_mode="enforce"}[15m])
+            ) > 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Image signature verification FAILING — deploys blocked ({{ $labels.policy_name }})"
+            description: |
+              Kyverno enforce policy {{ $labels.policy_name }} recorded {{ $value }} cosign
+              verification FAILURES in the last 15m. New pods matching ghcr.io/jaupole/* are
+              being DENIED at admission.
+              #1 likely cause: the ghcr-pull PAT expired/was revoked — it lives at
+              secret/apps/control/ghcr-pull (and secret/apps/member-hub/ghcr-pull) in OpenBao
+              and Kyverno uses it to pull + verify signatures. Rotate it, then force-sync VSO:
+                for ns in control kyverno member-hub; do kubectl annotate vaultstaticsecret \
+                  -n $ns ghcr-pull-secret vso.hashicorp.com/force-sync="$(date +%s)" --overwrite; done
+              Other causes: an unsigned/tampered image was pushed, or the cosign subject/issuer
+              identity regex drifted out of sync with the signing workflow.
+        # Scrape-gap guard so image-trust monitoring can't silently go blind
+        # the way velero/cert-manager metrics did before their ServiceMonitors.
+        - alert: KyvernoMetricsDown
+          expr: absent(kyverno_policy_results_total)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kyverno metrics not scraping (ServiceMonitor kyverno may be broken)"
+            description: |
+              kyverno_policy_results_total has been absent for 30m. Image-signature
+              verification alerts are blind. Check the kyverno ServiceMonitor and the
+              allow-prometheus-to-kyverno-metrics NetworkPolicy.
