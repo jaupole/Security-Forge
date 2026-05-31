@@ -28,19 +28,34 @@ spec:
         # Fires well BEFORE OOMKill — gives us a chance to bump the limit
         # or investigate a real leak.
         - alert: ContainerMemoryNearLimit
+          # Hysteresis (2026-05-30, anti-flap): ARM at >0.85, stay firing until the
+          # ratio drops below 0.80 (5-pt deadband). The ALERTS self-reference latches
+          # the series in the 0.80–0.85 band so a workload parked near a correctly-
+          # sized limit can't oscillate FIRING/RESOLVED. Primary fix is right-sizing;
+          # this stops residual boundary flapping without hiding genuine OOM creep.
           expr: |
-            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
-             / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
-            > 0.80
-          for: 10m
+            (
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
+              > 0.85
+            )
+            or
+            (
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
+              > 0.80
+              and on (namespace, pod, container)
+              (ALERTS{alertname="ContainerMemoryNearLimit",alertstate="firing"} == 1)
+            )
+          for: 30m
           labels:
             severity: warning
           annotations:
-            summary: "Container memory >80% of limit ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
+            summary: "Container memory >85% of limit ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
             description: |
-              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has been
-              using more than 80% of its memory limit for >10 minutes. Likely OOM is approaching unless
-              the limit is raised or workload changes.
+              Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has held
+              >85% of its memory limit for >30m (clears only below 80%). OOM approaches unless the limit is
+              raised or the workload changes. Backstops: ContainerMemoryAtLimit (>0.95) + ContainerOOMKilled.
               Current value: {{ $value | humanizePercentage }}
 
         - alert: ContainerMemoryAtLimit
@@ -75,8 +90,17 @@ spec:
               cascade failure.
 
         - alert: ContainerOOMKilled
+          # Fire ONCE per real OOM and auto-resolve (2026-05-30, anti-flap). The bare
+          # last_terminated_reason==1 latches for the pod's WHOLE life after a single
+          # OOM, so it re-nagged until rollout. Gating on the terminated TIMESTAMP
+          # (<15m ago) fires for any recent OOM — including a one-shot OOM on a
+          # restartPolicy:Never pod (scan jobs) — and clears ~15m later. NB: a
+          # changes(restarts_total) gate would MISS those single-shot OOMs (no
+          # restart), so the timestamp is the non-masking choice.
           expr: |
-            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+            (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1)
+            and on (namespace, pod, container)
+            ((time() - kube_pod_container_status_last_terminated_timestamp) < 900)
           for: 1m
           labels:
             severity: warning
@@ -84,7 +108,7 @@ spec:
             summary: "Container OOMKilled ({{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }})"
             description: |
               Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} was
-              OOMKilled. Check if memory limit needs to be raised, or if there is a memory leak.
+              OOMKilled in the last 15m. Raise the memory limit, or fix the leak if it recurs.
 
         - alert: PodCrashLoopBackOff
           expr: |
@@ -196,16 +220,38 @@ spec:
       interval: 30s
       rules:
         - alert: VeleroBackupFailed
-          expr: max by (schedule) (velero_backup_last_status{schedule!=""}) != 0
+          # velero_backup_last_status is 1=success, 0=FAILURE (per its own HELP text).
+          # The original expr `!= 0` was INVERTED — it matched success (=1), so it
+          # nagged non-stop on HEALTHY backups and could never clear (this was a real
+          # contributor to the 2026-05-30 alert storm). Correct semantics: fire on ==0.
+          # NB: velero reports PartiallyFailed as last_status=1 ("it ran"), so partial
+          # failures are caught by VeleroBackupPartial (below) + VeleroBackupTooOld
+          # (no success in 26h), NOT by this hard-failure rule.
+          expr: min by (schedule) (velero_backup_last_status{schedule!=""}) == 0
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Velero schedule {{ $labels.schedule }} last backup FAILED/partial"
+            summary: "Velero schedule {{ $labels.schedule }} last backup hard-FAILED (status=0)"
             description: |
-              velero_backup_last_status != 0 — backups are not protecting data.
-              Check BackupRepository CRs (kubectl -n velero get backuprepositories)
-              and the kopia repo metadata in MinIO backups/velero/kopia/<ns>/.
+              The most recent backup for this schedule hard-failed (velero_backup_last_status==0)
+              — data is not protected. Check BackupRepository CRs
+              (kubectl -n velero get backuprepositories) and node-agent logs for
+              'repository not initialized' / data-path errors.
+        - alert: VeleroBackupPartial
+          # PartiallyFailed reports last_status=1, so VeleroBackupFailed can't see it.
+          # Edge-triggered off the partial-failure counter; auto-resolves ~90m after
+          # the last partial. Catches "some PodVolumeBackups failed" promptly.
+          expr: max by (schedule) (increase(velero_backup_partial_failure_total{schedule!=""}[90m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero schedule {{ $labels.schedule }} had a PARTIAL backup failure"
+            description: |
+              A backup for this schedule partially failed in the last ~90m (one or more
+              PodVolumeBackups failed). Inspect: kubectl -n velero get podvolumebackups
+              -l velero.io/backup-name=<latest> | grep -vi Completed.
         - alert: VeleroBackupTooOld
           expr: (time() - max by (schedule) (velero_backup_last_successful_timestamp{schedule!=""})) > 93600
           for: 15m

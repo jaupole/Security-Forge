@@ -27,8 +27,27 @@ spec:
     groupBy: [alertname, namespace, severity]
     groupWait: 30s
     groupInterval: 5m
-    repeatInterval: 4h
+    repeatInterval: 12h            # was 4h — cut re-nag frequency (2026-05-30 storm)
     routes:
+      # Throttle (NOT blackhole) the ephemeral trivy vulnerability-scan Jobs.
+      # They churn by design (scan-vulnerabilityreport-<hash>, 10-22s each); the
+      # vendored kps KubeJobFailed rule flaps on them whenever the trivy-operator
+      # hiccups. First failure STILL emails; repeats coalesce to ~12h. Scoped to
+      # trivy-system scan jobs ONLY — real app-namespace job failures (control,
+      # keycloak, member-hub, …) fall through to the normal email schedule.
+      - receiver: email-ops
+        matchers:
+          - name: alertname
+            matchType: =
+            value: KubeJobFailed
+          - name: namespace
+            matchType: =
+            value: trivy-system
+          - name: job_name
+            matchType: =~
+            value: "scan-vulnerabilityreport-.*"
+        groupInterval: 30m
+        repeatInterval: 12h
       # Dead-man's-switch + inhibitor are pure signal noise for email.
       - receiver: blackhole
         matchers:
@@ -46,5 +65,8 @@ spec:
             name: alertmanager-smtp-gmail
             key: password
           requireTLS: true
-          sendResolved: true
+          # firing-only: with sendResolved:true every flap cost a 2nd (RESOLVED)
+          # email — the dominant multiplier in the 2026-05-30 storm. Resolutions
+          # remain visible in the Alertmanager UI + Grafana Alerting.
+          sendResolved: false
     - name: blackhole

@@ -35,6 +35,17 @@ prometheus:
     probeSelector: {}
     probeNamespaceSelector: {}
 
+    # Exclude the live Prometheus TSDB volume from Velero fs-backup (2026-05-30).
+    # The data-mover can't get a consistent read of the constantly-mmap-rewritten
+    # 20Gi TSDB (empty error, progress stuck at one 64KB block), so EVERY backup
+    # landed PartiallyFailed on this one PVB and kept VeleroBackupFailed/TooOld
+    # firing. The TSDB is rebuildable (14d of dev-cluster metrics; ~nil recovery
+    # value). Velero runs opt-out (defaultVolumesToFsBackup=true), so this
+    # annotation removes ONLY this volume; everything else is still backed up.
+    podMetadata:
+      annotations:
+        backup.velero.io/backup-volumes-excludes: prometheus-kps-prometheus-db
+
     retention: 14d
     retentionSize: "18GB"
 
