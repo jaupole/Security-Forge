@@ -122,6 +122,11 @@ spec:
             - { name: PGUSER, valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
             - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+            # Cross-org READ role for withExemptRead (FORCE-RLS, audit EC-003).
+            # optional:true so the pod boots pre-cutover when control-db-reader
+            # doesn't exist yet — the db-exempt pool is lazy and tolerates unset.
+            - { name: PGREADER_USER,     valueFrom: { secretKeyRef: { name: control-db-reader, key: username, optional: true } } }
+            - { name: PGREADER_PASSWORD, valueFrom: { secretKeyRef: { name: control-db-reader, key: password, optional: true } } }
             # OTLP exporter (Wazuh / Tempo collection point).
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: control }

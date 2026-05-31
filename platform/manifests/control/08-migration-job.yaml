@@ -97,8 +97,14 @@ spec:
             - { name: SPICEDB_ENDPOINT,        value: "spicedb.spicedb.svc.cluster.local:50051" }
             - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
             - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
-            - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
-            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+            # Connect as control_migrator (member of control + control_owner) so
+            # migrate.ts can `SET ROLE control_owner` for 060/061 ownership under
+            # FORCE RLS. host/port/dbname stay on control-db-app (identical).
+            # (Migration 060's REASSIGN OWNED BY postgres needs the in-pod
+            # superuser and is run by hand once in the cutover window; the Job
+            # applies 061+ as control_migrator.)
+            - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-migrator, key: username } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-migrator, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
           envFrom:
             # Pulls EMAIL_HMAC_KEY + OIDC_CLIENT_SECRET +

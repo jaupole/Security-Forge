@@ -69,3 +69,52 @@ spec:
         # upgrade resets the WAL timeline, so PG17 archives under a fresh
         # serverName (added with the 2026-05-21 16->17 upgrade).
         serverName: control-db-pg17
+
+  # ── Managed DB roles for the FORCE-RLS cutover (audit EC-003 / SC-3.4) ──
+  # CNPG manages ONLY the role objects (LOGIN/password/membership/attrs).
+  # Table OWNERSHIP is moved by migration 060 (ALTER ... OWNER TO control_owner)
+  # — CNPG has no owner-of-table concept. These roles are inert until 060/061
+  # run + the app-side cutover image deploys. control_owner is the schema owner;
+  # control_migrator runs migrations; control_reader backs withExemptRead.
+  managed:
+    roles:
+      # Owner of all RLS objects after 060. NOLOGIN — nobody connects as the
+      # owner at runtime, which is exactly what makes FORCE ROW LEVEL SECURITY
+      # meaningful. No passwordSecret (NULL password). NOBYPASSRLS.
+      - name: control_owner
+        ensure: present
+        comment: "RLS object owner (migration 060); NOLOGIN, never connected at runtime"
+        login: false
+        superuser: false
+        bypassrls: false
+        inherit: true
+      # Migration role. LOGIN so the migration Job connects as it. Member of
+      # `control` (CNPG app role) AND control_owner, so migrate.ts can
+      # `SET ROLE control_owner` and own objects for 061+. NOBYPASSRLS.
+      # NOTE: migration 060 itself (REASSIGN OWNED BY postgres) needs the
+      # in-pod superuser and is run by hand once during the cutover window;
+      # the Job (this role) applies 061+.
+      - name: control_migrator
+        ensure: present
+        comment: "Runs DB migrations; member of control + control_owner; LOGIN for the migration Job"
+        login: true
+        superuser: false
+        bypassrls: false
+        inherit: true
+        inRoles:
+          - control
+          - control_owner
+        passwordSecret:
+          name: control-db-migrator
+      # Cross-org READ role (withExemptRead). LOGIN. SELECT-only on the 9
+      # exempt tables + exempt_read policies granted by migration 061.
+      # Non-owner, NOBYPASSRLS — the USING(true) exemption is read-only.
+      - name: control_reader
+        ensure: present
+        comment: "Cross-org read role for withExemptRead; SELECT-only on the exempt tables (migration 061)"
+        login: true
+        superuser: false
+        bypassrls: false
+        inherit: true
+        passwordSecret:
+          name: control-db-reader
