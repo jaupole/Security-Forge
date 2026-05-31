@@ -1,0 +1,181 @@
+# =============================================================================
+# Layer A ingress NetworkPolicies for the istio-system namespace.
+#
+# H-4.14: istio-system had ZERO NetworkPolicies. This adds the INGRESS side
+# (default-deny-ingress + explicit allows). Egress is intentionally LEFT OPEN
+# (no default-deny-egress here) to bound risk — matches the conservative
+# ingress-only scope of this item. Egress baseline can be layered later via
+# platform/lib/apply-egress-baseline.sh, same as velero/05-network-policies.yaml.
+#
+# HOST-CALLBACK CONVENTION (proven, copied from the live cluster):
+#   k3s reaches pods over cni0 with SOURCE 10.42.0.1, so the kube-apiserver and
+#   kubelet appear to pods as 10.42.0.1 — NOT the node public IP 65.21.25.40.
+#   An ipBlock {cidr: 65.21.25.40/32} would SILENTLY DROP these. The working
+#   pattern (see observability/allow-kubelet-probes, kyverno/allow-api-to-admission-webhook,
+#   postgres-operator/allow-api-to-cnpg-webhook) is:
+#       ipBlock: { cidr: 0.0.0.0/0, except: [169.254.0.0/16] }
+#   scoped tightly by port + podSelector.
+#
+# Live facts (verified 2026-05-31): istiod is a regular pod (NOT hostNetwork);
+# ztunnel + istio-cni-node DaemonSets are also NOT hostNetwork — all three are
+# subject to this policy. NO namespace currently has istio injection / ambient
+# dataplane-mode enabled, so there are ZERO external mesh xds clients today;
+# ztunnel (intra-namespace) is the only live xds consumer.
+# =============================================================================
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+# Intra-namespace: allow any istio-system pod to reach any other istio-system
+# pod. Covers ztunnel -> istiod xds (15012/15010) and any future istio-system
+# internal flows. Coarse but contained to the ns (matches the repo's
+# allow-intra-observability / control allow-intra-namespace style).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+
+---
+# kubelet liveness/readiness probes. k3s kubelet hits pod IPs from the host
+# network, arriving on cni0 as 10.42.0.1 -> 0.0.0.0/0-except-link-local pattern.
+# Ports are the EXACT probe targets verified live:
+#   istiod        readiness httpGet :8080
+#   ztunnel       readiness httpGet :15021
+#   istio-cni     readiness httpGet :8000
+# podSelector {} so it applies to all three pods; ports gate it tightly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 8080     # istiod readiness /ready
+    - protocol: TCP
+      port: 15021    # ztunnel readiness /healthz/ready
+    - protocol: TCP
+      port: 8000     # istio-cni readiness /readyz
+
+---
+# Admission + validation webhooks: the kube-apiserver calls the istiod Service
+# on :443 (-> pod container 15017 https-webhooks). apiserver-sourced traffic
+# arrives on cni0 as 10.42.0.1 -> 0.0.0.0/0-except-link-local pattern.
+# Backed by live webhook configs (all clientConfig.service = istiod:443):
+#   MutatingWebhookConfiguration  istio-sidecar-injector  (4 webhooks, path /inject)
+#   ValidatingWebhookConfiguration istio-validator-istio-system (rev.validation.istio.io, path /validate)
+# Scoped to the istiod pod only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-istiod-webhook
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app: istiod
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 15017    # https-webhooks (Service istiod:443 -> 15017)
+
+---
+# Mesh data-plane xds. istiod serves config on 15012 (tls-xds, mTLS) and 15010
+# (grpc-xds, plaintext) to ztunnel and to enrolled workloads' proxies.
+# CURRENT LIVE STATE: NO namespace has injection/ambient enabled, so ztunnel
+# (covered by allow-intra-namespace above) is the ONLY live xds client. This
+# rule is the explicit forward-looking hook: when a workload namespace is
+# enrolled into the mesh, add its namespaceSelector to the `from:` list below.
+# Left present-but-empty-of-external-sources today would be a no-op, so it is
+# scoped to istio-system itself for now (redundant with intra-ns, but documents
+# intent and keeps the port mapping in one place). NO 0.0.0.0/0 here — xds is
+# pod-to-pod east-west, never host-sourced.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-xds-to-istiod
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app: istiod
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    # ztunnel + any future istio-system-local xds client
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    # FUTURE: when a namespace is meshed, add it here, e.g.:
+    # - namespaceSelector:
+    #     matchLabels:
+    #       kubernetes.io/metadata.name: <meshed-namespace>
+    ports:
+    - protocol: TCP
+      port: 15012    # tls-xds (primary, mTLS)
+    - protocol: TCP
+      port: 15010    # grpc-xds (plaintext)
+
+# -----------------------------------------------------------------------------
+# DELIBERATELY OMITTED (would widen ingress past live facts):
+#
+# * Prometheus scrape of istiod:15014 / istio-cni:15014. There is NO live
+#   ServiceMonitor or PodMonitor for istio (verified: no istio entries in
+#   `get servicemonitors -A`, no `podmonitors`, and Prometheus /api/v1/targets
+#   has ZERO istio targets). kube-prometheus-stack does NOT honor the
+#   prometheus.io/scrape pod annotation by default, so istiod's annotation is
+#   inert. Adding an allow-observability-to-istio-metrics policy now would open
+#   :15014 for traffic that nothing sends. When an istio ServiceMonitor is
+#   added in observability, ADD a policy then, modeled on
+#   velero/allow-prometheus-to-velero-metrics:
+#     from namespaceSelector {kubernetes.io/metadata.name: observability}
+#          podSelector {app.kubernetes.io/name: prometheus}
+#     to podSelector {app: istiod} ports 15014; and {k8s-app: istio-cni-node} 15014.
+#
+# * istiod debug :8080 from anything but kubelet — /ready is the only consumer
+#   today; full debug API stays closed.
+# -----------------------------------------------------------------------------
