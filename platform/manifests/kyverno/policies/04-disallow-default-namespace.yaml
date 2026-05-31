@@ -13,7 +13,9 @@ metadata:
     policies.kyverno.io/severity: medium
 spec:
   background: true
-  validationFailureAction: Audit
+  # Enforce (was Audit): 0 live violations (144 reports pass / 0 fail), applied live
+  # 2026-05-31 and verified safe; blocks only future default-ns admissions (audit H-4.15).
+  validationFailureAction: Enforce
   rules:
     - name: validate-namespace
       match:
