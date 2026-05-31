@@ -149,6 +149,7 @@ COMPONENT_ORDER=(
   12-kyverno
   12b-kyverno-policies
   12c-kyverno-image-verify-creds
+  12d-system-netpols              # default-deny netpols for kube-system/istio/topolvm (H-4.14)
 )
 
 green() { printf '\033[32m%s\033[0m\n' "$*"; }

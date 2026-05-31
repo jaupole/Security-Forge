@@ -1,0 +1,45 @@
+# Require every container image to be pinned by an @sha256 digest (audit H-4.8).
+#
+# The stronger sibling of disallow-latest-tag: a digest is immutable, so what was
+# deployed is exactly what is running (reproducibility + forensics + tamper-
+# evidence). Renovate pins digests automatically (pinDigests + the helm-values
+# coverage + digest auto-merge added in the CVE-cadence change); see
+# docs/03-runbooks/base-image-cve-cadence.md.
+#
+# SHIPS IN AUDIT, deliberately. Many images are still tag-only until Renovate's
+# cadence pins them. Flip validationFailureAction to Enforce ONLY AFTER a deploy
+# sweep confirms running workloads are digest-pinned (check PolicyReports for
+# this policy) — otherwise Enforce blocks legitimate redeploys of tag-only images.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-digest
+  annotations:
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    secforge.audit/finding: H-4.8
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: require-digest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              # System namespaces run images we don't control as tightly; excluded
+              # to mirror disallow-latest-tag. Revisit when flipping to Enforce.
+              namespaces: [kube-system, kube-public, kube-node-lease, kyverno]
+      validate:
+        message: "Container images must be pinned by @sha256 digest (audit H-4.8), not a mutable tag."
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "*@sha256:*"
+            =(ephemeralContainers):
+              - image: "*@sha256:*"
+            containers:
+              - image: "*@sha256:*"
