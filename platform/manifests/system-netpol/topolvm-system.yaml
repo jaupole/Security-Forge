@@ -1,0 +1,73 @@
+# =============================================================================
+# Layer A ingress NetworkPolicies for the topolvm-system namespace.
+#
+# Audit H-4.14: every app namespace is default-deny; the 3 system namespaces
+# (incl. topolvm-system) had ZERO NetworkPolicy. This adds the ingress side.
+#
+# Conservative scope: default-deny-INGRESS only. Egress is intentionally LEFT
+# OPEN here (no default-deny-egress) to bound risk; egress hardening is a
+# separate change.
+#
+# Host-sourced traffic (kube-apiserver / kubelet) reaches pods via cni0 with
+# source 10.42.0.1 (NOT the node public IP). The proven repo convention to
+# admit it is ipBlock {cidr: 0.0.0.0/0, except: [169.254.0.0/16]} scoped
+# tightly by port + podSelector. An ipBlock of <node-public-ip>/32 would
+# SILENTLY DROP these callbacks. Copied verbatim from the live working
+# policies cert-manager/allow-api-to-webhook, kyverno/allow-api-to-admission-webhook,
+# postgres-operator/allow-api-to-cnpg-webhook, observability|wazuh/allow-kubelet-probes.
+#
+# NO webhook-admission allow is included: no Validating/MutatingWebhookConfiguration
+# in the cluster references topolvm, and the controller runs --enable-webhooks=false.
+# The :9443/:443 path is inert (verified live).
+#
+# NO cross-namespace Prometheus scrape allow is included: no ServiceMonitor
+# targets topolvm-system (verified live, none exist).
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: topolvm-system
+  labels:
+    secforge.platform/component: topolvm
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+# Kubelet liveness/readiness probes. Source is the node/kubelet, which appears
+# to pods as 10.42.0.1 over cni0 -> admitted via the 0.0.0.0/0-except-link-local
+# pattern. Ports are exactly the probed container ports found live:
+#   controller: healthz 9808 (liveness), readyz 8081 (readiness)
+#   node:       healthz 9808 (liveness), reg-healthz 9809 (csi-registrar liveness)
+# lvmd is deliberately NOT covered: its liveness probe is exec (/lvmd health),
+# so kubelet needs no network ingress to it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes
+  namespace: topolvm-system
+  labels:
+    secforge.platform/component: topolvm
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/component
+      operator: In
+      values: [controller, node]
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [169.254.0.0/16]
+    ports:
+    - protocol: TCP
+      port: 9808   # healthz (controller liveness, node liveness)
+    - protocol: TCP
+      port: 8081   # readyz  (controller readiness)
+    - protocol: TCP
+      port: 9809   # reg-healthz (node csi-registrar liveness)

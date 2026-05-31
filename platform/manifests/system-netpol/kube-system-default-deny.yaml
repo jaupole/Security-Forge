@@ -1,0 +1,20 @@
+# Default-deny INGRESS for kube-system (audit H-4.14).
+#
+# APPLY THIS LAST — only after kube-system-allows.yaml is applied AND confirmed
+# present (CoreDNS :53, CoreDNS metrics, CoreDNS probes, metrics-server). The
+# allow policies above re-open exactly the flows proven necessary from the live
+# cluster; this policy denies everything else. Egress is deliberately untouched.
+#
+# Rollback (instant, restores fully-open ingress): delete this policy.
+#   sudo k3s kubectl delete netpol -n kube-system default-deny-ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: kube-system
+  labels:
+    secforge.platform/component: kube-system
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

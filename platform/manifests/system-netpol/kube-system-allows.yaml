@@ -1,0 +1,129 @@
+# Ingress ALLOW policies for kube-system (audit H-4.14).
+#
+# Every app namespace is default-deny; the system namespaces had ZERO netpol.
+# This closes kube-system — conservatively, INGRESS only (egress left open:
+# CoreDNS upstream resolution + controllers -> apiserver have wide, not-fully-
+# enumerated egress needs, and locking egress here risks a cluster-wide outage).
+#
+# APPLY ORDER IS LOAD-BEARING: apply THIS file (the allows) FIRST, confirm the
+# policies exist, and ONLY THEN apply kube-system-default-deny.yaml. Applying
+# default-deny before these allows briefly black-holes cluster DNS. See
+# docs/03-runbooks/system-ns-netpol-apply.md.
+#
+# Host-sourced traffic (kubelet probes, apiserver aggregation) arrives at pods
+# via cni0 with source 10.42.0.1 — NOT the node public IP. The proven repo
+# convention is therefore `ipBlock 0.0.0.0/0 except 169.254.0.0/16` scoped tight
+# by port + podSelector (identical to the live observability/allow-kubelet-probes
+# and cert-manager/allow-api-to-webhook policies); defense-in-depth is the
+# per-listener TLS/mTLS on each port. A node-public-IP /32 would silently drop
+# this traffic.
+#
+# Live facts (2026-05-31): only CoreDNS (k8s-app=kube-dns) and metrics-server
+# (k8s-app=metrics-server) receive in-cluster ingress. local-path-provisioner
+# and both snapshot-controller replicas have no containerPorts/probes and need
+# no allow — default-deny covers them.
+
+---
+# CoreDNS :53 — cluster DNS. Reachable from EVERY pod in every namespace.
+# `from: []` (empty source list) with a ports list = all sources, restricted to
+# the named ports. This is the one deliberately cluster-wide rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-from-all-pods
+  namespace: kube-system
+  labels:
+    secforge.platform/component: kube-system
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes: [Ingress]
+  ingress:
+    - from: []
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+
+---
+# CoreDNS :9153 metrics — scraped by Prometheus in the observability namespace.
+# Source podSelector matches the live scraper pod prometheus-kps-prometheus-0
+# (app.kubernetes.io/name=prometheus) — the repo convention; the operator pod
+# (app.kubernetes.io/name=prometheus-operator) is intentionally NOT matched.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-coredns-metrics
+  namespace: kube-system
+  labels:
+    secforge.platform/component: kube-system
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - { protocol: TCP, port: 9153 }
+
+---
+# CoreDNS kubelet probes — liveness /health :8080, readiness /ready :8181.
+# Host-sourced (cni0 10.42.0.1) via the proven 0.0.0.0/0-except-link-local
+# pattern. Without this, default-deny blocks the probes -> CoreDNS NotReady ->
+# endpoints pulled -> cluster DNS outage.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes-coredns
+  namespace: kube-system
+  labels:
+    secforge.platform/component: kube-system
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.0.0/16]
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 8181 }
+
+---
+# metrics-server :10250 — serves the v1beta1.metrics.k8s.io aggregated API
+# (kube-apiserver aggregation proxy) AND its own kubelet liveness/readiness
+# probes, both host-sourced (cni0 10.42.0.1). One rule covers both. Without it,
+# `kubectl top` / HPA break and the pod restart-loops on failed probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-host-to-metrics-server
+  namespace: kube-system
+  labels:
+    secforge.platform/component: kube-system
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: metrics-server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.0.0/16]
+      ports:
+        - { protocol: TCP, port: 10250 }
