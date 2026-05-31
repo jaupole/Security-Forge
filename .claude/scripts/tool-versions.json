@@ -21,7 +21,7 @@
       "cosign_issuer": "https://token.actions.githubusercontent.com"
     },
     "syft": {
-      "version": "1.16.0",
+      "version": "1.44.0",
       "repo": "anchore/syft",
       "asset_template": "syft_{version}_{os}_{arch}.tar.gz",
       "checksums_template": "syft_{version}_checksums.txt",
