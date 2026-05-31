@@ -1,4 +1,4 @@
-# CLAUDE.md — Project Context for Claude Code (Local Edition)
+# CLAUDE.md — Project Context for Claude Code
 
 > **This file is read by Claude Code automatically every session.** It is the authoritative source of project context. Read this file first. When the human asks you to do something that conflicts with this file, point out the conflict and ask before proceeding.
 
@@ -6,22 +6,22 @@
 
 ## Project mission
 
-Build a secure, open-source Identity and Access Management platform that runs entirely on a local Docker Desktop Kubernetes cluster, supporting three applications (Proposal Forge, Project Tracker, future PM app). The owner is a senior security developer who values security over convenience and is using local development to iterate on the apps before committing to a cloud destination.
+Build a secure, open-source Identity and Access Management platform that runs on a single public Hetzner bare-metal k3s node, supporting three applications (Proposal Forge, Project Tracker, future PM app). The owner is a senior security developer who values security over convenience and runs the platform on a public node serving real traffic over real DNS and TLS.
 
-## We are running LOCALLY, not in the cloud
+## We are running on a single public Hetzner node
 
-This is the **Local Edition**. Every decision in this CLAUDE.md is calibrated for that. Specific implications:
+This is a single public bare-metal deployment. Every decision in this CLAUDE.md is calibrated for that. Specific implications:
 
-- **Substrate**: Docker Desktop Kubernetes (single node, but treat it as a real cluster)
-- **DNS**: `*.secforge.local` resolves to 127.0.0.1 via hosts file or local DNS
-- **TLS**: mkcert local CA, trusted by the developer's browser; cert-manager issues from it
-- **Cloud KMS**: replaced by file-based keys mounted as Secrets, OpenBao Transit for app-level crypto
+- **Substrate**: Hetzner bare-metal k3s (single node at `65.21.25.40`, but treat it as a real cluster)
+- **DNS**: `*.secforge.dev` resolves publicly to the node's public IP
+- **TLS**: cert-manager issues real certificates from Let's Encrypt, trusted by every browser
+- **KMS**: OpenBao Transit for app-level crypto
 - **Cloud IAM (AWS IAM, GCP service accounts)**: does not exist — workloads use SPIFFE-ID-bound OpenBao roles
-- **Cloud object storage (S3)**: replaced by MinIO
-- **Public DNS / Let's Encrypt**: not applicable
-- **Public Sigstore Rekor for image signatures**: keyless flow not available without GitHub OIDC; use local Cosign keys
+- **Object storage (S3)**: replaced by MinIO
+- **Public DNS / Let's Encrypt**: real public DNS for `*.secforge.dev`; cert-manager issues from Let's Encrypt
+- **Image signatures**: keyless Cosign via GitHub OIDC against the public Sigstore Rekor
 
-This is intentional, not a deficiency. We're optimizing for fast iteration on the application layer.
+The node is hardened: public SSH is closed (Tailscale-only) and ingress is IP-allowlisted.
 
 ## How to work in this repository
 
@@ -33,31 +33,31 @@ This is intentional, not a deficiency. We're optimizing for fast iteration on th
 
 ## Architecture stack (committed decisions)
 
-| Layer | Local Edition choice | Rationale / cloud equivalent |
+| Layer | Choice | Rationale / cloud equivalent |
 |---|---|---|
-| Kubernetes | Docker Desktop K8s | Local-first; cloud equivalent: EKS / GKE / AKS |
+| Kubernetes | Hetzner bare-metal k3s (single node) | Self-hosted public node; managed-cloud equivalent: EKS / GKE / AKS |
 | Identity Provider | Keycloak (Apache 2.0) | Same as cloud edition |
 | Authorization | SpiceDB | Same |
 | Secrets | OpenBao | Same |
 | Outbound Secret Sync | Vault Secrets Operator (VSO) | Renders OpenBao secrets to K8s Secrets for operator-owned/-shaped consumers (SpiceDB, AuthZEN façade). Direct-API via `apps/lib/secrets/` for first-class apps — see [ADR-0015](./docs/02-decisions/0015-secret-distribution-pattern.md). |
-| Workload Identity | SPIRE | Same; `spiffe://secforge.local` trust domain |
+| Workload Identity | SPIRE | Same; `spiffe://secforge.dev` trust domain |
 | Service Mesh | Istio Ambient | Same |
-| Privileged Access | Teleport Community | Optional locally |
+| Privileged Access | Teleport Community | Optional |
 | Browser Pattern | BFF | Same |
 | Token Strategy | OAuth 2.1 + PAR + DPoP-bound | Same |
-| Auth Factor | TOTP (interim — see [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md)) + recovery codes; passkeys + hardware FIDO2 at production hardening | Same; passkeys work on `*.secforge.local` over local TLS |
+| Auth Factor | TOTP (interim — see [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md)) + recovery codes; passkeys + hardware FIDO2 at production hardening | Same; passkeys work on `*.secforge.dev` over real TLS |
 | Session Store | Valkey (BSD-3-Clause) | Same |
 | Database | Postgres (in-cluster) | Cloud equivalent: RDS Postgres |
 | Object Storage | MinIO | Cloud equivalent: S3 |
-| KMS | OpenBao Transit + file keys | Cloud equivalent: AWS KMS / GCP KMS |
-| TLS Certs | cert-manager + mkcert local CA | Cloud equivalent: cert-manager + Let's Encrypt |
-| Image Signing | Cosign with local keys | Cloud equivalent: Cosign keyless via GitHub OIDC |
-| Admission Control | Kyverno (relaxed in dev mode) | Same |
+| KMS | OpenBao Transit | Cloud equivalent: AWS KMS / GCP KMS |
+| TLS Certs | cert-manager + Let's Encrypt | Same in managed cloud |
+| Image Signing | Cosign keyless via GitHub OIDC | Same in managed cloud |
+| Admission Control | Kyverno | Same |
 | SIEM | Wazuh (slim) | Same |
 | Logs | Loki + Promtail | Cloud equivalent: Loki + Promtail (works the same) |
 | Metrics | kube-prometheus-stack | Same |
 | Traces | OpenTelemetry → Tempo | Same |
-| IaC | Pure Helm + kubectl manifests | Cloud equivalent: Terraform + Helm |
+| IaC | Pure Helm + kubectl manifests | Managed-cloud equivalent: Terraform + Helm |
 
 If you're tempted to introduce a tool not on this list, **stop and ask first**.
 
@@ -75,28 +75,28 @@ If you're tempted to introduce a tool not on this list, **stop and ask first**.
 
 These are bright-line rules. They apply locally too — if anything, the local environment is where you build the muscle memory.
 
-- ❌ Adding `localhost`, `127.0.0.1`, or wildcard CORS origins to **non-development-explicit** configurations. Local development has its own dedicated configs that are clearly marked.
+- ❌ Adding `localhost`, `127.0.0.1`, or wildcard CORS origins to **non-development-explicit** configurations. Any local-development overrides live in dedicated configs that are clearly marked and never ship to the public node.
 - ❌ Storing access tokens, refresh tokens, or session keys in browser localStorage or sessionStorage.
-- ❌ Disabling certificate verification (`-k`, `--insecure`, `tls.InsecureSkipVerify = true`) anywhere except a clearly-named throwaway dev script.
+- ❌ Disabling certificate verification (`-k`, `--insecure`, `tls.InsecureSkipVerify = true`) anywhere. Certs are real Let's Encrypt certs; there is no reason to skip verification.
 - ❌ Generating long-lived (>24h) credentials of any kind, except where the architecture document explicitly approves it (e.g., realm signing keys with 90-day rotation).
 - ❌ Granting `cluster-admin` or `*:*` RBAC to a service account.
 - ❌ Implicit OAuth flow, ROPC password grant, or any OAuth 2.0 (non-2.1) flow for new clients.
 - ❌ SMS as an MFA factor.
 - ❌ Putting Keycloak's admin console on the same hostname/path as the public OIDC endpoints.
-- ❌ Storing outbound third-party credentials (Stripe, OpenAI, SendGrid, GitHub, etc.) in a `.env` file, an env var, a baked-in image layer, or an unencrypted-at-rest K8s `Secret`. They live in OpenBao at `secret/data/apps/<app>/<integration>` and are fetched at runtime via `apps/lib/secrets/`. The platform has six guardrail layers that reject any other path; see [ADR-0013](./docs/02-decisions/0013-outbound-secrets-no-env.md) and the runbook chain ([secrets-library.md](./docs/03-runbooks/secrets-library.md), [migrate-env-to-openbao.md](./docs/03-runbooks/migrate-env-to-openbao.md), [new-app-bootstrap.md](./docs/03-runbooks/new-app-bootstrap.md), [secrets-guardrails-verification.md](./docs/03-runbooks/secrets-guardrails-verification.md), [secrets-guardrails-monitoring.md](./docs/03-runbooks/secrets-guardrails-monitoring.md), [ci-secrets-check.md](./docs/03-runbooks/ci-secrets-check.md)). The expiring escape hatch (`secforge.local/legacy-secret-env*` annotations) is the ONLY acceptable bypass and is itself time-bounded ≤90d with a tracked ticket reference.
+- ❌ Storing outbound third-party credentials (Stripe, OpenAI, SendGrid, GitHub, etc.) in a `.env` file, an env var, a baked-in image layer, or an unencrypted-at-rest K8s `Secret`. They live in OpenBao at `secret/data/apps/<app>/<integration>` and are fetched at runtime via `apps/lib/secrets/`. The platform has six guardrail layers that reject any other path; see [ADR-0013](./docs/02-decisions/0013-outbound-secrets-no-env.md) and the runbook chain ([secrets-library.md](./docs/03-runbooks/secrets-library.md), [migrate-env-to-openbao.md](./docs/03-runbooks/migrate-env-to-openbao.md), [new-app-bootstrap.md](./docs/03-runbooks/new-app-bootstrap.md), [secrets-guardrails-verification.md](./docs/03-runbooks/secrets-guardrails-verification.md), [secrets-guardrails-monitoring.md](./docs/03-runbooks/secrets-guardrails-monitoring.md), [ci-secrets-check.md](./docs/03-runbooks/ci-secrets-check.md)). The expiring escape hatch (`secforge.dev/legacy-secret-env*` annotations) is the ONLY acceptable bypass and is itself time-bounded ≤90d with a tracked ticket reference.
 - ❌ Defining environment variables whose names contain `KEY`, `SECRET`, `TOKEN`, `PASSWORD`, or `CREDENTIAL` on Pods in the `app` namespace. Kyverno admission denies them at deploy time. If a vendor SDK strictly requires this shape, use the escape hatch above with an expiry annotation.
 
 When you encounter one of these, flag it. Do not "fix" it silently.
 
-## Local-specific gotchas to remember
+## Deployment gotchas to remember
 
-These are easy to forget on local but cause real bugs:
+These are easy to forget but cause real bugs:
 
-1. **Passkeys require HTTPS or `localhost`.** Do not test passkey flows over plain HTTP, ever. The browser will silently downgrade or fail.
-2. **`localhost` and `127.0.0.1` are first-class for WebAuthn.** `secforge.local` is not — it requires a trusted cert. mkcert makes this work.
-3. **DPoP `htu` claim must match exactly.** If your local URL is `https://app.secforge.local:8443` but the BFF resolves it as `https://app.secforge.local`, validation fails. Pick one and stick with it everywhere.
-4. **Docker Desktop's loopback is special.** Pods reaching the host use `host.docker.internal`. Be careful with hostnames in configs.
-5. **Resource quotas matter even locally.** Without them, one component can starve the cluster.
+1. **Passkeys require HTTPS.** Do not test passkey flows over plain HTTP, ever. The browser will silently downgrade or fail.
+2. **WebAuthn needs a trusted cert.** `secforge.dev` works because cert-manager issues real Let's Encrypt certs; never fall back to a self-signed cert.
+3. **DPoP `htu` claim must match exactly.** If the URL is `https://app.secforge.dev:8443` but the BFF resolves it as `https://app.secforge.dev`, validation fails. Pick one and stick with it everywhere.
+4. **Ingress is IP-allowlisted and SSH is Tailscale-only.** When a request or admin action is refused, check the allowlist and the Tailscale path before assuming an app bug.
+5. **Resource quotas matter on a single node.** Without them, one component can starve the cluster.
 
 ## Verification habits
 
@@ -135,7 +135,7 @@ ADRs are the project's append-only decision log. The numbering matters as much a
 | How a component works | [docs/01-architecture/](./docs/01-architecture/) |
 | Operational procedures | [docs/03-runbooks/](./docs/03-runbooks/) |
 | Open follow-ups not yet cleared | [docs/06-reference/operator-backlog.md](./docs/06-reference/operator-backlog.md) |
-| Migration paths off local | [docs/06-reference/migration-to-vps.md](./docs/06-reference/migration-to-vps.md) and [migration-to-aws.md](./docs/06-reference/migration-to-aws.md) |
+| Migration paths to managed cloud | [docs/06-reference/migration-to-vps.md](./docs/06-reference/migration-to-vps.md) and [migration-to-aws.md](./docs/06-reference/migration-to-aws.md) |
 | Glossary | [docs/00-getting-started/00-glossary.md](./docs/00-getting-started/00-glossary.md) |
 | Which Claude model to use for which task | [docs/06-reference/claude-model-selection.md](./docs/06-reference/claude-model-selection.md) |
 
