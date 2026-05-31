@@ -18,6 +18,7 @@
   "prConcurrentLimit": 8,
   "labels": ["dependencies", "renovate"],
   "pinDigests": true,
+  "osvVulnerabilityAlerts": true,
   "ignoreDeps": [
     "github.com/secforge/lib",
     "local/authzen-facade",
@@ -42,6 +43,12 @@
       "platform/manifests/**/*.yml",
       "apps/*/deploy/**/*.yaml",
       "apps/*/deploy/**/*.yml"
+    ]
+  },
+  "helm-values": {
+    "managerFilePatterns": [
+      "platform/values/**/*.yaml",
+      "platform/values/**/*.yml"
     ]
   },
   "vulnerabilityAlerts": {
@@ -72,10 +79,20 @@
     },
     {
       "description": "Kubernetes base images / sidecar images: 7-day soak",
-      "matchManagers": ["dockerfile", "kubernetes"],
+      "matchManagers": ["dockerfile", "kubernetes", "helm-values"],
       "matchDatasources": ["docker"],
       "minimumReleaseAge": "7 days",
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Base/sidecar image DIGEST refreshes (same tag, rebuilt image = the CVE-patch stream): auto-merge after the 7-day soak + passing CI, WITHOUT dashboard approval. This is the H-4.7 cadence fix — pure digest bumps were piling up unmerged behind the manual approval above, leaving running images stale despite pinDigests. Version (major/minor/patch) bumps still require dashboard approval via the rule above; this only relaxes same-tag digest refreshes. Consistent with the existing github-actions digest auto-merge. Merge is repo-only — the cluster is rolled separately (see docs/03-runbooks/base-image-cve-cadence.md). To revert to fully-manual, set automerge:false.",
+      "matchManagers": ["dockerfile", "kubernetes", "helm-values"],
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": "7 days",
+      "dependencyDashboardApproval": false,
+      "automerge": true,
+      "automergeStrategy": "squash"
     },
     {
       "description": "Keycloak base image — operator review before merge. Both version and digest updates surface on the dependency dashboard and merge only on operator approval; merging runs the keycloak-image-build pipeline, then the CR digest is cut over by hand (operator-backlog #48).",
