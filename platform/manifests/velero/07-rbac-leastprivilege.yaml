@@ -1,0 +1,217 @@
+# Least-privilege RBAC for Velero — replaces the chart-default cluster-admin
+# binding (audit H-4.12; CLAUDE.md "NEVER grant cluster-admin / *:* to a SA").
+#
+# Applied by 09a-velero.sh AFTER the Helm step on purpose: values set
+# rbac.clusterAdministrator:false, so chart 12.0.1 renders NO ClusterRoleBinding
+# and a Helm upgrade first PRUNES any pre-existing chart-managed
+# `velero-server -> cluster-admin` binding (a delete, so the immutable roleRef
+# is not an obstacle). This file then (re)creates the operator-owned scoped
+# ClusterRole + binding.
+#
+# Scope was derived from live inspection (2026-05-31, velero v1.18.0 / chart
+# 12.0.1, FSB/kopia data path) and an adversarial completeness review against
+# the full 165-type / 50-group live API surface, validated with
+# `kubectl auth can-i ... --as=system:serviceaccount:velero:velero-server`.
+# The verifier's Option A is applied: only the subresources Velero PROVABLY
+# uses are granted (pods/exec, pods/log, csr/approval, signers/approve, and
+# velero.io own-CR status/finalizers). Speculative cross-group */status and
+# */finalizers grants were intentionally DROPPED — Velero recreates top-level
+# objects and the owning controllers reconcile status/finalizers themselves, so
+# those grants were both dead and a silent-trap-on-new-CRD risk.
+#
+# RESIDUAL RISK (honest): backup needs cluster-wide get/list/watch on */* (it
+# can read every Secret) and restore needs create/update/patch/delete on */*.
+# This removes the cluster-admin "escalate via any verb" surface but is NOT a
+# tight cage. The restore-completeness gate is the drill in
+# docs/03-runbooks/velero-restore-drill-leastpriv.md — H-4.12 closes only when
+# that drill passes with Errors: 0 under THIS role.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: velero-least-privilege
+  labels:
+    app.kubernetes.io/name: velero
+    app.kubernetes.io/component: server
+    secforge.platform/component: velero
+    secforge.audit/finding: H-4.12
+  annotations:
+    secforge.audit/residual-risk: "cluster-wide get/list/watch + create/update/patch/delete on */*; can read all Secrets and recreate any object incl. RBAC. Not a tight cage; removes cluster-admin escalate-via-any-verb."
+rules:
+  # 1. BACKUP — read everything that exists, in every API group. Schedules use
+  #    includeClusterResources:true and exclude no resource TYPES, so the item
+  #    collector must enumerate and read all live types.
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # 2. RESTORE — recreate/patch/delete arbitrary top-level resource types.
+  #    create: restore; update/patch: label/ownerRef/existing-resource policy;
+  #    delete/deletecollection: restore-replace + GC of generated objects.
+  #    NOTE: resources:[*] does NOT match resource/subresource — the subresources
+  #    Velero actually writes are granted explicitly in block 7.
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+
+  # 3. RBAC restore — creating a (Cluster)Role/Binding that grants perms Velero
+  #    holds requires the privilege-escalation guards; the verb wildcard in
+  #    block 2 does NOT imply bind/escalate.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["bind", "escalate"]
+
+  # 4. Velero's OWN CRDs — controllers read/write the full object set plus their
+  #    status/finalizers subresources (these ARE written by Velero itself, so
+  #    unlike restored-object subresources they are real and required).
+  - apiGroups: ["velero.io"]
+    resources:
+      - "backups"
+      - "backupstoragelocations"
+      - "volumesnapshotlocations"
+      - "schedules"
+      - "restores"
+      - "deletebackuprequests"
+      - "downloadrequests"
+      - "serverstatusrequests"
+      - "backuprepositories"
+      - "podvolumebackups"
+      - "podvolumerestores"
+      - "datauploads"
+      - "datadownloads"
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["velero.io"]
+    resources:
+      - "backups/status"
+      - "restores/status"
+      - "podvolumebackups/status"
+      - "podvolumerestores/status"
+      - "datauploads/status"
+      - "datadownloads/status"
+      - "backuprepositories/status"
+      - "backupstoragelocations/status"
+      - "deletebackuprequests/status"
+      - "downloadrequests/status"
+      - "serverstatusrequests/status"
+      - "schedules/status"
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["velero.io"]
+    resources:
+      - "backups/finalizers"
+      - "restores/finalizers"
+      - "podvolumebackups/finalizers"
+      - "podvolumerestores/finalizers"
+      - "datauploads/finalizers"
+      - "datadownloads/finalizers"
+      - "backuprepositories/finalizers"
+    verbs: ["update"]
+  # On version upgrades (upgradeCRDs:true) velero applies its own CRDs.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # 5. CSI / VolumeSnapshot — the binary runs with --features=EnableCSI and
+  #    --default-snapshot-move-data=true and the CSI plugin probes these types
+  #    per backup. The effective data path here is FSB/kopia (VSL is empty and
+  #    local-path is not CSI-snapshottable), but granting read+write keeps the
+  #    role correct if a CSI-capable StorageClass is added later. PVC/PV writes
+  #    come from block 2.
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources:
+      - "volumesnapshots"
+      - "volumesnapshotcontents"
+      - "volumesnapshotclasses"
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots/status", "volumesnapshotcontents/status"]
+    verbs: ["get", "update", "patch"]
+  # Storage topology the data mover consults.
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers", "csinodes", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+
+  # 6. NODE-AGENT / kopia FSB data path (the primary path here). The node-agent
+  #    shares the velero-server SA. In v1.18 it spawns a per-volume mover Pod in
+  #    ns velero, execs into app pods for file capture, reconciles PVB/PVR and
+  #    BackupRepository (kopia repo init/maintenance Jobs), and reads pod/PVC/PV
+  #    metadata. The cluster-wide secrets read covers the kopia repo passphrase
+  #    (velero-repo-credentials) and BSL/object-store creds (velero-minio-credentials).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+
+  # 7. SUBRESOURCES that Velero PROVABLY writes (resources:[*] above does not
+  #    match resource/subresource). Verifier Option A: only these — NOT
+  #    speculative */status or */finalizers on restored objects (those are
+  #    reconciled by the owning controllers, not written by Velero).
+  - apiGroups: [""]
+    resources: ["pods/exec"]            # node-agent execs into app pods for kopia FSB capture
+    verbs: ["create", "get"]
+  - apiGroups: [""]
+    resources: ["pods/log"]             # data-mover pod log collection
+    verbs: ["get"]
+  - apiGroups: ["certificates.k8s.io"]  # restoring a CSR; top-level verbs also in block 2
+    resources: ["certificatesigningrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["certificates.k8s.io"]  # restoring a CSR in Approved state needs /approval
+    resources: ["certificatesigningrequests/approval"]
+    verbs: ["update"]
+  - apiGroups: ["certificates.k8s.io"]  # the signer an approval is scoped to
+    resources: ["signers"]
+    verbs: ["approve"]
+
+  # 8. Self-introspection — discovery + access reviews velero issues at startup
+  #    (matches the SA's can-i --list today).
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["selfsubjectaccessreviews", "selfsubjectrulesreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["selfsubjectreviews"]
+    verbs: ["create"]
+---
+# Strategy A: operator-owned binding. Named `velero-server` to match the chart's
+# binding name so the one-time Helm prune (on the clusterAdministrator:false
+# upgrade) removes the old cluster-admin binding and this one takes its place.
+# In steady state the chart renders no binding of this name, so there is no
+# Helm ownership conflict and no re-prune on subsequent upgrades.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: velero-server
+  labels:
+    app.kubernetes.io/name: velero
+    app.kubernetes.io/component: server
+    secforge.platform/component: velero
+    secforge.audit/finding: H-4.12
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: velero-least-privilege
+subjects:
+  - kind: ServiceAccount
+    name: velero-server
+    namespace: velero

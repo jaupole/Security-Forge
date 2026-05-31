@@ -172,6 +172,18 @@ done
   --chart vmware-tanzu/velero --version "$CHART_VER" \
   --values "$PLATFORM_DIR/values/velero.yaml"
 
+# 8b. Least-privilege RBAC (audit H-4.12) — applied AFTER Helm on purpose.
+# values.yaml sets rbac.clusterAdministrator:false, so the chart renders no
+# ClusterRoleBinding and the Helm upgrade above first PRUNES any pre-existing
+# chart-managed `velero-server -> cluster-admin` binding (a delete, so the
+# immutable roleRef is not an obstacle). This manifest then (re)creates the
+# operator-owned scoped ClusterRole + binding. On a cluster still on the old
+# cluster-admin binding, this is the one-time migration; see
+# docs/03-runbooks/velero-restore-drill-leastpriv.md for the migration ordering,
+# the 02:00/03:00 UTC backup-window timing constraint, and the restore-drill
+# gate that must pass (Errors: 0) before H-4.12 is closed.
+"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/velero/07-rbac-leastprivilege.yaml"
+
 # 9. ScheduledBackup CRs
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/velero/03-schedules.yaml"
 
