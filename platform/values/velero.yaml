@@ -79,6 +79,20 @@ upgradeCRDsJob:
   extraVolumes: []
   extraVolumeMounts: []
 
+# RBAC — replace the chart-default cluster-admin binding (audit H-4.12).
+# With clusterAdministrator:false the chart renders NO ClusterRoleBinding, so
+# the operator-owned ClusterRole + binding in
+# manifests/velero/07-rbac-leastprivilege.yaml take over (applied by
+# 09a-velero.sh AFTER the Helm step, so a Helm upgrade first prunes any old
+# chart-managed velero-server -> cluster-admin binding). clusterAdministratorName
+# is kept aligned with that ClusterRole's name for clarity even though no chart
+# binding renders. NOTE: automount is read ONLY from serviceAccount.server below
+# (a rbac.serviceAccount.* key would be silently ignored), so it stays there.
+rbac:
+  create: true
+  clusterAdministrator: false
+  clusterAdministratorName: velero-least-privilege
+
 # Server ServiceAccount — explicit even though default is true,
 # to document that the API credential IS automounted (required by
 # the controller's in-cluster API access pattern).
