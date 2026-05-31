@@ -18,9 +18,15 @@
 # Reduces base load + fits nicely in our resource budget.
 operator:
   replicas: 1
+  # 1536Mi limit (2026-05-30): the live deploy had drifted to 512Mi and was
+  # OOMKilling (working set ~450Mi) — it kicked off the alert-email storm.
+  # trivy-operator's footprint scales with #workloads × #images during scan
+  # orchestration; 1.5Gi is a sane ceiling for ~17 namespaces. If it climbs
+  # monotonically across a week of constant workload count, treat as a leak
+  # (pin the image + upstream issue) rather than bumping further.
   resources:
     requests: { cpu: 100m, memory: 256Mi }
-    limits:   { cpu: 1,    memory: 1Gi }
+    limits:   { cpu: 1,    memory: 1536Mi }
   scanJobsConcurrentLimit: 5
   scanJobsRetryDeleteAfterSeconds: 600
   # What to scan + how often

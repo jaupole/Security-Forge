@@ -3962,12 +3962,15 @@ spec:
           successThreshold: 1
           timeoutSeconds: 15
         resources:
+          # memory 160Mi->512Mi (2026-05-30): was sitting at 91% of 160Mi and
+          # flapping ContainerMemoryNearLimit alongside the trivy-operator storm.
+          # 512Mi gives ~3x headroom over the ~150Mi working set.
           limits:
             cpu: 250m
-            memory: 160Mi
+            memory: 512Mi
           requests:
             cpu: 20m
-            memory: 64Mi
+            memory: 128Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
