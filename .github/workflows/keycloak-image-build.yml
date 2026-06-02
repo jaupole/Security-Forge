@@ -102,6 +102,38 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      # CVE-scan the built image. The cluster's trivy-operator cannot scan this
+      # private image: the Keycloak operator strips podTemplate imagePullSecrets,
+      # so keycloak pulls via its ServiceAccount secret, which trivy-operator does
+      # not use for cross-namespace scan jobs (confirmed 2026-06-02). Scanning at
+      # build time closes that CVE-visibility gap for the IdP image. Runs before
+      # the cosign signature so a future gate can refuse to sign a vulnerable image.
+      - name: Scan image for CVEs (Trivy)
+        if: github.event_name != 'pull_request'
+        env:
+          REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          ./.claude/scripts/install-verify.sh trivy
+          {
+            echo "## Trivy CVE scan — \`${REF}\`"
+            echo '```'
+            trivy image --quiet --scanners vuln --pkg-types os,library --severity HIGH,CRITICAL "${REF}" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          trivy image --quiet --scanners vuln --format json --output trivy-keycloak.json "${REF}" || true
+          # Report-only for now (this just closes the visibility gap). To GATE the
+          # build (refuse to sign/ship), uncomment — start with CRITICAL, then HIGH
+          # once the baseline is clean. --ignore-unfixed limits it to actionable CVEs:
+          # trivy image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 "${REF}"
+
+      - name: Upload Trivy CVE report
+        if: ${{ github.event_name != 'pull_request' && always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: trivy-keycloak-cve-report
+          path: trivy-keycloak.json
+          if-no-files-found: ignore
+
       - name: Cosign keyless sign
         if: github.event_name != 'pull_request'
         env:
