@@ -860,3 +860,69 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "false"
               lightweight.claim: "false"
+
+      # ─── proposal-forge (browser auth-code + PKCE, user-facing) ──
+      # secforge-prod migration: Proposal Forge becomes ecosystem app
+      # `proposalapp`. Operator/staff login on the platform realm; the app
+      # is tailnet-only (no public DNS A record). Same in-app-OIDC shape as
+      # member-hub — no separate BFF. No admin service-account client:
+      # user/role management is owned by Ecosystem Control + SpiceDB, not
+      # by PF itself (its legacy Admin Panel is superseded). When PF ever
+      # goes tenant-facing, register the same clientId in secforge-tenants
+      # and trust both issuers (multi-issuer, per the realm-to-app matrix).
+      - clientId: proposal-forge
+        name: Proposal Forge
+        description: Proposal Forge user-facing OIDC (browser auth-code + PKCE). App proposalapp.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://proposal-forge.${DOMAIN}/*
+          - http://proposal-forge.localhost:5173/auth/callback
+        webOrigins:
+          - https://proposal-forge.${DOMAIN}
+          - http://proposal-forge.localhost:5173
+        attributes:
+          post.logout.redirect.uris: https://proposal-forge.${DOMAIN}/*##http://proposal-forge.localhost:5173
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          # Self-audience: every access token carries `aud=proposal-forge`
+          # so the PF backend can strict-audience-check
+          # (project_keycloak_audience_mappers). `sub` is standard on
+          # access tokens for a standard-flow client — no explicit
+          # oidc-sub-mapper needed (matches the live member-hub client).
+          - name: proposal-forge-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: proposal-forge
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          # Cross-audience: tokens also carry `aud=control` so PF can call
+          # Ecosystem Control's /api/v1/me for the active-org context on
+          # sign-in (no separate token exchange — same pattern as member-hub).
+          - name: control-audience-for-getme
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"

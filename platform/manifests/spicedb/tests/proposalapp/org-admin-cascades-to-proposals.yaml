@@ -1,0 +1,99 @@
+# Validator: an Organizational Administrator cascades — through the org's
+# ACTIVATED app — to full control on every proposal in the org, without any
+# direct proposal role. Path: organization->administer -> app->administer ->
+# proposalapp/proposal. This is the proposalapp analogue of the platform
+# tenant-admin-cascades test; the cascade is the bit that silently breaks if a
+# `+ app->administer` / `+ organization->administer` clause is mistyped.
+#
+# `organization:secforge#app@app:proposalapp_secforge` is the app-activation
+# tuple the app-activation middleware checks (org has activated proposalapp).
+# App object IDs use `_` (colon is the type:id separator and is illegal inside
+# an id), so the per-org app instance is `app:proposalapp_secforge`.
+
+schema: |
+  definition user {}
+  definition platform {
+      relation administrator: user
+      permission administer = administrator
+  }
+  definition organization {
+      relation parent: organization
+      relation platform: platform
+      relation administrator: user
+      relation local_administrator: user
+      relation executive: user
+      relation member_manager: user
+      relation position_manager: user
+      relation auditor: user
+      relation member: user
+      relation app: app
+      permission cascading_administer = administrator + parent->cascading_administer + platform->administer
+      permission administer = local_administrator + cascading_administer
+      permission cascading_view = administrator + executive + parent->cascading_view + platform->administer
+      permission view = local_administrator + member + cascading_view
+      permission create_sub_org = administer
+      permission delete_org = administrator + parent->delete_org + platform->administer
+      permission cascading_manage_members = administrator + parent->cascading_manage_members + platform->administer
+      permission manage_members = local_administrator + member_manager + cascading_manage_members
+      permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
+      permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+      permission read_audit = auditor + administer
+  }
+  definition app {
+      relation organization: organization
+      relation administrator: user
+      relation creator: user
+      relation editor: user
+      relation viewer: user
+      relation commenter: user
+      relation approver: user
+      relation finance: user
+      relation exporter: user
+      relation inviter: user
+      relation invite_approver: user
+      relation workflow_approver: user
+      permission administer = administrator + organization->administer
+      permission create = creator + administer
+      permission view = viewer + editor + commenter + approver + finance + administer + organization->administer
+      permission edit = editor + administer
+      permission comment = commenter + approver + edit
+      permission approve = approver + administer
+      permission view_finance = finance + administer
+      permission export = exporter + administer
+      permission invite = inviter + administer
+      permission approve_invite = invite_approver + administer
+      permission approve_workflow = workflow_approver + administer
+  }
+  definition proposalapp/proposal {
+      relation app: app
+      relation owner: user
+      relation editor: user
+      relation reviewer: user
+      relation viewer: user
+      permission view = owner + editor + reviewer + viewer + app->view
+      permission edit = owner + editor + app->administer
+      permission review = owner + editor + reviewer + app->administer
+      permission approve = reviewer + app->administer
+      permission delete = owner + app->administer
+  }
+
+relationships: |
+  organization:secforge#administrator@user:bob
+  organization:secforge#member@user:bob
+  organization:secforge#app@app:proposalapp_secforge
+  app:proposalapp_secforge#organization@organization:secforge
+  proposalapp/proposal:p1#app@app:proposalapp_secforge
+  proposalapp/proposal:p2#app@app:proposalapp_secforge
+
+assertions:
+  assertTrue:
+    # org admin -> app admin
+    - app:proposalapp_secforge#administer@user:bob
+    # cascade to every proposal in the org, full control
+    - proposalapp/proposal:p1#view@user:bob
+    - proposalapp/proposal:p1#edit@user:bob
+    - proposalapp/proposal:p1#review@user:bob
+    - proposalapp/proposal:p1#approve@user:bob
+    - proposalapp/proposal:p1#delete@user:bob
+    - proposalapp/proposal:p2#edit@user:bob
+    - proposalapp/proposal:p2#delete@user:bob
