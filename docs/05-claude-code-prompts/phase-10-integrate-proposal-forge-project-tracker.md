@@ -1,5 +1,16 @@
 # Phase 10 — Integrate Proposal Forge and Project Tracker
 
+> ⚠️ **SUPERSEDED (2026-06-02) for the live bare-metal platform.** This prompt
+> was written for the **retired local edition** (separate BFF pods, shared
+> `secforge-app-db`, `secforge.local`, mkcert, `infrastructure/spicedb`). The
+> live platform uses the **Member Hub** production shape: in-app OIDC, per-app
+> CNPG, OpenBao+VSO secrets, MinIO, GHCR cosign-signed images, tailnet-only
+> ingress. The current Proposal Forge migration plan + audit is
+> [docs/01-architecture/apps/proposal-forge.md](../01-architecture/apps/proposal-forge.md).
+> Keep this file for its still-valid *intent* (strip local auth, SpiceDB authz,
+> OpenBao secrets, per-app schema + RLS, decommission docker-compose) and the
+> hard-won data-import gotchas, but follow the live pattern for all mechanics.
+
 > **Navigation:** ⬅ [Previous: Phase 9 — Hello World](./phase-09-hello-world.md) · [Next: Phase 11 — Develop Additional Apps](./phase-11-develop-apps.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)
 >
 > **Depends on (must be ✅):** Phase 9 · Phase 6b-2 (outbound secrets pattern — apps need it for Anthropic/OpenAI/GSA/etc.)
