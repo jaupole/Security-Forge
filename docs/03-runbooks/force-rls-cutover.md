@@ -253,6 +253,14 @@ failure leaves that file's changes rolled back — but a *partial sequence*
 - If a future migration adds an RLS table: add it to `060`'s FORCE list AND to
   `db-assert.ts`'s `FORCE_RLS_TABLES`; decide exempt-vs-withTx and, if exempt,
   add the `061` grant + `exempt_read` policy; re-run §3.
+- **Backup/restore is now posture-sensitive.** A restore of `control-db` must
+  bring back the `control_owner` ownership + FORCE + policies — and a restore
+  from a **pre-cutover** backup silently restores the old, isolation-defeating
+  posture. The FORCE-RLS-aware restore procedure (DR ordering behind OpenBao,
+  the post-restore posture gate `verify-control-force-rls-posture.sql`, and the
+  `09i` restore drill) lives in
+  [control-db-restore.md](./control-db-restore.md). Run the `09i` drill
+  quarterly (rule 41).
 - **Migration 062+ coordination** (see the guide in `src/db/migrate.ts`): files
   run as `control_owner`, which owns ONLY the security-critical set. A migration
   that must write or own a control-owned object cannot do it as `control_owner`.
