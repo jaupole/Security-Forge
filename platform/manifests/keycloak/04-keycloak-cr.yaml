@@ -32,9 +32,10 @@ spec:
   # below and `kubectl apply`. The Keycloak Operator handles the rollout.
   #
   # operator-backlog #48 cutover (2026-05-22): moved the IdP off the unsigned
-  # in-cluster build localhost/secforge/keycloak:26.3.3-optimized onto this
-  # GHA-built, cosign-v2-signed image (base 6a7217a — CVE-refreshed).
-  image: ghcr.io/jaupole/keycloak@sha256:b9948b68c1a90d216736c6fd9c9d2e496afebdd66243d507df7e53d52d727793
+  # GHA-built, cosign-v2-signed image. Bumped to keycloak 26.6.2 (base f9ba7b2,
+  # JDK 21.0.11) on 2026-06-02 — clears the fixable HIGH java-21-openjdk CVEs;
+  # forward-only DB migration ran clean (realms -> 26.6.2). Built by #65.
+  image: ghcr.io/jaupole/keycloak@sha256:b35fa3cf23c453a8e3afeef6761e65cd6fb5ab0fe6cae74d17cb92559c5156af
   startOptimized: true    # using the pre-built optimized image
 
   db:
