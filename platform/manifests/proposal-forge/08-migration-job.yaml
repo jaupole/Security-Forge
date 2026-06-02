@@ -68,8 +68,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # TODO: pin to the signed digest from proposal-forge-image-build.
-          image: ghcr.io/jaupole/proposal-forge:latest
+          # First cosign-signed build (proposal-forge-image-build run 26851763152,
+          # commit cff926e+). Bump to the matching digest on each app release;
+          # the Deployment (P6) must reference the SAME digest.
+          image: ghcr.io/jaupole/proposal-forge@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
