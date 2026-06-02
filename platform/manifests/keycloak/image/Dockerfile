@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 # SecForge custom Keycloak image — optimized + HIBP password blacklist baked in.
 #
-# Why custom: the live deployment uses `KC_FEATURES=recovery-codes,dpop` baked
+# Why custom: the live deployment uses `KC_FEATURES=recovery-codes,dpop,organization` baked
 # at build time, AND a 100k-entry HIBP password blacklist mounted at
 # /opt/keycloak/data/password-blacklists/Pwdb_top-100000.txt. Without baking
 # both into the image, we have:
@@ -19,8 +19,8 @@
 # Keycloak version bumps; KEYCLOAK_BASE_DIGEST pins the exact build of that
 # version. Bump them together. FROM uses tag@digest — the digest still wins
 # for what is pulled; the tag is for human + Renovate readability.
-ARG KEYCLOAK_VERSION=26.3.3
-ARG KEYCLOAK_BASE_DIGEST=sha256:6a7217a100bd3e5de4063a27a538ef999a3c5a88c4b4ec0ffc0a642aee7b2597
+ARG KEYCLOAK_VERSION=26.6.2
+ARG KEYCLOAK_BASE_DIGEST=sha256:f9ba7b2af90db8dc749a57ca9aedca51e840cb9224441ab546a968da941da900
 # checkov:skip=CKV_DOCKER_7: the base image is pinned by digest via KEYCLOAK_BASE_DIGEST (stronger than any tag); the :${KEYCLOAK_VERSION} tag is for readability/Renovate tracking only. checkov cannot resolve the ARG-based digest.
 FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}@${KEYCLOAK_BASE_DIGEST}
 
