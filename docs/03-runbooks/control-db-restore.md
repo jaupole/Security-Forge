@@ -6,8 +6,11 @@
 > with [force-rls-cutover.md](./force-rls-cutover.md) (the one-time cutover) and
 > [ADR-0020](../02-decisions/0020-openbao-backup-and-dr.md) (OpenBao DR).
 >
-> Last tested: **pending first 09i drill run** (the drill is committed; run
-> `platform/components/09i-control-restore-drill.sh` to stamp this date).
+> Last tested: **2026-06-02** — 09i drill restored the post-cutover backup
+> `control-db-postcutover-r4` into `verify-restore` (cluster healthy in 60s) and
+> the posture gate PASSed (FORCE + control_owner ownership on all 21 RLS tables,
+> 20 org_isolation + 9 exempt_read policies, control/control_reader behaviour).
+> Empirically confirms a restore preserves the FORCE-RLS posture (rule 41).
 
 ## 1. Scope
 
@@ -180,8 +183,13 @@ kubectl -n control logs deploy/control | grep -iE 'force-rls|exempt reader|liste
 ## 7. Drill (rule 41 — "an untested backup is a wish")
 
 `platform/components/09i-control-restore-drill.sh` restores the latest control-db
-backup into a throwaway `verify-restore-control` ns, runs the §5 gate, and tears
-down. It needs no OpenBao (roles come from the backup; the gate uses `SET ROLE`).
+backup into the throwaway `verify-restore` ns (the platform's shared CNPG
+restore-drill namespace — it is the one allowlisted on MinIO's
+`allow-cross-ns-minio-clients` ingress policy, so barman can reach MinIO; a
+drill in any other namespace cannot list backups and the recovery loops). It is
+shared with 09g (Keycloak) — run the drills **sequentially**, not concurrently.
+It runs the §5 gate and tears down, and needs no OpenBao (roles come from the
+backup; the gate uses `SET ROLE`).
 Run it **quarterly** (README cadence), after any control backup-config change,
 and after the next ownership-model change. A pre-cutover source backup will
 (correctly) fail the gate.

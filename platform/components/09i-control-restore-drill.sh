@@ -40,7 +40,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 
 NS_SOURCE=control
-NS_VERIFY=verify-restore-control
+# Reuse the platform's shared CNPG restore-drill namespace. MinIO's
+# `allow-cross-ns-minio-clients` ingress policy allowlists barman/CNPG pods
+# (podSelector cnpg.io/cluster) by a HARDCODED namespace list that includes
+# `verify-restore` (and the app namespaces) — but NOT an arbitrary new ns. A
+# drill in any other namespace cannot reach MinIO to list backups and the
+# recovery loops. This ns is shared with 09g (Keycloak): run the drills
+# sequentially, not concurrently (each starts by delete-and-recreating it).
+# The restored Cluster name (below) is app-specific, so even the shared ns is
+# unambiguous. To give control its own isolated drill ns instead, add it to
+# that MinIO ingress allowlist in platform/manifests/minio/ first.
+NS_VERIFY=verify-restore
 SOURCE_CLUSTER=control-db
 RESTORED_CLUSTER=restored-control-db
 SERVER_NAME=control-db-pg17                 # barman serverName (PG17 timeline)
