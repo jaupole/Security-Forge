@@ -5,8 +5,9 @@
 > cannot bypass tenant isolation". Last validated: **2026-06-01** (PG 17.5 copy,
 > prod-accurate role model, 23/23 checks green).
 
-This is the procedure `src/api/db-exempt.ts` points at when `PGREADER_*` is
-unset. Read it end-to-end before the window. It coordinates two repos:
+This is the procedure `src/api/db-exempt.ts` points at when the `control_reader`
+OpenBao fetch can't resolve (pre-cutover). Read it end-to-end before the window.
+It coordinates two repos:
 
 - **ecosystem-control** — migrations `060`/`061`, the app rewires
   (`withTx`/`withExemptRead`), and the startup posture gate
@@ -58,16 +59,18 @@ All other RLS tables are `withTx`-only.
       username=control_migrator password=<rand32>` — or the Job fails to mount
       `PGUSER/PGPASSWORD` ("couldn't find secret control-db-migrator").
 - [ ] Secret-key coupling is intact: the VSO `VaultStaticSecret`s render
-      `kubernetes.io/basic-auth` Secrets with keys `username`/`password`, which
-      are consumed in FOUR places that must stay in lockstep — CNPG
-      `managed.roles.passwordSecret` (02), the Job `PGUSER/PGPASSWORD` (08), and
-      the backend `PGREADER_USER/PGREADER_PASSWORD` (09). Renaming a key or
-      changing the Secret type breaks all consumers silently.
-- [ ] Security-Forge PR #49 ready: CNPG `managed.roles` (control_owner /
-      control_migrator / control_reader), the two VSO `VaultStaticSecret`
-      bindings (`control-db-migrator`, `control-db-reader`), the migration Job,
-      and `09-backend-deployment.yaml` injecting `PGREADER_USER` /
-      `PGREADER_PASSWORD` from `control-db-reader` (with `optional: true`).
+      `kubernetes.io/basic-auth` Secrets with keys `username`/`password`,
+      consumed by CNPG `managed.roles.passwordSecret` (02) and the Job
+      `PGUSER/PGPASSWORD` (08). The backend does NOT consume the reader Secret
+      via env — `db-exempt.ts` reads `control_reader`'s creds from OpenBao
+      (`secret/data/apps/control/db-reader`) at runtime (ADR-0013); CNPG sets
+      the role password from the SAME OpenBao path (via `control-db-reader`),
+      so the value the app connects with always matches.
+- [ ] Security-Forge PR #49 (+ the cutover-fixes PR) ready: CNPG `managed.roles`
+      (control_owner / control_migrator / control_reader), the two VSO
+      `VaultStaticSecret` bindings (`control-db-migrator`, `control-db-reader`),
+      the migration Job, and `09-backend-deployment.yaml` pinned to the cutover
+      image digest with **no `PGREADER_*` env** (reader cred via OpenBao).
 - [ ] ecosystem-control PR merged to the image you will deploy: migrations
       `060`/`061`, the `withTx`/`withExemptRead` rewires, `db-assert.ts`.
 - [ ] **DB-copy validation green** on a *restored copy* — see §3. Do NOT skip.
@@ -181,10 +184,12 @@ Ordering is constrained: `060` must land **before** the new image starts
    `060` already applied, migrate.ts's cutover guard passes; were `060` missing
    it would abort with a clear message. Verify the Job exits 0; confirm
    `schema_migrations` has `060` and `061`.
-4. **Roll the new backend image** (deployment from #49, with `PGREADER_*` wired).
+4. **Roll the new backend image** (cutover image digest; no `PGREADER_*` env).
    On boot it runs `assertForceRlsPosture` (FORCE on the 21 + control non-owner)
-   and, post-cutover, asserts the `control_reader` path is reachable — so a
-   missing/misnamed `control-db-reader` fails at BOOT, not at first cross-org
+   and, post-cutover, `assertExemptReaderReachable` — which FETCHES the reader
+   creds from OpenBao + connects as `control_reader`, so a missing OpenBao
+   entry / un-provisioned role / unreachable OpenBao fails at BOOT, not at the
+   first cross-org
    read. PASS → serves; FAIL (`process.exit(1)`, CrashLoop) → go to §6.
 
 ---
