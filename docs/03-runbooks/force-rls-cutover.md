@@ -99,22 +99,35 @@ node scripts/validate-force-rls.mjs     # Appendix A — expect "N passed, 0 fai
 pnpm remove @electric-sql/pglite
 ```
 
-### 3b. Real-data fidelity (scratch CNPG, in-cluster)
+### 3b. Real-data fidelity (scratch copy, in-cluster)
 
 Confirms the cutover works against **production's actual ownership + rows**
-(genuine `NULL` GUC path, real drift, real row volumes) without touching prod:
+(genuine GUC path, real drift, real row volumes) without touching prod:
 
-1. Provision a **scratch** CNPG cluster in a throwaway namespace (e.g.
-   `control-validate`) via `bootstrap.recovery` from the latest
-   `control-db` Barman backup. It shares no Service/ingress with prod.
-2. Apply `060` as the scratch superuser by hand, then run the migration Job
-   image's `db:migrate` (applies `061` as `control_migrator`→`control_owner`).
-3. Translate Appendix A's assertions to `psql` against the scratch primary
-   (same SQL; connect as `control`, `control_owner`, `control_reader` in turn).
-   All must pass — especially: `control` sees 0 cross-org rows; `control_owner`
-   sees 0 with no context (FORCE); `control_reader` reads exempt tables + JOINs
-   `organizations`; `061` applied cleanly as `control_owner`.
+1. Provision a **scratch** Postgres in a throwaway namespace (e.g.
+   `control-validate`) — either a CNPG cluster via `bootstrap.recovery` from
+   the latest `control-db` backup, or (lighter, zero backup-chain risk) a
+   standalone `postgresql:17.6` pod loaded by a read-only `pg_dump | psql` of
+   the live DB with ownership preserved. It shares no Service/ingress with prod.
+2. Pre-create roles `control` + `control_reader`, restore. Apply `060` as the
+   scratch superuser by hand, then `061` as `control_owner` (`SET ROLE`).
+3. Run Appendix A's assertions translated to `psql` (connect as `control`,
+   `control_owner`, `control_reader`). All must pass — especially: `control`
+   sees 0 cross-org rows; `control_owner` sees 0 with no context (FORCE);
+   `control_reader` reads exempt tables + JOINs `organizations`; `061` applies
+   as `control_owner`; the real audit hash-chain verifies; **and `control` can
+   read every non-RLS operational table** (the REASSIGN regression).
 4. **Tear the scratch namespace down.** It held a full PII copy.
+
+> **Executed 2026-06-01** (standalone pod, `pg_dump` copy of the live `control`
+> DB, PG 17.6). Confirmed prod ownership is uniform (**all 36 tables
+> control-owned** — no postgres drift), `060`+`061` apply clean as
+> superuser/control_owner, the real 172-row audit chain verifies, and control
+> retains access to all non-RLS tables. It **caught one more blocker**: a
+> transaction-local `app.org_id` reverts to `''` (not NULL) at tx end in real
+> Postgres, so a pooled connection reused for a `withTx` WITHOUT an orgId throws
+> `''::uuid` under the org_isolation policies. Fixed in `db-tx.ts` (always set
+> `app.org_id`, all-zeros sentinel when absent); re-validated on the copy.
 
 Proceed to §4 only when both layers are green.
 
