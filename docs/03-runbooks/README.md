@@ -18,6 +18,7 @@ Each runbook should have:
 | `key-rotation.md` | Phase 1 / 3 | KMS keys, realm signing keys, OpenBao recovery |
 | `backup-and-restore.md` | Phase 1 | RDS, OpenBao, Wazuh data |
 | [`control-db-restore.md`](./control-db-restore.md) | EC-003 | FORCE-RLS-aware control-db restore + full-DR ordering |
+| [`deploy-app-image.md`](./deploy-app-image.md) | Deploy | Manual app image bump by `@sha256` digest (control/portal/member-hub); why tag deploys are denied |
 | `breaking-glass.md` | Phase 8 | Emergency admin access |
 | [`spire-rotation.md`](./spire-rotation.md) | Phase 2 | SPIRE operational rotation, troubleshooting, recovery |
 | [`spire-ca-rotation.md`](./spire-ca-rotation.md) | Phase 2 | SPIRE upstream CA rotation (every ~9 years) |
