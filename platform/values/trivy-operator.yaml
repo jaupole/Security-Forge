@@ -73,3 +73,14 @@ serviceMonitor:
 # Don't watch system namespaces (kyverno, kube-system) — too noisy +
 # we're not in control of their image versions anyway.
 excludeNamespaces: "kube-system,kube-public,kube-node-lease,kyverno"
+
+# Workload kinds to scan — chart default MINUS `job`. Velero spawns a constant
+# churn of ephemeral bare Jobs (one `*-default-kopia-maintain-job-*` per backup
+# repo per hour, ~50 live at any time). Trivy raced to scan each, and the scan
+# Jobs FAILED when Velero deleted the target mid-scan — tripping KubeJobFailed
+# repeatedly (2026-06-01/02 flapping) for zero security value: those Jobs run the
+# velero/velero image, already scanned via the Velero Deployment. Bare one-off
+# Jobs elsewhere (e.g. control-db-migrate) run images already covered by their
+# owning Deployment; scheduled jobs are covered via `cronjob`. Dropping `job`
+# loses no real image coverage.
+targetWorkloads: "pod,replicaset,replicationcontroller,statefulset,daemonset,cronjob"
