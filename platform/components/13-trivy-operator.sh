@@ -15,7 +15,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.30.0}"
+# Pinned to the version actually deployed on prod (was 0.30.0, which would have
+# DOWNGRADED the live 0.32.1 operator on the next installer run). 2026-06-02.
+CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.32.1}"
 NS=trivy-system
 
 # 1. Namespace
