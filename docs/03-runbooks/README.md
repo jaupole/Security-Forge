@@ -17,6 +17,7 @@ Each runbook should have:
 | `incident-response.md` | Phase 7 | General on-call playbook |
 | `key-rotation.md` | Phase 1 / 3 | KMS keys, realm signing keys, OpenBao recovery |
 | `backup-and-restore.md` | Phase 1 | RDS, OpenBao, Wazuh data |
+| [`control-db-restore.md`](./control-db-restore.md) | EC-003 | FORCE-RLS-aware control-db restore + full-DR ordering |
 | `breaking-glass.md` | Phase 8 | Emergency admin access |
 | [`spire-rotation.md`](./spire-rotation.md) | Phase 2 | SPIRE operational rotation, troubleshooting, recovery |
 | [`spire-ca-rotation.md`](./spire-ca-rotation.md) | Phase 2 | SPIRE upstream CA rotation (every ~9 years) |

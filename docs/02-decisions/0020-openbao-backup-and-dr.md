@@ -77,3 +77,22 @@ The **main OpenBao recovery keys** (per `bao operator init`'s output during Phas
 ## Phase 5 follow-up opened by this ADR
 
 `openbao-backup-restore.md` runbook + `infrastructure/openbao/02-snapshot-cronjob.yaml` implementation are both flagged for Phase 5 follow-up by this fix package. Tracked in PLAN.md (Fix-after-07 §D adds the line).
+
+## Amendment (2026-06-02): control-plane DB is a downstream restore dependency
+
+The EC-003 FORCE-RLS cutover made the control-plane DB depend on OpenBao at
+**restore time**, not just at steady state. The control DB's login roles
+(`control_migrator`, `control_reader`) authenticate with passwords sourced from
+OpenBao via VSO, and the control app fetches `secret/data/apps/control/db-reader`
+from OpenBao at boot (ADR-0013) — failing closed if OpenBao is unreachable.
+
+No change to this ADR's backup *scope* is needed: the whole-Raft snapshot
+defined above already captures every KV entry under `secret/data/apps/control/*`
+(incl. `db-migrator`, `db-reader`) and the `control` JWT auth role/policy — they
+are inside the snapshot by construction, not an enumerated list. What this
+amendment records is the **ordering contract** for full-cluster DR: OpenBao must
+be restored + unsealed (and VSO must have re-rendered the control DB Secrets)
+**before** the control DB is restored and the control app is booted. That
+ordered procedure, plus the FORCE-RLS posture gate that must pass after any
+control-db restore, lives in
+[`docs/03-runbooks/control-db-restore.md`](../03-runbooks/control-db-restore.md).
