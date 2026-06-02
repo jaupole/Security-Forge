@@ -1,0 +1,177 @@
+# VSO bindings for the proposal-forge namespace.
+#
+# Rendered K8s Secrets (all consumed via envFrom / imagePullSecrets on the
+# backend Deployment + migration Job in P6):
+#   - proposal-forge-app-secrets  → OIDC client_secret, SpiceDB PSK, session
+#                                   signing key, Gemini + GSA API keys
+#   - ghcr-pull-secret            → GHCR dockerconfigjson (image pull)
+#   - proposal-forge-files-minio  → rw creds for the proposal-forge-files bucket
+#   - cnpg-minio-credentials      → barman-cloud → MinIO (CNPG backups)
+#
+# DEPLOY-TIME PREREQS (P6 — not applied by this manifest):
+#   1. OpenBao policy `proposal-forge` + k8s-auth role `proposal-forge-vso`
+#      (bind SA proposal-forge-vso → policy). Add a row to APP_ROLES in
+#      platform/components/05j-app-vso-roles.sh + a proposal-forge.hcl policy,
+#      per project_openbao_app_roles_codified.
+#   2. Populate the OpenBao KV paths below (runtime/ghcr-pull/minio).
+#   3. Create the proposal-forge-files MinIO bucket (versioned + SSE-S3) and a
+#      bucket-scoped service account; write its keys to minio/proposal-forge-files.
+#   4. Publish the proposal-forge Keycloak client_secret to apps/proposal-forge/
+#      runtime via the 05l-keycloak-secret-publish.sh bridge.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: proposal-forge-vso
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: proposal-forge-vso
+    serviceAccount: proposal-forge-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# App-level secrets → single Secret consumed via envFrom on the backend.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: proposal-forge-app-secrets
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: proposal-forge-vso
+  mount: secret
+  type: kv-v2
+  path: apps/proposal-forge/runtime
+  refreshAfter: 60s
+  destination:
+    name: proposal-forge-app-secrets
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # Keycloak OIDC client_secret (user-login `proposal-forge` client).
+        # Published by 05l-keycloak-secret-publish.sh.
+        OIDC_CLIENT_SECRET:
+          text: '{{ .Secrets.oidc_client_secret }}'
+        # SpiceDB pre-shared key for gRPC auth (consumed, not owned here).
+        SPICEDB_PRESHARED_KEY:
+          text: '{{ .Secrets.spicedb_psk }}'
+        # OIDC session-cookie signing key (raw 32-byte base64). Generated
+        # once at bootstrap via `openssl rand -base64 32`; rotate via OpenBao
+        # + Pod restart.
+        SESSION_KEY:
+          text: '{{ .Secrets.session_signing_key }}'
+        # Gemini API key (AI_PROVIDER=gemini). Rotated on cutover (the old
+        # .env value moves here and is regenerated). ANTHROPIC_API_KEY /
+        # OPENAI_API_KEY get added the same way when those providers land.
+        GEMINI_API_KEY:
+          text: '{{ .Secrets.gemini_api_key }}'
+        # GSA per-diem API key (api.gsa.gov/travel/perdiem/v2).
+        GSA_API_KEY:
+          text: '{{ .Secrets.gsa_api_key }}'
+
+---
+# GHCR image-pull credential (read:packages PAT on jaupole/proposal-forge).
+# OpenBao path apps/proposal-forge/ghcr-pull: { username, password }.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: proposal-forge-vso
+  mount: secret
+  type: kv-v2
+  path: apps/proposal-forge/ghcr-pull
+  refreshAfter: 5m
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ".dockerconfigjson":
+          text: |-
+            {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
+
+---
+# App-level MinIO credentials for the proposal-forge-files bucket (uploads,
+# assets, templates, exports). rw on that bucket only. Rendered as
+# MINIO_ACCESS_KEY + MINIO_SECRET_KEY, consumed via envFrom on the backend.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: proposal-forge-files-minio-vso
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: proposal-forge-vso
+  mount: secret
+  type: kv-v2
+  path: minio/proposal-forge-files
+  refreshAfter: 60s
+  destination:
+    name: proposal-forge-files-minio
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        MINIO_ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        MINIO_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'
+
+---
+# barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
+# Same shared OpenBao path as the other apps' CNPG clusters.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: proposal-forge-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 60s
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

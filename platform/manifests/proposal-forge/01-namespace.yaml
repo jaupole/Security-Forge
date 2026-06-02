@@ -1,0 +1,21 @@
+# proposal-forge namespace — single Express Deployment (serves /api/v1/* +
+# the built React SPA from client/dist) plus a CNPG cluster (proposal-forge-db).
+# Ecosystem app `proposalapp`. Tailnet-only access: no public DNS A record;
+# the ingress is CGNAT-whitelisted (see 11-ingress.yaml, P6) and the operator's
+# hosts file maps proposal-forge.${DOMAIN} -> the host's tailnet IP.
+#
+# NOTE: unlike most platform namespaces this app is NOT distroless (the PDF
+# export path runs headless Chromium via Puppeteer), but the pod is still
+# PSS-restricted — non-root 65532, drop ALL caps, seccomp RuntimeDefault,
+# readOnlyRootFilesystem. No PSS exemption.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: proposal-forge
+  labels:
+    app.kubernetes.io/name: proposal-forge
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: proposal-forge
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

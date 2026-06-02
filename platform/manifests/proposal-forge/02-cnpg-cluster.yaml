@@ -1,0 +1,67 @@
+# Postgres cluster for Proposal Forge (proposalapp).
+#
+# Schema is managed by Prisma — `prisma migrate deploy` runs from the
+# proposal-forge image via the migration Job in 08-migration-job.yaml.
+# CNPG owns the rest of the lifecycle: failover, WAL archiving, base
+# backups via barman-cloud plugin -> MinIO (06-objectstore.yaml).
+#
+# RLS approach (differs from member-hub): the app connects via Prisma as
+# the DB owner `proposal_forge`, and the org_id RLS migration sets
+# `ALTER TABLE ... FORCE ROW LEVEL SECURITY` on every tenant table so the
+# owner is ALSO subject to RLS (Postgres exempts table owners unless FORCE
+# is set). The app sets `app.org_id` via `SET LOCAL` per request. We
+# therefore do NOT grant the owner BYPASSRLS (the opposite of member-hub,
+# which needs it for SECURITY DEFINER functions — Prisma has none). A
+# dedicated non-owner runtime role is a documented hardening follow-up.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: proposal-forge-db
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: proposal-forge
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      database: proposal_forge
+      owner: proposal_forge
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+      # RLS uses a session-local GUC (app.org_id) set via `SET LOCAL` in a
+      # Prisma transaction wrapper per request — no postgresql.conf entries
+      # needed.
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin.
+  # ObjectStore CR in 06-objectstore.yaml; ScheduledBackup in 07.
+  # barmanObjectName is REQUIRED to link the cluster to the ObjectStore CR.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-backup

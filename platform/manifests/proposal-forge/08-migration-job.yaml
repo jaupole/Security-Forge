@@ -1,0 +1,100 @@
+# One-shot Job that applies Prisma migrations to proposal-forge-db.
+#
+# Run BEFORE the API Deployment so the schema is in place when the first
+# server starts. Re-runs are safe — `prisma migrate deploy` only applies
+# pending migrations (tracked in _prisma_migrations) and is a no-op when
+# the DB is already current.
+#
+# CNPG auto-renders `proposal-forge-db-app` with host/port/user/password/
+# dbname/uri/jdbc-uri/pgpass. Prisma wants a single connection string, so
+# DATABASE_URL is fed from the `uri` key.
+#
+# IMAGE: the digest below is a PLACEHOLDER. Pin it to the cosign-signed
+# digest emitted by the first proposal-forge-image-build run (then the
+# Kyverno verify-image-signature policy admits it). The Deployment +
+# this Job must reference the SAME digest.
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: proposal-forge-db-migrate
+  namespace: proposal-forge
+  labels:
+    app.kubernetes.io/name: proposal-forge
+    secforge.platform/component: proposal-forge
+    secforge.platform/role: db-migration
+spec:
+  # Don't auto-retry on app errors — a migration failure needs operator eyes.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400     # GC after 24h; keep the artefact for inspection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: proposal-forge
+        secforge.platform/component: proposal-forge
+        secforge.platform/role: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: proposal-forge
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h proposal-forge-db-rw.proposal-forge.svc.cluster.local -p 5432 -U proposal_forge -d proposal_forge -t 3; do
+                echo "waiting for proposal-forge-db..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 128Mi }
+      containers:
+        - name: migrate
+          # TODO: pin to the signed digest from proposal-forge-image-build.
+          image: ghcr.io/jaupole/proposal-forge:latest
+          imagePullPolicy: IfNotPresent
+          # `prisma` is a runtime dependency; the CLI entry is build/index.js.
+          # Overrides the image's tini ENTRYPOINT (no Chromium here).
+          command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema=./prisma/schema.prisma"]
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: proposal-forge-db-app
+                  key: uri
+            # Prisma's migration engine writes to a temp dir.
+            - name: TMPDIR
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

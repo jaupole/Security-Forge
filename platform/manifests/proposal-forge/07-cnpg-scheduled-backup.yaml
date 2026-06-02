@@ -1,0 +1,20 @@
+# Daily ScheduledBackup for proposal-forge-db.
+# 03:00 UTC — staggered after member-hub (02:45) and keycloak (02:30) to
+# spread MinIO PUT load.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: proposal-forge-db-daily
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: proposal-forge-db
+spec:
+  schedule: "0 0 3 * * *"          # 6-field CNPG cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: proposal-forge-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false
