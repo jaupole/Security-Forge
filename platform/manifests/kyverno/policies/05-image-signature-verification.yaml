@@ -50,6 +50,11 @@ spec:
   validationFailureAction: Enforce     # our CI signs every image — block unsigned
   webhookConfiguration:
     failurePolicy: Ignore              # don't wedge admission if Kyverno is down
+    timeoutSeconds: 30                 # raised from the 10s default: the keyless verify
+                                       # (ghcr signature fetch + Rekor/Fulcio) was blowing
+                                       # the budget under admission bursts and — because
+                                       # failurePolicy=Ignore — FAILING OPEN (pod admitted
+                                       # unverified). 30s (k8s max) lets verify complete.
   rules:
     # SecForge-owned images: control + portal today (same keyless CI as the
     # keycloak overlay — see .github/workflows/*-image-build.yml). The
@@ -103,6 +108,8 @@ spec:
   validationFailureAction: Audit
   webhookConfiguration:
     failurePolicy: Ignore
+    timeoutSeconds: 30                 # match the secforge policy: same shared svc-ignore
+                                       # webhook; absorb keyless-verify latency bursts.
   rules:
     - name: verify-cloudnative-pg
       match:
