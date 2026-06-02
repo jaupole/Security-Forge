@@ -1,6 +1,6 @@
 module github.com/secforge/security-events-collector
 
-go 1.25.0
+go 1.25.8
 
 require github.com/secforge/lib v0.0.0
 
@@ -19,5 +19,5 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 )
