@@ -127,10 +127,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           trivy image --quiet --scanners vuln --format json --output trivy-keycloak.json "${REF}"
-          # Report-only for now (this just closes the visibility gap). To GATE the
-          # build (refuse to sign/ship), uncomment — start with CRITICAL, then HIGH
-          # once the baseline is clean. --ignore-unfixed limits it to actionable CVEs:
-          # trivy image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 "${REF}"
+          # GATE: refuse to sign/ship a keycloak image with a FIXABLE CRITICAL CVE.
+          # Baseline 2026-06-02 was 0 CRITICAL, so this does not block today; it fails
+          # closed if a fixable CRITICAL ever lands on the IdP image. HIGH stays
+          # report-only for now (the current fixable HIGHs are java-21-openjdk CVEs
+          # that need a keycloak minor upgrade to clear — tracked separately).
+          # --ignore-unfixed limits the gate to actionable (patchable) CVEs.
+          trivy image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 "${REF}"
 
       - name: Upload Trivy CVE report
         if: ${{ github.event_name != 'pull_request' && always() }}
