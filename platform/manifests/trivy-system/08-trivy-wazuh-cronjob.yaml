@@ -120,6 +120,7 @@ spec:
                   echo "Fetching VulnerabilityReports at $TS..."
                   COUNT=$(kubectl get vulnerabilityreports -A -o json | \
                     jq -r --arg ts "$TS" --arg syslog_ts "$SYSLOG_TS" --arg host "$HOST" '
+                      [
                       .items[] |
                       . as $item |
                       (
@@ -145,8 +146,17 @@ spec:
                         pkg_name: (.resource // ""),
                         installed_version: (.installedVersion // ""),
                         fixed_version: (.fixedVersion // "")
-                      } | @json |
-                      "\($syslog_ts) \($host) trivy-cve: \(.)"
+                      }
+                      ]
+                      # Dedup to one line per (namespace, resource, cve_id): a CVE
+                      # affecting several packages in one image (openssl + libssl3
+                      # + libcrypto3 share CVE-2026-31789) was emitting N identical
+                      # alerts. Keep the CRITICAL row when severity is mixed.
+                      | group_by("\(.namespace)|\(.resource)|\(.cve_id)")
+                      | map(sort_by(if .severity == "CRITICAL" then 0 else 1 end)[0])
+                      | .[]
+                      | @json
+                      | "\($syslog_ts) \($host) trivy-cve: \(.)"
                     ' | tee "$OUTFILE" | wc -l)
 
                   echo "Wrote $COUNT HIGH/CRITICAL CVE findings to $OUTFILE"
