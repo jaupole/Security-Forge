@@ -24,10 +24,17 @@ returns 0 rows on cross-org reads once `060` lands.
 
 | Role | Login | Owns tables | BYPASSRLS | Purpose |
 |------|-------|-------------|-----------|---------|
-| `control` | yes | **none** | no | Runtime app role. DML only; bound by RLS for real. |
-| `control_owner` | **no** | all 21 RLS tables + `schema_migrations` + sequence/functions/enums | no | Object owner. Never connected at runtime — that is what makes `FORCE` meaningful (FORCE binds even the owner). |
+| `control` | yes | the non-RLS **operational** tables (idempotency_keys, billing_*, platform_*, ecosystem_*, org_app_*, organizations, apps, …) | no | Runtime app role. DML on those + on the 21 RLS tables (via grant); bound by RLS for real. |
+| `control_owner` | **no** | the 21 RLS tables + `audit_log` + `schema_migrations` + ticket_number_seq + 4 audit functions + 3 enums | no | Owns only the **security-critical** objects. Never connected at runtime — that is what makes `FORCE` meaningful (FORCE binds even the owner) and what stops the runtime role from DISABLE-ing RLS or DROPping the audit triggers. |
 | `control_migrator` | yes | none | no | The migration Job connects as this. Member of `control` + `control_owner`; `migrate.ts` does `SET ROLE control_owner` so `061+` objects are owner-correct. |
 | `control_reader` | yes | none | no | Backs `withExemptRead`. `SELECT`-only on the 9 exempt tables (+ a permissive `exempt_read` policy) and on `organizations`/`apps`. Cannot write. |
+
+**Ownership only moves for objects whose owner-DDL is a tenant-isolation or
+audit-integrity risk** — the 21 RLS tables, `audit_log`, and their deps. The
+non-RLS operational tables STAY owned by `control` (it needs ongoing direct
+access; moving them — an over-broad `REASSIGN OWNED` — is precisely what an
+early draft did, stripping `control`'s access to idempotency / billing /
+platform and breaking every mutating request).
 
 The 9 **exempt** tables (cross-org/public reads): `organization_memberships`,
 `organization_apps`, `org_roles`, `pending_invitations`, `tickets`,
@@ -61,20 +68,29 @@ Validate against a **restored copy**, never the live cluster. Two layers:
 ### 3a. Logic + posture (repeatable, no cluster)
 
 `ecosystem-control` ships an ephemeral-Postgres harness (PGlite 17.5 ≈ prod's
-CNPG 17.6) that applies `001..061` under the **prod-accurate role model**
-(001-059 as `control`, 060 as superuser, 061 as `control_owner`, with the
-`056` email-config drift simulated) and asserts the full posture + runtime
-enforcement. Appendix A is the script. It found and gated three cutover
-blockers on first run (all now fixed in `060`/`061`):
+CNPG 17.6, real pgcrypto) that applies `001..061` under the **prod-accurate
+role model** (001-059 as `control`, 060 as superuser, 061 as `control_owner`,
+with the `056` email-config drift simulated) and asserts the full posture,
+runtime enforcement, the runtime role's access to NON-RLS operational tables,
+the audit hash-chain, tamper resistance, and the rollback round-trip — **40
+checks**. Appendix A is the script. Across two audit rounds it found and gated
+**four cutover blockers** (all now fixed):
 
-1. `REASSIGN OWNED BY postgres` aborts on pinned system catalogs.
-2. `GRANT ... ON organizations, apps TO control_reader` cannot run as
+1. **CRITICAL** — the over-broad `REASSIGN OWNED BY control` moved every
+   control-owned object (incl. idempotency_keys, billing_*, platform_*,
+   ecosystem_*, org_app_*) to the NOLOGIN `control_owner`, leaving `control`
+   "permission denied" on every idempotency / billing / platform path. Fix:
+   drop the blanket REASSIGN; `control` keeps the non-RLS tables, only the
+   security-critical objects move (explicit `ALTER OWNER`).
+2. `REASSIGN OWNED BY postgres` aborts on pinned system catalogs (removed).
+3. `GRANT ... ON organizations, apps TO control_reader` cannot run as
    `control_owner` (not the owner) — moved to `060` (superuser).
-3. `INSERT INTO schema_migrations` from `061` needs `control_owner` to own
-   `schema_migrations` — `060` now re-homes it explicitly.
+4. `INSERT INTO schema_migrations` from `061`/`062+` needs `control_owner` to
+   own `schema_migrations` — `060` re-homes it explicitly; the down restores it.
 
-> The first two-layer lesson: an all-as-superuser test passes and ships the
-> break. The harness MUST apply `061` as `control_owner`.
+> Two lessons baked into the harness: (a) an all-as-superuser test passes and
+> ships the break — it MUST apply `061` as `control_owner`; (b) a forward-only
+> test misses the rollback + the non-RLS-table access — it must probe both.
 
 ```
 cd ecosystem-control
@@ -178,20 +194,26 @@ failure leaves that file's changes rolled back — but a *partial sequence*
 - If a future migration adds an RLS table: add it to `060`'s FORCE list AND to
   `db-assert.ts`'s `FORCE_RLS_TABLES`; decide exempt-vs-withTx and, if exempt,
   add the `061` grant + `exempt_read` policy; re-run §3.
+- **Migration 062+ coordination** (see the guide in `src/db/migrate.ts`): files
+  run as `control_owner`, which owns ONLY the security-critical set. A migration
+  that must write or own a control-owned object (a non-RLS operational table, or
+  a GRANT on one) cannot do it as `control_owner` — fold that into a
+  superuser-applied step (the `060` pattern), not the `control_owner` loop. The
+  planned Control migration 062 (website-designer work) must follow this.
 
 ---
 
 ## Appendix A — validation harness
 
-`ecosystem-control/scripts/validate-force-rls.mjs` (run per §3a). Applies all
-migrations under the prod-accurate role model and asserts: 21 tables ENABLE +
-FORCE; `control` non-super/non-bypass/non-owner; `control_owner` owns all 21;
-`control` (and `control_owner`) see 0 rows with no org context; org-scoped
-`withTx` sees only its org; the `organization_memberships` `user_id` branch
-self-reads cross-org; `control_reader` reads all exempt rows + JOINs
-`organizations`/`apps`, is denied on non-exempt tables + denied writes; the
-`/api/v1/orgs` `member_count` subquery returns the true count under
-`control_reader`; and `control` DML is org-scoped (the rotate/rewrap path).
+`ecosystem-control/scripts/validate-force-rls.mjs` (run per §3a, 40 checks).
+Applies all migrations under the prod-accurate role model and asserts:
+
+- **Posture**: 21 tables ENABLE + FORCE; `control` non-super/non-bypass/non-owner; `control_owner` owns all 21.
+- **Enforcement**: `control` (and `control_owner`) see 0 rows with no org context (FORCE binds the owner); org-scoped `withTx` sees only its org; the `organization_memberships` `user_id` branch self-reads cross-org; `control_reader` reads all exempt rows + JOINs `organizations`/`apps`, is denied on non-exempt tables + denied writes; the `/api/v1/orgs` `member_count` subquery returns the true count; `control` DML is org-scoped (rotate/rewrap path).
+- **Non-RLS access** (REASSIGN regression guard): `control` can SELECT all 14 non-RLS operational tables (idempotency/billing/platform); only `schema_migrations` is control_owner-owned.
+- **Audit integrity**: `control`'s `audit_log` INSERTs seal (prev_hash/row_hash) and `verify_audit_log_chain()` reports no break.
+- **Tamper resistance**: `control` cannot DISABLE RLS / DROP POLICY / disable the audit seal trigger / UPDATE audit_log.
+- **Rollback round-trip**: `061.down` + `060.down` apply, FORCE comes off, `control` re-owns the 21 + `audit_log` + `schema_migrations`, exempt policies drop, the 060/061 rows are deleted, and `control` can write `schema_migrations` again.
 
 PGlite-only accommodations (NOT prod behaviour): `CREATE EXTENSION pgcrypto`
 is stripped (`gen_random_uuid()` is built-in in PG13+); "no context" uses an
