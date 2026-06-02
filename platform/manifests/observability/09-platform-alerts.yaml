@@ -252,13 +252,28 @@ spec:
               A backup for this schedule partially failed in the last ~90m (one or more
               PodVolumeBackups failed). Inspect: kubectl -n velero get podvolumebackups
               -l velero.io/backup-name=<latest> | grep -vi Completed.
+        # Cadence-aware. A single flat 26h threshold fired ~6 of every 7 days for
+        # the WEEKLY schedule by design (weekly-platform, cron '0 3 * * 0'): a
+        # weekly backup is legitimately up to 168h old between runs. Split by
+        # cadence. The daily rule is ALSO the fail-CLOSED default — any non-weekly
+        # or future/unknown schedule is held to >27h, so a new schedule can never
+        # go silently un-alerted. VeleroBackupFailed/Partial only catch a backup
+        # that RAN-and-failed; a fully SKIPPED run is caught only here, hence the
+        # weekly bound is one cadence + slack (7d12h), not a loose multi-day window.
         - alert: VeleroBackupTooOld
-          expr: (time() - max by (schedule) (velero_backup_last_successful_timestamp{schedule!=""})) > 93600
+          expr: (time() - max by (schedule) (velero_backup_last_successful_timestamp{schedule!="",schedule!~".*weekly.*"})) > 97200
           for: 15m
           labels:
             severity: critical
           annotations:
-            summary: "No successful Velero backup for {{ $labels.schedule }} in >26h"
+            summary: "No successful Velero backup for {{ $labels.schedule }} in >27h"
+        - alert: VeleroBackupTooOld
+          expr: (time() - max by (schedule) (velero_backup_last_successful_timestamp{schedule=~".*weekly.*"})) > 648000
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No successful Velero backup for weekly schedule {{ $labels.schedule }} in >7.5d (cadence 7d)"
         - alert: VeleroMetricsDown
           expr: absent(velero_backup_last_status)
           for: 30m
@@ -307,14 +322,20 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Image signature verification FAILING — deploys blocked ({{ $labels.policy_name }})"
+            summary: "Image signature verification FAILING for {{ $labels.policy_name }} (enforce)"
             description: |
-              Kyverno enforce policy {{ $labels.policy_name }} recorded {{ $value }} cosign
-              verification FAILURES in the last 15m. New pods matching ghcr.io/jaupole/* are
-              being DENIED at admission.
-              #1 likely cause: the ghcr-pull PAT expired/was revoked — it lives at
-              secret/apps/control/ghcr-pull (and secret/apps/member-hub/ghcr-pull) in OpenBao
-              and Kyverno uses it to pull + verify signatures. Rotate it, then force-sync VSO:
+              Kyverno ENFORCE policy {{ $labels.policy_name }} recorded {{ $value }} cosign
+              verification FAILURE(s) in the last 15m.
+              NOTE: this policy is webhookConfiguration.failurePolicy=Ignore, so a verification
+              that times out FAILS OPEN — the pod is admitted UNVERIFIED (it is NOT denied) and
+              deploys are not blocked. The alert still matters: signature enforcement was bypassed.
+              Most common cause here: the keyless verify (ghcr.io signature fetch + Rekor/Fulcio)
+              exceeds the admission webhook timeout under an admission burst — check CoreDNS
+              (single replica?) and ghcr.io / rekor.sigstore.dev latency. The per-policy webhook
+              timeout was raised to 30s on 2026-06-01 to absorb these.
+              If the error is auth (401/403) the ghcr-pull PAT may have expired — it lives at
+              secret/apps/control/ghcr-pull (and secret/apps/member-hub/ghcr-pull) in OpenBao;
+              rotate it, then force-sync VSO:
                 for ns in control kyverno member-hub; do kubectl annotate vaultstaticsecret \
                   -n $ns ghcr-pull-secret vso.hashicorp.com/force-sync="$(date +%s)" --overwrite; done
               Other causes: an unsigned/tampered image was pushed, or the cosign subject/issuer
