@@ -114,13 +114,19 @@ jobs:
           REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
         run: |
           ./.claude/scripts/install-verify.sh trivy
+          # install-verify appends ~/.local/bin to $GITHUB_PATH (for *later* steps);
+          # this is the same step, so put it on PATH explicitly.
+          export PATH="$HOME/.local/bin:$PATH"
+          # No `|| true`: trivy exits non-zero only on ERRORS (can't pull/run), not on
+          # findings (no --exit-code below), so this surfaces broken scanning while
+          # staying report-only for CVEs.
           {
             echo "## Trivy CVE scan — \`${REF}\`"
             echo '```'
-            trivy image --quiet --scanners vuln --pkg-types os,library --severity HIGH,CRITICAL "${REF}" || true
+            trivy image --quiet --scanners vuln --pkg-types os,library --severity HIGH,CRITICAL "${REF}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          trivy image --quiet --scanners vuln --format json --output trivy-keycloak.json "${REF}" || true
+          trivy image --quiet --scanners vuln --format json --output trivy-keycloak.json "${REF}"
           # Report-only for now (this just closes the visibility gap). To GATE the
           # build (refuse to sign/ship), uncomment — start with CRITICAL, then HIGH
           # once the baseline is clean. --ignore-unfixed limits it to actionable CVEs:
