@@ -254,3 +254,84 @@ spec:
           text: '{{ .Secrets.client_id }}'
         QBO_CLIENT_SECRET:
           text: '{{ .Secrets.client_secret }}'
+
+---
+# control_migrator login password → CNPG managed role `control_migrator`
+# (02-cnpg-cluster.yaml). kubernetes.io/basic-auth Secret (keys: username +
+# password) + cnpg.io/reload so CNPG reloads on rotation.
+# KEY COUPLING — the rendered keys `username`/`password` are consumed by CNPG
+# managed.roles.passwordSecret (02) AND the migration Job PGUSER/PGPASSWORD (08);
+# the reader Secret below adds the backend PGREADER_* (09). Do not rename the
+# keys or change the Secret type without auditing every consumer.
+# OpenBao path: secret/data/apps/control/db-migrator  (covered by control.hcl's
+#   secret/data/apps/control/+ grant — no policy change)
+#   - username: control_migrator   ← MUST be the exact Postgres role name; the
+#                                     value is used verbatim as the connection
+#                                     `user=` (a wrong value -> "role does not
+#                                     exist" at runtime)
+#   - password: <operator-written; rotate via OpenBao, incl. post-cutover>
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: control-db-migrator-vso
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/db-migrator
+  refreshAfter: 60s
+  destination:
+    name: control-db-migrator
+    create: true
+    type: kubernetes.io/basic-auth
+    labels:
+      cnpg.io/reload: "true"
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        username:
+          text: '{{ .Secrets.username }}'
+        password:
+          text: '{{ .Secrets.password }}'
+
+---
+# control_reader login password → CNPG managed role `control_reader` AND the
+# backend's PGREADER_PASSWORD (09-backend-deployment). Same Secret, consumed
+# two ways. OpenBao path: secret/data/apps/control/db-reader
+#   - username: control_reader
+#   - password: <operator-written>
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: control-db-reader-vso
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/db-reader
+  refreshAfter: 60s
+  destination:
+    name: control-db-reader
+    create: true
+    type: kubernetes.io/basic-auth
+    labels:
+      cnpg.io/reload: "true"
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        username:
+          text: '{{ .Secrets.username }}'
+        password:
+          text: '{{ .Secrets.password }}'

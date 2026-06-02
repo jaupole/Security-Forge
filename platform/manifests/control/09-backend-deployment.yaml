@@ -67,7 +67,7 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          image: ghcr.io/jaupole/control@sha256:bb3f8fa5c249f8fe271501c5ac5e7e3007bb1979186dccaef092d3045b1bbafb
+          image: ghcr.io/jaupole/control@sha256:a2e5f9b13c4bd6a0cf8128a384e4291ea7c94c16f210a7e2495040a59d1fa12e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
@@ -122,6 +122,11 @@ spec:
             - { name: PGUSER, valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
             - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+            # Cross-org READ role for withExemptRead (FORCE-RLS, audit EC-003).
+            # optional:true so the pod boots pre-cutover when control-db-reader
+            # doesn't exist yet — the db-exempt pool is lazy and tolerates unset.
+            - { name: PGREADER_USER,     valueFrom: { secretKeyRef: { name: control-db-reader, key: username, optional: true } } }
+            - { name: PGREADER_PASSWORD, valueFrom: { secretKeyRef: { name: control-db-reader, key: password, optional: true } } }
             # OTLP exporter (Wazuh / Tempo collection point).
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: control }
