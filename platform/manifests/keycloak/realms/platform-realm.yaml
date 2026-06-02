@@ -91,30 +91,29 @@ spec:
     maxDeltaTimeSeconds: 43200
     failureFactor: 10
 
-    # ─── Password policy ───────────────────────────────────────────
-    # length(14)                    Per NIST SP 800-63B Vol B §5.1.1.2.
-    # digits/lower/upper/special    Composition rules (defense-in-depth
-    #                               vs basic dictionary attacks).
-    # notUsername / notEmail        Block trivially-derivable choices.
-    # passwordHistory(5)            User can't recycle the last 5.
-    # forceExpiredPasswordChange    Conservative; modern NIST guidance
-    #   (365)                       discourages forced rotation but
-    #                               compliance frameworks still want it.
-    # passwordBlacklist(...)        Rejects any password in the HIBP
-    #                               top-100K compromised list. The list
-    #                               is mounted into the pod via the
-    #                               keycloak-password-blacklist
-    #                               ConfigMap at
-    #                               /opt/keycloak/data/password-blacklists.
-    #                               Source: SecLists Pwdb_top-100000.txt.
-    #                               Closes checklist-auditor rule 4
-    #                               (2026-05-14).
+    # ─── Password policy (NIST SP 800-63B / CLAUDE.md rule 3) ──────
+    # length(14)                    ≥12 floor per rule 3; 14 for margin.
+    # notUsername / notEmail        Block trivially-derivable choices
+    #                               (identifier reuse) — NOT a
+    #                               composition/character-class rule.
+    # passwordBlacklist(...)        Rejects any password in the top-100K
+    #                               breached list (rule 4). File baked
+    #                               into the custom image at
+    #                               /opt/keycloak/data/password-blacklists
+    #                               (SecLists Pwdb_top-100000.txt). Build
+    #                               invariant: 03a-...-hardening.sh:87.
     #
-    # NOTE: KeycloakRealmImport is one-shot — this block documents what
-    # is currently live, applied via kcadm. To replay onto a fresh
-    # realm, copy the passwordPolicy value into the Keycloak admin or
-    # use kcadm with `kcadm.sh update realms/platform -s passwordPolicy=...`.
-    passwordPolicy: "length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"
+    # Length + breach-check ONLY, by deliberate design. Character-class
+    # composition (digits/upper/lower/special), forced rotation
+    # (forceExpiredPasswordChange) and history(5) were REMOVED 2026-06-02:
+    # rule 3 / the project hard-NOs forbid them, and the evidence base
+    # (NIST 800-63B, OWASP) shows they weaken security (predictable
+    # patterns, reuse). Do NOT re-add without a written CLAUDE.md exception.
+    #
+    # NOTE: KeycloakRealmImport is one-shot — this documents the live
+    # value, applied via kcadm. Replay: kcadm.sh update realms/platform
+    # -s passwordPolicy=...  (also set in 03a-keycloak-realm-hardening.sh).
+    passwordPolicy: "length(14) and notUsername(undefined) and notEmail(undefined) and passwordBlacklist(Pwdb_top-100000.txt)"
 
     # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
     # SHA-1 chosen for broad authenticator-app compatibility (1Password,

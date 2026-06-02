@@ -76,7 +76,14 @@ KEYCLOAK_NS="keycloak"
 
 # Password policy is identical across realms — both apply the same
 # baseline. Defined once here, referenced inside harden_realm.
-PASSWORD_POLICY='length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)'
+#
+# NIST SP 800-63B / CLAUDE.md rule 3: length + breach-check ONLY.
+# Character-class composition (digits/upper/lower/special), forced
+# rotation (forceExpiredPasswordChange) and history(5) were REMOVED
+# 2026-06-02 — the project hard-NOs forbid them and the evidence base
+# (NIST 800-63B, OWASP) shows they weaken security (predictable
+# patterns, reuse). Do not re-add without a written CLAUDE.md exception.
+PASSWORD_POLICY='length(14) and notUsername(undefined) and notEmail(undefined) and passwordBlacklist(Pwdb_top-100000.txt)'
 
 # Remember-me lifetimes are identical across realms (8 h idle / 24 h
 # absolute — production session hygiene per 2026-05-19 hardening).

@@ -206,13 +206,14 @@ spec:
     maxDeltaTimeSeconds: 43200
     failureFactor: 10
 
-    # ─── Password policy ───────────────────────────────────────────
-    # Same policy as platform realm. The HIBP blacklist
-    # (Pwdb_top-100000.txt) is baked into the custom Keycloak image —
-    # if a fresh cluster comes up on the stock upstream image, this
-    # password policy will throw at evaluation time. The image-build
-    # invariant is checked at 03a-keycloak-realm-hardening.sh:87.
-    passwordPolicy: "length(14) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5) and forceExpiredPasswordChange(365) and passwordBlacklist(Pwdb_top-100000.txt)"
+    # ─── Password policy (NIST SP 800-63B / CLAUDE.md rule 3) ──────
+    # Same NIST-aligned policy as platform realm: length + breach-check
+    # ONLY (see platform-realm.yaml for full rationale). Composition,
+    # forced rotation and history(5) were removed 2026-06-02 per rule 3.
+    # The breach blacklist (Pwdb_top-100000.txt) is baked into the custom
+    # Keycloak image — a fresh cluster on the stock upstream image would
+    # throw at evaluation time. Build invariant: 03a-...-hardening.sh:87.
+    passwordPolicy: "length(14) and notUsername(undefined) and notEmail(undefined) and passwordBlacklist(Pwdb_top-100000.txt)"
 
     # ─── OTP policy (TOTP, RFC 6238) ───────────────────────────────
     # Same TOTP config as platform realm. Used by the auth-otp-form
