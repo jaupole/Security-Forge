@@ -257,12 +257,19 @@ spec:
 
 ---
 # control_migrator login password → CNPG managed role `control_migrator`
-# (02-cnpg-cluster.yaml). basic-auth Secret (username+password) + cnpg.io/reload
-# so CNPG reloads on rotation. Consumed by the migration Job (08-migration-job).
+# (02-cnpg-cluster.yaml). kubernetes.io/basic-auth Secret (keys: username +
+# password) + cnpg.io/reload so CNPG reloads on rotation.
+# KEY COUPLING — the rendered keys `username`/`password` are consumed by CNPG
+# managed.roles.passwordSecret (02) AND the migration Job PGUSER/PGPASSWORD (08);
+# the reader Secret below adds the backend PGREADER_* (09). Do not rename the
+# keys or change the Secret type without auditing every consumer.
 # OpenBao path: secret/data/apps/control/db-migrator  (covered by control.hcl's
 #   secret/data/apps/control/+ grant — no policy change)
-#   - username: control_migrator
-#   - password: <operator-written; rotate via OpenBao>
+#   - username: control_migrator   ← MUST be the exact Postgres role name; the
+#                                     value is used verbatim as the connection
+#                                     `user=` (a wrong value -> "role does not
+#                                     exist" at runtime)
+#   - password: <operator-written; rotate via OpenBao, incl. post-cutover>
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
 metadata:

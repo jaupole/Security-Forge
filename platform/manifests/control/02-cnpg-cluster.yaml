@@ -91,9 +91,19 @@ spec:
       # Migration role. LOGIN so the migration Job connects as it. Member of
       # `control` (CNPG app role) AND control_owner, so migrate.ts can
       # `SET ROLE control_owner` and own objects for 061+. NOBYPASSRLS.
-      # NOTE: migration 060 itself (REASSIGN OWNED BY postgres) needs the
-      # in-pod superuser and is run by hand once during the cutover window;
-      # the Job (this role) applies 061+.
+      # NOTE: migration 060 itself needs the in-pod SUPERUSER (it does
+      # ALTER ROLE ... NOBYPASSRLS + ALTER ... OWNER TO control_owner + FORCE
+      # ROW LEVEL SECURITY) and is run by hand once during the cutover window;
+      # the Job (this role) applies 061+. migrate.ts fail-fast-aborts if 060 is
+      # still pending and the effective role is not superuser (cutover §4).
+      # SECURITY: this is a HIGH-VALUE standing credential. Via control_owner it
+      # can run DDL on the RLS tables (DISABLE RLS / DROP POLICY) — i.e. defeat
+      # tenant isolation — and via `control` it can DML the non-RLS operational
+      # tables. That power is inherent to a role that applies RLS-policy
+      # migrations; mitigate operationally: the OpenBao password is rotated
+      # post-cutover and on schedule, the Secret is read only by the migration
+      # Job, and every use is the auditable Job artefact. Do NOT reuse it as a
+      # runtime/app credential.
       - name: control_migrator
         ensure: present
         comment: "Runs DB migrations; member of control + control_owner; LOGIN for the migration Job"

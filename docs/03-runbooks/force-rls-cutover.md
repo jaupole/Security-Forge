@@ -45,9 +45,24 @@ All other RLS tables are `withTx`-only.
 
 ## 2. Pre-cutover checklist
 
-- [ ] OpenBao holds `secret/data/apps/control/db-migrator` and `.../db-reader`
-      (username/password). Covered by the existing `control.hcl`
-      `secret/data/apps/control/+` grant — no policy change.
+- [ ] OpenBao holds `secret/data/apps/control/db-migrator` and `.../db-reader`,
+      each with `username` + `password` fields. Covered by the existing
+      `control.hcl` `secret/data/apps/control/+` grant — no policy change.
+      **The `username` field VALUE must be the exact Postgres role name**:
+      `control_migrator` and `control_reader` respectively (NOT the K8s Secret
+      name). VSO renders it verbatim into the Secret's `username` key, which the
+      backend passes straight to the connection `user=`; a wrong value fails at
+      runtime with `role "<x>" does not exist` (the migrator fails the Job; the
+      reader fails the first `withExemptRead`). If a path is missing, bootstrap
+      it BEFORE applying #49 — e.g. `bao kv put secret/apps/control/db-migrator
+      username=control_migrator password=<rand32>` — or the Job fails to mount
+      `PGUSER/PGPASSWORD` ("couldn't find secret control-db-migrator").
+- [ ] Secret-key coupling is intact: the VSO `VaultStaticSecret`s render
+      `kubernetes.io/basic-auth` Secrets with keys `username`/`password`, which
+      are consumed in FOUR places that must stay in lockstep — CNPG
+      `managed.roles.passwordSecret` (02), the Job `PGUSER/PGPASSWORD` (08), and
+      the backend `PGREADER_USER/PGREADER_PASSWORD` (09). Renaming a key or
+      changing the Secret type breaks all consumers silently.
 - [ ] Security-Forge PR #49 ready: CNPG `managed.roles` (control_owner /
       control_migrator / control_reader), the two VSO `VaultStaticSecret`
       bindings (`control-db-migrator`, `control-db-reader`), the migration Job,
@@ -139,26 +154,38 @@ Ordering is constrained: `060` must land **before** the new image starts
 (`assertForceRlsPosture` is fail-closed), and the old image degrades once
 `060` lands. Keep steps 2-4 tight.
 
-1. **Apply Security-Forge #49** (roles, VSO secrets, Job, deployment env).
-   Confirm `control_owner`/`control_migrator`/`control_reader` exist on the
-   live `control-db` cluster and the `control-db-migrator`/`control-db-reader`
-   K8s Secrets are synced by VSO.
+1. **Apply the roles / VSO / deployment parts of #49 — NOT the Job yet.**
+   `kubectl apply` the cluster (`managed.roles`), `04-vso-bindings.yaml`, and
+   `09-backend-deployment.yaml`. Confirm `control_owner`/`control_migrator`/
+   `control_reader` exist on `control-db`, and the `control-db-migrator`/
+   `control-db-reader` K8s Secrets are rendered by VSO with `username` +
+   `password` keys (`kubectl get secret -n control control-db-migrator
+   control-db-reader -o jsonpath='{.data}'`). **Job immutability:** a k8s Job's
+   `spec.template` is immutable, so if a `control-db-migrate` Job already exists
+   `kubectl apply` of the new template is REJECTED ("field is immutable") and
+   silently keeps the old env. Delete it first:
+   `kubectl delete job -n control control-db-migrate --ignore-not-found`.
+   Do NOT create the new Job yet — if it runs before `060`, migrate.ts aborts
+   ("apply 060 by hand first"); it cannot run `060` as `control_migrator`.
 2. **Apply `060` by hand as the in-pod superuser.** `060` needs superuser
-   (ALTER ROLE / REASSIGN OWNED / ALTER OWNER / FORCE); `enableSuperuserAccess`
-   is `false`, so use a local-socket psql in the primary pod:
+   (`ALTER ROLE … NOBYPASSRLS` / `ALTER … OWNER` / `FORCE`); `enableSuperuserAccess`
+   is `false`, so use a local-socket psql in the primary pod. **The DB name is
+   `control`** (not `control_db`):
    ```
-   kubectl exec -n control -c postgres control-db-1 -- \
-     psql -U postgres -d control_db -v ON_ERROR_STOP=1 -f - < migrations/060_force_rls_and_ownership.sql
+   kubectl exec -i -n control control-db-1 -c postgres -- \
+     psql -U postgres -d control -v ON_ERROR_STOP=1 < migrations/060_force_rls_and_ownership.sql
    ```
-   (Copy the file in first, or pipe as shown.) `ON_ERROR_STOP=1` aborts on the
-   first error — if it does, STOP and go to §6.
-3. **Run the migration Job** (`control-db-migrate`) — it connects as
-   `control_migrator` and applies `061` (as `control_owner`). Verify it
-   completes; confirm `schema_migrations` has `060` and `061`.
-4. **Roll the new backend image** (the deployment from #49, with `PGREADER_*`
-   wired). On boot it runs `assertForceRlsPosture`:
-   - PASS → it serves via `withTx`/`withExemptRead`.
-   - FAIL (`process.exit(1)`, CrashLoop) → posture is wrong; go to §6.
+   `ON_ERROR_STOP=1` aborts on the first error — if it does, STOP and go to §6.
+3. **Create the migration Job** (`kubectl apply -f 08-migration-job.yaml`). It
+   connects as `control_migrator` and applies `061` (as `control_owner`). With
+   `060` already applied, migrate.ts's cutover guard passes; were `060` missing
+   it would abort with a clear message. Verify the Job exits 0; confirm
+   `schema_migrations` has `060` and `061`.
+4. **Roll the new backend image** (deployment from #49, with `PGREADER_*` wired).
+   On boot it runs `assertForceRlsPosture` (FORCE on the 21 + control non-owner)
+   and, post-cutover, asserts the `control_reader` path is reachable — so a
+   missing/misnamed `control-db-reader` fails at BOOT, not at first cross-org
+   read. PASS → serves; FAIL (`process.exit(1)`, CrashLoop) → go to §6.
 
 ---
 
@@ -199,6 +226,13 @@ failure leaves that file's changes rolled back — but a *partial sequence*
 - The runtime role `control` is now bound by RLS. Every code path that reads a
   tenant table does so through `withTx({ userId, orgId })` (org-scoped) or
   `withExemptRead` (cross-org/public, control_reader).
+- **Rotate `control_migrator` once the cutover Job has succeeded.** It is a
+  high-value standing credential — via `control_owner` it can DDL the RLS tables
+  (disable RLS / drop policies). Regenerate its OpenBao password
+  (`bao kv put secret/apps/control/db-migrator username=control_migrator
+  password=<rand32>`); VSO re-renders and CNPG reloads it within the refresh
+  window. Keep it on the standard quarterly rotation thereafter; it is read only
+  by the migration Job, never by the runtime app.
 - **Maintenance key scripts** (`rotate-org-transit-key.ts`,
   `rewrap-org-vendor-keys.ts`) run per-org under `withTx({ orgId })` as the
   normal `control` role — deliberately NOT a BYPASSRLS/superuser Job, so the

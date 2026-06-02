@@ -98,11 +98,12 @@ spec:
             - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
             - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
             # Connect as control_migrator (member of control + control_owner) so
-            # migrate.ts can `SET ROLE control_owner` for 060/061 ownership under
+            # migrate.ts can `SET ROLE control_owner` for 061+ ownership under
             # FORCE RLS. host/port/dbname stay on control-db-app (identical).
-            # (Migration 060's REASSIGN OWNED BY postgres needs the in-pod
-            # superuser and is run by hand once in the cutover window; the Job
-            # applies 061+ as control_migrator.)
+            # Migration 060 needs the in-pod SUPERUSER (ALTER ROLE/OWNER + FORCE)
+            # and is run by hand once in the cutover window BEFORE this Job; the
+            # Job applies 061+ as control_migrator. migrate.ts aborts fast if 060
+            # is still pending and the role is not superuser (cutover runbook §4).
             - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-migrator, key: username } } }
             - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-migrator, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
