@@ -53,6 +53,10 @@ APP_ROLES=(
   "control-vso|control|control-vso|vso|3600|86400"
   "member-hub-vso|member-hub|member-hub-vso|vso|3600|86400"
   "member-hub-audit-signer|member-hub|member-hub-audit-signer|audit-signer|900|1800"
+  # keycloak-ghcr-vso: lets the keycloak ns VSO binding render ghcr-pull-secret
+  # (private image pull cred) via the scoped keycloak-ghcr policy. See
+  # manifests/openbao/policies/keycloak-ghcr.hcl + manifests/keycloak/03b-ghcr-vso-binding.yaml.
+  "keycloak-ghcr-vso|keycloak|keycloak-ghcr-vso|keycloak-ghcr|3600|86400"
 )
 
 echo ">>> Creating app-level kubernetes-auth roles"

@@ -1,0 +1,71 @@
+# VSO binding for the ghcr.io image-pull credential in the keycloak ns.
+#
+# Renders OpenBao secret/data/apps/control/ghcr-pull into a K8s
+# dockerconfigjson Secret `ghcr-pull-secret` that the Keycloak Operator's
+# StatefulSet uses (via the keycloak SA's imagePullSecrets — the operator
+# strips podTemplate imagePullSecrets, see 04-keycloak-cr.yaml) to pull the
+# private custom image ghcr.io/jaupole/keycloak.
+#
+# This replaces a stale hand-created pull Secret (a dead PAT, hash 4f8720ef)
+# that caused the 26.6.2 deploy to ErrImagePull. VSO now sources the SAME
+# working token control/member-hub/kyverno use and auto-refreshes it
+# (refreshAfter 5m) so a future PAT rotation can't silently break pulls.
+#
+# Auth: SA keycloak-ghcr-vso -> VaultAuth (k8s-auth role keycloak-ghcr-vso)
+# -> scoped OpenBao policy keycloak-ghcr (reads ONLY the ghcr-pull key, not
+# the broad apps/control/+ that the shared `vso` policy grants). The role is
+# created in components/05j-app-vso-roles.sh; the policy in
+# manifests/openbao/policies/keycloak-ghcr.hcl.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-ghcr-vso
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: keycloak-ghcr-vso
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: keycloak-ghcr-vso
+    serviceAccount: keycloak-ghcr-vso
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+spec:
+  vaultAuthRef: keycloak-ghcr-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/ghcr-pull
+  refreshAfter: 5m
+  hmacSecretData: true
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    overwrite: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        .dockerconfigjson:
+          text: '{"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}'
