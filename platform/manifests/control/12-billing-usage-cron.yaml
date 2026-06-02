@@ -9,6 +9,17 @@
 # The Pod runs against the same image + env as the API + migration
 # Job (same DATABASE_URL, same Transit/OpenBao bindings, same
 # imagePullSecrets), with the CLI entrypoint flipped.
+#
+# CROSS-ORG READ under FORCE RLS (EC-003): this job's `countMembers()`
+# reads `organization_memberships` across ALL active-subscription orgs in
+# one query, so it must run as `control_reader` via withExemptRead — the
+# plain `control` role (NOBYPASSRLS, no app.org_id GUC) sees 0 rows under
+# FORCE RLS and would silently push usage_record{quantity:0} (Security-Forge
+# #56). withExemptRead fetches control_reader creds from OpenBao at runtime
+# (ADR-0013) using a SPIFFE JWT-SVID — so this pod mirrors the backend's
+# spiffe-helper + OpenBao wiring. The helper runs as a NATIVE SIDECAR
+# (initContainer + restartPolicy:Always) so it is SIGTERM'd when `sync`
+# exits and the Job still reaches Completed (a daemon sidecar would hang it).
 
 ---
 apiVersion: batch/v1
@@ -40,6 +51,10 @@ spec:
             app.kubernetes.io/name: control
             secforge.platform/component: control
             secforge.platform/role: billing-usage-sync
+            # Namespace-scoped ClusterSPIFFEID (spire/cluster-spiffe-ids.yaml)
+            # already issues every control-ns pod an SVID; the label is
+            # belt-and-suspenders parity with the backend Deployment.
+            spiffe.io/spire-managed-identity: "true"
         spec:
           restartPolicy: Never
           serviceAccountName: control
@@ -54,6 +69,36 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           initContainers:
+            # spiffe-helper as a NATIVE SIDECAR (restartPolicy: Always).
+            # Fetches a JWT-SVID via the SPIFFE workload API and writes it to
+            # the shared spiffe-jwt volume; withExemptRead exchanges it for an
+            # OpenBao token (role: control) to read control_reader's DB creds.
+            # restartPolicy:Always = the kubelet terminates it once `sync`
+            # exits, so the Job reaches Completed (k8s ≥1.29 native sidecars;
+            # cluster is v1.31). Reuses the backend's control-spiffe-helper-config.
+            - name: spiffe-helper
+              image: ghcr.io/spiffe/spiffe-helper:0.11.0@sha256:1c92e5998ad3621e3323f25aabe40f5a88ba730ee0edb248aa8c943ca504e8a2
+              imagePullPolicy: IfNotPresent
+              restartPolicy: Always
+              args:
+                - "-config"
+                - "/etc/spiffe-helper/helper.conf"
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits:   { cpu: 50m, memory: 64Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - { name: spiffe-helper-config, mountPath: /etc/spiffe-helper, readOnly: true }
+                - { name: spiffe-jwt, mountPath: /run/spiffe }
+                - { name: spiffe-workload-api, mountPath: /spiffe-workload-api, readOnly: true }
             - name: wait-for-db
               image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
               imagePullPolicy: IfNotPresent
@@ -77,7 +122,7 @@ spec:
               # Digest-pinned. Same image as the backend Deployment.
               # When the operator bumps `09-backend-deployment.yaml`
               # they should bump this manifest too (same SHA).
-              image: ghcr.io/jaupole/control@sha256:d34b3b700cfe30901dc8ed5d2c7de6b664eb8c9eafd8dc2a4bd3c9112bb01c15
+              image: ghcr.io/jaupole/control@sha256:fae6a5f89a055731926dc7ffef6e97a46287e2cdc34f20018716d0734e0091c9
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "billing:sync-usage"]
               env:
@@ -95,6 +140,17 @@ spec:
                 - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+                # Cross-org exempt-read (control_reader) via OpenBao at runtime.
+                # config.ts defaults these to the same values, but they are set
+                # explicitly for parity with 09-backend-deployment.yaml. The
+                # OpenBao client verifies TLS against the mounted internal CA;
+                # the JWT-SVID is written by the spiffe-helper sidecar above.
+                - { name: NODE_EXTRA_CA_CERTS,   value: "/etc/secforge/openbao-ca.crt" }
+                - { name: OPENBAO_ADDR,          value: "https://openbao.openbao.svc.cluster.local:8200" }
+                - { name: OPENBAO_CA_CERT_PATH,  value: "/etc/secforge/openbao-ca.crt" }
+                - { name: OPENBAO_JWT_AUTH_ROLE, value: control }
+                - { name: TRANSIT_KEYNAME,       value: pii-encryption }
+                - { name: SPIFFE_JWT_SVID_PATH,  value: "/run/spiffe/jwt-svid.token" }
               envFrom:
                 - secretRef:
                     name: control-app-secrets
@@ -105,3 +161,29 @@ spec:
               resources:
                 requests: { cpu: 50m, memory: 128Mi }
                 limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                # OpenBao internal CA (HTTPS verification for the reader-cred
+                # fetch) + the JWT-SVID the spiffe-helper sidecar writes.
+                - { name: openbao-ca, mountPath: /etc/secforge, readOnly: true }
+                - { name: spiffe-jwt, mountPath: /run/spiffe, readOnly: true }
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - key: ca.crt
+                    path: openbao-ca.crt
+            - name: spiffe-jwt
+              emptyDir:
+                sizeLimit: 1Mi
+                medium: Memory
+            - name: spiffe-helper-config
+              configMap:
+                name: control-spiffe-helper-config
+                items:
+                  - key: helper.conf
+                    path: helper.conf
+            - name: spiffe-workload-api
+              csi:
+                driver: csi.spiffe.io
+                readOnly: true
