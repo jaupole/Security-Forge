@@ -4,6 +4,13 @@
 > "RLS enabled, owner bypasses" into "RLS enabled **and FORCED**, runtime role
 > cannot bypass tenant isolation". Last validated: **2026-06-01** (PG 17.5 copy,
 > prod-accurate role model, 23/23 checks green).
+>
+> **DONE — executed on prod 2026-06-02.** FORCE active on all 21 tables; `control`
+> non-super/non-bypass/owns-none; migrations 060/061/062 applied; cutover image
+> serving; functional smoke green. Attempt 1 rolled back cleanly on a Kyverno
+> admission block (see §7 "What actually happened"); attempt 2 succeeded. This
+> runbook is retained for a fresh-environment rebuild and as the procedure
+> `db-exempt.ts` still points operators at.
 
 This is the procedure `src/api/db-exempt.ts` points at when the `control_reader`
 OpenBao fetch can't resolve (pre-cutover). Read it end-to-end before the window.
@@ -248,10 +255,40 @@ failure leaves that file's changes rolled back — but a *partial sequence*
   add the `061` grant + `exempt_read` policy; re-run §3.
 - **Migration 062+ coordination** (see the guide in `src/db/migrate.ts`): files
   run as `control_owner`, which owns ONLY the security-critical set. A migration
-  that must write or own a control-owned object (a non-RLS operational table, or
-  a GRANT on one) cannot do it as `control_owner` — fold that into a
-  superuser-applied step (the `060` pattern), not the `control_owner` loop. The
-  planned Control migration 062 (website-designer work) must follow this.
+  that must write or own a control-owned object cannot do it as `control_owner`.
+  Two sub-cases, two fixes:
+  - **DDL on a control-owned object** (CREATE/ALTER/DROP) → fold into a
+    superuser-applied step (the `060` pattern), not the `control_owner` loop.
+  - **DML on a control-owned non-RLS catalog table** (INSERT/UPDATE seeds) → the
+    table needs a `control_owner` DML grant. `060` now grants this on the catalog
+    tables it knows about (`apps`, `app_feature_surfaces`); a NEW catalog table
+    seeded by a `control_owner`-run migration needs its grant added to `060`.
+
+### What actually happened (2026-06-02 cutover)
+
+Recorded so the next operator (or a fresh-env rebuild) inherits the gotchas the
+dry runs missed:
+
+1. **`*.down.sql` ran as a forward migration.** `migrate.ts` matched any
+   `*.sql`, and `060...down.sql` sorts before `060....sql`, so the Job tried to
+   apply the rollback first ("must be able to SET ROLE control"). The §3a harness
+   used a corrected filter and never saw it. Fixed: `migrate.ts` now excludes
+   `.down.sql` (ecosystem-control #32). **Lesson: validate with the SAME file
+   discovery the Job uses, not a cleaned-up copy.**
+2. **Kyverno blocked the deploy** on `PGREADER_PASSWORD` (matches
+   `(^|_)PASSWORD($|_)`; `PGPASSWORD` does not — no underscore boundary). Attempt
+   1 rolled back here (061.down + 060.down, clean). Fixed the right way per
+   ADR-0013: `control_reader` creds are now **fetched from OpenBao at runtime**
+   (`db-exempt.ts` → `secret/data/apps/control/db-reader`; `control.hcl` already
+   grants the app role read — no new OpenBao entry needed), so there is no
+   `_PASSWORD` env at all. **Lesson: `kubectl apply --dry-run=server` to check
+   admission BEFORE the window.**
+3. **Migration 062 (`app_feature_surfaces` INSERT) failed** "permission denied"
+   as `control_owner` — exactly the catalog-DML case above. Unblocked live with
+   the grant; reconciled into `060` (ecosystem-control #33) so source matches.
+4. **New pod CrashLooped twice at boot** — the OpenBao reader fetch raced the
+   spiffe-helper sidecar writing the JWT-SVID. Self-healed; hardened with
+   retry-with-backoff in `assertExemptReaderReachable` (ecosystem-control #33).
 
 ---
 
