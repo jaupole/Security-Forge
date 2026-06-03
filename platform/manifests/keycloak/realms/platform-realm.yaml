@@ -705,21 +705,19 @@ spec:
           - https://admin.${DOMAIN}/auth/callback
           - https://admin.${DOMAIN}/
           - https://control.${DOMAIN}/auth/callback
-          - http://portal.localhost:5173/auth/callback
           # Dedicated silent-renew iframe target — see Portal
           # `silent-callback.html` + `src/silent-callback.ts`. Must
           # be registered separately from the SPA's main /auth/callback
           # because Keycloak validates redirect_uri exactly.
           - https://admin.${DOMAIN}/silent-callback.html
           - https://control.${DOMAIN}/silent-callback.html
-          - http://portal.localhost:5173/silent-callback.html
         webOrigins:
           - "+"
         attributes:
           # PKCE S256 mandatory — public clients with no client_secret
           # need PKCE to be safe.
           pkce.code.challenge.method: S256
-          post.logout.redirect.uris: https://admin.${DOMAIN}/##https://control.${DOMAIN}/##http://portal.localhost:5173
+          post.logout.redirect.uris: https://admin.${DOMAIN}/##https://control.${DOMAIN}/
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"
@@ -757,12 +755,10 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - https://members.${DOMAIN}/*
-          - http://member-hub.localhost:5173/auth/callback
         webOrigins:
           - https://members.${DOMAIN}
-          - http://member-hub.localhost:5173
         attributes:
-          post.logout.redirect.uris: https://members.${DOMAIN}/*##http://member-hub.localhost:5173
+          post.logout.redirect.uris: https://members.${DOMAIN}/*
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"
