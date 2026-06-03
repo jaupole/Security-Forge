@@ -26,6 +26,8 @@
     "ghcr.io/jaupole/control",
     "ghcr.io/jaupole/portal",
     "ghcr.io/jaupole/keycloak",
+    "ghcr.io/jaupole/member-hub",
+    "ghcr.io/jaupole/proposal-forge",
     "public.ecr.aws/curl/curl",
     "ghcr.io/authzed/spicedb-operator"
   ],
