@@ -163,12 +163,24 @@ kubectl exec -n "$NS_WAZUH" "$MGR_POD" -- /bin/bash -c \
     </mitre>
   </rule>
 
-  <!-- CRITICAL CVE in a public-facing namespace — highest priority.
-       NOTE: use | alternation directly; (group) syntax causes error 5107. -->
+  <!-- CRITICAL CVE in a public-facing namespace AND a CVSS base score in the
+       critical band (>=9.0) — highest priority, level 15.
+       NOTE: use | alternation directly; (group) syntax causes error 5107.
+
+       The CVSS gate (added 2026-06-03) stops a vendor/scanner "CRITICAL" label
+       that carries a merely medium CVSS from paging at level 15. Concretely it
+       declassifies CVE-2026-31789 (openssl, CVSS 5.8, heap overflow only on
+       32-bit platforms — not reachable on this amd64 node) which was firing 12
+       level-15 alerts/day off the EOL ingress-nginx image. Such findings fall
+       through to 100202 (level 13, still alerts) instead of paging at 15.
+       cvss_score is the numeric .score the reporter emits; jq renders 9.0 as
+       "9" and 10.0 as "10", hence the optional decimal. pcre2 so \. and the
+       group are real PCRE (the default OS_Regex treats "." as a literal). -->
   <rule id="100203" level="15">
     <if_sid>100202</if_sid>
     <field name="namespace">^keycloak$|^ingress-nginx$</field>
-    <description>Trivy: CRITICAL CVE $(cve_id) in PUBLIC namespace $(namespace) - immediate remediation required</description>
+    <field name="cvss_score" type="pcre2">^(9(\.\d+)?|10(\.\d+)?)$</field>
+    <description>Trivy: CRITICAL CVE $(cve_id) (CVSS $(cvss_score)) in PUBLIC namespace $(namespace) - immediate remediation required</description>
     <group>trivy,cve_critical,public_facing,</group>
     <mitre>
       <id>T1190</id>
