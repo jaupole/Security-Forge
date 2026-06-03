@@ -25,6 +25,12 @@ metadata:
     policies.kyverno.io/category: "Supply Chain"
     policies.kyverno.io/severity: high
     policies.kyverno.io/subject: Pod
+    # Validate at Pod admission only — do NOT autogenerate Deployment/DaemonSet/etc.
+    # rules. The istio/gateway chart ships `image: auto` in its Deployment template
+    # (istiod rewrites it to the digest-pinned proxy at POD creation), so the check
+    # must run on the injected pod, not the template. Enforcement is intact: a
+    # disallowed image still blocks the pod. See ADR-0032.
+    pod-policies.kyverno.io/autogen-controllers: "none"
 spec:
   background: true
   validationFailureAction: Enforce
@@ -46,16 +52,11 @@ spec:
           registry+org prefixes:
           ghcr.io/{authzed,cloudnative-pg,spiffe,secforge,jaupole,jkroepke,topolvm},
           quay.io/{brancz,jetstack,keycloak,kiwigrid,minio,prometheus,prometheus-operator},
-          reg.kyverno.io/*,
-          registry.k8s.io/*,
-          mirror.gcr.io/*,
-          rancher/*,
-          velero/*,
-          wazuh/*,
-          otel/*,
-          public.ecr.aws/*,
-          hashicorp/*,
-          localhost/secforge/*.
+          reg.kyverno.io/*, registry.k8s.io/*, mirror.gcr.io/*, public.ecr.aws/*,
+          rancher/*, velero/* (+docker.io/velero/*), wazuh/*, otel/*, hashicorp/*,
+          localhost/secforge/*, cgr.dev/chainguard/*, alpine/* (+docker.io/alpine/*),
+          library/* (+docker.io/library/*),
+          docker.io/{istio,grafana,openbao,kiwigrid,rclone,nginxinc}/*.
           To approve a new registry, edit
           platform/manifests/kyverno/policies/08-restrict-image-registries.yaml.
         pattern:

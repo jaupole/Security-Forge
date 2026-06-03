@@ -80,6 +80,7 @@ spec:
                 - wazuh-agent
                 - velero
                 - ingress-nginx
+                - istio-ingress   # Istio ingress gateway binds host :80/:443 (replaces ingress-nginx; drop ingress-nginx at decommission — ADR-0032)
                 - cert-manager
                 - image-builds
                 - topolvm-system

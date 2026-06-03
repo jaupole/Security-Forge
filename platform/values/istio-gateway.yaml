@@ -1,0 +1,62 @@
+# istio/gateway chart values — the Istio ingress gateway that replaces
+# ingress-nginx (EOL). Release: istio-ingress, ns: istio-ingress. Chart pinned
+# to the istiod version (1.29.2) by 06a-istio-gateway.sh.
+#
+# Single-node bare metal: the Service stays ClusterIP; the host's listening
+# ports are bound by a hostPort strategic-merge patch in 06a-istio-gateway.sh
+# (the chart exposes no hostPort value). We use hostPort — NOT hostNetwork —
+# to preserve the client source IP for the AuthorizationPolicy allowlists and
+# to avoid the hostNetwork hairpin bug that previously forced ingress-nginx
+# onto hostPort. Pre-cutover the host binds :8080/:8443; cutover flips to
+# :80/:443.
+#
+# The Istio `Gateway` resource selects this proxy via `istio: istio-ingress`
+# (label set from the release name by the chart).
+
+replicaCount: 1
+
+# Pin the istiod-injected proxy image by DIGEST (matches the running mesh
+# proxyv2 1.29.2). Without this the gateway injects `proxyv2:1.29.2` (a tag),
+# tripping require-image-digest; the digest also makes the injected pod a
+# concrete docker.io/istio/* image so restrict-image-registries passes at the
+# pod level (its Kyverno autogen is set to pod-only so the chart's `image:auto`
+# Deployment template is not the check point). See ADR-0032.
+podAnnotations:
+  sidecar.istio.io/proxyImage: "docker.io/istio/proxyv2:1.29.2@sha256:69ca4585993f4057861954f18be88df8268b713d114e7036bf9b185458c7a2c1"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: status-port
+      port: 15021
+      targetPort: 15021
+    - name: http2
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
+
+autoscaling:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# Drop every capability except NET_BIND_SERVICE (needed to bind :80/:443 at
+# cutover); run as the non-root istio-proxy uid.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1337
+  runAsGroup: 1337
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+    add: ["NET_BIND_SERVICE"]

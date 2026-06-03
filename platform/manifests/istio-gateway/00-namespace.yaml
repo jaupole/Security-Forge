@@ -1,0 +1,15 @@
+# istio-ingress — dedicated namespace for the Istio ingress gateway that
+# replaces ingress-nginx (EOL 2026-03-24). See ADR-0032.
+#
+# NOT labelled into ambient: a gateway is the mesh edge and must not be
+# ztunnel-captured. The gateway's Envoy reaches ambient backends over HBONE
+# mTLS natively (because the BACKEND namespaces are ambient-enrolled), so the
+# gateway→backend hop is still mTLS without redirecting the gateway itself.
+# The gateway proxy is a standard Deployment from the istio/gateway Helm chart
+# (release: istio-ingress).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway

@@ -1,0 +1,28 @@
+# Allow the Istio ingress gateway (ns istio-ingress) to reach istiod for its
+# workload cert (15012 CA) and config (15012/15010 XDS). istio-system runs
+# default-deny-ingress and its allow-mesh-xds-to-istiod only permits the
+# istio-system namespace itself — the gateway lives in its own namespace, so
+# without this it cannot obtain a cert/config and never goes Ready (CSR sign
+# fails with "connection refused" to istiod:15012). Layer-A netpol, mirrors
+# allow-mesh-xds-to-istiod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-xds-to-istiod
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio-gateway
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app: istiod
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { port: 15012, protocol: TCP }
+        - { port: 15010, protocol: TCP }

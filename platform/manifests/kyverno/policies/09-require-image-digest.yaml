@@ -18,6 +18,11 @@ metadata:
     policies.kyverno.io/category: "Supply Chain"
     policies.kyverno.io/severity: high
     secforge.audit/finding: H-4.8
+    # Validate at Pod admission only (see 08-restrict-image-registries): the
+    # istio/gateway Deployment template carries `image: auto`, rewritten to the
+    # digest-pinned proxy at pod creation. Pod-level keeps the digest check on
+    # what actually runs without flagging the template. See ADR-0032.
+    pod-policies.kyverno.io/autogen-controllers: "none"
 spec:
   background: true
   validationFailureAction: Audit

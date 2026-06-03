@@ -1,0 +1,27 @@
+# Wildcard TLS cert for the Istio gateway. cert-manager issues *.secforge.dev
+# (+ apex) from Let's Encrypt prod via the same DNS-01 (Cloudflare) solver the
+# existing cert-manager/04-wildcard-cert.yaml uses — but into THIS namespace,
+# because an Istio Gateway's credentialName must resolve to a secret in the
+# gateway's own namespace. This single cert replaces the 8 per-host ingress
+# certs (control-tls, members-tls, …) at decommission.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: secforge-wildcard
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  secretName: secforge-wildcard-tls
+  duration: 2160h    # 90d
+  renewBefore: 720h  # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - "*.secforge.dev"
+    - "secforge.dev"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
