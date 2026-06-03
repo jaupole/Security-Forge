@@ -40,7 +40,12 @@ spec:
               kinds: [Pod]
       preconditions:
         all:
-          - key: "{{ request.object.spec.volumes[?name=='spiffe-jwt'] | length(@) }}"
+          # `|| `[]`` defaults volumes to an empty array when the pod has NO
+          # volumes — without it, `length(<nil>)` errors and (fail-closed
+          # mutate webhook) DENIES every volumeless pod at admission
+          # (Kyverno may evaluate before the SA-token volume is injected).
+          # Pipe precedence means `||` binds before the pipes, so no parens.
+          - key: "{{ request.object.spec.volumes || `[]` | [?name=='spiffe-jwt'] | length(@) }}"
             operator: GreaterThanOrEquals
             value: 1
       mutate:
