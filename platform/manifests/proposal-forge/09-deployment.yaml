@@ -59,7 +59,7 @@ spec:
         - name: app
           # Ecosystem active-org/SpiceDB-TLS fix — proposal-forge-image-build run
           # 26886726347, commit 1cafe65. MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+          image: ghcr.io/jaupole/proposal-forge@sha256:9e672ed3ff5f75f6f0b008e13ea753e5c42b2f85e135e6c45d16759d0a9731fe
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
