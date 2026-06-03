@@ -1,0 +1,38 @@
+# Global response security headers on the gateway, replacing nginx's
+# secforge-default-headers ConfigMap + hsts config. Deliberately ONLY the
+# headers that are safe to force on EVERY response (same set nginx forced via
+# more_set_headers): X-Content-Type-Options, Referrer-Policy, HSTS. CSP is NOT
+# set here — each app owns its own CSP and it passes through untouched (some
+# dashboards need a relaxed script-src to boot their bundle). `replace` so a
+# backend that also sets one of these does not produce duplicates.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-security-headers
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  workloadSelector:
+    labels:
+      istio: ingress
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_response(handle)
+                handle:headers():replace("X-Content-Type-Options", "nosniff")
+                handle:headers():replace("Referrer-Policy", "strict-origin-when-cross-origin")
+                handle:headers():replace("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+              end

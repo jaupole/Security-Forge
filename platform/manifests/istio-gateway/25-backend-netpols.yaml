@@ -1,0 +1,24 @@
+# Allow the Istio gateway (ns istio-ingress) to reach each backend it routes to.
+# Mirrors the existing allow-ingress-nginx-to-<backend> policies; the nginx ones
+# are removed at decommission. These live in the BACKEND namespaces. Hosts added
+# as the migration replicates each one. Canary: grafana.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-grafana
+  namespace: observability
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { port: 3000, protocol: TCP }

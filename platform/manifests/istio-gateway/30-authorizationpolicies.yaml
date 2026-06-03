@@ -1,0 +1,34 @@
+# Per-host edge authorization on the gateway. Replaces nginx
+# whitelist-source-range. Uses DENY + notRemoteIpBlocks (surgical: only denies
+# the matched host from non-allowlisted sources; does not impose deny-by-default
+# on other hosts).
+#
+# notRemoteIpBlocks (NOT notIpBlocks): on an ingress gateway the original client
+# IP is the XFF-derived remote IP, which Envoy sets to the real connection source
+# (use_remote_address=true, numTrustedProxies=0 — first hop, so client-supplied
+# XFF cannot spoof it; validated on the grafana canary). `ipBlocks` matches
+# direct_remote_ip and does NOT see the real client behind hostPort.
+# Tailnet CIDR 100.64.0.0/10 = Tailscale; 10.42.0.0/16 = in-cluster pods;
+# 65.21.25.40/32 = node hairpin.
+#
+# Hosts are added as the migration replicates each one. Canary: grafana (tailnet-only).
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: grafana-tailnet-only
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  selector:
+    matchLabels:
+      istio: ingress
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notRemoteIpBlocks: ["100.64.0.0/10", "10.42.0.0/16", "65.21.25.40/32"]
+      to:
+        - operation:
+            hosts: ["grafana.secforge.dev"]

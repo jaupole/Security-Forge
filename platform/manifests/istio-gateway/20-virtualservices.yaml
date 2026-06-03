@@ -1,0 +1,22 @@
+# Per-host routing for the Istio gateway (replaces the nginx Ingress rules).
+# Hosts are added here as the migration replicates each one. Canary: grafana.
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: grafana
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  hosts: ["grafana.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: grafana
+      route:
+        - destination:
+            host: kps-grafana.observability.svc.cluster.local
+            port:
+              number: 80
+      # nginx had proxy-read/send-timeout 3600 for Grafana Live (SSE/websockets).
+      timeout: 3600s
