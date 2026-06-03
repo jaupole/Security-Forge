@@ -136,6 +136,14 @@ spec:
 # Member Hub calls `getMe()` against control.control.svc on the OIDC
 # callback path; future ecosystem apps that need the same lookup go
 # in this list. Pairs with each app's own allow-egress-to-control NP.
+#
+# 15008 (HBONE) — REQUIRED since both `control` and `member-hub` joined the
+# Istio Ambient mesh. Cross-ns mesh traffic arrives over the ztunnel HBONE
+# tunnel on 15008 (source identity preserved as the caller pod), NOT the app
+# port. Without it ztunnel resets the upstream connect and getMe fails during
+# /auth/callback → no active org → black screen (incident 2026-06-03). Keep
+# 4000 for the non-Ambient path. NOTE: proposal-forge is intentionally absent
+# here — PF reaches Control via the public ingress, not this in-cluster path.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -158,6 +166,7 @@ spec:
                 values: [member-hub]
       ports:
         - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
 
 ---
 # Egress to Keycloak for OIDC discovery + JWKS fetch + (rare) admin API.

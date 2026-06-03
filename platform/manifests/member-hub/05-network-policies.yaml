@@ -182,6 +182,15 @@ spec:
 # port 80 → targetPort 4000 (Hono containerPort). NetworkPolicies
 # in this cluster (Cilium) are evaluated POST-NAT, so the allow must
 # be on port 4000 (the pod port), not 80 (the service port).
+#
+# 15008 (HBONE) — REQUIRED since both `member-hub` and `control` joined
+# the Istio Ambient mesh (istio.io/dataplane-mode=ambient). Cross-namespace
+# mesh traffic is tunnelled ztunnel→ztunnel over HBONE on 15008, NOT the
+# app port. Without this, ztunnel accepts the connection then resets it
+# ("Connection reset by peer"), getMe fails during /auth/callback, no active
+# org is set, and the SPA dead-ends on a black screen. (Incident 2026-06-03:
+# the Ambient rollout added istio-ingress 15008 rules but missed app↔app
+# mesh paths.) The 4000 rule stays for the pre/non-Ambient path.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -202,6 +211,7 @@ spec:
               kubernetes.io/metadata.name: control
       ports:
         - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
 
 ---
 # Egress to OpenBao for Transit encrypt/decrypt + KV reads. VSO uses a
