@@ -7,6 +7,14 @@
 # differences are captured in the two `harden_realm` calls at the
 # bottom of this file:
 #
+# The `master` realm is intentionally NOT hardened here: it is the Keycloak
+# bootstrap realm (not realm-importable) and kcadm cannot open a headless
+# session against it (the sole master admin is WebAuthn-required). Master's
+# login posture (UN/PW first factor, passkey-preferred 2FA, recovery codes
+# as break-glass) is replayed instead by the DB-write sibling
+# `03c-keycloak-master-passkey-2fa.sh` (see
+# docs/03-runbooks/keycloak-master-flow-replay.md).
+#
 #                                    platform              secforge-tenants
 #   browserFlow alias                browser-webauthn-     browser-webauthn-
 #                                    required              optional
