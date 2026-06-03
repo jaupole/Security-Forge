@@ -135,6 +135,39 @@ spec:
             {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
 
 ---
+# Cloudflare Turnstile siteverify secret for the public signup bot-check.
+# OpenBao path: secret/data/apps/control/turnstile (key: secret_key).
+# Rendered as TURNSTILE_SECRET into an Opaque Secret, injected via the
+# optional control-turnstile-secret envFrom in 09-backend-deployment.yaml.
+# The signup route's Turnstile check is dark until this env var is present,
+# so the optional envFrom keeps the pod booting before the secret is written.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: control-turnstile-secret
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/control/turnstile
+  refreshAfter: 5m
+  destination:
+    name: control-turnstile-secret
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        TURNSTILE_SECRET:
+          text: '{{ .Secrets.secret_key }}'
+
+---
 # barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
 # Same VSO consumer SA, same OpenBao path as keycloak's CNPG cluster.
 apiVersion: secrets.hashicorp.com/v1beta1

@@ -201,6 +201,13 @@ spec:
             - secretRef:
                 name: ecosystem-graphics-minio
                 optional: true
+            # TURNSTILE_SECRET — Cloudflare Turnstile siteverify secret for
+            # the public signup bot-check. optional:true so the pod starts
+            # before the operator writes secret/apps/control/turnstile; the
+            # signup Turnstile check stays dark until the env var is present.
+            - secretRef:
+                name: control-turnstile-secret
+                optional: true
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }
