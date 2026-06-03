@@ -103,7 +103,7 @@ We choose **Ambient**. Rationale captured in [ADR-0010](../02-decisions/0010-ist
 
 - **DaemonSet** (1 pod on the single local node; same shape on multi-node clusters).
 - **Identity**: ztunnel itself runs with SPIFFE ID `spiffe://secforge.local/ns/istio-system/sa/ztunnel`. It uses an SVID from cert-manager-csi-driver-spiffe.
-- **HBONE tunnel** (HTTP/2 CONNECT over mTLS) is the wire format between ztunnels on different nodes. Locally there's only one node, so HBONE is a no-op; in cloud each cross-node hop is HBONE-encrypted.
+- **HBONE tunnel** (HTTP/2 CONNECT over mTLS, TCP/**15008**) is the wire format between ztunnels. Even on a **single node** the hop still rides HBONE on 15008 (it is *not* a no-op for the data path — `NetworkPolicy` sees 15008, not the app port). Cross-node hops are HBONE-encrypted the same way. **This has a hard NetworkPolicy consequence — see ["Ambient + Kubernetes NetworkPolicy"](#ambient--kubernetes-networkpolicy) below.**
 - **L4 enforcement**: applies `PeerAuthentication` (always STRICT here) and any `AuthorizationPolicy` rules that resolve at L4 (e.g., allow/deny by SPIFFE ID, by namespace, by ports).
 
 ### istio-cni
@@ -206,6 +206,60 @@ The full set of patterns (gateway-from-internet, BFF-to-backend, backend-to-Spic
 
 - `keycloak`, `spicedb`, `openbao`, `spire`, `istio-system`: **not** ambient-labeled in Phase 6. We add them later only if there's a concrete reason (e.g., we want SpiceDB-to-Postgres traffic to flow through the mesh). Keeping them out reduces blast radius during the initial Ambient rollout.
 - `app`: ambient + default-deny + per-service ALLOW policies. This is where the BFF, backends, and the AuthZEN façade live.
+
+---
+
+## Ambient + Kubernetes NetworkPolicy
+
+> **Incident 2026-06-03.** Member Hub (`members.secforge.dev`) black-screened after
+> login. Root cause was a NetworkPolicy gap, not the app. This section exists so it
+> never recurs.
+
+`NetworkPolicy` (enforced by the CNI at L3/L4) and Ambient (ztunnel) **stack**, and
+they interact in one non-obvious way:
+
+- When a pod talks to a pod in **another ambient namespace**, ztunnel tunnels the
+  connection ztunnel→ztunnel over **HBONE on TCP/15008** — *not* the application
+  port. So a `NetworkPolicy` that only allows the app port (e.g. `4000`) **blocks the
+  actual mesh traffic**. ztunnel accepts the client connection, fails to open the
+  upstream HBONE leg, and the caller sees **`Connection reset by peer`** (a RST — note
+  it is *not* a clean timeout, which is what a plain L4 drop looks like).
+
+**The rule:** any cross-namespace `NetworkPolicy` between **two ambient namespaces**
+MUST allow `TCP/15008` (HBONE) on **both** ends — the caller's egress rule *and* the
+callee's ingress rule — in addition to the app port. Keep the app-port rule too (it
+covers the pre/non-Ambient path and is harmless).
+
+```yaml
+# callee ingress (and mirror on the caller's egress)
+ports:
+  - { protocol: TCP, port: 4000 }    # app port (pre/non-Ambient path)
+  - { protocol: TCP, port: 15008 }   # HBONE — Istio Ambient ztunnel mesh tunnel
+```
+
+**What is and isn't affected:**
+
+| Path | Mesh transport | NetworkPolicy needs |
+|---|---|---|
+| ambient ns ↔ **same** ns (intra-namespace) | HBONE, but intra-ns rules usually allow all ports (`ports: []`) | nothing extra |
+| ambient ns ↔ **other ambient** ns | HBONE on 15008 | **15008 on both ends** + app port |
+| ambient ns ↔ **non-ambient** ns (keycloak, spicedb, openbao, minio, ingress-nginx) | plain L4 on the app port | app port only (unchanged) |
+
+**Operational notes:**
+
+- Source identity is preserved across the HBONE tunnel, so `from:`/`to:`
+  `namespaceSelector` (and pod selectors) still match — you only add the port.
+- When you join a namespace to the mesh (`istio.io/dataplane-mode: ambient`), audit
+  every cross-namespace `NetworkPolicy` it has *to or from another ambient namespace*
+  and add 15008. The `bootstrap-app.sh` namespace template carries a warning for this.
+- Diagnose with a throwaway pod in the caller ns (labelled to match the egress
+  selector, with a PSS-restricted `securityContext`) doing
+  `wget http://<svc>.<ns>.svc.cluster.local/healthz`: a **RST** points here; a
+  **timeout** points at a missing app-port allow or AuthorizationPolicy DENY.
+- Fixed paths so far: `member-hub ↔ control`. Audit (2026-06-03) confirmed it was the
+  only *complete* cross-ambient app path; the OTel app→observability and PF→control
+  rules are one-ended (blocked at the far end regardless), so they were never working
+  and are tracked separately, not as Ambient regressions.
 
 ---
 
