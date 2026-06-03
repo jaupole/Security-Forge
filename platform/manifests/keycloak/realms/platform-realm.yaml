@@ -543,9 +543,6 @@ spec:
         redirectUris:
           - https://bao.${DOMAIN}/oidc/callback
           - https://bao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback
-          # localhost callback supports `bao login -method=oidc` (CLI
-          # launches a browser to localhost:8250 for the callback).
-          - http://localhost:8250/oidc/callback
         webOrigins:
           - "+"
         attributes:
@@ -878,12 +875,10 @@ spec:
         serviceAccountsEnabled: false
         redirectUris:
           - https://proposal-forge.${DOMAIN}/*
-          - http://proposal-forge.localhost:5173/auth/callback
         webOrigins:
           - https://proposal-forge.${DOMAIN}
-          - http://proposal-forge.localhost:5173
         attributes:
-          post.logout.redirect.uris: https://proposal-forge.${DOMAIN}/*##http://proposal-forge.localhost:5173
+          post.logout.redirect.uris: https://proposal-forge.${DOMAIN}/*
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"
