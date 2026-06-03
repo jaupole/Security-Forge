@@ -135,6 +135,24 @@
       ],
       "groupName": "wazuh SIEM images",
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Platform Helm charts (tracked via the per-component CHART_VER customManagers below + MinIO): each surfaces on the dependency dashboard for operator approval, with a 3-day soak. High-touch cluster infra — never auto-merged.",
+      "matchDatasources": ["helm"],
+      "labels": ["helm-chart", "dependencies"],
+      "dependencyDashboardApproval": true,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "ingress-nginx chart is being retired (ADR-0032 — replaced by the Istio gateway; Deployment scaled to 0). Its CHART_VER manager is kept for completeness, but updates are disabled so a decommissioned component does not generate noise PRs. Delete this rule to resume tracking if the retirement is reversed.",
+      "matchDatasources": ["helm"],
+      "matchPackageNames": ["ingress-nginx"],
+      "enabled": false
+    },
+    {
+      "description": "Vendored SpiceDB operator bundle (OLM-style). Its update-graph ConfigMap is the operator's INTERNAL SpiceDB release catalog (imageName ghcr.io/authzed/spicedb + ~50 tag entries), not something we version-bump — Renovate was misparsing it into a bare-org ref (ghcr.io/authzed -> GHCR 400 NAME_INVALID, surfacing as the 'Error obtaining docker token' warning). Disable all managers for this vendored file; the operator image itself is pinned and already in ignoreDeps.",
+      "matchFileNames": ["platform/manifests/spicedb/operator/bundle.yaml"],
+      "enabled": false
     }
   ],
   "customManagers": [
@@ -163,22 +181,110 @@
       "currentValueTemplate": "master"
     },
     {
-      "description": "CHART_VER pins in platform/components/*.sh helm install scripts",
+      "description": "cert-manager Helm chart version (CERT_MANAGER_CHART_VER) in 00b-cert-manager.sh. Tracks the cert-manager chart in https://charts.jetstack.io. Replaces the old generic CHART_VER manager, which expected an inline `helm --chart` on the next line and so silently matched nothing (the scripts call a install-helm.sh wrapper). Per-chart managers are the only reliable pattern here — operator-backlog #55 / #56.",
       "customType": "regex",
-      "managerFilePatterns": ["platform/components/*.sh"],
-      "matchStrings": [
-        "CHART_VER=\"\\$\\{[A-Z_]+:-(?<currentValue>[0-9.]+)\\}\"\\s*\\n.*helm.*--chart\\s+(?<depName>[\\w./-]+)"
-      ],
+      "managerFilePatterns": ["platform/components/00b-cert-manager.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{CERT_MANAGER_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "cert-manager",
       "datasourceTemplate": "helm",
-      "registryUrlTemplate": "https://kubernetes-charts.storage.googleapis.com/"
+      "registryUrlTemplate": "https://charts.jetstack.io"
     },
     {
-      "description": "MinIO chart version pin in 07a-minio.sh — the generic CHART_VER customManager above can't infer the chart's actual repo URL (https://charts.min.io) from the surrounding script context, so it falls through to the deprecated google bucket and silently never matches. This pins MinIO explicitly. (Operator-backlog #55 / #56 — without this, MinIO has gone 17 months stale unnoticed.)",
+      "description": "ingress-nginx Helm chart version (INGRESS_NGINX_CHART_VER) in 00c-ingress-nginx.sh. Tracks the ingress-nginx chart in https://kubernetes.github.io/ingress-nginx. NOTE: update PRs are disabled via a packageRule above (chart is being retired — ADR-0032).",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/00c-ingress-nginx.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{INGRESS_NGINX_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "ingress-nginx",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://kubernetes.github.io/ingress-nginx"
+    },
+    {
+      "description": "Istio Helm chart version (ISTIO_CHART_VER) in 06-istio.sh. One version drives all four sub-charts (base, istiod, cni, ztunnel) installed from https://istio-release.storage.googleapis.com/charts — they ship as one release train, so tracking the 'base' chart is sufficient to bump the shared ISTIO_CHART_VER.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/06-istio.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{ISTIO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "istio",
+      "packageNameTemplate": "base",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://istio-release.storage.googleapis.com/charts"
+    },
+    {
+      "description": "Tempo Helm chart version (TEMPO_CHART_VER) in 07b-tempo.sh. Tracks the tempo chart in https://grafana.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07b-tempo.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{TEMPO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "tempo",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://grafana.github.io/helm-charts"
+    },
+    {
+      "description": "OpenTelemetry Collector Helm chart version (OTEL_CHART_VER) in 07c-otel-collector.sh. Tracks the opentelemetry-collector chart in https://open-telemetry.github.io/opentelemetry-helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07c-otel-collector.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{OTEL_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "opentelemetry-collector",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://open-telemetry.github.io/opentelemetry-helm-charts"
+    },
+    {
+      "description": "kube-prometheus-stack Helm chart version (KPS_CHART_VER) in 07e-prometheus.sh. Tracks the kube-prometheus-stack chart in https://prometheus-community.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07e-prometheus.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{KPS_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "kube-prometheus-stack",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://prometheus-community.github.io/helm-charts"
+    },
+    {
+      "description": "Loki Helm chart version (LOKI_CHART_VER) in 07f-loki.sh. Tracks the loki chart in https://grafana.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07f-loki.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{LOKI_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "loki",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://grafana.github.io/helm-charts"
+    },
+    {
+      "description": "Promtail Helm chart version (PROMTAIL_CHART_VER) in 07g-promtail.sh. Tracks the promtail chart in https://grafana.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/07g-promtail.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{PROMTAIL_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "promtail",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://grafana.github.io/helm-charts"
+    },
+    {
+      "description": "Velero Helm chart version (VELERO_CHART_VER) in 09a-velero.sh. Tracks the velero chart in https://vmware-tanzu.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/09a-velero.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{VELERO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "velero",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://vmware-tanzu.github.io/helm-charts"
+    },
+    {
+      "description": "Kyverno Helm chart version (KYVERNO_CHART_VER) in 12-kyverno.sh. Tracks the kyverno chart in https://kyverno.github.io/kyverno.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/12-kyverno.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{KYVERNO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "kyverno",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://kyverno.github.io/kyverno"
+    },
+    {
+      "description": "Trivy Operator Helm chart version (TRIVY_OPERATOR_CHART_VER) in 13-trivy-operator.sh. Tracks the trivy-operator chart in https://aquasecurity.github.io/helm-charts.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/13-trivy-operator.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{TRIVY_OPERATOR_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "trivy-operator",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://aquasecurity.github.io/helm-charts"
+    },
+    {
+      "description": "MinIO Helm chart version (MINIO_CHART_VER) in 07a-minio.sh. Tracks the minio chart in https://charts.min.io. (Operator-backlog #55 / #56 — MinIO had gone 17 months stale before explicit tracking was added; the other platform charts shared the same blind spot, now closed by the per-chart managers above.)",
       "customType": "regex",
       "managerFilePatterns": ["platform/components/07a-minio.sh"],
-      "matchStrings": [
-        "CHART_VER=\"\\$\\{MINIO_CHART_VER:-(?<currentValue>[0-9.]+)\\}\""
-      ],
+      "matchStrings": ["CHART_VER=\"\\$\\{MINIO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
       "depNameTemplate": "minio",
       "datasourceTemplate": "helm",
       "registryUrlTemplate": "https://charts.min.io"
