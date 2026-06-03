@@ -47,6 +47,35 @@ spec:
           port: 8200
 
 # ──────────────────────────────────────────────────────────────────────
+# Ingress: allow the Istio ingress gateways → main openbao:8200. Both the
+# public (istio-ingress) and tailnet (istio-ingress-tailnet) gateways live
+# in the istio-ingress ns, so this one rule covers both. The two-plane
+# gateway migration (2026-06-03) serves the OpenBao UI/API + bao.${DOMAIN}
+# through the Istio gateway; this is the istio counterpart of
+# allow-ingress-nginx-to-openbao above. (Was live-patched.)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - protocol: TCP
+          port: 8200
+
+# ──────────────────────────────────────────────────────────────────────
 # Ingress: allow `app` ns → openbao:8200 (workload JWT auth from BFFs).
 ---
 apiVersion: networking.k8s.io/v1
@@ -314,18 +343,23 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # ingress-nginx for the public Keycloak OIDC discovery URL.
-    # `auth.secforge.local` resolves via hostAlias to the ingress-nginx
-    # ClusterIP; OpenBao reaches Keycloak via the public hostname so the
-    # token's `iss` claim matches what's stored at auth/oidc/config.
-    # Without this rule, openbao→ingress is dropped at egress, OpenBao
-    # can't construct its OIDC JWK validator, and OIDC login fails with
-    # the misleading "Unable to authorize role" error. See F-CLU-11
-    # resolution (Fix after 07/00-audit-findings.md) for the diagnosis.
+    # istio-ingress gateway for the public Keycloak OIDC discovery URL.
+    # auth.secforge.dev resolves (via the openbao hostAlias → the Istio
+    # gateway ClusterIP) to the public Keycloak hostname; OpenBao reaches
+    # Keycloak via that public hostname so the token's `iss` claim matches
+    # what's stored at auth/oidc/config. Without this rule, openbao→gateway
+    # is dropped at egress, OpenBao can't construct its OIDC JWK validator,
+    # and OIDC login fails with the misleading "Missing auth_url" / "Unable
+    # to authorize role" error.
+    #
+    # The two-plane gateway migration (2026-06-03) moved auth off
+    # ingress-nginx onto the Istio gateway — this replaces the old
+    # ingress-nginx egress rule (F-CLU-11 successor). Was live-patched as a
+    # standalone `allow-openbao-egress-istio-ingress` policy; folded in here.
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: istio-ingress
       ports:
         - protocol: TCP
           port: 443

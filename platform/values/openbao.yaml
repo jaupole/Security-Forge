@@ -111,13 +111,20 @@ server:
     SKIP_CHOWN: "true"
     SKIP_SETCAP: "true"
 
-  # Pod-cluster routing fix for ingress-nginx hairpin: auth.secforge.dev
-  # resolves to the host's public IP, which pods can't reach (NAT hairpin).
-  # Override DNS to point at the ingress-nginx-controller ClusterIP service,
-  # which now routes to a real pod IP (post-hostNetwork-removal).
-  # If ingress-nginx is reinstalled and the ClusterIP changes, update this.
+  # Pod-cluster routing fix: auth.secforge.dev / bao.secforge.dev resolve to
+  # the host's public IP, which pods can't reach (NAT hairpin). Override DNS to
+  # the Istio public ingress-gateway ClusterIP, which routes to a real pod.
+  # OpenBao needs auth.secforge.dev in-cluster so its OIDC discovery + JWKS
+  # fetch hit Keycloak via the public hostname (token `iss` must match
+  # auth/oidc/config).
+  #
+  # Two-plane gateway migration (2026-06-03): moved off the ingress-nginx
+  # ClusterIP (10.43.119.237) onto the istio-ingress gateway ClusterIP.
+  # NOTE: this ClusterIP is NOT pinned — if the istio-ingress Service is
+  # recreated (fresh cluster / gateway redeploy) the IP changes; update this to
+  # the new `kubectl -n istio-ingress get svc istio-ingress` ClusterIP.
   hostAliases:
-    - ip: "10.43.119.237"   # ingress-nginx-controller ClusterIP
+    - ip: "10.43.24.153"   # istio-ingress (public gateway) ClusterIP
       hostnames:
         - auth.secforge.dev
         - bao.secforge.dev
