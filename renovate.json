@@ -159,6 +159,13 @@
       "matchDatasources": ["helm"],
       "matchPackageNames": ["ingress-nginx"],
       "enabled": false
+    },
+    {
+      "description": "Istio service mesh: own dashboard entry, never folded into the group:allNonMajor sweep. One ISTIO_CHART_VER drives base/istiod/cni/ztunnel under the public + tailnet gateways and the Ambient HBONE paths, so mesh bumps must be reviewed and rolled in isolation (maintenance window; istiod before dataplane). Mirrors the wazuh/keycloak separation.",
+      "matchDatasources": ["helm"],
+      "matchDepNames": ["istio"],
+      "groupName": "istio service mesh",
+      "dependencyDashboardApproval": true
     }
   ],
   "customManagers": [
