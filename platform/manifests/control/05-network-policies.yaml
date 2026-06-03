@@ -142,8 +142,11 @@ spec:
 # tunnel on 15008 (source identity preserved as the caller pod), NOT the app
 # port. Without it ztunnel resets the upstream connect and getMe fails during
 # /auth/callback → no active org → black screen (incident 2026-06-03). Keep
-# 4000 for the non-Ambient path. NOTE: proposal-forge is intentionally absent
-# here — PF reaches Control via the public ingress, not this in-cluster path.
+# 4000 for the non-Ambient path. proposal-forge added 2026-06-03: it calls
+# Control at control.control.svc (in-cluster, same as member-hub) via its
+# ECOSYSTEM_CONTROL_API_URL, so it needs the same HBONE allow. (The earlier
+# "PF uses the public ingress" assumption was wrong — PF's first real login
+# reset at getMe until both this ingress and PF's egress allowed 15008.)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -163,7 +166,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [member-hub]
+                values: [member-hub, proposal-forge]
       ports:
         - { protocol: TCP, port: 4000 }
         - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
