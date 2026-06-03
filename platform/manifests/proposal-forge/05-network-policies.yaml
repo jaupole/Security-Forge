@@ -1,0 +1,288 @@
+# NetworkPolicies for the proposal-forge namespace. Default-deny both
+# directions + minimal allows. Uses app.kubernetes.io/name selectors so Jobs
+# (migration) that lack the bare `app` label still match where intended.
+#
+# PF does NOT egress to OpenBao (secrets arrive via VSO-rendered K8s Secrets;
+# VSO runs in its own ns) and sends no email (no SMTP egress) — both differ
+# from member-hub. Outbound third-party: Gemini (generativelanguage.googleapis
+# .com) + GSA per-diem (api.gsa.gov), both over allow-egress-internet-https.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# DNS + kube-apiserver. CNPG fetches TLS certs from the API server at startup;
+# every pod needs DNS. The host:6443/:443 path covers k3s pods bypassing
+# kube-proxy + *.secforge.dev hostnames that loop through the public IP back
+# to in-cluster services (JWKS/OIDC discovery from auth.${DOMAIN}).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# ingress-nginx → app on the container's :3001.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-proposal-forge
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 3001 }
+
+---
+# Egress to Keycloak (OIDC discovery + JWKS + token exchange).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-keycloak
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - { protocol: TCP, port: 8443 }
+
+---
+# Egress to SpiceDB (per-request permission checks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-spicedb
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb
+      ports:
+        - { protocol: TCP, port: 50051 }
+
+---
+# Egress to Ecosystem Control (/api/v1/me active-org context). Service port 80
+# → pod 4000; Cilium NPs are POST-NAT so the allow is on the pod port 4000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-control
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+      ports:
+        - { protocol: TCP, port: 4000 }
+
+---
+# Egress to OTel collector (traces + metrics).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-otel
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+
+---
+# App-pod egress to MinIO (uploads/assets/templates → proposal-forge-files).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-app-to-minio
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
+# CNPG postgres pods → MinIO for barman base + WAL backups + retention.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: proposal-forge-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
+# Egress to the public internet on HTTPS — Gemini API
+# (generativelanguage.googleapis.com) + GSA per-diem (api.gsa.gov). By CIDR
+# (k8s NPs have no FQDN egress): 0.0.0.0/0 minus private/link-local. Scoped to
+# the app container only. Future hardening: FQDN egress via Istio Ambient.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+
+---
+# CNPG operator (postgres-operator + cnpg-system) → the db pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-db
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: proposal-forge-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [postgres-operator, cnpg-system]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 9187 }
+        - { protocol: TCP, port: 9090 }
