@@ -6,7 +6,7 @@
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
     ":enableVulnerabilityAlertsWithLabel(security)",
-    ":timezone(Europe/Berlin)",
+    ":timezone(America/New_York)",
     "group:allNonMajor"
   ],
   "schedule": [
