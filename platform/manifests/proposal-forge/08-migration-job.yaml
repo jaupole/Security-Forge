@@ -68,11 +68,12 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Ecosystem cutover build — proposal-forge-image-build run 26856812311,
-          # merge commit b4c0d30 (Keycloak OIDC + SpiceDB + org RLS + MinIO).
+          # Ecosystem cutover build — proposal-forge-image-build run 26859121847,
+          # commit a5953a5 (Prisma schema-engine libssl-3.0.x fix; supersedes
+          # b4c0d30 whose image shipped the wrong schema-engine variant).
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:4139a407a713b814d379dbbce260812af918e93be69bc15138836864dcfc9d7f
+          image: ghcr.io/jaupole/proposal-forge@sha256:9b4128b51aeec58dd096d843e3358f404f6585ade1e1729d0d70a97beaa50c9f
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
