@@ -1,0 +1,48 @@
+# Public Istio ingress gateway — the internet-facing edge.
+#
+# The istio-ingress Deployment (Helm-managed, istio/gateway chart) binds
+# hostPort 80/443 on 0.0.0.0 (the PUBLIC NIC); this Gateway CR terminates the
+# *.${DOMAIN} wildcard cert (secforge-wildcard-tls) and 301s :80 -> :443.
+# Pairs with the tailnet plane (10-tailnet-gateway.yaml). See ADR-0032.
+#
+# Captured verbatim from the live cluster 2026-06-03 (kubectl-diff-clean). The
+# public-gateway config previously lived ONLY in the closed PR #75; this commit
+# makes the public edge reproducible from main.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: secforge-gateway
+  namespace: istio-ingress
+spec:
+  selector:
+    istio: ingress
+  servers:
+  - hosts:
+    - '*.${DOMAIN}'
+    - ${DOMAIN}
+    port:
+      name: http
+      number: 80
+      protocol: HTTP
+    tls:
+      httpsRedirect: true
+  - hosts:
+    - '*.${DOMAIN}'
+    - ${DOMAIN}
+    port:
+      name: https
+      number: 443
+      protocol: HTTPS
+    tls:
+      cipherSuites:
+      - ECDHE-ECDSA-AES256-GCM-SHA384
+      - ECDHE-RSA-AES256-GCM-SHA384
+      - ECDHE-ECDSA-CHACHA20-POLY1305
+      - ECDHE-RSA-CHACHA20-POLY1305
+      - ECDHE-ECDSA-AES128-GCM-SHA256
+      - ECDHE-RSA-AES128-GCM-SHA256
+      credentialName: secforge-wildcard-tls
+      minProtocolVersion: TLSV1_2
+      mode: SIMPLE

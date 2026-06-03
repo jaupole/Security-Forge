@@ -1,0 +1,35 @@
+# Global response security headers at the gateway (X-Content-Type-Options,
+# Referrer-Policy, HSTS) via a Lua HTTP filter; per-app CSP passes through
+# untouched. Replaces the equivalent nginx add_header config. See ADR-0032.
+#
+# Captured from the live cluster 2026-06-03 (kubectl-diff-clean).
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: gateway-security-headers
+  namespace: istio-ingress
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inlineCode: "function envoy_on_response(handle)\n  handle:headers():replace(\"\
+            X-Content-Type-Options\", \"nosniff\")\n  handle:headers():replace(\"\
+            Referrer-Policy\", \"strict-origin-when-cross-origin\")\n  handle:headers():replace(\"\
+            Strict-Transport-Security\", \"max-age=63072000; includeSubDomains; preload\"\
+            )\nend\n"
+  workloadSelector:
+    labels:
+      istio: ingress

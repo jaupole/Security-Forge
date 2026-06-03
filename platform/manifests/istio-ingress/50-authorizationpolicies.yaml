@@ -1,0 +1,98 @@
+# Edge authz — DENY by source IP. Uses notRemoteIpBlocks on the XFF-derived
+# ORIGINAL client IP (remoteIpBlocks is un-spoofable at the first hop;
+# numTrustedProxies=0). Replaces nginx whitelist-source-range. See ADR-0032.
+#   - auth-admin-tailnet:   keycloak /admin* — tailnet / in-cluster / node only
+#   - billing-allowlist:    billing.${DOMAIN} — Stripe webhook source IPs only
+#   - portal-deny-internal: portal /api/v1/admin|system never public
+#                           (the rest of the control API is org-management, open)
+# Allow ranges: tailnet 100.64.0.0/10 + pod CIDR 10.42.0.0/16 + the node IP.
+# Host-scoped on :authority, so INERT on the :8443 staging port; enforces on :443.
+#
+# Captured from the live cluster 2026-06-03 (kubectl-diff-clean).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: auth-admin-tailnet
+  namespace: istio-ingress
+spec:
+  action: DENY
+  rules:
+  - from:
+    - source:
+        notRemoteIpBlocks:
+        - 100.64.0.0/10
+        - 10.42.0.0/16
+        - 65.21.25.40/32
+    to:
+    - operation:
+        hosts:
+        - auth.${DOMAIN}
+        paths:
+        - /admin
+        - /admin/*
+  selector:
+    matchLabels:
+      istio: ingress
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: billing-allowlist
+  namespace: istio-ingress
+spec:
+  action: DENY
+  rules:
+  - from:
+    - source:
+        notRemoteIpBlocks:
+        - 100.64.0.0/10
+        - 10.42.0.0/16
+        - 3.18.12.63/32
+        - 3.69.109.8/32
+        - 3.120.168.93/32
+        - 3.130.192.231/32
+        - 13.235.14.237/32
+        - 13.235.122.149/32
+        - 18.211.135.69/32
+        - 35.154.171.200/32
+        - 35.157.207.129/32
+        - 52.15.183.38/32
+        - 54.88.130.119/32
+        - 54.88.130.237/32
+        - 54.187.174.169/32
+        - 54.187.205.235/32
+        - 54.187.216.72/32
+    to:
+    - operation:
+        hosts:
+        - billing.${DOMAIN}
+  selector:
+    matchLabels:
+      istio: ingress
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: portal-deny-internal
+  namespace: istio-ingress
+spec:
+  action: DENY
+  rules:
+  - to:
+    - operation:
+        hosts:
+        - portal.${DOMAIN}
+        paths:
+        - /api/v1/admin
+        - /api/v1/admin/*
+        - /api/v1/system
+        - /api/v1/system/*
+  selector:
+    matchLabels:
+      istio: ingress

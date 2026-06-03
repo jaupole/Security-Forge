@@ -1,0 +1,35 @@
+# Backend app-TLS. keycloak + openbao terminate their OWN internal TLS and are
+# NOT ambient-meshed, so the gateway must originate TLS to them (SIMPLE,
+# skip-verify — their cert is signed by the internal CA, not in the gateway's
+# trust store, and the hop is in-cluster). Ambient HTTP backends (control,
+# member-hub, etc.) get HBONE mTLS automatically and need no DestinationRule.
+# See ADR-0032.
+#
+# Captured from the live cluster 2026-06-03 (kubectl-diff-clean).
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: keycloak-tls
+  namespace: istio-ingress
+spec:
+  host: keycloak-service.keycloak.svc.cluster.local
+  trafficPolicy:
+    tls:
+      insecureSkipVerify: true
+      mode: SIMPLE
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: openbao-tls
+  namespace: istio-ingress
+spec:
+  host: openbao.openbao.svc.cluster.local
+  trafficPolicy:
+    tls:
+      insecureSkipVerify: true
+      mode: SIMPLE

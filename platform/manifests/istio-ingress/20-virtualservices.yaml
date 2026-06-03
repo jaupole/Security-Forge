@@ -1,0 +1,222 @@
+# Public-host routing. One VirtualService per backend, attached to
+# secforge-gateway (public) and — for hosts an operator also reaches over the
+# tailnet — secforge-gateway-tailnet too. Tailnet-only hosts (grafana, bao, pf,
+# wazuh) attach to the tailnet gateway ONLY (no public DNS). See ADR-0032.
+#
+# Captured from the live cluster 2026-06-03 (kubectl-diff-clean). The
+# control/admin tailnet VirtualService lives in 10-tailnet-gateway.yaml.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: billing
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - billing.${DOMAIN}
+  http:
+  - match:
+    - uri:
+        exact: /api/v1/webhooks/stripe-platform
+    name: stripe-platform
+    route:
+    - destination:
+        host: control.control.svc.cluster.local
+        port:
+          number: 80
+  - match:
+    - uri:
+        regex: /member-hub/(.+)
+    name: member-hub-webhook
+    rewrite:
+      uriRegexRewrite:
+        match: /member-hub/(.+)
+        rewrite: /api/webhooks/stripe/\1
+    route:
+    - destination:
+        host: member-hub.member-hub.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: control-portal
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - portal.${DOMAIN}
+  http:
+  - match:
+    - uri:
+        prefix: /api
+    name: api
+    route:
+    - destination:
+        host: control.control.svc.cluster.local
+        port:
+          number: 80
+  - name: spa
+    route:
+    - destination:
+        host: portal.control.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: grafana
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - grafana.${DOMAIN}
+  http:
+  - name: grafana
+    route:
+    - destination:
+        host: kps-grafana.observability.svc.cluster.local
+        port:
+          number: 80
+    timeout: 3600s
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: keycloak
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - auth.${DOMAIN}
+  http:
+  - name: keycloak
+    route:
+    - destination:
+        host: keycloak-service.keycloak.svc.cluster.local
+        port:
+          number: 8443
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: member-hub
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - members.${DOMAIN}
+  http:
+  - name: members
+    route:
+    - destination:
+        host: member-hub.member-hub.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: openbao
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - bao.${DOMAIN}
+  http:
+  - name: openbao
+    route:
+    - destination:
+        host: openbao.openbao.svc.cluster.local
+        port:
+          number: 8200
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: proposal-forge
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - pf.${DOMAIN}
+  http:
+  - name: pf
+    route:
+    - destination:
+        host: proposal-forge.proposal-forge.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: qbo
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - qbo.${DOMAIN}
+  http:
+  - match:
+    - uri:
+        prefix: /callback
+    name: qbo-callback
+    rewrite:
+      uri: /api/v1/accounting/qbo/callback
+    route:
+    - destination:
+        host: control.control.svc.cluster.local
+        port:
+          number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: wazuh
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - wazuh.${DOMAIN}
+  http:
+  - name: wazuh
+    route:
+    - destination:
+        host: wazuh-dashboard.wazuh.svc.cluster.local
+        port:
+          number: 5601
