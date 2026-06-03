@@ -3,8 +3,15 @@
 # does NOT use a wildcard — the allow list grows per-component as new
 # tracing producers come online.
 #
-# Today (Phase 7-Tempo): keycloak only (Wazuh false-positive fix).
-# Phase 7-rest will add: app, spicedb, istio-system.
+# Producers split by mesh membership (see 07-service-mesh.md
+# "Ambient + Kubernetes NetworkPolicy"):
+#   - keycloak: NOT ambient → plain OTLP on 4317/4318.
+#   - control, member-hub: Ambient (so is observability) → traffic arrives
+#     over HBONE 15008. They are configured with
+#     OTEL_EXPORTER_OTLP_ENDPOINT=…:4318; without 15008 here their traces
+#     were silently dropped at this ingress (2026-06-03).
+# Not yet added: proposal-forge (no OTEL env / not exporting), spicedb,
+# istio-system.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,12 +26,23 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Non-ambient producers: plain OTLP on the app ports.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: keycloak
       ports:
-        - protocol: TCP
-          port: 4317
-        - protocol: TCP
-          port: 4318
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+    # Ambient producers: traffic is tunnelled ztunnel→ztunnel over HBONE
+    # (15008). App ports kept for the pre/non-Ambient path.
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [control, member-hub]
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+        - { protocol: TCP, port: 15008 }   # HBONE — Istio Ambient ztunnel mesh tunnel

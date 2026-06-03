@@ -262,6 +262,7 @@ spec:
       ports:
         - { protocol: TCP, port: 4317 }   # gRPC OTLP
         - { protocol: TCP, port: 4318 }   # HTTP OTLP
+        - { protocol: TCP, port: 15008 }  # HBONE — observability is Ambient too (see 07-service-mesh.md)
 
 ---
 # Egress to MinIO for CNPG plugin-barman-cloud base + WAL backups + retention.

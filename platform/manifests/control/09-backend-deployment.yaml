@@ -129,8 +129,10 @@ spec:
             # Transit. That also keeps no `_PASSWORD`-shaped env on this pod
             # (no-secret-shaped-env Kyverno policy). The control-db-reader VSO
             # Secret still exists — CNPG reads it to SET the role's password.
-            # OTLP exporter (Wazuh / Tempo collection point).
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.observability.svc.cluster.local:4318" }
+            # OTLP exporter (Wazuh / Tempo collection point). Service is named
+            # `otel-collector` (the pod label is `opentelemetry-collector`); the
+            # earlier value used the pod-label name and silently failed at DNS.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: control }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=control,deployment.environment=prod" }
             # PII encryption (rule 38). Transit client uses SPIFFE
