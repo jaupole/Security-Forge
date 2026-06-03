@@ -158,7 +158,7 @@
         "ARG PWDB_COMMIT=(?<currentDigest>[a-f0-9]{40})"
       ],
       "depNameTemplate": "danielmiessler/SecLists",
-      "packageNameTemplate": "danielmiessler/SecLists",
+      "packageNameTemplate": "https://github.com/danielmiessler/SecLists",
       "datasourceTemplate": "git-refs",
       "currentValueTemplate": "master"
     },
