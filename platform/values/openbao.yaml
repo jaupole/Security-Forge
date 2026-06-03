@@ -17,7 +17,7 @@ server:
   image:
     registry: docker.io
     repository: openbao/openbao
-    tag: 2.5.3
+    tag: 2.5.4
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -134,7 +134,7 @@ server:
 
   extraInitContainers:
     - name: wait-for-seal-unsealed
-      image: docker.io/openbao/openbao:2.5.3
+      image: docker.io/openbao/openbao:2.5.4
       env:
         - name: BAO_ADDR
           value: "https://openbao-seal.openbao.svc.cluster.local:8200"
@@ -172,7 +172,7 @@ server:
         requests: { cpu: 10m, memory: 16Mi }
         limits:   { cpu: 50m, memory: 32Mi }
     - name: wait-for-spiffe-csi
-      image: docker.io/openbao/openbao:2.5.3
+      image: docker.io/openbao/openbao:2.5.4
       command:
         - sh
         - -c
