@@ -1,34 +1,90 @@
-# Per-host edge authorization on the gateway. Replaces nginx
-# whitelist-source-range. Uses DENY + notRemoteIpBlocks (surgical: only denies
-# the matched host from non-allowlisted sources; does not impose deny-by-default
-# on other hosts).
+# Per-host edge authorization on the gateway (replaces nginx whitelist-source-range
+# + the keycloak-admin path split + the portal admin/system boundary).
 #
-# notRemoteIpBlocks (NOT notIpBlocks): on an ingress gateway the original client
-# IP is the XFF-derived remote IP, which Envoy sets to the real connection source
-# (use_remote_address=true, numTrustedProxies=0 — first hop, so client-supplied
-# XFF cannot spoof it; validated on the grafana canary). `ipBlocks` matches
-# direct_remote_ip and does NOT see the real client behind hostPort.
-# Tailnet CIDR 100.64.0.0/10 = Tailscale; 10.42.0.0/16 = in-cluster pods;
-# 65.21.25.40/32 = node hairpin.
-#
-# Hosts are added as the migration replicates each one. Canary: grafana (tailnet-only).
+# All use DENY + notRemoteIpBlocks (XFF-derived original client IP — the canary
+# proved ipBlocks/direct_remote_ip does NOT see the real client behind hostPort,
+# and remoteIpBlocks is un-spoofable at the first hop, numTrustedProxies=0).
+# DENY is surgical: it only affects the matched host(s)/path(s); public hosts
+# (members, qbo) and public paths (auth `/`, portal SPA + non-admin API) need no
+# policy. Tailnet 100.64.0.0/10 = Tailscale; 10.42.0.0/16 = pods; 65.21.25.40/32
+# = node hairpin.
 ---
+# Tailnet-only dashboards/admin hosts (full allowlist).
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
-metadata:
-  name: grafana-tailnet-only
-  namespace: istio-ingress
-  labels:
-    secforge.platform/component: istio-gateway
+metadata: { name: tailnet-dashboards, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
 spec:
-  selector:
-    matchLabels:
-      istio: ingress
+  selector: { matchLabels: { istio: ingress } }
+  action: DENY
+  rules:
+    - from: [{ source: { notRemoteIpBlocks: ["100.64.0.0/10", "10.42.0.0/16", "65.21.25.40/32"] } }]
+      to: [{ operation: { hosts: ["control.secforge.dev", "admin.secforge.dev", "grafana.secforge.dev", "bao.secforge.dev", "wazuh.secforge.dev"] } }]
+---
+# pf / Proposal Forge — tailnet-only, but the app's own whitelist is ONLY 100.64/10.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: pf-tailnet, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  selector: { matchLabels: { istio: ingress } }
+  action: DENY
+  rules:
+    - from: [{ source: { notRemoteIpBlocks: ["100.64.0.0/10"] } }]
+      to: [{ operation: { hosts: ["pf.secforge.dev"] } }]
+---
+# auth.secforge.dev is PUBLIC at `/` (OIDC) but `/admin*` is tailnet-only.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: auth-admin-tailnet, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  selector: { matchLabels: { istio: ingress } }
+  action: DENY
+  rules:
+    - from: [{ source: { notRemoteIpBlocks: ["100.64.0.0/10", "10.42.0.0/16", "65.21.25.40/32"] } }]
+      to: [{ operation: { hosts: ["auth.secforge.dev"], paths: ["/admin", "/admin/*"] } }]
+---
+# billing.secforge.dev — public to Stripe + tailnet only (Stripe webhook source IPs).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: billing-allowlist, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  selector: { matchLabels: { istio: ingress } }
   action: DENY
   rules:
     - from:
         - source:
-            notRemoteIpBlocks: ["100.64.0.0/10", "10.42.0.0/16", "65.21.25.40/32"]
-      to:
+            notRemoteIpBlocks:
+              - "100.64.0.0/10"
+              - "10.42.0.0/16"
+              - "3.18.12.63/32"
+              - "3.69.109.8/32"
+              - "3.120.168.93/32"
+              - "3.130.192.231/32"
+              - "13.235.14.237/32"
+              - "13.235.122.149/32"
+              - "18.211.135.69/32"
+              - "35.154.171.200/32"
+              - "35.157.207.129/32"
+              - "52.15.183.38/32"
+              - "54.88.130.119/32"
+              - "54.88.130.237/32"
+              - "54.187.174.169/32"
+              - "54.187.205.235/32"
+              - "54.187.216.72/32"
+      to: [{ operation: { hosts: ["billing.secforge.dev"] } }]
+---
+# portal.secforge.dev is PUBLIC, but the control API's internal prefixes are denied
+# at the edge: /api/v1/admin** (platform-admin) and /api/v1/system** (service-account,
+# in-cluster only). Everything else (org-management API + SPA) passes; the app still
+# enforces JWT + SpiceDB. No source restriction — these paths are denied for everyone
+# on the public host.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: { name: portal-deny-internal, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  selector: { matchLabels: { istio: ingress } }
+  action: DENY
+  rules:
+    - to:
         - operation:
-            hosts: ["grafana.secforge.dev"]
+            hosts: ["portal.secforge.dev"]
+            paths: ["/api/v1/admin", "/api/v1/admin/*", "/api/v1/system", "/api/v1/system/*"]

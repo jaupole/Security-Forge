@@ -1,22 +1,118 @@
 # Per-host routing for the Istio gateway (replaces the nginx Ingress rules).
-# Hosts are added here as the migration replicates each one. Canary: grafana.
+# All VirtualServices bind istio-ingress/secforge-gateway. Backends are FQDNs.
+# Exposure/allowlists are enforced separately in 30-authorizationpolicies.yaml;
+# backend TLS origination (keycloak/openbao/wazuh) in 40-destinationrules.yaml.
 ---
+# grafana (tailnet) — canary
 apiVersion: networking.istio.io/v1
 kind: VirtualService
-metadata:
-  name: grafana
-  namespace: istio-ingress
-  labels:
-    secforge.platform/component: istio-gateway
+metadata: { name: grafana, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
 spec:
   hosts: ["grafana.secforge.dev"]
   gateways: ["istio-ingress/secforge-gateway"]
   http:
     - name: grafana
       route:
-        - destination:
-            host: kps-grafana.observability.svc.cluster.local
-            port:
-              number: 80
-      # nginx had proxy-read/send-timeout 3600 for Grafana Live (SSE/websockets).
+        - destination: { host: kps-grafana.observability.svc.cluster.local, port: { number: 80 } }
       timeout: 3600s
+---
+# control + admin + portal share routing (/api -> control, / -> portal).
+# Exposure differs per host via AuthorizationPolicy: control/admin tailnet,
+# portal public with the /api/v1/admin|system deny-list.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: control-portal, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["control.secforge.dev", "admin.secforge.dev", "portal.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: api
+      match: [{ uri: { prefix: /api } }]
+      route: [{ destination: { host: control.control.svc.cluster.local, port: { number: 80 } } }]
+    - name: spa
+      route: [{ destination: { host: portal.control.svc.cluster.local, port: { number: 80 } } }]
+---
+# members (public)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: member-hub, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["members.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: members
+      route: [{ destination: { host: member-hub.member-hub.svc.cluster.local, port: { number: 80 } } }]
+---
+# auth (public; /admin restricted to tailnet via AuthZ). Backend is HTTPS (keycloak 8443).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: keycloak, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["auth.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: keycloak
+      route: [{ destination: { host: keycloak-service.keycloak.svc.cluster.local, port: { number: 8443 } } }]
+---
+# billing (public + Stripe-IP allowlist). Two backends; the member-hub path uses a
+# regex capture rewrite identical to the nginx rewrite /api/webhooks/stripe/$1.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: billing, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["billing.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: stripe-platform
+      match: [{ uri: { exact: /api/v1/webhooks/stripe-platform } }]
+      route: [{ destination: { host: control.control.svc.cluster.local, port: { number: 80 } } }]
+    - name: member-hub-webhook
+      match: [{ uri: { regex: "/member-hub/(.+)" } }]
+      rewrite: { uriRegexRewrite: { match: "/member-hub/(.+)", rewrite: "/api/webhooks/stripe/\\1" } }
+      route: [{ destination: { host: member-hub.member-hub.svc.cluster.local, port: { number: 80 } } }]
+---
+# qbo (public) — /callback rewritten to the full API path (nginx rewrite-target).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: qbo, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["qbo.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: qbo-callback
+      match: [{ uri: { prefix: /callback } }]
+      rewrite: { uri: /api/v1/accounting/qbo/callback }
+      route: [{ destination: { host: control.control.svc.cluster.local, port: { number: 80 } } }]
+---
+# bao (tailnet). Backend is HTTPS (openbao 8200).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: openbao, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["bao.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: openbao
+      route: [{ destination: { host: openbao.openbao.svc.cluster.local, port: { number: 8200 } } }]
+---
+# wazuh (tailnet). Backend is HTTPS (wazuh-dashboard 5601).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: wazuh, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["wazuh.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: wazuh
+      route: [{ destination: { host: wazuh-dashboard.wazuh.svc.cluster.local, port: { number: 5601 } } }]
+---
+# pf / Proposal Forge (tailnet-only 100.64/10). HTTP backend (ambient mTLS).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: proposal-forge, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  hosts: ["pf.secforge.dev"]
+  gateways: ["istio-ingress/secforge-gateway"]
+  http:
+    - name: pf
+      route: [{ destination: { host: proposal-forge.proposal-forge.svc.cluster.local, port: { number: 80 } } }]

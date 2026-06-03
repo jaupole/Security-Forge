@@ -1,0 +1,24 @@
+# Backend TLS origination for the services that terminate their own TLS
+# (mirrors nginx backend-protocol: HTTPS + proxy-ssl-verify off). The gateway
+# speaks app-level TLS to these upstreams. These backends are NOT ambient-
+# enrolled — their hop is already encrypted by app-TLS, so ambient mTLS would be
+# redundant double-encryption. (The plaintext HTTP backends get ambient instead.)
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata: { name: keycloak-tls, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  host: keycloak-service.keycloak.svc.cluster.local
+  trafficPolicy:
+    tls: { mode: SIMPLE, insecureSkipVerify: true }
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata: { name: openbao-tls, namespace: istio-ingress, labels: { secforge.platform/component: istio-gateway } }
+spec:
+  host: openbao.openbao.svc.cluster.local
+  trafficPolicy:
+    tls: { mode: SIMPLE, insecureSkipVerify: true }
+# NOTE: wazuh-dashboard serves plain HTTP on 5601 (verified: http 302, https
+# refused) — NO DestinationRule; it's an HTTP backend and gets ambient mTLS
+# like the other plaintext backends.
