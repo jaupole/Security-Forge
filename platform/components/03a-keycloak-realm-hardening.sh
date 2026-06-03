@@ -209,8 +209,12 @@ harden_realm() {
   WA_STATE=$(kc get "authentication/required-actions/webauthn-register" -r "$realm" \
     | jq -r '{enabled, defaultAction} | tostring')
   if [[ "$WA_STATE" != "$EXPECTED_WR" ]]; then
+    # priority=20: passkey registers BEFORE recovery codes (40) so it gets the
+    # lower credential-priority slot and becomes the DEFAULT 2FA challenge.
+    # Reversing this makes Keycloak prompt for recovery codes instead of the
+    # passkey (incident 2026-06-03 — project_keycloak_credential_priority_inversion).
     kc update "authentication/required-actions/webauthn-register" -r "$realm" \
-      -s 'enabled=true' -s "defaultAction=$webauthn_register_default" -s 'priority=70'
+      -s 'enabled=true' -s "defaultAction=$webauthn_register_default" -s 'priority=20'
     echo "    set (was: $WA_STATE)"
   else
     echo "    already at expected state — skipping"
@@ -231,8 +235,10 @@ harden_realm() {
   RC_STATE=$(kc get "authentication/required-actions/CONFIGURE_RECOVERY_AUTHN_CODES" -r "$realm" \
     | jq -r '{enabled, defaultAction} | tostring')
   if [[ "$RC_STATE" != "$EXPECTED_RC" ]]; then
+    # priority=40: recovery codes register AFTER the passkey (20) so they are
+    # the fallback 2FA, not the default. See the webauthn-register block above.
     kc update "authentication/required-actions/CONFIGURE_RECOVERY_AUTHN_CODES" -r "$realm" \
-      -s 'enabled=true' -s "defaultAction=$recovery_codes_default"
+      -s 'enabled=true' -s "defaultAction=$recovery_codes_default" -s 'priority=40'
     echo "    set (was: $RC_STATE)"
   else
     echo "    already at expected state — skipping"

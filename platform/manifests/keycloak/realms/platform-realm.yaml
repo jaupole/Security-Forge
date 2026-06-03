@@ -130,10 +130,20 @@ spec:
       - totpAppMicrosoftAuthenticatorName
 
     # ─── Required actions ──────────────────────────────────────────
-    # CONFIGURE_TOTP and CONFIGURE_RECOVERY_AUTHN_CODES are both
-    # default-actions, meaning every newly-created user is required to
-    # complete them at first login. Order is enforced by `priority`
-    # (lower number runs first): TOTP first, then recovery codes.
+    # The DEFAULT actions every new user completes at first login are
+    # webauthn-register (passkey) and CONFIGURE_RECOVERY_AUTHN_CODES.
+    # (CONFIGURE_TOTP is enabled-but-NOT-default since 2026-05-14.)
+    #
+    # ORDER MATTERS — passkey MUST register BEFORE recovery codes.
+    # Order is enforced by `priority` (lower number runs first). Keycloak
+    # assigns each new credential the next priority slot (10, 20, 30…) in
+    # registration order, and presents the LOWEST-priority credential as
+    # the default 2FA challenge. If recovery codes are created first they
+    # out-rank the passkey, and login prompts for recovery codes instead
+    # of the passkey (incident 2026-06-03 — see
+    # project_keycloak_credential_priority_inversion). So we keep
+    # webauthn-register(20) BELOW CONFIGURE_RECOVERY_AUTHN_CODES(40),
+    # which yields a clean password(10) -> passkey(20) -> recovery(30).
     requiredActions:
       # CONFIGURE_TOTP — enabled (existing TOTP users still resolve) but
       # NO LONGER defaultAction since the 2026-05-14 hardening (passkeys
@@ -157,14 +167,14 @@ spec:
         providerId: webauthn-register
         enabled: true
         defaultAction: true
-        priority: 70
+        priority: 20   # BEFORE recovery codes (40) — passkey is the preferred 2FA
         config: {}
       - alias: CONFIGURE_RECOVERY_AUTHN_CODES
         name: Recovery Authentication Codes
         providerId: CONFIGURE_RECOVERY_AUTHN_CODES
         enabled: true
         defaultAction: true
-        priority: 20
+        priority: 40   # AFTER webauthn-register (20) — recovery is the fallback 2FA
         config: {}
       - alias: UPDATE_PASSWORD
         name: Update Password
