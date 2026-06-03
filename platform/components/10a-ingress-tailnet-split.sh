@@ -44,7 +44,7 @@ ADMIN_HOSTNAME_PREFIXES=(
     "argocd."
     "kibana."
     "discover."
-    "proposal-forge."
+    "pf."
 )
 
 ALLOWLIST_VALUE="100.64.0.0/10"

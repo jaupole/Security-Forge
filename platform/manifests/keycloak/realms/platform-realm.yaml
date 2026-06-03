@@ -874,11 +874,11 @@ spec:
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
         redirectUris:
-          - https://proposal-forge.${DOMAIN}/*
+          - https://pf.${DOMAIN}/*
         webOrigins:
-          - https://proposal-forge.${DOMAIN}
+          - https://pf.${DOMAIN}
         attributes:
-          post.logout.redirect.uris: https://proposal-forge.${DOMAIN}/*
+          post.logout.redirect.uris: https://pf.${DOMAIN}/*
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
           frontchannel.logout.session.required: "true"

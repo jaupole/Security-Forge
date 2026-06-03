@@ -69,10 +69,10 @@ intended path and far safer than hand-written SQL.
   "implicitFlowEnabled": false,
   "directAccessGrantsEnabled": false,
   "serviceAccountsEnabled": false,
-  "redirectUris": ["https://proposal-forge.secforge.dev/*"],
-  "webOrigins": ["https://proposal-forge.secforge.dev"],
+  "redirectUris": ["https://pf.secforge.dev/*"],
+  "webOrigins": ["https://pf.secforge.dev"],
   "attributes": {
-    "post.logout.redirect.uris": "https://proposal-forge.secforge.dev/*",
+    "post.logout.redirect.uris": "https://pf.secforge.dev/*",
     "backchannel.logout.session.required": "true",
     "backchannel.logout.revoke.offline.tokens": "false",
     "frontchannel.logout.session.required": "true",
@@ -302,9 +302,9 @@ exist and have `proposalapp` activated:
 
 ## 10. Verify end-to-end (on the tailnet)
 
-1. Add a hosts-file entry mapping `proposal-forge.secforge.dev` → the host's
+1. Add a hosts-file entry mapping `pf.secforge.dev` → the host's
    tailnet IP (same as the other admin hosts).
-2. Browse `https://proposal-forge.secforge.dev` → redirected to Keycloak →
+2. Browse `https://pf.secforge.dev` → redirected to Keycloak →
    passkey login → back to the app with active-org context.
 3. Create a project/proposal; confirm it's scoped to your org (RLS) and that a
    second org can't see it. Confirm a SpiceDB-denied user gets 403.

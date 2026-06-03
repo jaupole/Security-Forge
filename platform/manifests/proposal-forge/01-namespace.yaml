@@ -2,7 +2,7 @@
 # the built React SPA from client/dist) plus a CNPG cluster (proposal-forge-db).
 # Ecosystem app `proposalapp`. Tailnet-only access: no public DNS A record;
 # the ingress is CGNAT-whitelisted (see 11-ingress.yaml, P6) and the operator's
-# hosts file maps proposal-forge.${DOMAIN} -> the host's tailnet IP.
+# hosts file maps pf.${DOMAIN} -> the host's tailnet IP.
 #
 # NOTE: unlike most platform namespaces this app is NOT distroless (the PDF
 # export path runs headless Chromium via Puppeteer), but the pod is still

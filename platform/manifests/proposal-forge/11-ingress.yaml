@@ -1,12 +1,12 @@
-# Tailnet-only ingress for Proposal Forge — proposal-forge.${DOMAIN}.
+# Tailnet-only ingress for Proposal Forge — pf.${DOMAIN}.
 #
 # NO public access. The `whitelist-source-range: 100.64.0.0/10` annotation
 # (Tailscale CGNAT) makes ingress-nginx 403 any request not sourced from the
 # tailnet, before the upstream pod is contacted. There is NO public DNS A
-# record — the operator's hosts file maps proposal-forge.${DOMAIN} → the
+# record — the operator's hosts file maps pf.${DOMAIN} → the
 # host's tailnet IP. The Kyverno admin-ingress-must-be-tailnet-only policy
 # (components/10a) enforces this annotation at admission for the
-# `proposal-forge.` hostname prefix.
+# `pf.` hostname prefix.
 #
 # TLS: per-host LE via DNS-01 (Cloudflare) — a real cert without a public A
 # record (DNS-01 validates via a TXT record, no inbound exposure).
@@ -37,10 +37,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - proposal-forge.${DOMAIN}
-      secretName: proposal-forge-tls
+        - pf.${DOMAIN}
+      secretName: pf-tls
   rules:
-    - host: proposal-forge.${DOMAIN}
+    - host: pf.${DOMAIN}
       http:
         paths:
           - path: /

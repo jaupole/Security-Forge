@@ -26,7 +26,7 @@ shape. Proposal Forge clones the **Member Hub** production pattern instead:
 | Database | shared `secforge-app-db`, per-app schema | **per-app CNPG cluster** `proposal-forge-db` |
 | Secrets | `apps/lib/secrets` Go library | **OpenBao → VSO-rendered Secrets** + spiffe-helper sidecar for Transit |
 | Files | n/a | **MinIO + SSE-S3**, bucket-scoped creds via VSO |
-| Domain | `secforge.local`, mkcert | `proposal-forge.secforge.dev`, LE via DNS-01 |
+| Domain | `secforge.local`, mkcert | `pf.secforge.dev`, LE via DNS-01 |
 | Exposure | public ingress | **tailnet-only** (CGNAT whitelist + Kyverno enforce) |
 | Images | local registry, local cosign key | **GHCR digest-pinned + cosign keyless**, Kyverno-verified |
 
@@ -308,8 +308,8 @@ Maps to the migration-plan phases agreed 2026-06-02. Artifacts land under
   `automount:false`, VSO bindings, NetworkPolicies incl. Gemini+GSA egress,
   objectstore, scheduled backup, migration Job, openbao-CA configmap,
   spiffe-helper config, deployment, services).
-- **Tailnet-only ingress** `proposal-forge.secforge.dev` + `whitelist-source-range:
-  100.64.0.0/10`; **add `proposal-forge.` to `10a` `ADMIN_HOSTNAME_PREFIXES` +
+- **Tailnet-only ingress** `pf.secforge.dev` + `whitelist-source-range:
+  100.64.0.0/10`; **add `pf.` to `10a` `ADMIN_HOSTNAME_PREFIXES` +
   the Kyverno `admin-allowlist-policy.yaml`**. No public A record; LE via DNS-01;
   operator hosts-file → tailnet IP.
 - Apply only via `apply-manifest.sh` (envsubst) — never raw `kubectl apply -f`.
