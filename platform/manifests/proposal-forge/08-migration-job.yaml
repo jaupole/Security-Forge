@@ -68,12 +68,12 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Dual-realm OIDC sign-in — proposal-forge-image-build run
-          # 26913675656, commit 848e869. No new Prisma migration in this release;
+          # App-activation gate — proposal-forge-image-build run
+          # 26916902358, commit 6f508bd. No new Prisma migration in this release;
           # the digest is kept in lockstep with the Deployment (09) per convention.
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:60c3d1f539aa1ec80a324dab991d72c6cd14d298b26e9bdabbf129be53448b12
+          image: ghcr.io/jaupole/proposal-forge@sha256:7ff3ab28b480f2794941559853739d0675c5ec593d1e2ccde89d4d9f4ce899fb
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
