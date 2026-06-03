@@ -53,6 +53,11 @@ APP_ROLES=(
   "control-vso|control|control-vso|vso|3600|86400"
   "member-hub-vso|member-hub|member-hub-vso|vso|3600|86400"
   "member-hub-audit-signer|member-hub|member-hub-audit-signer|audit-signer|900|1800"
+  # proposal-forge (proposalapp) — VSO renders OIDC/SpiceDB/session/Gemini/GSA
+  # runtime bundle + ghcr-pull + the proposal-forge-files MinIO key. No
+  # audit-signer (PF has no OpenBao Transit usage). Policy paths: vso.hcl
+  # apps/proposal-forge/+ , minio/proposal-forge-files , minio/cnpg/credentials.
+  "proposal-forge-vso|proposal-forge|proposal-forge-vso|vso|3600|86400"
   # keycloak-ghcr-vso: lets the keycloak ns VSO binding render ghcr-pull-secret
   # (private image pull cred) via the scoped keycloak-ghcr policy. See
   # manifests/openbao/policies/keycloak-ghcr.hcl + manifests/keycloak/03b-ghcr-vso-binding.yaml.

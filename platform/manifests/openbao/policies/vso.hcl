@@ -211,3 +211,28 @@ path "secret/data/minio/ecosystem-graphics" {
 path "secret/metadata/minio/ecosystem-graphics" {
   capabilities = ["read"]
 }
+
+# Proposal Forge (proposal-forge ns) — apps/proposal-forge/runtime bundle
+# (OIDC_CLIENT_SECRET, SPICEDB_PRESHARED_KEY, SESSION_KEY, GEMINI_API_KEY,
+# GSA_API_KEY) + apps/proposal-forge/ghcr-pull (.dockerconfigjson). Rendered
+# by the VaultStaticSecrets in
+# platform/manifests/proposal-forge/04-vso-bindings.yaml. CNPG physical
+# backups reuse the shared minio/cnpg/credentials path (granted above).
+path "secret/data/apps/proposal-forge/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/proposal-forge/+" {
+  capabilities = ["read", "list"]
+}
+
+# MinIO scoped-user credentials for Proposal Forge file storage
+# (proposal-forge-files bucket — versioned, SSE-S3). Rendered by the
+# `proposal-forge-files-minio-vso` VaultStaticSecret into the
+# proposal-forge-files-minio K8s Secret, consumed via envFrom in the
+# proposal-forge Deployment.
+path "secret/data/minio/proposal-forge-files" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/proposal-forge-files" {
+  capabilities = ["read"]
+}
