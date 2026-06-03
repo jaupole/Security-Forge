@@ -1,0 +1,36 @@
+# Drift-proof the gateway's backend mTLS. The gateway→backend hop is HBONE only
+# while the backend namespace carries `istio.io/dataplane-mode: ambient`. Those
+# namespaces are app-owned (control, member-hub, observability, wazuh,
+# proposal-forge), so an app re-applying its namespace manifest WITHOUT the label
+# would silently drop the backend off mTLS.
+#
+# This Kyverno policy makes the label a platform invariant: an **admission**
+# mutate (re)adds it on every create/update of those namespaces — so an app
+# re-applying its namespace manifest can't drop the label. The initial enroll of
+# already-existing namespaces is done by 06a (`kubectl label`); we deliberately
+# do NOT use mutateExisting (Kyverno's background controller lacks `update` on
+# Namespaces). It only ADDS a label — never removes anything the app owns.
+# Covers proposal-forge without needing that app's repo. See ADR-0032.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: istio-ambient-gateway-backends
+  annotations:
+    policies.kyverno.io/title: "Gateway HTTP backends stay ambient-enrolled"
+    policies.kyverno.io/category: "Istio"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+spec:
+  background: false   # admission-only; no background-controller RBAC needed
+  rules:
+    - name: ensure-ambient-label
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: [control, member-hub, observability, wazuh, proposal-forge]
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              istio.io/dataplane-mode: ambient

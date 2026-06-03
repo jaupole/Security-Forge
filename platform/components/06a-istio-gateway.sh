@@ -56,6 +56,9 @@ kubectl apply -f "$M/05-netpol-istiod.yaml"
 kubectl apply -f "$M/25-backend-netpols.yaml"
 
 echo ">>> [1b] enroll HTTP backends into ambient (gateway→backend mTLS over HBONE)"
+# Kyverno policy keeps the ambient label on these app-owned namespaces even if an
+# app re-applies its namespace (drift-proof); the loop is the immediate enroll.
+kubectl apply -f "$M/26-mutate-ambient-backends.yaml"
 for ns in "${AMBIENT_BACKENDS[@]}"; do
   kubectl get ns "$ns" >/dev/null 2>&1 && \
     kubectl label ns "$ns" istio.io/dataplane-mode=ambient --overwrite || \

@@ -61,7 +61,11 @@ The whole live state is reproducible from `platform/components/06a-istio-gateway
   **15008**, NOT the app port — so the backend NetworkPolicy must open 15008
   (25-backend-netpols.yaml). Without it the gateway's `connect_originate` fails
   (`cx_connect_fail`) → 503. This is what made the first enrollment attempt look
-  like it "broke" gateway→backend.
+  like it "broke" gateway→backend. The ambient label sits on **app-owned**
+  namespaces, so a Kyverno admission-mutate policy
+  (`26-mutate-ambient-backends.yaml`) re-applies it on every namespace
+  create/update — an app re-applying its manifest cannot silently drop the
+  backend off mTLS (covers proposal-forge without that app's repo).
 - **`portal` is now public** (was tailnet) serving org-management; the control
   API's `/admin`+`/system` are blocked at the edge. `pf.secforge.dev` (Proposal
   Forge) is wired tailnet-only; its DNS A-record + OIDC client + base-URL are the
