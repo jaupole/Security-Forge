@@ -31,7 +31,7 @@ fi
 (( $# > 0 )) || { echo "usage: apply-manifest.sh [--server-side] <file> [file ...]" >&2; exit 1; }
 
 # envsubst allowlist — only substitute named globals, not arbitrary shell vars.
-ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_EMAIL} ${WILDCARD_CERT_NAMESPACE} ${WILDCARD_CERT_SECRET} ${STORAGE_CLASS} ${KEYCLOAK_PLATFORM_REALM} ${KEYCLOAK_TENANTS_REALM} ${TIMEZONE}'
+ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_EMAIL} ${WILDCARD_CERT_NAMESPACE} ${WILDCARD_CERT_SECRET} ${STORAGE_CLASS} ${KEYCLOAK_PLATFORM_REALM} ${KEYCLOAK_TENANTS_REALM} ${TIMEZONE} ${PUBLIC_IP} ${TAILNET_IP}'
 
 for f in "$@"; do
   [[ -f "$f" ]] || { echo "ERR: file not found: $f" >&2; exit 1; }

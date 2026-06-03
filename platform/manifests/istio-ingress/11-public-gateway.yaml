@@ -1,13 +1,103 @@
 # Public Istio ingress gateway — the internet-facing edge.
 #
-# The istio-ingress Deployment (Helm-managed, istio/gateway chart) binds
-# hostPort 80/443 on 0.0.0.0 (the PUBLIC NIC); this Gateway CR terminates the
-# *.${DOMAIN} wildcard cert (secforge-wildcard-tls) and 301s :80 -> :443.
-# Pairs with the tailnet plane (10-tailnet-gateway.yaml). See ADR-0032.
+# Self-contained manifest (ServiceAccount + Deployment + Service + Gateway CR),
+# mirroring the tailnet plane in 10-tailnet-gateway.yaml. This REPLACES the
+# previous istio/gateway Helm release `istio-ingress`, which had drifted to
+# STATUS=failed and left the public-NIC hostIP binding as an uncommitted
+# `kubectl patch` (so a from-scratch rebuild produced NO public edge). Applied
+# by components/06a-istio-gateway.sh. See ADR-0032 + README.md.
 #
-# Captured verbatim from the live cluster 2026-06-03 (kubectl-diff-clean). The
-# public-gateway config previously lived ONLY in the closed PR #75; this commit
-# makes the public edge reproducible from main.
+# ONE-TIME LIVE MIGRATION: on the existing cluster the old Helm release still
+# owns these objects. Before first apply there, remove it so this manifest is
+# the sole manager:  helm uninstall istio-ingress -n istio-ingress
+# (brief edge blip — do it in the istio window). On a fresh rebuild there is no
+# release, so apply is clean.
+#
+# NODE-SPECIFIC LITERAL: ${PUBLIC_IP} (globals.env) is the node's public IP.
+# hostPort 80/443 bind to that NIC only; this Gateway terminates the
+# *.${DOMAIN} wildcard cert (secforge-wildcard-tls) and 301s :80 -> :443.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: istio-ingress
+  namespace: istio-ingress
+  labels: { app: istio-ingress, istio: ingress }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-ingress
+  namespace: istio-ingress
+  labels: { app: istio-ingress, istio: ingress }
+spec:
+  replicas: 1
+  # Recreate (not RollingUpdate): a surge pod can't bind the hostPort while the
+  # old pod still holds it, so a rolling update would hang.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: istio-ingress, istio: ingress }
+  template:
+    metadata:
+      annotations:
+        # Triggers Istio gateway injection (fills in the istio-proxy container).
+        inject.istio.io/templates: gateway
+        sidecar.istio.io/inject: "true"
+        # Pin the proxy image to the istiod version. BUMP THIS (and the tailnet
+        # manifest's pin) during an Istio version upgrade — it's the codified
+        # way to move the gateways' data plane in lockstep with ISTIO_CHART_VER.
+        sidecar.istio.io/proxyImage: docker.io/istio/proxyv2:1.29.2@sha256:69ca4585993f4057861954f18be88df8268b713d114e7036bf9b185458c7a2c1
+        prometheus.io/path: /stats/prometheus
+        prometheus.io/port: "15020"
+        prometheus.io/scrape: "true"
+      labels:
+        app: istio-ingress
+        istio: ingress                    # selector for the Gateway CR + AuthorizationPolicies
+        sidecar.istio.io/inject: "true"
+        istio.io/dataplane-mode: none      # gateway Envoy, not ambient-captured
+    spec:
+      serviceAccountName: istio-ingress
+      # Explicit securityContext: Kyverno (require-run-as-nonroot + PSS) validates
+      # the Deployment template BEFORE Istio injection runs, so it must be set here.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1337
+        runAsGroup: 1337
+      containers:
+        - name: istio-proxy
+          image: auto                       # replaced by the gateway injector
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              add: [NET_BIND_SERVICE]       # bind 80/443 as uid 1337
+              drop: [ALL]
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: "2",  memory: 1Gi }
+          ports:
+            - { name: http,  containerPort: 80,  hostPort: 80,  hostIP: "${PUBLIC_IP}", protocol: TCP }
+            - { name: https, containerPort: 443, hostPort: 443, hostIP: "${PUBLIC_IP}", protocol: TCP }
+            - { name: http-envoy-prom, containerPort: 15090, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: istio-ingress
+  namespace: istio-ingress
+  labels: { app: istio-ingress, istio: ingress }
+spec:
+  type: ClusterIP
+  selector: { app: istio-ingress, istio: ingress }
+  ports:
+    - { name: status-port, port: 15021, targetPort: 15021 }
+    - { name: http2,       port: 80,    targetPort: 80 }
+    - { name: https,       port: 443,   targetPort: 443 }
+---
+# Public Gateway CR — terminates the *.${DOMAIN} wildcard cert and 301s :80 -> :443.
+# Selects the public Deployment above (istio: ingress). Pairs with the tailnet
+# plane (10-tailnet-gateway.yaml). Captured verbatim from the live cluster
+# 2026-06-03 (kubectl-diff-clean); previously lived ONLY in the closed PR #75.
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:

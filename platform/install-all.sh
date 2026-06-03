@@ -7,7 +7,6 @@
 #   Group 00 — host + foundational cluster substrate
 #     00-host-bootstrap        sysctl + ufw + unattended-upgrades + k3s audit policy
 #     00b-cert-manager         cert-manager + LE issuers + CF token via VSO + wildcard cert
-#     00c-ingress-nginx        nginx ingress controller (hostPort mode)
 #     00d-wazuh-storage        wazuh-local SC + static PVs on /var/lib/wazuh partition
 #     00e-minio-storage        minio-local SC + static PV on /var/lib/minio partition
 #
@@ -29,6 +28,8 @@
 #     05i-openbao-oidc-auth    OpenBao OIDC auth method federated to Keycloak
 #     05j-spicedb-vso-migration        SpiceDB → VSO config rendering
 #     06-istio                 Istio Ambient (base + istiod + cni + ztunnel + PA)
+#     06a-istio-gateway        Istio ingress gateways (public + tailnet edge) + routing CRs
+#                              (replaces retired 00c-ingress-nginx; tailnet plane needs 10-tailscale)
 #
 #   Group 07 — observability
 #     07-wazuh                 Wazuh manager + indexer + dashboard
@@ -94,7 +95,6 @@ COMPONENT_ORDER=(
   # Host + cluster foundations
   00-host-bootstrap
   00b-cert-manager
-  00c-ingress-nginx
   00d-wazuh-storage               # must run before 07-wazuh
   00e-minio-storage               # must run before 07a-minio
 
@@ -116,6 +116,8 @@ COMPONENT_ORDER=(
   05i-openbao-oidc-auth
   05j-spicedb-vso-migration
   06-istio
+  06a-istio-gateway               # public + tailnet ingress edge + routing CRs
+                                  # (tailnet plane binds the Tailscale NIC — needs 10-tailscale)
 
   # Observability
   07-wazuh
