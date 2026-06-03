@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${ISTIO_CHART_VER:-1.29.2}"
+CHART_VER="${ISTIO_CHART_VER:-1.30.0}"
 NS=istio-system
 
 # 1. base — CRDs + cluster-wide resources
