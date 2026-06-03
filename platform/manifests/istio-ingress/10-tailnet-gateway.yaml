@@ -40,7 +40,7 @@ spec:
         inject.istio.io/templates: gateway
         sidecar.istio.io/inject: "true"
         # Pin the proxy image to match the public gateway's istiod version.
-        sidecar.istio.io/proxyImage: docker.io/istio/proxyv2:1.29.2@sha256:69ca4585993f4057861954f18be88df8268b713d114e7036bf9b185458c7a2c1
+        sidecar.istio.io/proxyImage: registry.istio.io/release/proxyv2:1.30.0-distroless
         prometheus.io/path: /stats/prometheus
         prometheus.io/port: "15020"
         prometheus.io/scrape: "true"

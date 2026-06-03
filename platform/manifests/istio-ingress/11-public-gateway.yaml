@@ -46,7 +46,7 @@ spec:
         # Pin the proxy image to the istiod version. BUMP THIS (and the tailnet
         # manifest's pin) during an Istio version upgrade — it's the codified
         # way to move the gateways' data plane in lockstep with ISTIO_CHART_VER.
-        sidecar.istio.io/proxyImage: docker.io/istio/proxyv2:1.29.2@sha256:69ca4585993f4057861954f18be88df8268b713d114e7036bf9b185458c7a2c1
+        sidecar.istio.io/proxyImage: registry.istio.io/release/proxyv2:1.30.0-distroless
         prometheus.io/path: /stats/prometheus
         prometheus.io/port: "15020"
         prometheus.io/scrape: "true"
