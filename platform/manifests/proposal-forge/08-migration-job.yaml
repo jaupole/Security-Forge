@@ -68,12 +68,12 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Ecosystem active-org/SpiceDB-TLS fix — proposal-forge-image-build run
-          # 26886726347, commit 1cafe65. No new Prisma migration in this release;
+          # Dual-realm OIDC sign-in — proposal-forge-image-build run
+          # 26913675656, commit 848e869. No new Prisma migration in this release;
           # the digest is kept in lockstep with the Deployment (09) per convention.
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:9e672ed3ff5f75f6f0b008e13ea753e5c42b2f85e135e6c45d16759d0a9731fe
+          image: ghcr.io/jaupole/proposal-forge@sha256:60c3d1f539aa1ec80a324dab991d72c6cd14d298b26e9bdabbf129be53448b12
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).

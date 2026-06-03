@@ -66,6 +66,14 @@ spec:
         # Published by 05l-keycloak-secret-publish.sh.
         OIDC_CLIENT_SECRET:
           text: '{{ .Secrets.oidc_client_secret }}'
+        # Same `proposal-forge` user-login client, but in the TENANTS realm — a
+        # separate confidential client with its own secret. Drives the
+        # members→tenants-realm sign-in flow. App reads as
+        # OIDC_CLIENT_SECRET_TENANTS. Optional in OpenBao: when the
+        # `oidc_client_secret_tenants` key is absent the template renders empty
+        # and PF keeps platform-only sign-in.
+        OIDC_CLIENT_SECRET_TENANTS:
+          text: '{{ if .Secrets.oidc_client_secret_tenants }}{{ .Secrets.oidc_client_secret_tenants }}{{ end }}'
         # SpiceDB pre-shared key for gRPC auth (consumed, not owned here).
         SPICEDB_PRESHARED_KEY:
           text: '{{ .Secrets.spicedb_psk }}'

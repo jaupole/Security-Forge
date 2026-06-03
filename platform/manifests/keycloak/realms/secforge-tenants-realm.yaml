@@ -927,3 +927,58 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "false"
               lightweight.claim: "false"
+
+      # ─── proposal-forge (browser auth-code + PKCE, tenant-facing) ────
+      # Tenant users log into Proposal Forge here. Same dual-audience
+      # pattern as member-hub: `aud=proposal-forge` so PF verifies its own
+      # tokens, plus `aud=control` so PF can call Control's /api/v1/me for
+      # active-org context. The `platform` realm has the same clientId
+      # (operators); the issuer is the discriminator. Live-created on the
+      # cluster 2026-06-03 (DB clone of the platform client); this entry is
+      # the DR source of truth for a fresh-cluster rebuild.
+      - clientId: proposal-forge
+        name: Proposal Forge
+        description: Proposal Forge user-facing OIDC (browser auth-code + PKCE).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://pf.${DOMAIN}/*
+        webOrigins:
+          - https://pf.${DOMAIN}
+        attributes:
+          post.logout.redirect.uris: https://pf.${DOMAIN}/*
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: proposal-forge-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: proposal-forge
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          - name: control-audience-for-getme
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
