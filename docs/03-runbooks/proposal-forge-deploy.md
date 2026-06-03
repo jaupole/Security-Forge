@@ -49,10 +49,11 @@ platform realm needs it created by hand. Per
 but a one-off client created by **jaupole logged into the admin console** is the
 intended path and far safer than hand-written SQL.
 
-1. Sign in to the Keycloak admin console (`https://auth-admin.secforge.dev`,
-   master-realm admin `jaupole`, WebAuthn).
-2. Realm `platform` → **Clients** → **Import client**, paste the JSON below
-   (DOMAIN already resolved to `secforge.dev`), or create it manually to match.
+1. Sign in to the Keycloak admin console (`https://auth.secforge.dev/admin`
+   — `/admin` is the tailnet-only CGNAT-whitelisted ingress; master-realm admin
+   `jaupole`, WebAuthn). Switch the realm dropdown (top-left) to `platform`.
+2. **Clients** → **Import client**, paste the JSON below (DOMAIN already
+   resolved to `secforge.dev`), or create it manually to match.
 3. After save, **Clients → proposal-forge → Credentials** → copy the **Client
    secret** — you'll write it to OpenBao in step 2.
 
