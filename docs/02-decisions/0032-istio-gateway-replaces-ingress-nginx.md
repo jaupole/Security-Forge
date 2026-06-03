@@ -54,10 +54,14 @@ The whole live state is reproducible from `platform/components/06a-istio-gateway
   period, `--force` orphaning the CNI portmap DNAT (black-holes `:443`), and the
   node's inability to hairpin to its own public IP (false-negative tests). Full
   procedure: `docs/03-runbooks/ingress-nginx-to-istio-cutover.md`.
-- **Backend mTLS DEFERRED:** enrolling the HTTP backends in ambient broke
-  gateway→backend (503; gateway is non-ambient, the path needs convergence/HBONE
-  netpol work). Un-enrolled — backends run plaintext-on-node = nginx parity (no
-  regression). Re-enabling ambient mTLS is a tracked fast-follow.
+- **Backend mTLS ACTIVE:** the HTTP backends (control, member-hub, observability,
+  wazuh, proposal-forge) are ambient-enrolled, so gateway→backend is **HBONE
+  mTLS** (keycloak/openbao stay app-TLS, non-ambient). The non-obvious catch: an
+  ambient backend receives the gateway's inbound on ztunnel's HBONE port
+  **15008**, NOT the app port — so the backend NetworkPolicy must open 15008
+  (25-backend-netpols.yaml). Without it the gateway's `connect_originate` fails
+  (`cx_connect_fail`) → 503. This is what made the first enrollment attempt look
+  like it "broke" gateway→backend.
 - **`portal` is now public** (was tailnet) serving org-management; the control
   API's `/admin`+`/system` are blocked at the edge. `pf.secforge.dev` (Proposal
   Forge) is wired tailnet-only; its DNS A-record + OIDC client + base-URL are the

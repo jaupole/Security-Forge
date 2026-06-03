@@ -41,12 +41,26 @@ echo "════════════════════════�
 echo "  06a — Istio ingress gateway (hostPort ${HP_HTTP}/${HP_HTTPS})"
 echo "════════════════════════════════════════════════════════════"
 
+# HTTP backends enrolled in the ambient mesh so the gateway→backend hop is HBONE
+# mTLS. keycloak/openbao are NOT here — they terminate their own app-TLS.
+AMBIENT_BACKENDS=(control member-hub observability wazuh proposal-forge)
+
 # ─── 1. Namespace, wildcard cert, NetworkPolicies ──────────────────────────
 echo ">>> [1] namespace + wildcard Certificate + istiod XDS netpol + backend allows"
 kubectl apply -f "$M/00-namespace.yaml"
 kubectl apply -f "$M/01-wildcard-cert.yaml"
 kubectl apply -f "$M/05-netpol-istiod.yaml"
+# Backend allows MUST exist before ambient enrollment: an ambient backend
+# receives the gateway's inbound over ztunnel's HBONE port 15008 (not the app
+# port), and 25-backend-netpols.yaml opens 15008 for the ambient backends.
 kubectl apply -f "$M/25-backend-netpols.yaml"
+
+echo ">>> [1b] enroll HTTP backends into ambient (gateway→backend mTLS over HBONE)"
+for ns in "${AMBIENT_BACKENDS[@]}"; do
+  kubectl get ns "$ns" >/dev/null 2>&1 && \
+    kubectl label ns "$ns" istio.io/dataplane-mode=ambient --overwrite || \
+    echo "    (ns $ns not present yet — skip)"
+done
 kubectl -n cert-manager wait --for=condition=Ready certificate/secforge-wildcard \
   -n "$NS" --timeout=180s 2>/dev/null || \
   kubectl -n "$NS" wait --for=condition=Ready certificate/secforge-wildcard --timeout=180s || true

@@ -1,7 +1,13 @@
 # Allow the Istio gateway (ns istio-ingress) to reach each backend it routes to.
-# Mirrors the existing allow-ingress-nginx-to-<backend> policies (same pod
-# selectors + pod ports); the nginx ones are removed at decommission. These live
-# in the BACKEND namespaces.
+# Mirrors the existing allow-ingress-nginx-to-<backend> policies; the nginx ones
+# are removed at decommission. These live in the BACKEND namespaces.
+#
+# AMBIENT NOTE: for namespaces enrolled in the ambient mesh, the gateway reaches
+# the backend over HBONE — inbound arrives on ztunnel's port **15008**, NOT the
+# app port. So ambient HTTP backends (grafana/control/member-hub/wazuh/pf) allow
+# BOTH 15008 (HBONE mTLS, the live path) and the app port (fallback if the ns is
+# un-enrolled). keycloak/openbao are NOT ambient (they terminate their own TLS),
+# so they only need the app port.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -11,10 +17,9 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } } }]
-      ports: [{ port: 3000, protocol: TCP }]
+      ports: [{ port: 3000, protocol: TCP }, { port: 15008, protocol: TCP }]
 ---
-# control ns hosts both control (8080) and portal (4000) pods; mirror the nginx
-# all-pods + both-ports allow.
+# control ns hosts both control (8080) and portal (4000) pods.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: { name: allow-istio-ingress-to-control, namespace: control, labels: { secforge.platform/component: istio-gateway } }
@@ -23,7 +28,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } } }]
-      ports: [{ port: 4000, protocol: TCP }, { port: 8080, protocol: TCP }]
+      ports: [{ port: 4000, protocol: TCP }, { port: 8080, protocol: TCP }, { port: 15008, protocol: TCP }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -33,7 +38,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } } }]
-      ports: [{ port: 3000, protocol: TCP }]
+      ports: [{ port: 3000, protocol: TCP }, { port: 15008, protocol: TCP }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -63,7 +68,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } } }]
-      ports: [{ port: 5601, protocol: TCP }]
+      ports: [{ port: 5601, protocol: TCP }, { port: 15008, protocol: TCP }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -73,4 +78,4 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } } }]
-      ports: [{ port: 3001, protocol: TCP }]
+      ports: [{ port: 3001, protocol: TCP }, { port: 15008, protocol: TCP }]
