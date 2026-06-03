@@ -29,13 +29,23 @@ spec:
     groupInterval: 5m
     repeatInterval: 12h            # was 4h — cut re-nag frequency (2026-05-30 storm)
     routes:
-      # Throttle (NOT blackhole) the ephemeral trivy vulnerability-scan Jobs.
-      # They churn by design (scan-vulnerabilityreport-<hash>, 10-22s each); the
-      # vendored kps KubeJobFailed rule flaps on them whenever the trivy-operator
-      # hiccups. First failure STILL emails; repeats coalesce to ~12h. Scoped to
-      # trivy-system scan jobs ONLY — real app-namespace job failures (control,
-      # keycloak, member-hub, …) fall through to the normal email schedule.
-      - receiver: email-ops
+      # Blackhole the ephemeral trivy vulnerability-scan Jobs (2026-06-03,
+      # ADR-0033). ClientServer mode eliminated the dominant DB/cache-lock race
+      # that flooded the inbox all night, but a residual INTERMITTENT
+      # trivy-operator limitation remains: the heaviest multi-image pods (the
+      # CNPG DBs, control-billing-usage-sync) collide on the scan Job's shared
+      # /tmp and fail on some intervals. That's known-flaky operator churn on
+      # stock CNPG/topolvm images — NOT a security event — and it is not
+      # values-fixable (no within-Job serialization knob; the shared /tmp exists
+      # because the scan containers run readOnlyRootFilesystem:true). The earlier
+      # throttle-to-email still flooded because the job_name hash set churns each
+      # interval (group membership changes re-notify regardless of repeatInterval).
+      # Route to blackhole: stays visible+firing in Alertmanager, just off email.
+      # Scoped to trivy-system scan Jobs ONLY — real app-namespace Job failures
+      # (control, keycloak, member-hub, …) fall through to the normal email
+      # schedule, and a trivy-SERVER outage surfaces as its own StatefulSet alert,
+      # not as a scan-Job KubeJobFailed, so server health is NOT silenced.
+      - receiver: blackhole
         matchers:
           - name: alertname
             matchType: =
@@ -46,8 +56,6 @@ spec:
           - name: job_name
             matchType: =~
             value: "scan-vulnerabilityreport-.*"
-        groupInterval: 30m
-        repeatInterval: 12h
       # Dead-man's-switch + inhibitor are pure signal noise for email.
       - receiver: blackhole
         matchers:

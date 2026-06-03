@@ -29,6 +29,12 @@ operator:
     limits:   { cpu: 1,    memory: 1536Mi }
   scanJobsConcurrentLimit: 5
   scanJobsRetryDeleteAfterSeconds: 600
+  # Run scans in ClientServer mode against a built-in trivy-server (see the
+  # trivy.mode note below + ADR-0033). The chart renders the trivy-server
+  # StatefulSet + Service (:4954) ONLY when this is true, and auto-wires the
+  # operator's trivy.serverURL to it. This is the switch that kills the
+  # multi-image cache-lock race behind the KubeJobFailed flapping.
+  builtInTrivyServer: true
   # What to scan + how often
   vulnerabilityScannerEnabled: true
   configAuditScannerEnabled: true
@@ -56,9 +62,32 @@ trivy:
   # ImagePullSecrets — none for now; future: trust ghcr.io/secforge/* via
   # a deploy-key Secret + trivy.imagePullSecrets reference.
   imagePullSecrets: []
-  # Server mode would centralize the vulnerability DB cache; standalone
-  # is simpler at our scale (single node, modest workload count).
-  mode: Standalone
+  # ── ClientServer mode (2026-06-03, ADR-0033) ────────────────────────────
+  # Standalone ran one `trivy image` container PER image inside EACH scan Job,
+  # all sharing one emptyDir cache dir. Multi-image pods — every CNPG DB pod is
+  # 3 images (postgres + cloudnative-pg + barman sidecar); topolvm-controller is
+  # many — made those sibling containers race on the trivy BoltDB cache lock:
+  #   FATAL ... unable to initialize cache: cache may be in use by another
+  #   process: timeout
+  # → the Job failed → KubeJobFailed flapped ~every 30m all night (it's a RACE,
+  # so it's intermittent — some intervals win). ClientServer moves the vuln DB
+  # into ONE long-lived `trivy-server` StatefulSet; scan Jobs become thin
+  # clients holding NO local DB cache, so the lock contention is structurally
+  # gone. Set here for self-documentation; operator.builtInTrivyServer above is
+  # what makes the chart deploy the server and wire it up.
+  mode: ClientServer
+  # The server keeps the ~1GB vuln DB on a 5Gi PVC (chart default; default SC =
+  # local-path) so a server restart doesn't re-download the DB — a re-download
+  # window would leave scans failing and could itself flap KubeJobFailed.
+  # Revert cleanup: delete StatefulSet/trivy-server + PVC data-trivy-server-0.
+  storageClassEnabled: true
+  storageSize: 5Gi
+  # trivy-server pod resources (chart defaults are sane; pinned for visibility).
+  # The pod runs nonroot:65534, readOnlyRootFilesystem, automountSAToken:false.
+  server:
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits:   { cpu: 1,    memory: 1Gi }
   # Skip vulnerability scanning of certain registries that don't host
   # CVE-relevant content (NONE for us — leave default).
   ignoreUnfixed: false               # report CVEs even without fix

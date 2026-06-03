@@ -1,0 +1,37 @@
+# ClientServer-mode egress: client → built-in trivy-server (ADR-0033).
+#
+# In ClientServer mode the trivy-operator AND every scan-vulnerabilityreport-*
+# Job are CLIENTS of the in-cluster trivy-server (a StatefulSet fronted by the
+# `trivy-service` ClusterIP on :4954). The egress baseline (default-deny + DNS +
+# K8s API) and 06-egress-public-443.yaml (vuln-DB download) cover only public
+# :443 and the API — NOT this in-cluster hop. Without this allow:
+#   - the operator's pre-dispatch server health-check (:4954) is blocked, so it
+#     never dispatches client scans (symptom: zero scan Jobs created), and
+#   - any scan Job that did run could not reach the server.
+# Standalone mode didn't need this (each Job scanned locally), so it's net-new
+# with the ClientServer cutover.
+#
+# Ingress to the server is unrestricted in this ns (only Egress-type policies
+# exist here), so only the client-side egress allow is required. The server's
+# own egress to mirror.gcr.io for the DB is already covered by 06 + DNS.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-trivy-server
+  namespace: trivy-system
+  labels:
+    secforge.platform/component: egress-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        # Same-namespace selector (no namespaceSelector ⇒ trivy-system only).
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trivy-server
+      ports:
+        - port: 4954
+          protocol: TCP
