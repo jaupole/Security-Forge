@@ -68,12 +68,12 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Ecosystem cutover build — proposal-forge-image-build run 26859484787,
-          # commit ffab547 (Express 5 SPA-fallback fix; + a5953a5 Prisma
-          # schema-engine libssl-3.0.x fix). Supersedes b4c0d30/a5953a5 images.
+          # Ecosystem active-org/SpiceDB-TLS fix — proposal-forge-image-build run
+          # 26886726347, commit 1cafe65. No new Prisma migration in this release;
+          # the digest is kept in lockstep with the Deployment (09) per convention.
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:8cb629d622fd1370bdc06013d91fc8f801863efcde1d0460a007a681cd0ee4f6
+          image: ghcr.io/jaupole/proposal-forge@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
