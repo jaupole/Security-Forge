@@ -68,10 +68,11 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # First cosign-signed build (proposal-forge-image-build run 26851763152,
-          # commit cff926e+). Bump to the matching digest on each app release;
-          # the Deployment (P6) must reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+          # Ecosystem cutover build — proposal-forge-image-build run 26856812311,
+          # merge commit b4c0d30 (Keycloak OIDC + SpiceDB + org RLS + MinIO).
+          # Bump to the matching digest on each app release; the Deployment (P6)
+          # MUST reference the SAME digest.
+          image: ghcr.io/jaupole/proposal-forge@sha256:4139a407a713b814d379dbbce260812af918e93be69bc15138836864dcfc9d7f
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
