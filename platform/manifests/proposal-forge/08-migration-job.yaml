@@ -69,11 +69,11 @@ spec:
       containers:
         - name: migrate
           # App-activation gate — proposal-forge-image-build run
-          # 26916902358, commit 6f508bd. No new Prisma migration in this release;
+          # 26917464528, commit a6e8c82. No new Prisma migration in this release;
           # the digest is kept in lockstep with the Deployment (09) per convention.
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:7ff3ab28b480f2794941559853739d0675c5ec593d1e2ccde89d4d9f4ce899fb
+          image: ghcr.io/jaupole/proposal-forge@sha256:5803ab02e74469ca5880f663ee849e2cac181500ffe80d60648564b40502e962
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).

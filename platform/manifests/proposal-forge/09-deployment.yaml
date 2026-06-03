@@ -58,9 +58,9 @@ spec:
       containers:
         - name: app
           # App-activation gate (block deactivated orgs) on top of dual-realm —
-          # proposal-forge-image-build run 26916902358, commit 6f508bd.
-          # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:7ff3ab28b480f2794941559853739d0675c5ec593d1e2ccde89d4d9f4ce899fb
+          # proposal-forge-image-build run 26917464528, commit a6e8c82 (fixes the
+          # isAppActivated response-shape bug). MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:5803ab02e74469ca5880f663ee849e2cac181500ffe80d60648564b40502e962
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
