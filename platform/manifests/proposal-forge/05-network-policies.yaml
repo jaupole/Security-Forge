@@ -83,26 +83,6 @@ spec:
     - to:
         - podSelector: {}
 
----
-# ingress-nginx → app on the container's :3001.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-nginx-to-proposal-forge
-  namespace: proposal-forge
-  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: proposal-forge
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
-        - { protocol: TCP, port: 3001 }
 
 ---
 # Egress to Keycloak (OIDC discovery + JWKS + token exchange).

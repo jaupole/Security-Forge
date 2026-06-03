@@ -151,10 +151,13 @@ grafana:
 
   # Resolve auth.${DOMAIN} (OIDC token endpoint) AND grafana.${DOMAIN}
   # (sidecar's reload-datasources call gets 302-redirected to public host
-  # because enforce_domain=true) to the ingress-nginx ClusterIP.
-  # Same hairpin fix as OpenBao. If ingress-nginx is reinstalled, update this IP.
+  # because enforce_domain=true) to the Istio public ingress-gateway ClusterIP.
+  # Same hairpin fix as OpenBao. Two-plane gateway migration (2026-06-03) moved
+  # this off ingress-nginx onto the Istio gateway. ClusterIP is NOT pinned — if
+  # the istio-ingress Service is recreated, update to the new
+  # `kubectl -n istio-ingress get svc istio-ingress` ClusterIP.
   hostAliases:
-    - ip: "10.43.119.237"
+    - ip: "10.43.24.153"   # istio-ingress (public gateway) ClusterIP
       hostnames:
         - auth.${DOMAIN}
         - grafana.${DOMAIN}

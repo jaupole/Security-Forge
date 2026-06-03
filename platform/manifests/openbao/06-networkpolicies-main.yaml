@@ -22,29 +22,6 @@
 #   openbao → kube-dns                  (DNS)
 #   openbao pod-to-pod                  → :8201 (Raft)
 
-# ──────────────────────────────────────────────────────────────────────
-# Ingress: allow ingress-nginx → main openbao:8200 (the public Ingress).
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-nginx-to-openbao
-  namespace: openbao
-  labels:
-    secforge.platform/component: openbao
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: openbao
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
-        - protocol: TCP
-          port: 8200
 
 # ──────────────────────────────────────────────────────────────────────
 # Ingress: allow the Istio ingress gateways → main openbao:8200. Both the

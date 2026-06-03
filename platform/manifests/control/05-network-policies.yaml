@@ -106,29 +106,6 @@ spec:
     - to:
         - podSelector: {}
 
----
-# Ingress-nginx → portal + control via the cluster ClusterIP Services.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-nginx-to-control
-  namespace: control
-  labels:
-    secforge.platform/component: control
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchExpressions:
-      - { key: app.kubernetes.io/name, operator: In, values: [control, portal] }
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
-        - { protocol: TCP, port: 4000 }   # control API
-        - { protocol: TCP, port: 8080 }   # portal nginx
 
 ---
 # Cross-ns ingress: ecosystem apps that consume Control's API directly

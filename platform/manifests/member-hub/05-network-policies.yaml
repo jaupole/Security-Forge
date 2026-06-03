@@ -106,28 +106,6 @@ spec:
     - to:
         - podSelector: {}
 
----
-# Ingress-nginx → portal + member-hub via the cluster ClusterIP Services.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-nginx-to-member-hub
-  namespace: member-hub
-  labels:
-    secforge.platform/component: member-hub
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchExpressions:
-      - { key: app.kubernetes.io/name, operator: In, values: [member-hub, portal] }
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
-        - { protocol: TCP, port: 3000 }   # member-hub API (Hono backend, 09-backend-deployment.yaml containerPort)
 
 ---
 # Egress to Keycloak for OIDC discovery + JWKS fetch + (rare) admin API.
