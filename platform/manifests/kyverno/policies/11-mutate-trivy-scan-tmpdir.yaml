@@ -1,0 +1,79 @@
+# Per-container temp isolation for trivy-operator scan Jobs (ADR-0033 §Residual).
+#
+# In ClientServer mode trivy-operator still creates ONE scan Job per workload with
+# ONE container per DISTINCT image, all running CONCURRENTLY and SHARING a single
+# `tmp` emptyDir mounted at /tmp. trivy uses os.TempDir() (=/tmp) for its working
+# directory; concurrent siblings collide there — one container's cleanup RemoveAll's
+# a /tmp/trivy-* dir out from under a sibling mid-walk, which then dies with:
+#   "unable to create temporary directory: stat /tmp/trivy-N: no such file or directory"
+# One image-container failing fails the WHOLE Job -> KubeJobFailed. This is the
+# residual that the ClientServer cutover alone did NOT fix (it removed the DB/cache
+# -lock race; this is the /tmp working-dir race). It bites the heaviest multi-image
+# pods: the 5 CNPG DB pods, control-billing-usage-sync, etc.
+#
+# Fix: give EACH scan container its OWN writable temp — a per-container emptyDir
+# mounted at /trivytmp, plus TMPDIR=/trivytmp. Why this shape:
+#   * The emptyDir MOUNT auto-creates /trivytmp, so trivy's os.MkdirTemp succeeds.
+#     A bare `TMPDIR=/tmp/<name>` would fail ENOENT — Go's MkdirTemp does NOT create
+#     the parent dir, and the scan container's `/bin/sh -c` wrapper never mkdirs it.
+#   * Each container's /trivytmp is a DISTINCT volume, so there is no shared path
+#     and no cross-container RemoveAll — the collision is structurally gone.
+#   * readOnlyRootFilesystem:true is preserved (writes land on the mounted emptyDir,
+#     not the container root fs). --cache-dir (/tmp/trivy/.cache) and --output
+#     (/tmp/scan/result_<c>.json, per-container filenames) stay on the shared `tmp`
+#     volume but are not the collision surface in client mode.
+#
+# Scoped to trivy-system + the two operator labels so it can never touch app pods.
+# `TMPDIR` is not a secret-shaped name -> passes 09-no-secret-shaped-env. No
+# SecurityContext/registry change -> passes pss-baseline / runasnonroot /
+# restrict-image-registries.
+#
+# REMOVE this policy (and the Alertmanager blackhole route in
+# observability/13-alertmanager-email.yaml) once a fixed trivy/operator ships.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: trivy-scan-tmpdir-isolation
+  annotations:
+    policies.kyverno.io/title: Per-container TMPDIR isolation for trivy scan jobs
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+  labels:
+    secforge.platform/component: kyverno-policy
+spec:
+  background: false            # admission-time only; scan pods are short-lived
+  rules:
+    - name: isolate-scan-container-tmp
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["trivy-system"]
+              selector:
+                matchLabels:
+                  app.kubernetes.io/managed-by: trivy-operator
+                  vulnerabilityReport.scanner: Trivy
+      mutate:
+        foreach:
+          # 1) per container: redirect TMPDIR + mount its own temp volume
+          - list: "request.object.spec.containers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/env/-"
+                value:
+                  name: TMPDIR
+                  value: "/trivytmp"
+              - op: add
+                path: "/spec/containers/{{elementIndex}}/volumeMounts/-"
+                value:
+                  name: "ttmp-{{element.name}}"
+                  mountPath: "/trivytmp"
+          # 2) add the matching per-container emptyDir volumes
+          - list: "request.object.spec.containers"
+            patchesJson6902: |-
+              - op: add
+                path: "/spec/volumes/-"
+                value:
+                  name: "ttmp-{{element.name}}"
+                  emptyDir: {}

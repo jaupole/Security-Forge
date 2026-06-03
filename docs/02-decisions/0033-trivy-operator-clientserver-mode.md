@@ -99,12 +99,32 @@ per-Job, not per-container; there is no within-Job serialization knob; and the
 shared `/tmp` exists *because* the scan containers run `readOnlyRootFilesystem:
 true`, which we will not weaken.
 
-**Decision (2026-06-03):** route `KubeJobFailed{namespace="trivy-system",
+**Interim mitigation (2026-06-03):** routed `KubeJobFailed{namespace="trivy-system",
 job_name=~"scan-vulnerabilityreport-.*"}` to the Alertmanager **blackhole**
-receiver (`platform/manifests/observability/13-alertmanager-email.yaml`) — it is
-known-flaky operator churn on stock CNPG/topolvm images, kept visible+firing in
-Alertmanager but off the inbox. The scope is deliberately tight: real
-app-namespace Job failures still email, and a trivy-**server** outage surfaces as
-its own StatefulSet alert (not a scan-Job `KubeJobFailed`), so server health is
-not silenced. A chart bump (0.33.1 / trivy-operator 0.31.1) is the open upstream
-lever if multi-image temp handling improves there.
+receiver (`platform/manifests/observability/13-alertmanager-email.yaml`) to stop
+the inbox flood while the real fix was developed.
+
+**Resolution (2026-06-03) — per-container TMPDIR isolation.** Root mechanism: the
+sibling scan containers run `/bin/sh -c "trivy …"`, and trivy's `os.TempDir()`
+(=`/tmp`) is the single SHARED `tmp` emptyDir — so concurrent siblings collide in
+`/tmp` (one container's cleanup `RemoveAll`s a `/tmp/trivy-*` dir out from under a
+sibling). Fix: Kyverno mutating policy
+`platform/manifests/kyverno/policies/11-mutate-trivy-scan-tmpdir.yaml` gives each
+scan container its OWN emptyDir mounted at `/trivytmp` + `TMPDIR=/trivytmp`. The
+mount auto-creates the dir (a bare `TMPDIR=/tmp/<name>` would `ENOENT` — Go's
+`MkdirTemp` doesn't create parents), each `/trivytmp` is a distinct volume (no
+shared path), and `readOnlyRootFilesystem:true` is preserved. Verified live: the
+previously-deterministically-failing 3-image CNPG scans (`spicedb-db`,
+`proposal-forge-db`) now Complete in <30s, zero Failed jobs.
+
+**Re-enable gate (NOT yet done).** The blackhole route stays until a soak proves
+the fix holds: **G1** zero Failed scan Jobs point-in-time; **G2**
+`kube_job_failed{namespace="trivy-system"}==0` sustained ≥6h (≥1 forced full
+re-dispatch in the window); **G3** every multi-image workload yields a
+VulnerabilityReport per distinct image. When G1–G3 pass, delete the blackhole
+route block in `13-alertmanager-email.yaml` (scan-Job `KubeJobFailed` then falls
+through to `email-ops`) and flip this section to Resolved. Watch for a failure-mode
+shift to `no space left on device` (per-container `/tmp` raises peak emptyDir use
+on the single node); the safety valve is lowering `operator.scanJobsConcurrentLimit`.
+Policy 11 is a mitigation pending an upstream trivy/operator fix — remove it (and
+this gate) when a fixed release ships.
