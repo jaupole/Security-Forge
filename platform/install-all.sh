@@ -6,7 +6,10 @@
 #
 #   Group 00 — host + foundational cluster substrate
 #     00-host-bootstrap        sysctl + ufw + unattended-upgrades + k3s audit policy
+#     00b-cis-hardening        CIS Ubuntu 24.04 host hardening (Wazuh SCA)
+#     00c-cis-hardening-followup   CIS gaps closed after first SCA scan
 #     00b-cert-manager         cert-manager + LE issuers + CF token via VSO + wildcard cert
+#     00d-upstream-image-check weekly systemd timer watching tracked image digests
 #     00d-wazuh-storage        wazuh-local SC + static PVs on /var/lib/wazuh partition
 #     00e-minio-storage        minio-local SC + static PV on /var/lib/minio partition
 #
@@ -26,7 +29,13 @@
 #     05g-keycloak-realms      operator-step: import platform realm
 #     05h-keycloak-openbao-client      Keycloak openbao OIDC client
 #     05i-openbao-oidc-auth    OpenBao OIDC auth method federated to Keycloak
-#     05j-spicedb-vso-migration        SpiceDB → VSO config rendering
+#     05j-spicedb-vso-migration        SpiceDB to VSO config rendering
+#     05j-app-vso-roles        OpenBao k8s-auth roles for app namespaces
+#     05k-openbao-jwt-roles    OpenBao JWT-SPIFFE Transit roles (control, member-hub)
+#     03a-keycloak-realm-hardening     realm hardening replay (AFTER 05g; operator-step kcadm)
+#     03b-keycloak-tenants-flexible-flow   tenants flexible first-factor replay (DB-write)
+#     03c-keycloak-master-passkey-2fa      master-realm passkey-2FA replay (DB-write)
+#     05l-keycloak-secret-publish      publish auto-gen client secrets to consumers
 #     06-istio                 Istio Ambient (base + istiod + cni + ztunnel + PA)
 #     06a-istio-gateway        Istio ingress gateways (public + tailnet edge) + routing CRs
 #                              (replaces retired 00c-ingress-nginx; tailnet plane needs 10-tailscale)
@@ -55,16 +64,32 @@
 #     09a-velero               Velero
 #     09b-cnpg-backups         CNPG backup config + ScheduledBackups
 #     09c-velero-tune          PV-backup exclusions
-#     09d-restore-drill        operator-runnable: validates the backup pipeline
+#     09f-minio-sse-encryption MinIO bucket-level SSE-S3
+#     09h-cnpg-barman-plugin   CNPG Barman Cloud plugin wiring
+#
+#   Group 10 — operator-access mesh + ingress edge
+#     10-tailscale             operator-step: operator-access mesh (provides the tailnet NIC)
+#     06a-istio-gateway        Istio ingress gateways (public + tailnet edge) + routing CRs
+#                              (runs here, not at 06: the tailnet plane binds the Tailscale NIC)
+#     10b-sshd-lockdown        bind sshd to the tailnet interface only
 #
 #   Group 11 — host-resident agents
 #     11-wazuh-host-agent      systemd-installed Wazuh agent (replaces 07b-wazuh-agent)
+#     11a-auditd               Linux audit subsystem (auditd)
+#     11b-fail2ban             fail2ban for the bare-metal host
 #
-#   Group 12 — admission policy + governance
+#   Group 12-14 — governance + scanning
 #     12-kyverno               Kyverno admission engine (HA)
 #     12b-kyverno-policies     ClusterPolicies (PSS, image-signature, etc.)
-#     12c-kyverno-image-verify-creds
-#                              GHCR read credential for image verification
+#     12c-kyverno-image-verify-creds   GHCR read credential for image verification
+#     12d-system-netpols       default-deny netpols for kube-system/istio/topolvm
+#     13-trivy-operator        Trivy Operator (CVE + misconfig + secret scanning)
+#     14-trivy-wazuh           Trivy to Wazuh integration
+#
+#   Excluded from the auto-order (run manually): backup/restore drills (09d/09g/09i),
+#   Velero passphrase rotation (09e), dated cleanups (99-*), and superseded scripts:
+#   07b-wazuh-agent (to 11), 10a-ingress-tailnet-split (nginx-era), 00c-ingress-nginx
+#   (retired), 05k-keycloak-webauthn-mandatory (WebAuthn now codified in the realm import).
 #
 #   Per-app — instantiation, not in install-all
 #     bootstrap-app.sh         takes APP_* env vars; instantiates the
@@ -94,7 +119,10 @@ COMPONENTS_DIR="$SCRIPT_DIR/components"
 COMPONENT_ORDER=(
   # Host + cluster foundations
   00-host-bootstrap
+  00b-cis-hardening               # CIS Ubuntu 24.04 host hardening (review vs docs/06-reference/host-hardening-tracker.md)
+  00c-cis-hardening-followup      # CIS gaps closed after first SCA scan
   00b-cert-manager
+  00d-upstream-image-check        # weekly upstream image-digest watch timer
   00d-wazuh-storage               # must run before 07-wazuh
   00e-minio-storage               # must run before 07a-minio
 
@@ -111,13 +139,19 @@ COMPONENT_ORDER=(
   05d-vso-install
   05e-vso-configure
   05f-openbao-jwt-auth
-  05g-keycloak-realms             # operator-step
+  05g-keycloak-realms             # operator-step — imports platform + secforge-tenants realms
   05h-keycloak-openbao-client
   05i-openbao-oidc-auth
   05j-spicedb-vso-migration
+  05j-app-vso-roles               # OpenBao k8s-auth roles for app namespaces (backlog #11)
+  05k-openbao-jwt-roles           # OpenBao JWT-SPIFFE Transit roles (control, member-hub)
+  # Keycloak realm replays run AFTER the realm import (05g), not at their 03 numeric slot:
+  03a-keycloak-realm-hardening    # realm hardening replay (operator-step: kcadm)
+  03b-keycloak-tenants-flexible-flow  # tenants flexible first-factor replay (DB-write)
+  03c-keycloak-master-passkey-2fa     # master-realm passkey-2FA replay (DB-write)
+  05l-keycloak-secret-publish     # publish auto-gen client secrets to consumers — AFTER realms + 05a-05k
+
   06-istio
-  06a-istio-gateway               # public + tailnet ingress edge + routing CRs
-                                  # (tailnet plane binds the Tailscale NIC — needs 10-tailscale)
 
   # Observability
   07-wazuh
@@ -139,19 +173,31 @@ COMPONENT_ORDER=(
   07p-wazuh-alerts-retention
   07q-grafana-dashboards
 
-  # Backups
+  # Backups + at-rest encryption
   09a-velero
   09b-cnpg-backups
   09c-velero-tune
+  09f-minio-sse-encryption        # MinIO bucket-level SSE-S3
+  09h-cnpg-barman-plugin          # CNPG Barman Cloud plugin wiring
+
+  # Operator-access mesh + ingress edge
+  # (10-tailscale provides the tailnet NIC the tailnet gateway binds — so 06a runs HERE, not at 06)
+  10-tailscale                    # operator-step — operator-access mesh (provides the tailnet NIC)
+  06a-istio-gateway               # public + tailnet ingress edge + routing CRs
+  10b-sshd-lockdown               # bind sshd to the tailnet only
 
   # Host-resident agents
   11-wazuh-host-agent
+  11a-auditd
+  11b-fail2ban
 
-  # Governance
+  # Governance + scanning
   12-kyverno
   12b-kyverno-policies
   12c-kyverno-image-verify-creds
   12d-system-netpols              # default-deny netpols for kube-system/istio/topolvm (H-4.14)
+  13-trivy-operator
+  14-trivy-wazuh
 )
 
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
