@@ -113,6 +113,16 @@ After the two fixes:
 3. **Run 05l-keycloak-secret-publish.sh AFTER realm-import** — it bridges the
    operator-generated secrets to the consumer destinations. Without it,
    apps fail auth.
+   - **Roster update 2026-06-03:** `proposal-forge` (app `proposalapp`) was
+     codified after this drill, so the realm now has **10** custom clients
+     (**9** confidential). 05l publishes its secret to
+     `secret/apps/proposal-forge/runtime#oidc_client_secret`. A future Tier 1
+     re-drill should additionally expect
+     `secret/apps/proposal-forge/runtime` → 1 key (`oidc_client_secret`). The
+     remaining `proposal-forge/runtime` fields (`spicedb_psk`,
+     `session_signing_key`, `gemini_api_key`, `gsa_api_key`) are operator-
+     populated, NOT published by 05l — see
+     [proposal-forge-deploy.md](proposal-forge-deploy.md) step 2.
 4. **Cluster-rebuild ordering matters**:
    `k3s+secrets-encryption → kube → cnpg → vso → openbao operator+CR+05c+05j → keycloak operator+CR+realm-import → 05l → app deploys`.
    The new ordering puts 05l AFTER realm-import, which is different from

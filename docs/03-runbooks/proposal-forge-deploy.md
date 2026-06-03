@@ -54,8 +54,11 @@ intended path and far safer than hand-written SQL.
    `jaupole`, WebAuthn). Switch the realm dropdown (top-left) to `platform`.
 2. **Clients** → **Import client**, paste the JSON below (DOMAIN already
    resolved to `secforge.dev`), or create it manually to match.
-3. After save, **Clients → proposal-forge → Credentials** → copy the **Client
-   secret** — you'll write it to OpenBao in step 2.
+3. After save, that's it — **no need to copy the secret**.
+   `05l-keycloak-secret-publish.sh` reads `CLIENT.secret` straight from the
+   Keycloak DB and publishes it to `secret/apps/proposal-forge/runtime#oidc_client_secret`
+   (step 2f). This is also what makes a DR rebuild self-healing — the realm-import
+   regenerates the secret and 05l re-publishes it, no manual step.
 
 ```json
 {
@@ -140,12 +143,12 @@ B bao policy write vso - < ~/secforge/platform/manifests/openbao/policies/vso.hc
 # 2b. Create the k8s-auth role (idempotent; reads openbao-root-token-tmp).
 bash ~/secforge/platform/components/05j-app-vso-roles.sh
 
-# 2c. Runtime bundle. oidc_client_secret = step 1's value;
-#     spicedb_psk = the shared PSK (read it from the live Secret);
-#     session_signing_key = fresh 32-byte base64; gemini/gsa rotated.
+# 2c. Runtime bundle — the OPERATOR-populated fields ONLY (oidc_client_secret
+#     is added by 05l in 2f). spicedb_psk = the shared PSK; session_signing_key
+#     = fresh 32-byte base64; gemini/gsa rotated. NOTE: `bao kv put` REPLACES
+#     the whole path, so this MUST run BEFORE 05l (which merge-adds the secret).
 PSK=$(sudo -n kubectl get secret -n spicedb spicedb-config-vso -o jsonpath='{.data.preshared_key}' | base64 -d)
 B bao kv put secret/apps/proposal-forge/runtime \
-    oidc_client_secret='<paste from Keycloak step 1>' \
     spicedb_psk="$PSK" \
     session_signing_key="$(openssl rand -base64 32)" \
     gemini_api_key='<rotated Gemini key>' \
@@ -156,6 +159,12 @@ B bao kv put secret/apps/proposal-forge/runtime \
 B bao kv put secret/apps/proposal-forge/ghcr-pull username='jaupole' password='<ghcr PAT>'
 
 # (2e. minio/proposal-forge-files is written in step 3 after the bucket+key exist.)
+
+# 2f. Publish the Keycloak client_secret from the KC DB → OpenBao
+#     (secret/apps/proposal-forge/runtime#oidc_client_secret). Merge-style:
+#     preserves the 2c fields. Mints its own admin-break-glass token, so it
+#     does NOT need openbao-root-token-tmp. Idempotent (re-run safe).
+bash ~/secforge/platform/components/05l-keycloak-secret-publish.sh
 ```
 
 > **Rotate** the Gemini + GSA keys on cutover — the values currently in the

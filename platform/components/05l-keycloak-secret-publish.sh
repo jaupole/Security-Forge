@@ -97,6 +97,8 @@ CLIENT_DESTINATIONS=(
   "member-hub|openbao://secret/apps/member-hub/runtime#oidc_client_secret"
   "member-hub-admin|openbao://secret/apps/member-hub/runtime#admin_client_secret"
   "member-hub-system|openbao://secret/apps/member-hub/runtime#system_client_secret"
+  # proposal-forge (proposalapp): single user-login client, no admin/system SA.
+  "proposal-forge|openbao://secret/apps/proposal-forge/runtime#oidc_client_secret"
 )
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
