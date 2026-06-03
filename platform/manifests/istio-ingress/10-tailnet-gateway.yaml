@@ -84,6 +84,19 @@ spec:
     - { name: http2,       port: 80,    targetPort: 80 }
     - { name: https,       port: 443,   targetPort: 443 }
 ---
+# The tailnet gateway serves ALL hosts (`*.${DOMAIN}`), not just the tailnet
+# ones. It's bound to the tailscale NIC, so this is NOT public exposure — it
+# just means an operator on the tailnet reaches EVERY host (public + tailnet)
+# via the one tailnet IP. This avoids two client-side traps from a split where
+# the tailnet gateway served only tailnet hosts:
+#   - public hosts (members/portal) 404'd if the operator's box resolved them
+#     to the tailnet IP;
+#   - HTTP/2 connection coalescing (shared wildcard cert) sent public-host
+#     requests onto the tailnet connection → 404.
+# Public hosts stay reachable from the internet via the public gateway; tailnet
+# hosts (no public DNS) remain reachable ONLY here. The public-host
+# VirtualServices (member-hub, control-portal, keycloak, qbo, billing) are
+# attached to BOTH gateways so they route here too — see README.
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
@@ -93,16 +106,10 @@ spec:
   selector: { istio: ingress-tailnet }
   servers:
     - port: { number: 80, name: http, protocol: HTTP }
-      hosts: &tailnetHosts
-        - pf.${DOMAIN}
-        - control.${DOMAIN}
-        - admin.${DOMAIN}
-        - grafana.${DOMAIN}
-        - bao.${DOMAIN}
-        - wazuh.${DOMAIN}
+      hosts: ["*.${DOMAIN}"]
     - port: { number: 443, name: https, protocol: HTTPS }
       tls: { mode: SIMPLE, credentialName: secforge-wildcard-tls }
-      hosts: *tailnetHosts
+      hosts: ["*.${DOMAIN}"]
 ---
 # control + admin shells route through the tailnet plane (portal stays public).
 # Mirror of the public control-portal VirtualService's routes.

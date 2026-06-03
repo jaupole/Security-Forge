@@ -55,6 +55,28 @@ public gateway is ever recreated from its Helm source:
 4. **Deleted dead policies.** `pf-tailnet` and `tailnet-dashboards`
    AuthorizationPolicies removed (non-functional source-IP denies for hosts that
    are now L3-isolated).
+5. **Public VS dual-attached to the tailnet gateway.** `member-hub`,
+   `control-portal`, `keycloak`, `qbo`, `billing` had
+   `istio-ingress/secforge-gateway-tailnet` appended to `.spec.gateways` so the
+   tailnet gateway routes them too (the tailnet Gateway CR serves `*.${DOMAIN}`).
+   This lets an on-tailnet operator reach every host via the one tailnet IP and
+   avoids the 404 / HTTP-2-coalescing traps described in `10-tailnet-gateway.yaml`.
+
+## Operator DNS / hosts mapping (REQUIRED after the split)
+
+There are now two ingress IPs. Resolve each host to the right one:
+
+- **Tailnet hosts** (`pf`, `control`, `admin`, `grafana`, `bao`, `wazuh`) have
+  **no public DNS** — add to your hosts file / MagicDNS → `100.77.117.112`.
+  `admin` + `control` previously had public A records and were reached via the
+  public IP; after the split they 404 there, so this mapping is now required.
+- **Public hosts** (`members`, `portal`, `auth`, `qbo`, `billing`) resolve via
+  public DNS → `65.21.25.40` and work on AND off the tailnet. Do NOT pin these
+  to the tailnet IP in a *static* hosts file (breaks them off-tailnet). On the
+  tailnet they ALSO work via the tailnet IP (the tailnet gateway serves them),
+  so MagicDNS pointing `*.${DOMAIN}` → `100.77.117.112` on-tailnet is fine.
+- Stale public A records for `admin`/`control` (→ `65.21.25.40`) should be
+  removed in Cloudflare — they now resolve to a 404.
 
 ## Known follow-ups (not yet done)
 
