@@ -31,6 +31,17 @@
     "public.ecr.aws/curl/curl",
     "ghcr.io/authzed/spicedb-operator"
   ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**",
+    "platform/manifests/spicedb/operator/bundle.yaml"
+  ],
   "kubernetes": {
     "managerFilePatterns": [
       "platform/manifests/**/*.yaml",
@@ -147,11 +158,6 @@
       "description": "ingress-nginx chart is being retired (ADR-0032 — replaced by the Istio gateway; Deployment scaled to 0). Its CHART_VER manager is kept for completeness, but updates are disabled so a decommissioned component does not generate noise PRs. Delete this rule to resume tracking if the retirement is reversed.",
       "matchDatasources": ["helm"],
       "matchPackageNames": ["ingress-nginx"],
-      "enabled": false
-    },
-    {
-      "description": "Vendored SpiceDB operator bundle (OLM-style). Its update-graph ConfigMap is the operator's INTERNAL SpiceDB release catalog (imageName ghcr.io/authzed/spicedb + ~50 tag entries), not something we version-bump — Renovate was misparsing it into a bare-org ref (ghcr.io/authzed -> GHCR 400 NAME_INVALID, surfacing as the 'Error obtaining docker token' warning). Disable all managers for this vendored file; the operator image itself is pinned and already in ignoreDeps.",
-      "matchFileNames": ["platform/manifests/spicedb/operator/bundle.yaml"],
       "enabled": false
     }
   ],
