@@ -164,7 +164,8 @@
       "description": "Non-major platform Helm chart bumps (patch/minor/digest) group into a single 'platform helm charts' PR, kept OUT of config:recommended's group:allNonMajor sweep — which otherwise folds them in with app go-module + image updates (e.g. the OpenBao image), so chart rollouts can't be approved on their own. Majors stay separate per Renovate defaults; istio is separated further by the rule below.",
       "matchDatasources": ["helm"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
-      "groupName": "platform helm charts"
+      "groupName": "platform helm charts",
+      "dependencyDashboardApproval": false
     },
     {
       "description": "Istio service mesh: own dashboard entry, never folded into the group:allNonMajor sweep. One ISTIO_CHART_VER drives base/istiod/cni/ztunnel under the public + tailnet gateways and the Ambient HBONE paths, so mesh bumps must be reviewed and rolled in isolation (maintenance window; istiod before dataplane). Mirrors the wazuh/keycloak separation.",
