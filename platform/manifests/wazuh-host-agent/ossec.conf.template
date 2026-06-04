@@ -33,10 +33,15 @@
     </enrollment>
   </client>
 
+  <!-- Buffer sizing: the host's auditd firehose (50-200 eps idle, more during
+       package installs / FIM scans) plus pod-log tails was overrunning the
+       default 5000/500 buffer and dropping events ("Agent event queue is
+       full"). Raised 2026-06-04 so bursts are absorbed rather than lost; the
+       single-node manager comfortably ingests 1000 eps. -->
   <client_buffer>
     <disabled>no</disabled>
-    <queue_size>5000</queue_size>
-    <events_per_second>500</events_per_second>
+    <queue_size>20000</queue_size>
+    <events_per_second>1000</events_per_second>
   </client_buffer>
 
   <!-- File Integrity Monitoring on host paths.

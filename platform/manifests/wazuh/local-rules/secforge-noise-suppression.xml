@@ -1,0 +1,58 @@
+<!--
+  SecForge Wazuh noise-suppression rules.
+  Added 2026-06-04 (security-audit follow-up — Wazuh triage) to tune three
+  high-volume false-positive / benign-noise sources that were burying real
+  signal and pressuring the host agent's event queue.
+
+  Reserved ID range for noise suppression: 100200-100299.
+  Apply via platform/components/07p-wazuh-noise-suppression.sh (mirrors 07m).
+
+  Each rule uses <if_sid> to override a parent rule to level 0 (= no alert)
+  for a narrowly-scoped benign case. The parent still alerts for everything
+  else — e.g. promiscuous mode on a REAL physical NIC (attacker sniffing)
+  still fires 80710.
+-->
+<group name="custom,no_alert,">
+
+  <!-- ============================================================ -->
+  <!-- 100200 — promiscuous mode on container / CNI interfaces       -->
+  <!-- ============================================================ -->
+  <!-- 80710 ("Auditd: Device enables promiscuous mode") fires ~2.6k/day
+       because the k3s CNI bridge plugin sets veth/bridge interfaces
+       promiscuous as pods churn (comm="bridge" exe=".../bin/cni").
+       Suppress ONLY virtual/container interface names; promiscuous mode on
+       a real physical NIC (eth0/eno1/enp*) still alerts via 80710. -->
+  <rule id="100200" level="0">
+    <if_sid>80710</if_sid>
+    <field name="audit.dev" type="pcre2">^(?:veth|cni|flannel|cali|lxc|docker|br-|tunl|vxlan|kube|datapath|antrea|ovn|weave|nodelocaldns)</field>
+    <description>Promiscuous mode on a container/CNI virtual interface (k3s) - benign, suppressed</description>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- 100201 — dockerd buildkit/CI "Error running exec"             -->
+  <!-- ============================================================ -->
+  <!-- 100001 ("Application error detected") false-fires on the self-hosted
+       GitHub Actions Docker daemon's transient "Error running exec" lines
+       during image builds. Benign CI churn (also double-logged via journald
+       + /var/log/syslog). Suppress just this dockerd message. -->
+  <rule id="100201" level="0">
+    <if_sid>100001</if_sid>
+    <match>Error running exec</match>
+    <description>dockerd buildkit/CI exec error - benign build-daemon noise, suppressed</description>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- 100202 — false 401s parsed out of the Trivy findings log      -->
+  <!-- ============================================================ -->
+  <!-- 100003 ("Authentication failure (401)") false-matches "401"/
+       "Unauthorized"/"authentication failed" TEXT inside CVE descriptions in
+       the Trivy findings log (/host/var/log/trivy-wazuh/*.jsonl). Not real
+       auth failures. The intended Trivy CVE alerts (100400-100405) are
+       unaffected. -->
+  <rule id="100202" level="0">
+    <if_sid>100003</if_sid>
+    <location>trivy-wazuh</location>
+    <description>401-pattern false positive from the Trivy findings log - suppressed</description>
+  </rule>
+
+</group>
