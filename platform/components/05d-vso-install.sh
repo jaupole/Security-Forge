@@ -20,6 +20,14 @@ M="$PLATFORM_DIR/manifests/vault-secrets-operator"
 
 NS=vault-secrets-operator
 
+# Chart version — pinned for reproducibility + Renovate tracking. Previously
+# UNPINNED, so `install-helm.sh` silently pulled "latest" on every run (non-
+# deterministic) and there was no path for an upstream fix to surface. See
+# operator-backlog #77 (VSO 1.4.0 wedges VaultStaticSecrets after an OpenBao
+# restart/restore; remedy is recreating the VSS CR — restart/watchdog don't
+# help). Bump via the VSO_CHART_VER customManager in renovate.json.
+CHART_VER="${VSO_CHART_VER:-1.4.0}"
+
 # 1. Namespace
 echo ">>> Creating $NS namespace"
 kubectl apply -f "$M/01-namespace.yaml"
@@ -43,7 +51,7 @@ kubectl -n "$NS" label secret openbao-ca-bundle \
   --release vault-secrets-operator \
   --namespace "$NS" \
   --repo-name hashicorp --repo-url https://helm.releases.hashicorp.com \
-  --chart hashicorp/vault-secrets-operator \
+  --chart hashicorp/vault-secrets-operator --version "$CHART_VER" \
   --values "$PLATFORM_DIR/values/vault-secrets-operator.yaml"
 
 echo ">>> Waiting for VSO controller Ready"

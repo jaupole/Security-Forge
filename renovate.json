@@ -317,6 +317,15 @@
       "depNameTemplate": "minio",
       "datasourceTemplate": "helm",
       "registryUrlTemplate": "https://charts.min.io"
+    },
+    {
+      "description": "Vault Secrets Operator Helm chart version (VSO_CHART_VER) in 05d-vso-install.sh. Tracks the vault-secrets-operator chart in https://helm.releases.hashicorp.com. Was previously UNPINNED + untracked (operator-backlog #77) — `install-helm.sh` pulled 'latest' non-deterministically and there was no path for an upstream fix to the stuck-VSS-after-OpenBao-restart stall to surface. Pinning + tracking surfaces new VSO releases as a (dashboard-approval) PR.",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/components/05d-vso-install.sh"],
+      "matchStrings": ["CHART_VER=\"\\$\\{VSO_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
+      "depNameTemplate": "vault-secrets-operator",
+      "datasourceTemplate": "helm",
+      "registryUrlTemplate": "https://helm.releases.hashicorp.com"
     }
   ]
 }
