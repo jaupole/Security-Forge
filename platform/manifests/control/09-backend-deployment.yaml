@@ -68,7 +68,7 @@ spec:
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump. 909769e1 = trust proposal-forge azp at /api/v1/me
           # (control-image-build run 26915980839, commit c660b1f).
-          image: ghcr.io/jaupole/control@sha256:909769e1c80a91876d50f2bad7a6aebd849100df5737ccdfe6eeb82de817195a
+          image: ghcr.io/jaupole/control@sha256:d0fc05951001d4f14007c4286503f66cd0b4015f56aa8a3942808b3b2d8f375d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
