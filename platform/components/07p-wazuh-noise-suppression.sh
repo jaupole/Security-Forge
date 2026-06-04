@@ -72,4 +72,4 @@ else
   fi
 fi
 
-green "✓ Noise-suppression rules + buffer sizing applied (rule IDs 100200-100202)."
+green "✓ Noise-suppression rules + buffer sizing applied (rule IDs 100100-100102)."
