@@ -177,6 +177,15 @@
   ],
   "customManagers": [
     {
+      "description": "CNPG Postgres database image in the per-app Cluster CRs (`spec.imageName` in platform/manifests/*/02-cnpg-cluster.yaml). The built-in kubernetes manager only extracts standard `image:` fields from pod specs, so this CRD field is a tracking blind spot — keycloak + spicedb reference the postgres image ONLY here, so Renovate was blind to a rebuild of their database image (the control/member-hub migration/cron job `image:` refs gave only an indirect, shared-image signal). This makes the DB image first-class: upstream rebuilds (the CVE-patch stream — e.g. the stale libssl3 3.0.17->3.0.19 / gnutls in 17.6-bookworm) and minor bumps surface a reviewable PR against the actual DB manifests. Intentionally NOT auto-merged (no matchManagers:regex rule above grants it) — a database image roll is operator-gated + rolled one cluster at a time per docs/03-runbooks/base-image-cve-cadence.md. Tracked: operator-backlog #76 (Tier B accept-monitor).",
+      "customType": "regex",
+      "managerFilePatterns": ["platform/manifests/*/02-cnpg-cluster.yaml"],
+      "matchStrings": [
+        "imageName:\\s*(?<depName>ghcr\\.io/cloudnative-pg/postgresql):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
       "description": "Keycloak version + base-image digest in the custom Dockerfile. matchStringsStrategy 'combination' builds one dependency from the KEYCLOAK_VERSION (currentValue) and KEYCLOAK_BASE_DIGEST (currentDigest) ARGs, so Renovate can apply both version and digest updates rather than only the digest.",
       "customType": "regex",
       "managerFilePatterns": ["platform/manifests/keycloak/image/Dockerfile"],
