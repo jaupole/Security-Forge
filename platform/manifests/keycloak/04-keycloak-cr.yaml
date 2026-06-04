@@ -2,9 +2,12 @@
 #
 # Differences from the retired local edition:
 #   - hostname: auth.${DOMAIN} (was auth.secforge.local)
-#   - admin/public split removed (single host for now; admin gating is by
-#     Keycloak's own auth + the BFF pattern; we can re-add the split with
-#     Cloudflare Access or a network ACL later)
+#   - admin/public split (re-added 2026-06-03): the admin console is served on
+#     kc.${DOMAIN} via KC_HOSTNAME_ADMIN, and kc.${DOMAIN} attaches to the
+#     tailnet gateway ONLY (istio-ingress/20-virtualservices.yaml). auth.${DOMAIN}
+#     stays public for OIDC. This network-isolates the console instead of relying
+#     on the source-IP `auth-admin-tailnet` DENY (weak under CNI SNAT). The admin
+#     REST API stays served on auth.${DOMAIN} for in-cluster backends. See ADR-0032.
 #   - edition label: prod (was local)
 
 apiVersion: k8s.keycloak.org/v2alpha1
@@ -52,6 +55,9 @@ spec:
 
   hostname:
     hostname: https://auth.${DOMAIN}
+    # Admin console on its own host (tailnet-gateway-only). Frontend/OIDC stays
+    # on auth.${DOMAIN} (public). strict:true keeps Host-header URL rewriting off.
+    admin: https://kc.${DOMAIN}
     strict: true
 
   http:

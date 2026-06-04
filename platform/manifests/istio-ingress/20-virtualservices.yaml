@@ -114,6 +114,33 @@ spec:
         port:
           number: 8443
 ---
+# Keycloak ADMIN CONSOLE host — TAILNET GATEWAY ONLY (no public DNS / no public
+# gateway attachment). Keycloak's KC_HOSTNAME_ADMIN (keycloak/04-keycloak-cr.yaml)
+# points the console at kc.${DOMAIN}; auth.${DOMAIN} stays public for OIDC only.
+# This network-isolates the admin console rather than relying on the source-IP
+# `auth-admin-tailnet` DENY (weak under CNI SNAT). Same keycloak-service backend
+# as the auth VS. Operators reach it by pointing kc.${DOMAIN} at the tailnet
+# gateway IP in /etc/hosts. See ADR-0032.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: keycloak-admin
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - kc.${DOMAIN}
+  http:
+  - name: keycloak-admin
+    route:
+    - destination:
+        host: keycloak-service.keycloak.svc.cluster.local
+        port:
+          number: 8443
+---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
