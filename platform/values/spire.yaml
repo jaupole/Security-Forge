@@ -103,6 +103,18 @@ spire-server:
     className: ""
     watchClassless: true
 
+    # Explicit resources for the controller-manager sidecar. The hardened chart
+    # default is 64Mi limit / 32Mi request, which ran at 94% steady (60Mi) and had
+    # no headroom for the full-entry re-reconcile spike that follows a node reboot
+    # (the 2026-06-05 reboot-storm, #79). 192Mi gives 3x headroom; node has ~45Gi free.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 192Mi
+
     identities:
       clusterSPIFFEIDs:
         # Default registration — opt-in via label `spiffe.io/spire-managed-identity: "true"`.
