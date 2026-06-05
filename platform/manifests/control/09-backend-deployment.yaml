@@ -66,10 +66,10 @@ spec:
         - name: api
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. d20ace1d = Resend email provider (config +
-          # secret plumbing, migration 063)
-          # (control-image-build run 27015284671, commit ffab606).
-          image: ghcr.io/jaupole/control@sha256:d20ace1dd865c4d2438a542d837af4fe4e55d39825b37710965edd182ea5713a
+          # automate the bump. de7aa177 = platform default email sender +
+          # Platform Settings backend (migration 064)
+          # (control-image-build run 27043200294, commit aed730b).
+          image: ghcr.io/jaupole/control@sha256:de7aa177f8950a11474de9d240161870e1c53578b48c7db184195177f91c5338
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
