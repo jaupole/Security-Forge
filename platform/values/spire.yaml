@@ -232,15 +232,20 @@ spiffe-csi-driver:
   # SVID (Keycloak, OpenBao, future apps). Bumped 2026-05-08 to 256Mi, then
   # 2026-05-12 to 512Mi after a runc-init OOM at 256Mi — the runc init
   # process itself can map ~1.2GB virtual, so 256Mi was still too low.
-  # (Live cluster has carried 128Mi/512Mi since 2026-05-12; this repo file
-  # was stale until reconciled 2026-05-21 — operator-backlog #47.)
+  # 2026-06-05: bumped to 1Gi/256Mi after a *reboot-storm* OOM. Three rapid
+  # k3s restarts (the k3s-encryption re-enable, backlog #79) stacked SVID
+  # re-mount storms faster than the driver could settle at 512Mi; it OOM-
+  # looped, cascaded into cluster-wide SVID-mount failures, and compute-
+  # starved the single node until a hardware reset was needed. The fresh 1Gi
+  # pod then rode out the post-reboot mount-storm with 0 restarts (validated
+  # live). Reconciled to repo same day. See runbook k3s-encryption-reenable.md.
   resources:
     requests:
       cpu: 25m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 200m
-      memory: 512Mi
+      memory: 1Gi
 
 # ============================================================================
 # OIDC discovery provider — exposes SPIRE's JWKS so OpenBao auth/jwt
