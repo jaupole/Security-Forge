@@ -17,16 +17,14 @@
 #     truststore source.
 #
 # Sources (all read from the trust namespace `cert-manager`; the non-native
-# ones are reflected in by 06-trust-manager.sh):
+# one is reflected in by 06-trust-manager.sh):
 #   - secforge-internal-ca-tls  : the live internal root CA (Keycloak chain).
 #   - openbao-ca-source         : reflected copy of the OpenBao root CA.
-#   - keycloak-ca-transitional  : TRANSITIONAL — the CA Keycloak currently
-#       serves on its internal listener. Present only because keycloak's
-#       cert predates the current internal root CA (the 3-way split). REMOVE
-#       this source after Phase 2 (re-issue keycloak-internal-tls from the
-#       current `secforge-internal-ca` ClusterIssuer + restart keycloak), at
-#       which point Keycloak serves a cert chaining to secforge-internal-ca-tls
-#       and this orphan CA is dead. Tracked in operator-backlog #78.
+#
+# (Phase 2 complete 2026-06-04: keycloak-internal-tls was re-issued from the
+# current `secforge-internal-ca` ClusterIssuer so Keycloak now serves a cert
+# chaining to secforge-internal-ca-tls; the transitional keycloak-ca source
+# was removed. The 3-way Internal-CA split is collapsed to one CA.)
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
@@ -38,7 +36,6 @@ spec:
   sources:
     - secret: { name: secforge-internal-ca-tls, key: ca.crt }
     - configMap: { name: openbao-ca-source, key: ca.crt }
-    - configMap: { name: keycloak-ca-transitional, key: ca.crt }  # REMOVE after Phase 2
   target:
     configMap: { key: ca.crt }
     namespaceSelector:
@@ -55,7 +52,6 @@ spec:
   sources:
     - secret: { name: secforge-internal-ca-tls, key: ca.crt }
     - configMap: { name: openbao-ca-source, key: ca.crt }
-    - configMap: { name: keycloak-ca-transitional, key: ca.crt }  # REMOVE after Phase 2
   target:
     configMap: { key: ca.pem }
     namespaceSelector:
