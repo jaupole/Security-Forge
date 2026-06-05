@@ -62,8 +62,19 @@ sudo systemctl restart k3s                 # status must STILL be Enabled, same 
 # (a full hardware reboot on 2026-06-05 validated this end-to-end — the key
 #  survived a power-cycle.)
 
-# Phase 5 — encrypt the pre-existing secrets at rest (optional, deferrable)
-sudo k3s secrets-encrypt reencrypt         # rewrites all existing secrets via aescbc
+# Phase 5 — encrypt the pre-existing secrets at rest  (DONE 2026-06-05)
+# ⚠️ `k3s secrets-encrypt reencrypt` is NOT an in-place encrypt — it errors
+#    "incorrect stage: start" and only runs as the TAIL of a key rotation
+#    (prepare → restart → rotate → restart → reencrypt = 2 k3s restarts =
+#    the §3 mount-storm risk). To encrypt existing secrets WITHOUT a restart,
+#    re-write them through the apiserver (the active provider encrypts on write):
+sudo kubectl get secrets -A -o json | sudo kubectl replace -f -   # mutable secrets
+#  → on 2026-06-05 this took 200 plaintext → 2, zero restarts. The 2 holdouts are
+#    *immutable* (`kube-system/secforge-prod.node-password.k3s`,
+#    `vault-secrets-operator/vso-cc-storage-hmac-key`) — apiserver replace can't
+#    touch them; only the rotation-dance or delete/recreate can, deferred as low-value.
+#    Verify at-rest: raw kine value of /registry/secrets/<ns>/<name> must start
+#    `k8s:enc:aescbc:` (200 of 211 were bare `k8s\0` before this step).
 ```
 
 Deriving the bootstrap key (read-only): `password` = the part after the first
