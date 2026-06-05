@@ -92,6 +92,11 @@ reset*; the kine sqlite is WAL/fsync crash-safe).
 
 ## 4. Post-reboot recovery checklist (single-node)
 
+> Codified: run `platform/scripts/openbao-unseal.sh` (step 2), then
+> `platform/scripts/post-reboot-reconcile.sh` (steps 1,3,4,5 + a stale-CA scan +
+> health summary; add `--reissue`/`--bounce` to act on findings). The manual
+> steps below are what those scripts automate.
+
 A power-cycle leaves these manual/transient steps — work them in order:
 
 1. **csi-driver**: confirm the new pod is `2/2 Running` at 1Gi (apply the bump in

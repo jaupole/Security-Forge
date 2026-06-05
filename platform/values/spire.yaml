@@ -225,6 +225,13 @@ spiffe-csi-driver:
   enabled: true
   namespaceOverride: spire
 
+  # system-node-critical (added 2026-06-05): every SVID-mounting pod depends on
+  # this driver, so it must be scheduled/CPU-prioritised and NEVER evicted under
+  # node pressure — exactly the condition during the 2026-06-05 reboot-storm,
+  # where the node compute-starved. ztunnel + istio-cni already carry this class;
+  # the csi-driver was the gap. See project_single_node_reboot_recovery.
+  priorityClassName: system-node-critical
+
   # 64Mi limit (chart default + early-deploy guess) was too low — Go runtime
   # + pollers + buffers OOM-killed the spiffe-csi-driver process every few
   # minutes, breaking the CSI socket and cascading "MountVolume.SetUp failed
