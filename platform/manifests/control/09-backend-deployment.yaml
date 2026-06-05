@@ -79,7 +79,15 @@ spec:
             - { name: API_PORT, value: "4000" }
             - { name: API_HOST, value: "0.0.0.0" }
             - { name: TRUST_PROXY, value: "1" }
-            - { name: PORTAL_ORIGIN, value: "https://control.${DOMAIN}" }
+            # Public TENANT front-door origin. Used for the post-OAuth
+            # redirect back to the Portal (QBO/accounting connect), emailed
+            # invite acceptUrls, and the CORS allow-origin. MUST be the
+            # public host the tenant's browser actually uses — NOT
+            # control.${DOMAIN}, which is tailnet-only (Shape B split):
+            # redirecting there 302s the browser to an unreachable host at
+            # the last hop of the QBO connect flow. Integrations is a
+            # tenant-face page served at portal.${DOMAIN} (lib/shell.ts).
+            - { name: PORTAL_ORIGIN, value: "https://portal.${DOMAIN}" }
             # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
             # which presents its INTERNAL cert (signed by secforge-internal-ca,
             # not Let's Encrypt). Point NODE_EXTRA_CA_CERTS at the
@@ -154,10 +162,11 @@ spec:
             # callback runs on a dedicated PUBLIC host (qbo.${DOMAIN}) —
             # control.${DOMAIN} is tailnet-only and Intuit can't reach it.
             # QBO_REDIRECT_URI is the value to register in the Intuit app,
-            # exactly; the qbo.${DOMAIN} ingress (13-qbo-ingress.yaml)
-            # rewrites /callback to the real API route. The OAuth state
-            # cookie is set during connect (on control.${DOMAIN}) and read
-            # on the callback (qbo.${DOMAIN}) — different subdomains — so
+            # exactly; the qbo.${DOMAIN} `qbo` VirtualService (istio-ingress/
+            # 20-virtualservices.yaml) rewrites /callback to the real API
+            # route. The OAuth state cookie is set during connect (on the
+            # tenant's front door, portal.${DOMAIN}) and read on the
+            # callback (qbo.${DOMAIN}) — different subdomains — so
             # QBO_STATE_COOKIE_DOMAIN scopes it to the shared parent.
             # QBO_CLIENT_ID / QBO_CLIENT_SECRET arrive via the optional
             # control-qbo-secrets envFrom below. Flip QBO_ENVIRONMENT to
