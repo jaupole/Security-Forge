@@ -14,6 +14,41 @@ BYO-keys and Connect run in parallel until each org is individually cut over.
 
 ---
 
+## Status — 2026-06-05
+
+**All three phases are CODE-COMPLETE and pushed.** Parallel-run with BYO-keys;
+nothing is live until deployed.
+
+- **Phase 1 (Control)** ✅ ecosystem-control `8207649` — OAuth connect/callback,
+  migration 065, system endpoint. Image rebuilt + digest bumped. Deploy wiring
+  (env + `stripe-connect` Istio VS) in Security-Forge `b787a05`.
+- **Phase 2 (Member Hub)** ✅ member-hub `d4632a8` — `getStripeForOrg` charge
+  branch (platform key + Stripe-Account) + single `/api/webhooks/stripe/connect`.
+- **Phase 3 (Portal + Control)** ✅ ecosystem-control `7a07619` +
+  ecosystem-portal `82ad6c5` — "Connect With Stripe" UI + status-endpoint fields.
+
+**Phase 0 finding:** OAuth-for-Standard is available (Stripe soft-discourages
+but has not closed it) — mechanism stands.
+
+**Remaining before a sandbox end-to-end test:**
+1. Operator provisioning (browser/OpenBao): create the restricted platform key;
+   write `platform_key` + `connect_webhook_secret` to
+   `secret/apps/member-hub/stripe-connect`; register the Connect webhook
+   (`members.secforge.dev/api/webhooks/stripe/connect`).
+2. Deploy wiring: member-hub Deployment env (`STRIPE_PLATFORM_SECRET_KEY` +
+   `STRIPE_CONNECT_WEBHOOK_SECRET` via VSO + ADR-0013 escape-hatch annotation)
+   + VSO binding for `apps/member-hub/stripe-connect`.
+3. Build the member-hub image; deploy Control + Member Hub + the Portal/admin
+   image.
+4. Sandbox test: connect a test org → checkout → Connect webhook → invoice paid
+   → QBO sync.
+
+**Deferred follow-up:** operator-adjustable "Ecosystem Stripe Connect App" card
+(swap test→live `client_id` without a redeploy). Env-swap covers go-live in the
+meantime.
+
+---
+
 ## Phase 0 — Verify + register (no code)
 
 Gates the mechanism (ADR-0034 Re-evaluation). Do this first; it can change Phase 1.
