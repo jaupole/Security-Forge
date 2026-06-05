@@ -1,0 +1,63 @@
+# trust-manager Bundles — the internal-CA trust distributed to app namespaces.
+#
+# Replaces the per-app hardcoded `08a-openbao-ca-configmap.yaml` manifests
+# (deleted). Those baked the internal + OpenBao CA certs as literal PEM, so a
+# CA rotation (which happens whenever a CA Secret is lost/regenerated — e.g.
+# the 2026-06-04 k3s-encryption incident) silently left every app trusting a
+# dead CA until each ConfigMap was hand-patched. trust-manager instead SOURCES
+# the live CA secrets and reconciles the target ConfigMaps continuously, so a
+# rotation propagates on its own. See operator-backlog #78.
+#
+# The Bundle NAME == the target ConfigMap name it writes in each selected
+# namespace, so these names match what the app Deployments already mount:
+#   - control / member-hub / proposal-forge mount `openbao-internal-ca-cert`
+#     (key ca.crt) as NODE_EXTRA_CA_CERTS + OPENBAO_CA_CERT_PATH.
+#   - wazuh mounts `secforge-internal-ca` (key ca.pem) as the dashboard's
+#     NODE_EXTRA_CA_CERTS and the indexer's openid pemtrustedcas / JVM
+#     truststore source.
+#
+# Sources (all read from the trust namespace `cert-manager`; the non-native
+# ones are reflected in by 06-trust-manager.sh):
+#   - secforge-internal-ca-tls  : the live internal root CA (Keycloak chain).
+#   - openbao-ca-source         : reflected copy of the OpenBao root CA.
+#   - keycloak-ca-transitional  : TRANSITIONAL — the CA Keycloak currently
+#       serves on its internal listener. Present only because keycloak's
+#       cert predates the current internal root CA (the 3-way split). REMOVE
+#       this source after Phase 2 (re-issue keycloak-internal-tls from the
+#       current `secforge-internal-ca` ClusterIssuer + restart keycloak), at
+#       which point Keycloak serves a cert chaining to secforge-internal-ca-tls
+#       and this orphan CA is dead. Tracked in operator-backlog #78.
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: openbao-internal-ca-cert
+  labels:
+    secforge.platform/component: trust-manager
+spec:
+  sources:
+    - secret: { name: secforge-internal-ca-tls, key: ca.crt }
+    - configMap: { name: openbao-ca-source, key: ca.crt }
+    - configMap: { name: keycloak-ca-transitional, key: ca.crt }  # REMOVE after Phase 2
+  target:
+    configMap: { key: ca.crt }
+    namespaceSelector:
+      matchExpressions:
+        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge] }
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: secforge-internal-ca
+  labels:
+    secforge.platform/component: trust-manager
+spec:
+  sources:
+    - secret: { name: secforge-internal-ca-tls, key: ca.crt }
+    - configMap: { name: openbao-ca-source, key: ca.crt }
+    - configMap: { name: keycloak-ca-transitional, key: ca.crt }  # REMOVE after Phase 2
+  target:
+    configMap: { key: ca.pem }
+    namespaceSelector:
+      matchExpressions:
+        - { key: kubernetes.io/metadata.name, operator: In, values: [wazuh] }

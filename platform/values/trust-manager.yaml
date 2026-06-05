@@ -1,0 +1,20 @@
+# trust-manager — distributes the internal CA trust bundle to app namespaces
+# so a CA rotation can never leave a stale hardcoded CA behind (the root
+# cause of the 2026-06-04 incident tail; operator-backlog #78).
+#
+# trust namespace = cert-manager: Bundle *sources* are read only from here,
+# which is where the internal root CA secret (secforge-internal-ca-tls)
+# already lives. The OpenBao CA is reflected in by 06-trust-manager.sh.
+crds:
+  enabled: true
+app:
+  trust:
+    namespace: cert-manager
+  logLevel: 1
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
