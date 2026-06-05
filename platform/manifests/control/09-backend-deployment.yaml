@@ -175,6 +175,20 @@ spec:
             - { name: QBO_REDIRECT_URI, value: "https://qbo.${DOMAIN}/callback" }
             - { name: QBO_STATE_COOKIE_DOMAIN, value: "${DOMAIN}" }
             - { name: QBO_ENVIRONMENT, value: sandbox }
+            # Stripe Connect (OAuth, Standard accounts) — per-org tenant
+            # payments (ADR-0034). STRIPE_CONNECT_CLIENT_ID is the ecosystem's
+            # Connect OAuth app id (ca_…): PUBLIC (it rides in the authorize
+            # URL), so a plain literal here — NOT a Secret. This is the TEST
+            # client_id; swap to the live ca_… to go live (re-register the live
+            # redirect URI + re-link orgs — see the stripe-connect migration
+            # plan). The OAuth token exchange + deauthorize auth with the
+            # PLATFORM Stripe key (platform_billing_config), so there is no
+            # Stripe secret to inject here. The callback runs on the public
+            # stripe-connect.${DOMAIN} host (istio-ingress/20-virtualservices.yaml
+            # `stripe-connect` VS) — control.${DOMAIN} is tailnet-only.
+            - { name: STRIPE_CONNECT_CLIENT_ID, value: "ca_UXvEIRtTACe2dfQqFeB4yXl5BXtb3f2Q" }
+            - { name: STRIPE_CONNECT_REDIRECT_URI, value: "https://stripe-connect.${DOMAIN}/callback" }
+            - { name: STRIPE_CONNECT_STATE_COOKIE_DOMAIN, value: "${DOMAIN}" }
             # ─── Object storage (ecosystem-graphics bucket, ADR-0001) ─
             # In-cluster MinIO; HTTP. SSE-S3 encryption-at-rest set on the
             # bucket itself. MINIO_ACCESS_KEY + MINIO_SECRET_KEY arrive

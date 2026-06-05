@@ -228,6 +228,38 @@ spec:
         port:
           number: 80
 ---
+# Stripe Connect OAuth callback — dedicated PUBLIC host. The admin Portal
+# origin (control/admin.${DOMAIN}) is tailnet-only and Stripe can't reach
+# it, so the redirect URI registered in the Stripe Connect settings is
+# https://stripe-connect.${DOMAIN}/callback; this rewrites /callback to
+# Control's internal callback route. Mirrors the `qbo` VirtualService.
+# See ADR-0034 + Ecosystem Control src/api/routes/stripe-connect.ts.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: stripe-connect
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - stripe-connect.${DOMAIN}
+  http:
+  - match:
+    - uri:
+        prefix: /callback
+    name: stripe-connect-callback
+    rewrite:
+      uri: /api/v1/stripe/callback
+    route:
+    - destination:
+        host: control.control.svc.cluster.local
+        port:
+          number: 80
+---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
