@@ -36,6 +36,10 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0028](./0028-approval-gated-cross-app-workflows.md) | Approval-gated cross-app workflows (pursuit→proposal, proposal→project) | In progress (stub) |
 | [0029](./0029-per-app-database-strategy.md) | Per-app database strategy — separate DBs with shared UUIDs from control plane | In progress (stub) |
 | [0030](./0030-custom-portal-as-sole-admin-ux.md) | Custom portal as sole admin UX; Keycloak default UI never shown to end users | In progress (stub) |
+| [0031](./0031-minio-kes-for-sse-rotation.md) | MinIO KES for SSE-S3 key rotation | Superseded (drain-and-rotate; KES kept as fallback) |
+| [0032](./0032-istio-gateway-replaces-ingress-nginx.md) | Istio ingress gateway replaces EOL ingress-nginx | Accepted — cutover 2026-06-03 |
+| [0033](./0033-trivy-operator-clientserver-mode.md) | Trivy Operator runs in ClientServer mode (built-in trivy-server) | Accepted — applied 2026-06-03 |
+| [0034](./0034-stripe-connect-oauth-for-tenant-payments.md) | Stripe Connect (OAuth, Standard accounts) for tenant payments — replaces bring-your-own-keys | Accepted (strategy) — implementation phased |
 
 ## Template
 
