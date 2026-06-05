@@ -66,9 +66,10 @@ spec:
         - name: api
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 909769e1 = trust proposal-forge azp at /api/v1/me
-          # (control-image-build run 26915980839, commit c660b1f).
-          image: ghcr.io/jaupole/control@sha256:d0fc05951001d4f14007c4286503f66cd0b4015f56aa8a3942808b3b2d8f375d
+          # automate the bump. d20ace1d = Resend email provider (config +
+          # secret plumbing, migration 063)
+          # (control-image-build run 27015284671, commit ffab606).
+          image: ghcr.io/jaupole/control@sha256:d20ace1dd865c4d2438a542d837af4fe4e55d39825b37710965edd182ea5713a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }

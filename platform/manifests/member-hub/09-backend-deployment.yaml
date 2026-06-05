@@ -74,7 +74,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/jaupole/member-hub@sha256:d93fe571fc3b56da7dd014079147d84b51498bfa28c07b65517330561ed698cf
+          # 417e4861 = Resend email provider + per-category QBO Item mapping
+          # (migration 094). member-hub-image-build run 27015318317, commit dc2fc34.
+          image: ghcr.io/jaupole/member-hub@sha256:417e48611394e5ff8ab3483b6845f74b7b9e7231a4be43b663b8da622080ba24
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
