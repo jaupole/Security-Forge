@@ -66,11 +66,10 @@ spec:
         - name: api
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. d529b083 = platform default email sender
-          # (migration 064, control-owner CREATE fix) + Stripe Connect
-          # Phase 1 (migration 065)
-          # (control-image-build run 27043865512, commit cab3431).
-          image: ghcr.io/jaupole/control@sha256:d529b0835a79efeea27b3e62510eb648a9ac421c977b5b31a99281e9e04a39f0
+          # automate the bump. 50e7c714 = adds Resend provider to the
+          # platform default sender (migration 066), on top of 064/065
+          # (control-image-build run 27044321454, commit b42ad1e).
+          image: ghcr.io/jaupole/control@sha256:50e7c714ce3fb2bc1e7746275fde96ba929260395aa7cb781940b867b64dcf5d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
