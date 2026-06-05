@@ -110,6 +110,20 @@ spec:
           text: 'member-hub-system'
         MH_SYSTEM_CLIENT_SECRET:
           text: '{{ .Secrets.system_client_secret }}'
+        # Stripe Connect (ADR-0034). The RESTRICTED platform key Member Hub
+        # uses to transact on behalf of Connect-linked accounts (via the
+        # Stripe-Account header), plus the single platform Connect webhook
+        # signing secret. Both live in this `runtime` blob — the only path
+        # the member-hub OpenBao policy reads — and the app consumes them as
+        # STRIPE_PLATFORM_SECRET_KEY + STRIPE_CONNECT_WEBHOOK_SECRET via this
+        # Secret's envFrom (so the secret-shaped names never appear in the
+        # Pod spec — no Kyverno no-secret-shaped-env conflict). Conditional
+        # so they render empty until the operator writes the keys; until
+        # then the app degrades cleanly to "Stripe Connect not configured".
+        STRIPE_PLATFORM_SECRET_KEY:
+          text: '{{ if .Secrets.stripe_platform_key }}{{ .Secrets.stripe_platform_key }}{{ end }}'
+        STRIPE_CONNECT_WEBHOOK_SECRET:
+          text: '{{ if .Secrets.stripe_connect_webhook_secret }}{{ .Secrets.stripe_connect_webhook_secret }}{{ end }}'
 
 ---
 # GHCR image-pull credential. Renders into a kubernetes.io/dockerconfigjson
