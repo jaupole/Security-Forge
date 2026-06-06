@@ -55,7 +55,7 @@ spec:
           # Connect-button "Redirecting To Stripe…" latch fix (no more
           # idle-looking button during the navigation gap)
           # (portal-image-build run 27047226446, commit 01b6f5c).
-          image: ghcr.io/jaupole/portal@sha256:22e1bc9fb98a61ea42bdeed81f9facb4f303decfb354604082d6e511dc6e6b85
+          image: ghcr.io/jaupole/portal@sha256:f01fd7ecdc8d7ba04a884e68026486683ee96853881e0016ea91fb41a2e81a95
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }

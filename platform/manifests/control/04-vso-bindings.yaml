@@ -97,6 +97,17 @@ spec:
         # every row that needs to remain searchable.
         EMAIL_HMAC_KEY:
           text: '{{ .Secrets.email_hmac_key }}'
+        # control-portal CONFIDENTIAL client secret(s) — Control is the Portal
+        # BFF (@jaupole/ecosystem-auth). The browser holds only a sealed
+        # __Host-ctrl_sess cookie; Control holds the Portal user's tokens
+        # server-side. Two clientIds-in-two-realms (platform = admin shell,
+        # secforge-tenants = tenant shell), each its own secret. Conditional so
+        # Control boots (BFF dormant) until the operator flips control-portal to
+        # confidential and writes the secret — then a Pod restart activates it.
+        CONTROL_PORTAL_CLIENT_SECRET:
+          text: '{{ if .Secrets.control_portal_client_secret }}{{ .Secrets.control_portal_client_secret }}{{ end }}'
+        CONTROL_PORTAL_CLIENT_SECRET_TENANTS:
+          text: '{{ if .Secrets.control_portal_client_secret_tenants }}{{ .Secrets.control_portal_client_secret_tenants }}{{ end }}'
 
 ---
 # GHCR image-pull credential. Renders into a kubernetes.io/dockerconfigjson
