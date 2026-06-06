@@ -155,12 +155,6 @@
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "ingress-nginx chart is being retired (ADR-0032 — replaced by the Istio gateway; Deployment scaled to 0). Its CHART_VER manager is kept for completeness, but updates are disabled so a decommissioned component does not generate noise PRs. Delete this rule to resume tracking if the retirement is reversed.",
-      "matchDatasources": ["helm"],
-      "matchPackageNames": ["ingress-nginx"],
-      "enabled": false
-    },
-    {
       "description": "Non-major platform Helm chart bumps (patch/minor/digest) group into a single 'platform helm charts' PR, kept OUT of config:recommended's group:allNonMajor sweep — which otherwise folds them in with app go-module + image updates (e.g. the OpenBao image), so chart rollouts can't be approved on their own. Majors stay separate per Renovate defaults; istio is separated further by the rule below.",
       "matchDatasources": ["helm"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
@@ -217,15 +211,6 @@
       "depNameTemplate": "cert-manager",
       "datasourceTemplate": "helm",
       "registryUrlTemplate": "https://charts.jetstack.io"
-    },
-    {
-      "description": "ingress-nginx Helm chart version (INGRESS_NGINX_CHART_VER) in 00c-ingress-nginx.sh. Tracks the ingress-nginx chart in https://kubernetes.github.io/ingress-nginx. NOTE: update PRs are disabled via a packageRule above (chart is being retired — ADR-0032).",
-      "customType": "regex",
-      "managerFilePatterns": ["platform/components/00c-ingress-nginx.sh"],
-      "matchStrings": ["CHART_VER=\"\\$\\{INGRESS_NGINX_CHART_VER:-(?<currentValue>v?[0-9][0-9.]*)\\}\""],
-      "depNameTemplate": "ingress-nginx",
-      "datasourceTemplate": "helm",
-      "registryUrlTemplate": "https://kubernetes.github.io/ingress-nginx"
     },
     {
       "description": "Istio Helm chart version (ISTIO_CHART_VER) in 06-istio.sh. One version drives all four sub-charts (base, istiod, cni, ztunnel) installed from https://istio-release.storage.googleapis.com/charts — they ship as one release train, so tracking the 'base' chart is sufficient to bump the shared ISTIO_CHART_VER.",
