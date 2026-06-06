@@ -160,6 +160,39 @@ spec:
     - protocol: TCP
       port: 15010    # grpc-xds (plaintext)
 
+---
+# Gateway-plane xds. The Istio ingress gateways (istio-ingress ns) are sidecar
+# (proxyv2) gateways that pull their config from istiod on 15012 (tls-xds, mTLS)
+# / 15010 (grpc-xds). Distinct from allow-mesh-xds-to-istiod above: the gateways
+# live in their own ns, so they need an explicit from-istio-ingress allow.
+# Without it the gateways never receive their Gateway/VirtualService config and
+# the public + tailnet edge stays down on a from-scratch rebuild. Was
+# live-patched during the two-plane gateway migration (2026-06-03, ADR-0032);
+# codified 2026-06-06 to close the rebuild-from-git DR gap.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-xds-to-istiod
+  namespace: istio-system
+  labels:
+    secforge.platform/component: istio-gateway
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app: istiod
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-ingress
+    ports:
+    - protocol: TCP
+      port: 15012    # tls-xds (primary, mTLS)
+    - protocol: TCP
+      port: 15010    # grpc-xds (plaintext)
+
 # -----------------------------------------------------------------------------
 # DELIBERATELY OMITTED (would widen ingress past live facts):
 #

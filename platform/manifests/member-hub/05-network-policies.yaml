@@ -414,3 +414,29 @@ spec:
         - { protocol: TCP, port: 8000 }
         - { protocol: TCP, port: 9187 }
         - { protocol: TCP, port: 9090 }
+
+---
+# Ingress: Istio ingress gateways (public + tailnet, istio-ingress ns) →
+# member-hub backend. members.secforge.dev (incl. the public Stripe
+# webhooks) terminates at the gateway and routes here. 3000 = member-hub
+# backend, 15008 = Ambient HBONE. The two-plane gateway migration
+# (2026-06-03, ADR-0032). Was live-patched; codified 2026-06-06 to close
+# the rebuild-from-git DR gap.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-member-hub
+  namespace: member-hub
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }

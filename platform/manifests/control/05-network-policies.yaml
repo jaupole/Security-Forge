@@ -372,3 +372,30 @@ spec:
         - { protocol: TCP, port: 8000 }
         - { protocol: TCP, port: 9187 }
         - { protocol: TCP, port: 9090 }
+
+---
+# Ingress: Istio ingress gateways (public + tailnet, both in the
+# istio-ingress ns) → control backend. The two-plane gateway migration
+# (2026-06-03, ADR-0032) routes portal.secforge.dev + control.secforge.dev
+# through Istio; this is the L3/L4 companion to the gateway VirtualServices.
+# 4000 = control API, 8080 = portal static, 15008 = Ambient HBONE.
+# Was live-patched; codified 2026-06-06 to close the rebuild-from-git DR gap.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-control
+  namespace: control
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 15008 }

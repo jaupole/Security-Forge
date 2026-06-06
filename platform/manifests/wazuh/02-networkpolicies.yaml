@@ -179,3 +179,31 @@ spec:
           port: 9300      # indexer transport (intra-cluster; benign)
         - protocol: TCP
           port: 55000     # manager API
+
+# ──────────────────────────────────────────────────────────────────────
+# Ingress: Istio ingress gateways (tailnet, istio-ingress ns) → Wazuh
+# dashboard:5601 (the dashboard is exposed via the tailnet gateway).
+# 15008 = Ambient HBONE. Two-plane gateway migration (2026-06-03, ADR-0032).
+# Was live-patched; codified 2026-06-06 to close the rebuild-from-git DR gap.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-wazuh-dashboard
+  namespace: wazuh
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wazuh
+      app.kubernetes.io/component: dashboard
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 5601 }
+        - { protocol: TCP, port: 15008 }
