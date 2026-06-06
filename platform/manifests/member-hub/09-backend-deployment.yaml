@@ -79,9 +79,10 @@ spec:
           # primitives + rebuilt Dashboard, cardless Card/PageHeader, and the
           # in-shell page sweep) PLUS all three Stripe-Connect fixes carried
           # over (hosted Checkout, Connect-webhook route precedence, reused-
-          # session mode guard). master 903619c (Phase 5 + cherry-picked 3be8023).
-          # member-hub-image-build run 27049706108, commit 903619c.
-          image: ghcr.io/jaupole/member-hub@sha256:536ae579e1495ae11505c83e1f885c3a38605885ffd746228f7068f350b28d26
+          # BFF cutover (centralized-login): @jaupole/ecosystem-auth session
+          # store; tokens server-side, sealed __Host-mh_sess cookie only.
+          # member-hub-image-build run 27064392001, commit 35b5f91.
+          image: ghcr.io/jaupole/member-hub@sha256:985ae21cfd76c1f26ff368b994ea2f127c3c6f8c39091c06fa7f3f020fc39d83
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
