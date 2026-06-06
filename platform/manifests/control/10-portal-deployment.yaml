@@ -51,12 +51,12 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 2c4139be = Phase 4 per-page cardless polish
-          # (Manage Orgs, Member Roles, Integrations chrome, Approval Inbox,
-          # Profile status states) on top of the glow migration + right-
-          # cluster fix.
-          # (portal-image-build run 27076349004, commit 90d82c8).
-          image: ghcr.io/jaupole/portal@sha256:2c4139beb47d92e1c3ee458828ea30c0dc114e1dad4d6f36d01f71243f5f7325
+          # automate the bump. 4348dbca = Phase 4 COMPLETE — cardless
+          # per-page polish across all remaining admin + tenant pages
+          # (Positions, Sub-Orgs, Invitations, Audit, Apps, Tickets,
+          # Graphics, settings status surfaces, Landing + Signup headlines).
+          # (portal-image-build run 27076778833, commit 4838f4d).
+          image: ghcr.io/jaupole/portal@sha256:4348dbca868a8b7cf4c24ca2806d00ce48dd2a9989c3b87cd474a2b48751b69a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
