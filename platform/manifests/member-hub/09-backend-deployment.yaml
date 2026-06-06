@@ -74,12 +74,13 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          # b37d904d = SecForge dashboard design-system adoption (Phases 0-4):
-          # glow tokens + self-hosted fonts + accent-only branding, responsive
-          # top-nav/bottom-tab shell, dashboard primitives + rebuilt Dashboard,
-          # cardless Card/PageHeader. Frontend-only over Stripe Connect Phase 2.
-          # member-hub-image-build run 27047382289, commit 4d1e583.
-          image: ghcr.io/jaupole/member-hub@sha256:b37d904de39f5dbc67e9a288b03c19ba84c0d8703ba19570a4299e850f59a925
+          # 084aa8a2 = the deployed dashboard image (4d1e583) + ONLY the Stripe
+          # Connect hosted-Checkout fix: Connect orgs redirect to Stripe's
+          # hosted page instead of the in-page embedded form, so no client
+          # publishable key is needed. Built from hotfix/stripe-hosted-checkout
+          # (cherry-pick onto 4d1e583, NOT the in-progress design-system Phase 5).
+          # member-hub-image-build run 27048537419, commit 00815e5.
+          image: ghcr.io/jaupole/member-hub@sha256:084aa8a24f10a7ddea13d669a0c5ccfb7690c998d0dc9d962684606779bc9348
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
