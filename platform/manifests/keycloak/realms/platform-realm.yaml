@@ -765,6 +765,13 @@ spec:
         webOrigins:
           - https://members.${DOMAIN}
         attributes:
+          # Enforce PKCE S256 server-side (the BFF always sends it). Stops a
+          # downgrade to a non-PKCE / plain-challenge auth-code exchange.
+          pkce.code.challenge.method: S256
+          # Back-channel logout receiver — the @jaupole/ecosystem-auth BFF
+          # endpoint that revokes the app's server-side session when Keycloak
+          # ends the SSO session (single-logout). Day-2 replay: 03d.
+          backchannel.logout.url: https://members.${DOMAIN}/auth/backchannel-logout
           post.logout.redirect.uris: https://members.${DOMAIN}/*
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
@@ -888,6 +895,13 @@ spec:
         webOrigins:
           - https://pf.${DOMAIN}
         attributes:
+          # Enforce PKCE S256 server-side (the BFF always sends it). Stops a
+          # downgrade to a non-PKCE / plain-challenge auth-code exchange.
+          pkce.code.challenge.method: S256
+          # Back-channel logout receiver — the @jaupole/ecosystem-auth BFF
+          # endpoint that revokes PF's server-side session on Keycloak SSO
+          # logout (single-logout). Day-2 replay: 03d.
+          backchannel.logout.url: https://pf.${DOMAIN}/api/v1/auth/backchannel-logout
           post.logout.redirect.uris: https://pf.${DOMAIN}/*
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
