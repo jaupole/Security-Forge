@@ -51,12 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 4348dbca = Phase 4 COMPLETE — cardless
-          # per-page polish across all remaining admin + tenant pages
-          # (Positions, Sub-Orgs, Invitations, Audit, Apps, Tickets,
-          # Graphics, settings status surfaces, Landing + Signup headlines).
-          # (portal-image-build run 27076778833, commit 4838f4d).
-          image: ghcr.io/jaupole/portal@sha256:4348dbca868a8b7cf4c24ca2806d00ce48dd2a9989c3b87cd474a2b48751b69a
+          # automate the bump. 10184fa2 = Remove-from-Organization Danger
+          # Zone action in the member edit panel (clears orphaned
+          # "(deleted user)" rows via the new Control endpoint).
+          # (portal-image-build run 27077136741, commit 1782329).
+          image: ghcr.io/jaupole/portal@sha256:10184fa2183d74b84c8804a7bb3999f27ce8e07f423880b55598e27965a49ebb
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }

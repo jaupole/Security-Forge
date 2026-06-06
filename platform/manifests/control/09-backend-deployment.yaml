@@ -66,12 +66,13 @@ spec:
         - name: api
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 534b5916 = Stripe Connect Phase 3 — the
-          # Portal org switch + Platform View work under the BFF: the switch
-          # is mirrored into the @jaupole/ecosystem-auth session (was a silent
-          # no-op for browser callers); ecosystem admins can run Platform View
-          # (control-image-build run 27074139216, commit fa7d4a8).
-          image: ghcr.io/jaupole/control@sha256:0aa1a99da2198fffcfae284b1fa1236884c2f1ce4e905242a338a69a673a3643
+          # automate the bump. bda20d70 = Remove-from-Organization endpoint
+          # (DELETE /orgs/:id/members/:userId — cascades membership +
+          # positions + manager refs + SpiceDB tuples; clears orphaned
+          # "(deleted user)" rows). Also carries the prior dead-cookie auth
+          # cleanup already on master.
+          # (control-image-build run 27077132813, commit be579c3).
+          image: ghcr.io/jaupole/control@sha256:bda20d70136034f12fb085f87f405cb25a646b6ea86712927993b5907e5542ad
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
