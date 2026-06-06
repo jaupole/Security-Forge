@@ -81,8 +81,8 @@ spec:
           # over (hosted Checkout, Connect-webhook route precedence, reused-
           # BFF cutover (centralized-login): @jaupole/ecosystem-auth session
           # store; tokens server-side, sealed __Host-mh_sess cookie only.
-          # member-hub-image-build run 27064392001, commit 35b5f91.
-          image: ghcr.io/jaupole/member-hub@sha256:985ae21cfd76c1f26ff368b994ea2f127c3c6f8c39091c06fa7f3f020fc39d83
+          # 0.1.1 fixes the __Host- cookie clear. commit 3437181.
+          image: ghcr.io/jaupole/member-hub@sha256:7ea9ba5ed2945b9bc5f2655783b40343472562b14871397a87661a1580f68534
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
