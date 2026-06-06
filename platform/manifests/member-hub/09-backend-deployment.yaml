@@ -74,16 +74,14 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          # 690fc65c = dashboard image (4d1e583) + the bundled Stripe Connect
-          # fixes from hotfix/stripe-hosted-checkout: (1) hosted Checkout —
-          # Connect orgs redirect to Stripe's hosted page, no client publishable
-          # key needed; (2) Connect webhook route-precedence — /stripe/connect
-          # was matching /stripe/:orgId and 400-ing as orgId='connect', dropping
-          # every Connect webhook; (3) reused-session mode guard — recreate when
-          # a stored session's mode mismatches the org's connection type. NOT the
-          # in-progress design-system Phase 5.
-          # member-hub-image-build run 27049457573, commit 3be8023.
-          image: ghcr.io/jaupole/member-hub@sha256:690fc65ce9f084b1dea2467f3bd1a14c65e314fc7eed2e3fbfbd4a62ec46e78b
+          # 536ae579 = full SecForge dashboard design-system (Phases 0-5:
+          # glow tokens, responsive top-nav/bottom-tab shell, dashboard
+          # primitives + rebuilt Dashboard, cardless Card/PageHeader, and the
+          # in-shell page sweep) PLUS all three Stripe-Connect fixes carried
+          # over (hosted Checkout, Connect-webhook route precedence, reused-
+          # session mode guard). master 903619c (Phase 5 + cherry-picked 3be8023).
+          # member-hub-image-build run 27049706108, commit 903619c.
+          image: ghcr.io/jaupole/member-hub@sha256:536ae579e1495ae11505c83e1f885c3a38605885ffd746228f7068f350b28d26
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
