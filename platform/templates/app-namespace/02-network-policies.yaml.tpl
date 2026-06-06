@@ -31,12 +31,14 @@ spec:
   podSelector: {}
   policyTypes: [Egress]
 
-# ─── allow ingress from ingress-nginx ────────────────────────────────
+# ─── allow ingress from istio-ingress (public + tailnet gateways) ────
+# Istio took over the ingress data plane (ADR-0032); ingress-nginx was
+# decommissioned 2026-06-06. Gateways live in the istio-ingress ns.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-ingress-nginx
+  name: allow-istio-ingress
   namespace: ${APP_NAME}
 spec:
   podSelector: {}
@@ -45,7 +47,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: istio-ingress
 
 # ─── allow ingress from observability (Prometheus scrape) ────────────
 ---

@@ -16,4 +16,3 @@
 ghcr.io/cloudnative-pg/postgresql:16.10-bookworm
 ghcr.io/cloudnative-pg/postgresql:16-bookworm
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.0
-registry.k8s.io/ingress-nginx/controller:v1.15.1
