@@ -67,10 +67,11 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump. 534b5916 = Stripe Connect Phase 3 — the
-          # Portal stripe-config status endpoint returns connectionMode +
-          # connectedAccountId, on top of migrations 065 + 066
-          # (control-image-build run 27044576664, commit 7a07619).
-          image: ghcr.io/jaupole/control@sha256:afa0976e0e42eb9707b16edb9ba8db8bf034883388b35b672677ae4b510a801b
+          # Portal org switch + Platform View work under the BFF: the switch
+          # is mirrored into the @jaupole/ecosystem-auth session (was a silent
+          # no-op for browser callers); ecosystem admins can run Platform View
+          # (control-image-build run 27074139216, commit fa7d4a8).
+          image: ghcr.io/jaupole/control@sha256:0aa1a99da2198fffcfae284b1fa1236884c2f1ce4e905242a338a69a673a3643
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
