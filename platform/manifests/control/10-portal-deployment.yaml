@@ -51,10 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 9b787a6b = Resend option in Platform Settings
-          # → Email, on top of the consolidated Platform Settings page
-          # (portal-image-build run 27044326352, commit c36b4b9).
-          image: ghcr.io/jaupole/portal@sha256:9b787a6bdcc5d38a80b3574670c89478bf95edc3c049eacf0e026a17ed77f960
+          # automate the bump. 2ac6d423 = Stripe Connect Phase 3 — the
+          # "Connect With Stripe" UI (button, connected status, return
+          # banner) on the Integrations page
+          # (portal-image-build run 27044588582, commit 82ad6c5).
+          image: ghcr.io/jaupole/portal@sha256:2ac6d42374df42aa8660153877911463064020fe67be0381928cc5215495c95e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }

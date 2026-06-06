@@ -66,10 +66,11 @@ spec:
         - name: api
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 50e7c714 = adds Resend provider to the
-          # platform default sender (migration 066), on top of 064/065
-          # (control-image-build run 27044321454, commit b42ad1e).
-          image: ghcr.io/jaupole/control@sha256:50e7c714ce3fb2bc1e7746275fde96ba929260395aa7cb781940b867b64dcf5d
+          # automate the bump. 534b5916 = Stripe Connect Phase 3 — the
+          # Portal stripe-config status endpoint returns connectionMode +
+          # connectedAccountId, on top of migrations 065 + 066
+          # (control-image-build run 27044576664, commit 7a07619).
+          image: ghcr.io/jaupole/control@sha256:534b5916423c61824a8014fd0b48ece8d35150fd0a70345400269f7ee722878a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
