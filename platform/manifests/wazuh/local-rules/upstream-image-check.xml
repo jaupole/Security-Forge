@@ -36,15 +36,6 @@
     </mitre>
   </rule>
 
-  <!-- Registry resolution failure escalated to admin attention if it
-       persists. Single occurrence is operational; repeated suggests a
-       network or auth issue that needs a human. -->
-  <rule id="100405" level="8" frequency="3" timeframe="86400">
-    <if_matched_sid>100403</if_matched_sid>
-    <description>Operator Attention: upstream-image-check has failed registry lookup 3+ times in 24h ($(image))</description>
-    <group>system_admin_attention,upstream_image,operational,</group>
-  </rule>
-
   <!-- First observation of an image — info only, no escalation -->
   <rule id="100402" level="2">
     <if_sid>100400</if_sid>
@@ -59,6 +50,19 @@
     <match>could not resolve digest</match>
     <description>upstream-image-check: registry lookup failed for $(image)</description>
     <group>upstream_image,operational,</group>
+  </rule>
+
+  <!-- Registry resolution failure escalated to admin attention if it
+       persists. Single occurrence is operational; repeated suggests a
+       network or auth issue that needs a human.
+       ORDERING: this rule MUST be defined AFTER 100403 — wazuh-analysisd
+       resolves <if_matched_sid> against already-loaded rules, so a forward
+       reference makes it drop 100405 ("Signature ID '100403' was not found").
+       Keep it below its parent. -->
+  <rule id="100405" level="8" frequency="3" timeframe="86400">
+    <if_matched_sid>100403</if_matched_sid>
+    <description>Operator Attention: upstream-image-check has failed registry lookup 3+ times in 24h ($(image))</description>
+    <group>system_admin_attention,upstream_image,operational,</group>
   </rule>
 
   <!-- Weekly summary line, fires every run -->
