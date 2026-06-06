@@ -30,22 +30,34 @@ nothing is live until deployed.
 **Phase 0 finding:** OAuth-for-Standard is available (Stripe soft-discourages
 but has not closed it) — mechanism stands.
 
-**Remaining before a sandbox end-to-end test:**
-1. Operator provisioning (browser/OpenBao): create the restricted platform key;
-   write `platform_key` + `connect_webhook_secret` to
-   `secret/apps/member-hub/stripe-connect`; register the Connect webhook
-   (`members.secforge.dev/api/webhooks/stripe/connect`).
-2. Deploy wiring: member-hub Deployment env (`STRIPE_PLATFORM_SECRET_KEY` +
-   `STRIPE_CONNECT_WEBHOOK_SECRET` via VSO + ADR-0013 escape-hatch annotation)
-   + VSO binding for `apps/member-hub/stripe-connect`.
-3. Build the member-hub image; deploy Control + Member Hub + the Portal/admin
-   image.
-4. Sandbox test: connect a test org → checkout → Connect webhook → invoice paid
-   → QBO sync.
+**DEPLOYED + CONNECT VALIDATED — 2026-06-06.** Live on the cluster:
+- Images: control `534b5916`, member-hub `d77e8487`, portal `22e1bc9f` (the
+  last incl. the Connect-button redirect-latch UX fix, ecosystem-portal `01b6f5c`).
+- Migration 065 applied; the member-hub secret carries the restricted platform
+  key + Connect webhook secret; the `stripe-connect` Istio VS is live; a
+  Cloudflare A record `stripe-connect.secforge.dev → 65.21.25.40` was added
+  (the `*.secforge.dev` wildcard cert already covers it).
+- **OAuth connect validated end-to-end** in Test mode (org "Bob #2" shows
+  Connected, `acct_…`, Test Mode).
 
-**Deferred follow-up:** operator-adjustable "Ecosystem Stripe Connect App" card
-(swap test→live `client_id` without a redeploy). Env-swap covers go-live in the
-meantime.
+Provisioning corrections made during deploy (the Phase 0/2 notes above were off):
+- The Connect webhook URL is **`billing.secforge.dev/member-hub/connect`** (the
+  dedicated Stripe-webhook host), NOT `members.secforge.dev` — the `billing`
+  VirtualService already rewrites `/member-hub/(.+)` → `/api/webhooks/stripe/\1`.
+- The creds live in **`secret/apps/member-hub/runtime`** (keys
+  `stripe_platform_key` + `stripe_connect_webhook_secret`) — the only path the
+  member-hub OpenBao policy reads — consumed via the existing `envFrom`.
+
+**Remaining:**
+1. **Charge-path test** (not yet run): a test checkout on a Connect-linked org →
+   Connect webhook → invoice paid → QBO sync.
+2. **Go-live** (one-time): register the live `ca_…` + live redirect URI, swap
+   `STRIPE_CONNECT_CLIENT_ID` to the live value, provision the live restricted
+   key + Connect webhook secret; orgs re-link once (test `acct_` ≠ live `acct_`).
+
+**Deferred follow-ups:** (a) operator-adjustable "Ecosystem Stripe Connect App"
+card (swap test→live `client_id` without a redeploy); (b) a `charge.refund.updated`
+handler to catch async refund failures (see the webhook discussion).
 
 ---
 
