@@ -51,12 +51,12 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 40b80e45 = SecForge "glow" design-system
-          # migration (Phases 0-3): glow tokens + dashboard primitives +
-          # responsive top-nav/bottom-tab shell (sidebar dropped) +
-          # spaced-v2 dashboard. Tenant=green / operator-admin=violet.
-          # (portal-image-build run 27075564413, commit 8452428).
-          image: ghcr.io/jaupole/portal@sha256:40b80e45c8e07854149cb4bb8b9101b29b50854de926a48d9b1650994ab0c672
+          # automate the bump. daf4042a = glow migration (Phases 0-3) +
+          # top-bar right-cluster fix to Member Hub parity (Search · theme ·
+          # Bell · gradient-ring Avatar with org switching folded into the
+          # account menu; standalone OrgSwitcher removed).
+          # (portal-image-build run 27076015095, commit a15b84e).
+          image: ghcr.io/jaupole/portal@sha256:daf4042a7b5101ff3e85245797808c7c89524451ffd0369c1c613c7a61ecd602
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
