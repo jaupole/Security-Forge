@@ -757,29 +757,33 @@ spec:
       # (no token-exchange dance needed).
       - clientId: control-portal
         name: Ecosystem Portal SPA
-        description: Ecosystem Portal SPA — tenant face — public client with PKCE S256.
+        description: Ecosystem Portal SPA — tenant face — CONFIDENTIAL; Control is the Portal BFF.
         enabled: true
         protocol: openid-connect
         rootUrl: https://portal.${DOMAIN}
         baseUrl: https://portal.${DOMAIN}
-        publicClient: true
+        # Confidential: Control (the Portal BFF) holds the client secret and the
+        # user's tokens server-side; the browser carries only a sealed session
+        # cookie. The tenants-realm secret is published via 05l to Control's
+        # CONTROL_PORTAL_CLIENT_SECRET_TENANTS env.
+        publicClient: false
         clientAuthenticatorType: client-secret
         standardFlowEnabled: true
         implicitFlowEnabled: false
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
         redirectUris:
-          - https://portal.${DOMAIN}/auth/callback
-          - https://portal.${DOMAIN}/
-          # Dedicated silent-renew iframe target — see Portal
-          # `silent-callback.html` + `src/silent-callback.ts`. Must
-          # be registered separately from the SPA's main /auth/callback
-          # because Keycloak validates redirect_uri exactly.
-          - https://portal.${DOMAIN}/silent-callback.html
+          # BFF callback — handled server-side by Control (path-routed from the
+          # tenant shell host). The old SPA /auth/callback + silent-callback
+          # iframe targets are gone under the BFF.
+          - https://portal.${DOMAIN}/api/auth/callback
+          - https://control.${DOMAIN}/api/auth/callback
         webOrigins:
           - "+"
         attributes:
           pkce.code.challenge.method: S256
+          # Back-channel logout → Control's BFF receiver (single-logout).
+          backchannel.logout.url: https://portal.${DOMAIN}/api/auth/backchannel-logout
           post.logout.redirect.uris: https://portal.${DOMAIN}/
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"

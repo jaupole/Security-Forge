@@ -697,33 +697,33 @@ spec:
       # operator bookmarks keep working until full cutover.
       - clientId: control-portal
         name: Admin Console SPA
-        description: Admin Console (operator-facing Portal shell) — public client with PKCE S256.
+        description: Admin Console (operator shell) — CONFIDENTIAL client; Control is the Portal BFF.
         enabled: true
         protocol: openid-connect
         rootUrl: https://admin.${DOMAIN}
         baseUrl: https://admin.${DOMAIN}
-        publicClient: true
+        # Confidential: Control (the Portal BFF) holds the client secret and the
+        # user's tokens server-side; the browser carries only a sealed session
+        # cookie. The secret is published to OpenBao→VSO→Control env via 05l.
+        publicClient: false
         clientAuthenticatorType: client-secret
         standardFlowEnabled: true
         implicitFlowEnabled: false
         directAccessGrantsEnabled: false
         serviceAccountsEnabled: false
         redirectUris:
-          - https://admin.${DOMAIN}/auth/callback
-          - https://admin.${DOMAIN}/
-          - https://control.${DOMAIN}/auth/callback
-          # Dedicated silent-renew iframe target — see Portal
-          # `silent-callback.html` + `src/silent-callback.ts`. Must
-          # be registered separately from the SPA's main /auth/callback
-          # because Keycloak validates redirect_uri exactly.
-          - https://admin.${DOMAIN}/silent-callback.html
-          - https://control.${DOMAIN}/silent-callback.html
+          # BFF callback — handled server-side by Control (path-routed from the
+          # admin shell host + the control host). The old SPA /auth/callback +
+          # silent-callback iframe targets are gone under the BFF.
+          - https://admin.${DOMAIN}/api/auth/callback
+          - https://control.${DOMAIN}/api/auth/callback
         webOrigins:
           - "+"
         attributes:
-          # PKCE S256 mandatory — public clients with no client_secret
-          # need PKCE to be safe.
+          # PKCE S256 stays mandatory (the BFF always sends an S256 challenge).
           pkce.code.challenge.method: S256
+          # Back-channel logout → Control's BFF receiver (single-logout).
+          backchannel.logout.url: https://admin.${DOMAIN}/api/auth/backchannel-logout
           post.logout.redirect.uris: https://admin.${DOMAIN}/##https://control.${DOMAIN}/
           backchannel.logout.session.required: "true"
           backchannel.logout.revoke.offline.tokens: "false"
@@ -747,6 +747,22 @@ spec:
           realm_client: "false"
           tls.client.certificate.bound.access.tokens: "false"
           token.response.type.bearer.lower-case: "false"
+        protocolMappers:
+          # Cross-audience: control-portal tokens carry `aud=control` so the
+          # BFF's server-held access token validates at Control's own
+          # /api/v1/me (the loopback the session resolver calls). The strict
+          # azp gate already trusts control-portal, but this makes the audience
+          # explicit rather than relying on the default `account` soft-check.
+          - name: control-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
 
       # ─── member-hub (browser auth-code + PKCE, user-facing) ──────
       - clientId: member-hub
