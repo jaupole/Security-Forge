@@ -57,10 +57,11 @@ spec:
       excludes:
         - .*
       templates:
-        # Keycloak OIDC client_secret (user-login `control` client).
-        # App reads as OIDC_CLIENT_SECRET.
-        OIDC_CLIENT_SECRET:
-          text: '{{ .Secrets.oidc_client_secret }}'
+        # NOTE: the legacy user-login `control` OIDC client secret
+        # (oidc_client_secret -> OIDC_CLIENT_SECRET) was dropped when Control
+        # moved to the BFF — config.ts no longer reads it; the Portal BFF uses
+        # the confidential control-portal secret (CONTROL_PORTAL_CLIENT_SECRET,
+        # templated below). The OpenBao key may still exist but is unused here.
         # Keycloak admin-API client_secret (`control-admin` service-account
         # client — separate from the user-login OIDC client). Used by
         # @keycloak/keycloak-admin-client for member-create / role-mgmt

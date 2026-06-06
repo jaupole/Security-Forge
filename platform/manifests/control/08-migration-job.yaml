@@ -108,10 +108,9 @@ spec:
             - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-migrator, key: password } } }
             - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
           envFrom:
-            # Pulls EMAIL_HMAC_KEY + OIDC_CLIENT_SECRET +
-            # KEYCLOAK_ADMIN_CLIENT_SECRET + SPICEDB_PRESHARED_KEY +
-            # SESSION_KEY — config.ts requires them all even though
-            # migrations don't use them.
+            # Pulls EMAIL_HMAC_KEY + KEYCLOAK_ADMIN_CLIENT_SECRET +
+            # SPICEDB_PRESHARED_KEY + SESSION_KEY — config.ts requires them
+            # all even though migrations don't use them.
             - secretRef:
                 name: control-app-secrets
           securityContext:

@@ -207,11 +207,12 @@ spec:
             # ecosystem-brand-kit as well. See BRAND_KIT_DEPLOY_HANDOFF.md.
             - { name: MINIO_BRAND_KIT_BUCKET, value: ecosystem-brand-kit }
           envFrom:
-            # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
-            # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
-            # the VSO-rendered Secret. All five come from
-            # secret/apps/control/runtime in OpenBao via the
-            # VaultStaticSecret in 04-vso-bindings.yaml.
+            # Adds KEYCLOAK_ADMIN_CLIENT_SECRET, SPICEDB_PRESHARED_KEY,
+            # SESSION_KEY, EMAIL_HMAC_KEY from the VSO-rendered Secret. All
+            # come from secret/apps/control/runtime in OpenBao via the
+            # VaultStaticSecret in 04-vso-bindings.yaml. (The Portal BFF's
+            # confidential CONTROL_PORTAL_CLIENT_SECRET[_TENANTS] are templated
+            # separately there too.)
             - secretRef:
                 name: control-app-secrets
             # QBO_CLIENT_ID + QBO_CLIENT_SECRET — the ecosystem QBO app's
