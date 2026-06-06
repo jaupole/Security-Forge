@@ -60,7 +60,7 @@ spec:
           # BFF cutover (centralized-login): @jaupole/ecosystem-auth 0.1.1
           # session store; tokens server-side, sealed __Host-pf_sess cookie only.
           # proposal-forge-image-build, commit f20af3a. MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:21ee17242d7b8d70a9ea95511e89284a740fbdafb7a55d587143f7affc4aea5d
+          image: ghcr.io/jaupole/proposal-forge@sha256:5f86d53f36a2574cb556ec9011e6c081e5806271b55e408eede5df5a4a5b279d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }

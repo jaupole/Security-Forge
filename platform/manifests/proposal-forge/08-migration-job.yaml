@@ -73,7 +73,7 @@ spec:
           # the digest is kept in lockstep with the Deployment (09) per convention.
           # Bump to the matching digest on each app release; the Deployment (P6)
           # MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:21ee17242d7b8d70a9ea95511e89284a740fbdafb7a55d587143f7affc4aea5d
+          image: ghcr.io/jaupole/proposal-forge@sha256:5f86d53f36a2574cb556ec9011e6c081e5806271b55e408eede5df5a4a5b279d
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
