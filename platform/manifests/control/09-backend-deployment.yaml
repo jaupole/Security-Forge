@@ -70,7 +70,7 @@ spec:
           # Portal stripe-config status endpoint returns connectionMode +
           # connectedAccountId, on top of migrations 065 + 066
           # (control-image-build run 27044576664, commit 7a07619).
-          image: ghcr.io/jaupole/control@sha256:7de185fcc58c48d54e2074190ba1fcb9cbe389b06225a8e9a682b0a378091a2f
+          image: ghcr.io/jaupole/control@sha256:afa0976e0e42eb9707b16edb9ba8db8bf034883388b35b672677ae4b510a801b
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
