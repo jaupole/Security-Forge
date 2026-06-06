@@ -55,4 +55,21 @@
     <description>401-pattern false positive from the Trivy findings log - suppressed</description>
   </rule>
 
+  <!-- ============================================================ -->
+  <!-- 100103 — 100001 false-fires on "error" text in CVE titles     -->
+  <!-- ============================================================ -->
+  <!-- 100001 ("Application error detected") also matches the word
+       "error" inside CVE *titles* in the Trivy findings log
+       (/host/var/log/trivy-wazuh/*.jsonl), e.g.
+       "...may cause ... an unrecoverable fatal error...". Same class as
+       100102. 100101 only catches the dockerd "Error running exec" case;
+       this covers the trivy-cve lines. The real Trivy CVE alerts
+       (trivy_rules.xml, 100200+) read the same log but match on the JSON
+       structure, so they are unaffected. -->
+  <rule id="100103" level="0">
+    <if_sid>100001</if_sid>
+    <location>trivy-wazuh</location>
+    <description>Application-error false positive from the Trivy findings log - suppressed</description>
+  </rule>
+
 </group>

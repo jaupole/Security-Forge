@@ -5,8 +5,9 @@
 # benign/false-positive sources and raises the host agent's event buffer so
 # bursts stop dropping events.
 #
-#   Manager rules (100200-100202): promiscuous-mode on CNI virtual interfaces,
-#   dockerd CI exec errors, and 401 false-positives from the Trivy findings log.
+#   Manager rules (100100-100103): promiscuous-mode on CNI virtual interfaces,
+#   dockerd CI exec errors, and 401 + application-error false-positives from the
+#   Trivy findings log.
 #
 #   Host agent client_buffer: queue_size 5000->20000, events_per_second
 #   500->1000 (was overrunning -> "Agent event queue is full").
@@ -72,4 +73,4 @@ else
   fi
 fi
 
-green "✓ Noise-suppression rules + buffer sizing applied (rule IDs 100100-100102)."
+green "✓ Noise-suppression rules + buffer sizing applied (rule IDs 100100-100103)."
