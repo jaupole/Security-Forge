@@ -171,7 +171,7 @@ Then verify a fresh login passes (same checks as the success-verification sectio
 
 ### `client not found in realm secforge-tenants`
 
-The script's pre-flight failed to resolve the client UUID. Either the realm is stale (re-import via `kubectl apply -f infrastructure/keycloak/realms/secforge-tenants-realm.yaml`) or the `clientId` argument was wrong. The script's allowlist accepts only the four canonical names.
+The script's pre-flight failed to resolve the client UUID. Either the realm is stale (re-import via `kubectl apply -f platform/manifests/keycloak/realms/secforge-tenants-realm.yaml`) or the `clientId` argument was wrong. The script's allowlist accepts only the four canonical names.
 
 ### `deployment <bff> not found — is the BFF deployed yet?`
 

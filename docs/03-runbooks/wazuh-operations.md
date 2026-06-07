@@ -79,7 +79,7 @@ The Phase 7.2 deploy intentionally omits four pieces. Each has a clear "when to 
 **Bootstrap (one-time, idempotent re-runs land a fresh ID + key):**
 
 ```bash
-bash infrastructure/wazuh-agent/bootstrap-agent-key.sh
+bash platform/manifests/wazuh-agent/bootstrap-agent-key.sh
 kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 ```
 
@@ -93,7 +93,7 @@ The script registers `desktop-control-plane` with the manager, extracts the agen
 kubectl exec -n wazuh wazuh-manager-0 -- /var/ossec/bin/manage_agents -l \
     | awk '/Name: desktop-control-plane,/ { print $2 }' | tr -d ','
 # (For each ID printed, remove with `manage_agents -r <id>` — pipe `y\n` for confirmation.)
-bash infrastructure/wazuh-agent/bootstrap-agent-key.sh
+bash platform/manifests/wazuh-agent/bootstrap-agent-key.sh
 kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 ```
 
@@ -105,7 +105,7 @@ kubectl rollout restart -n wazuh-agent daemonset/wazuh-agent
 
 **Where the config lives:**
 
-- `infrastructure/wazuh-agent/03-configmap.yaml` — `ossec-supplements.xml` includes:
+- `platform/manifests/wazuh-agent/03-configmap.yaml` — `ossec-supplements.xml` includes:
 
 ```xml
 <localfile>

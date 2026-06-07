@@ -32,10 +32,10 @@
    the running pod is on the wrong image.
 
    Refresh the blacklist by bumping `PWDB_COMMIT` + `PWDB_SHA256` in
-   `infrastructure/keycloak/image/Dockerfile` + merging. GHA rebuilds the
+   `platform/manifests/keycloak/image/Dockerfile` + merging. GHA rebuilds the
    image; bump `04-keycloak-cr.yaml` `spec.image` to the new digest.
 
-   See `infrastructure/keycloak/image/README.md` for the full image-refresh
+   See `platform/manifests/keycloak/image/README.md` for the full image-refresh
    procedure.
 
 ## Procedure
@@ -196,7 +196,7 @@ unreproducible — a DR rebuild would lose them.
 
 **Cutover steps (one-time):**
 
-1. Push to `main` with the `infrastructure/keycloak/image/Dockerfile` and
+1. Push to `main` with the `platform/manifests/keycloak/image/Dockerfile` and
    the GHA workflow in `.github/workflows/keycloak-image-build.yml`. GHA
    builds the first signed image. Note the `@sha256:...` digest from the
    run summary.

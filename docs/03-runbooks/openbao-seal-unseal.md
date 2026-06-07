@@ -22,10 +22,13 @@ The main OpenBao auto-unseals via the seal-OpenBao's Transit endpoint as soon as
 ## Procedure
 
 ```bash
-bash infrastructure/openbao/unseal-seal.sh
+# The local-edition `unseal-seal.sh` wrapper is retired; unseal manually.
+# Feed 3 of the 5 offline Shamir keys, one per invocation (no echo):
+kubectl exec -it -n openbao openbao-seal-0 -c openbao -- \
+    env BAO_SKIP_VERIFY=1 bao operator unseal      # repeat 3× with 3 distinct keys
 ```
 
-The script reads 3 unseal keys from stdin (one per line, no echo). It validates that the seal-OpenBao is initialized + currently sealed before accepting input, and exits 0 if it's already unsealed.
+Run it three times with three distinct keys. The seal-OpenBao validates each share and opens after 3 of 5 correct; it's a no-op if already unsealed. (See "What the unseal does" below for the exact commands.)
 
 After the seal-OpenBao reports `Sealed: false`, the main OpenBao auto-unseals within ~10 seconds. Verify:
 
@@ -79,16 +82,16 @@ The recovery path then is **destroy and rebuild**:
 
 1. `helm uninstall openbao-seal -n openbao`
 2. `kubectl delete pvc -n openbao data-openbao-seal-0`
-3. `bash infrastructure/openbao/apply-seal.sh && bash infrastructure/openbao/init-seal.sh`
+3. Re-bootstrap the seal node: `bash platform/components/05a-openbao-bootstrap-seal.sh`
 4. The new Transit token is different from the old; update the main OpenBao's seal block:
    - Delete the `openbao-seal-block` Secret.
-   - Re-run `bash infrastructure/openbao/apply-main.sh` (which renders a new seal Secret with the new token).
+   - Re-render it with the new Transit token and re-deploy main: `bash platform/components/05-openbao.sh`.
    - Roll the main OpenBao pods to pick it up.
 5. The main OpenBao's existing data is encrypted with a wrap-key based on the OLD Transit endpoint, which is now gone — so the main OpenBao **also** has to be rebuilt:
    - `helm uninstall openbao -n openbao`
    - `kubectl delete pvc -n openbao -l app.kubernetes.io/name=openbao`
-   - `bash infrastructure/openbao/apply-main.sh && bash infrastructure/openbao/init-main.sh`
-   - Re-load policies, auth methods, secrets engines (the Phase 5.4–5.10 scripts).
+   - `bash platform/components/05-openbao.sh && bash platform/components/05b-openbao-bootstrap-main.sh`
+   - Re-load policies, auth methods, secrets engines: `05c-openbao-configure.sh`, `05f-openbao-jwt-auth.sh`, `05i-openbao-oidc-auth.sh`.
 
 This is a "start over" — all OpenBao state is lost. **The recovery keys for the main OpenBao do NOT help with seal-OpenBao loss**; they are orthogonal (one mints a fresh root token on an unsealed OpenBao).
 
@@ -117,7 +120,7 @@ The keys are wiped from the script's variables immediately after use (`unset`).
 
 ### "openbao-seal-0 not found"
 
-The seal-OpenBao isn't deployed. Run `bash infrastructure/openbao/apply-seal.sh`.
+The seal-OpenBao isn't deployed. Run `bash platform/components/05a-openbao-bootstrap-seal.sh`.
 
 ### "Unseal didn't take" / `bao status` still shows sealed
 
@@ -131,8 +134,8 @@ The main OpenBao retries the Transit unseal on a backoff. Wait up to a minute. I
 - Check the main openbao log: `kubectl logs -n openbao openbao-0 -c openbao --tail=20`
 - **Telltale: distinguish 503 vs 403 in the main pod's log.**
   - `503 Vault is sealed` → seal-OpenBao itself is still sealed; finish the Shamir unseal.
-  - `403 permission denied` → Transit token expired. **As of Phase 7d Item 3 (2026-05-02):** the token is now minted as `-period=720h` (30-day periodic), so this happens only after >30 days of continuous cold pause. The token auto-refreshes its TTL on every USE — and main OpenBao's transit-unseal call at boot counts as use, so any cluster reboot within 30 days keeps it alive. Recovery for >30d cold pause is unchanged: **one-shot:** `bash infrastructure/openbao/rotate-transit-token.sh` — see [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token) for what it does and the manual procedure. (Pre-7d clusters minted with `-ttl=24h -renewable=true` see expiry after 24h; the recovery script handles both shapes.)
-- **Hit on 2026-05-01, 2026-05-02, and 2026-05-05:** full sequence after a multi-day cold cluster is `unseal-seal.sh` (Shamir) → `rotate-transit-token.sh` (mint-fresh + patch + re-render + roll). As of 2026-05-05, `apply-main.sh` itself detects a seal-block content change and force-rolls stale main pods before the readiness watchdog runs; the watchdog also counts only the per-pod restart *delta* since watch-start, so pre-existing crashloops can't cause a false-positive bail. Earlier transcripts of the recovery may show the legacy "watchdog bail" message — that path is gone.
+  - `403 permission denied` → Transit token expired. **As of Phase 7d Item 3 (2026-05-02):** the token is now minted as `-period=720h` (30-day periodic), so this happens only after >30 days of continuous cold pause. The token auto-refreshes its TTL on every USE — and main OpenBao's transit-unseal call at boot counts as use, so any cluster reboot within 30 days keeps it alive. Recovery for >30d cold pause is unchanged — see [openbao-recovery.md § Rotate the Transit unseal token](./openbao-recovery.md#rotate-the-transit-unseal-token) for the procedure. (Pre-7d clusters minted with `-ttl=24h -renewable=true` see expiry after 24h; the recovery script handles both shapes.)
+- **Hit on 2026-05-01, 2026-05-02, and 2026-05-05:** full sequence after a multi-day cold cluster is the manual Shamir unseal (above) → rotate the Transit token (see openbao-recovery.md). Re-rendering the `openbao-seal-block` Secret + redeploying main (`05-openbao.sh`) force-rolls stale main pods to pick up the new token.
 
 ### "I want to STOP the manual-unseal cadence"
 

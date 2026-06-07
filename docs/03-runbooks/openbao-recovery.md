@@ -203,31 +203,27 @@ kubectl delete pvc -n openbao -l app.kubernetes.io/name=openbao
 kubectl delete pvc -n openbao -l app.kubernetes.io/name=openbao-seal
 kubectl -n openbao delete secret openbao-transit-token openbao-seal-block
 
-# 3. Re-bootstrap (Phase 5.2 + 5.3).
-bash infrastructure/openbao/apply-seal.sh
-bash infrastructure/openbao/init-seal.sh
-# Save the new Phase 5.2 secrets offline (5 unseal keys, root, Transit token).
+# 3. Re-bootstrap the seal node, then main.
+bash platform/components/05a-openbao-bootstrap-seal.sh
+# Save the new seal secrets offline (5 unseal keys, root, Transit token).
+# The new Transit token goes into the openbao-seal-block Secret (rendered by
+# 05-openbao.sh from the offline token), NOT the retired openbao-transit-token Secret.
+bash platform/components/05-openbao.sh
+bash platform/components/05b-openbao-bootstrap-main.sh
+# Save the new main secrets offline (5 recovery keys, root).
 
-# Update the openbao-transit-token Secret with the new Transit token.
-kubectl -n openbao create secret generic openbao-transit-token \
-    --from-literal=token=<new-Transit-token>
-
-bash infrastructure/openbao/apply-main.sh
-bash infrastructure/openbao/init-main.sh
-# Save the new Phase 5.3 secrets offline (5 recovery keys, root).
-
-# 4. Re-apply the operational config.
-BAO_TOKEN=<new-main-root> bash infrastructure/openbao/configure-engines.sh
-BAO_TOKEN=<new-main-root> bash infrastructure/openbao/load-policies.sh
-BAO_TOKEN=<new-main-root> bash infrastructure/openbao/configure-auth-k8s-jwt.sh
+# 4. Re-apply the operational config (engines, policies, k8s-JWT auth).
+BAO_TOKEN=<new-main-root> bash platform/components/05c-openbao-configure.sh
+BAO_TOKEN=<new-main-root> bash platform/components/05f-openbao-jwt-auth.sh
 
 # OIDC: re-create the openbao Keycloak client OR reuse the existing one.
 # If reusing, fetch the existing client_secret from Keycloak admin UI.
 BAO_TOKEN=<new-main-root> CLIENT_SECRET=<from-Keycloak> \
-    bash infrastructure/openbao/configure-auth-oidc.sh
+    bash platform/components/05i-openbao-oidc-auth.sh
 
-# 5. Restore secrets from your pre-rebuild dump.
-bash infrastructure/openbao/migrate-secrets.sh   # re-pulls from K8s Secrets
+# 5. Re-establish app secrets. Per-app KV/dynamic-cred values are re-provisioned
+#    by the app VSO roles + per-app bootstrap (05j-app-vso-roles.sh); VSO then
+#    re-renders the destination K8s Secrets from OpenBao.
 
 # 6. Revoke the new initial root once OIDC is verified working.
 kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 \
@@ -287,7 +283,7 @@ BAO_SKIP_VERIFY=1 BAO_ADDR=https://127.0.0.1:8200 \
 
 # 2. Re-mint the metrics token + overwrite the K8s Secret.
 BAO_TOKEN=$(bao print token) \
-    bash infrastructure/openbao/configure-metrics-auth.sh
+    bash platform/components/05c-openbao-configure.sh   # includes metrics-auth setup
 ```
 
 The script rotates the metrics token, rewrites the Secret, and the Prometheus pod picks up the new token from its mounted-Secret file on its next scrape (~30-60s) without a restart — kubelet auto-reconciles the projected Secret and Prometheus reads the bearer token file per scrape.
@@ -316,4 +312,4 @@ kubectl exec -n wazuh wazuh-indexer-0 -- curl -sk -u "admin:$WPW" \
 
 **If the policy itself is missing or detached** (rarer than token expiry — confirm with `bao policy read metrics-policy` and `bao token lookup <token>`'s `policies` field), the same script reloads the policy idempotently.
 
-**If the ServiceMonitor wiring drifts** (gotcha: `bearerTokenSecret` is resolved by Prometheus Operator in the SAME namespace as the ServiceMonitor, NOT the Prometheus pod's namespace — the metrics-token Secret MUST live in `openbao` ns, not `observability`), inspect `kubectl get servicemonitor -n openbao openbao -o yaml` and re-apply `infrastructure/openbao/09-servicemonitor.yaml`.
+**If the ServiceMonitor wiring drifts** (gotcha: `bearerTokenSecret` is resolved by Prometheus Operator in the SAME namespace as the ServiceMonitor, NOT the Prometheus pod's namespace — the metrics-token Secret MUST live in `openbao` ns, not `observability`), inspect `kubectl get servicemonitor -n openbao openbao -o yaml` and re-apply the openbao ServiceMonitor from its manifest under `platform/manifests/openbao/` (the metrics wiring is set up by `05c-openbao-configure.sh`).
