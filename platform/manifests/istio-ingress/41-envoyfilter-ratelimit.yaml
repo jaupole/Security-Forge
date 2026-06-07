@@ -5,13 +5,10 @@
 # node). Sibling of 40-envoyfilter-security-headers.yaml (same GATEWAY-context
 # HTTP_FILTER pattern). See ADR-0032 + manifests/istio-ingress/README.md.
 #
-# ┌─ MONITOR-FIRST ─────────────────────────────────────────────────────────────┐
-# │ `filter_enforced` numerator is 0 → the filter EVALUATES every request and    │
-# │ increments the `rate_limited` counter, but REJECTS NOTHING. No tenant can be │
-# │ blocked by this object. Observe the counter (see "Observe" below), confirm   │
-# │ real traffic stays well under the bucket, THEN flip `filter_enforced`        │
-# │ numerator 0 → 100 and re-apply to start enforcing (returns 429 over ceiling).│
-# └──────────────────────────────────────────────────────────────────────────────┘
+# STATE: ENFORCING (2026-06-07). `filter_enforced` numerator is 100 -> requests over
+# the bucket get 429 (Retry-After). Was deployed monitor-first (enforced=0); the counter
+# showed rate_limited=0 under real traffic, then it was flipped to enforce. To revert to
+# monitor-only, set `filter_enforced` numerator back to 0 and re-apply (xDS, no restart).
 #
 # Bucket: 2000 tokens, refilled 2000/1s ≈ a 2000 req/s global ceiling at the
 # gateway — far above real traffic, but caps a volumetric flood. Tune from the
@@ -63,8 +60,10 @@ spec:
               default_value: {numerator: 100, denominator: HUNDRED}
               runtime_key: secforge_gateway_rl_enabled
             filter_enforced:
-              # MONITOR-FIRST: 0 = count only, reject nothing. Flip to 100 to enforce.
-              default_value: {numerator: 0, denominator: HUNDRED}
+              # ENFORCING since 2026-06-07 (flipped from monitor-mode after the counter
+              # showed rate_limited=0 under real traffic — far below the 2000/s ceiling).
+              # To revert to monitor-only: set numerator back to 0 and re-apply (xDS, no restart).
+              default_value: {numerator: 100, denominator: HUNDRED}
               runtime_key: secforge_gateway_rl_enforced
             response_headers_to_add:
               - append_action: OVERWRITE_IF_EXISTS_OR_ADD
