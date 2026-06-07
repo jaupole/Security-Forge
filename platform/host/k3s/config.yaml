@@ -41,4 +41,7 @@ kubelet-arg:
 # same disk. Real disk-theft protection still needs LUKS on vg0-*.
 # Historical plaintext from kine MVCC remains in state.db until the
 # previously-leaked Secret values are rotated.
-secrets-encryption: true
+secrets-encryption: true  # RE-ENABLED 2026-06-05: datastore-bootstrap clean-slate (#79)
+
+# kubeconfig hardened 2026-05-29 (audit Wave 0): root-only, durable across k3s restarts
+write-kubeconfig-mode: "0600"
