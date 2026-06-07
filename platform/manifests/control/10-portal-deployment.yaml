@@ -51,10 +51,10 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 776f36d6 = per-app accent overrides in the
-          # Branding page (Per-App Accent section) on top of the Phase 2
-          # ecosystem-ui shell. (portal-image-build, commit 1f14467).
-          image: ghcr.io/jaupole/portal@sha256:776f36d68f8b4c3ecb99b58aa0fddbda0f307dc303c8038fe47061d3a4bd747c
+          # automate the bump. 86e707f0 = ecosystem-ui 0.1.6: mobile bottom
+          # nav portals to <body> so it stays viewport-locked instead of
+          # scrolling with the page. (portal-image-build, commit 9a1fb59).
+          image: ghcr.io/jaupole/portal@sha256:86e707f057c2ae1bd6e348512dd0906dabc9fdd3cf7cd7d09172d8af7ff313e4
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
