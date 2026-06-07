@@ -3,7 +3,7 @@
 > Architecture: [docs/01-architecture/05-secrets-management.md](../01-architecture/05-secrets-management.md)
 > Source-of-truth files:
 > - Go client: [`apps/lib/secrets/transit.go`](../../apps/lib/secrets/transit.go)
-> - Sample policy: [`infrastructure/openbao/policies/helloworld-bff.hcl`](../../infrastructure/openbao/policies/helloworld-bff.hcl)
+> - Sample policy: the per-app policies under [`platform/manifests/openbao/policies/`](../../platform/manifests/openbao/policies/)
 > - Transit key: `transit/keys/pii-encryption` (aes256-gcm96, provisioned at platform install time)
 
 ## TL;DR
@@ -64,7 +64,7 @@ Apps that already use [`apps/lib/secrets/`](../../apps/lib/secrets/) for KV read
 
 ### 1. Provision the policy
 
-Per-app OpenBao policy granting encrypt/decrypt on the shared `pii-encryption` key. Minimal example (drop into `infrastructure/openbao/policies/<your-app>.hcl`):
+Per-app OpenBao policy granting encrypt/decrypt on the shared `pii-encryption` key. Minimal example (drop into `platform/manifests/openbao/policies/<your-app>.hcl`):
 
 ```hcl
 # Per-app policy, bound to the app's SPIFFE-ID via the JWT auth role.
@@ -80,7 +80,7 @@ path "transit/decrypt/pii-encryption" {
 }
 ```
 
-This mirrors `infrastructure/openbao/policies/helloworld-bff.hcl`, the canonical example.
+See the existing per-app policies in `platform/manifests/openbao/policies/` for the shape.
 
 If you want a per-app key (different blast radius — compromised app A can't decrypt app B's data), add a `transit/keys/<app>-pii` key in your app's bootstrap script and reference it instead of `pii-encryption` in both the policy and the client constructor.
 

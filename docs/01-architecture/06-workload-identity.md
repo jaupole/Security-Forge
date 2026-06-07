@@ -166,7 +166,7 @@ The "default" registration uses this pattern and templates the SPIFFE ID from na
 
 For platform components — `keycloak`, `spicedb`, `openbao`, `app`, `istio-system` — we additionally create namespace-scoped `ClusterSPIFFEID` resources with a `namespaceSelector`, so every pod in that namespace gets an identity without having to set the label. We still keep the SPIFFE ID template the same (namespace + service account), so the naming convention is consistent regardless of how the pod was selected.
 
-The registration manifests live in `infrastructure/spire/cluster-spiffe-ids.yaml`.
+The registration manifests live in `platform/manifests/spire/cluster-spiffe-ids.yaml`.
 
 ---
 

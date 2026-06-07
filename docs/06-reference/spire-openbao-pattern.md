@@ -42,7 +42,7 @@ The workload never holds a long-lived secret. The JWT-SVID lasts 5 minutes; the 
 ### On the SPIRE side (one-time per workload)
 
 The workload's pod must:
-1. Live in a namespace covered by a `ClusterSPIFFEID` registration (either via the `spiffe.io/spire-managed-identity: "true"` label, or a namespace-scoped registration in `infrastructure/spire/cluster-spiffe-ids.yaml`).
+1. Live in a namespace covered by a `ClusterSPIFFEID` registration (either via the `spiffe.io/spire-managed-identity: "true"` label, or a namespace-scoped registration in `platform/manifests/spire/cluster-spiffe-ids.yaml`).
 2. Mount the SPIFFE CSI driver volume:
    ```yaml
    volumes:
@@ -72,7 +72,7 @@ bao auth enable -path=spire jwt
 SPIRE doesn't expose a standard OIDC `/.well-known/openid-configuration` by default — that's what the `spiffe-oidc-discovery-provider` subchart is for. We enable that in Phase 5 alongside OpenBao:
 
 ```yaml
-# infrastructure/spire/values.yaml — Phase 5 overlay
+# platform/values/spire.yaml — Phase 5 overlay
 spiffe-oidc-discovery-provider:
   enabled: true
   service:

@@ -4,8 +4,8 @@
 
 > Architecture: [docs/01-architecture/02-authorization.md](../01-architecture/02-authorization.md)
 > ADR: [docs/02-decisions/0008-authz-schema.md](../02-decisions/0008-authz-schema.md)
-> Schema: [infrastructure/spicedb/schema.zed](../../infrastructure/spicedb/schema.zed)
-> Tests:  [infrastructure/spicedb/tests/](../../infrastructure/spicedb/tests/)
+> Schema: [platform/manifests/spicedb/schema.zed](../../platform/manifests/spicedb/schema.zed)
+> Tests:  [platform/manifests/spicedb/tests/](../../platform/manifests/spicedb/tests/)
 
 ---
 
@@ -13,16 +13,16 @@
 
 All commands assume:
 - `kubectl` on PATH, default context = Docker Desktop K8s
-- Working directory: `infrastructure/spicedb/`
+- Working directory: `platform/manifests/spicedb/`
 - The `spicedb-config-vso` Secret exists in `spicedb` ns. Keys: `preshared_key`, `datastore_uri`. **As of Phase 7d.2 (ADR-0023, amended 2026-05-03):** the underlying OpenBao KV path `secret/data/spicedb/config` is **periodically re-populated** by the `spicedb-datastore-refresher` CronJob, which mints fresh dynamic Postgres credentials from `database/creds/spicedb-readwrite` (combined with the still-static PSK) every 12 hours. The role's `default_ttl=14h` exceeds the cron interval by 2h so each newly-minted credential outlives the next refresh — the OLD credential stays alive while the NEW one rolls into the K8s Secret. VSO refreshes the rendered Secret on KV-version bump → SpiceDB Operator's `secretName` watch fires → SpiceDB pod rolls with the new credential. CNPG-side password rotation is a separate concern handled by re-running the bootstrap (see § "CNPG password rotation" below). See [ADR-0015](../02-decisions/0015-secret-distribution-pattern.md) for the broader VSO/direct-API split and [ADR-0023](../02-decisions/0023-spicedb-datastore-uri-rotation-pattern.md) for why this is a CronJob-refreshed VaultStaticSecret rather than a native VaultDynamicSecret + the 2026-05-03 TTL bug-fix amendment.
 - Docker available for one-shot zed/skopeo image runs
 
 The drop-in zed CLI:
 
 ```bash
-bash infrastructure/spicedb/zed.sh schema read
-bash infrastructure/spicedb/zed.sh permission check document:welcome view user:jason
-bash infrastructure/spicedb/zed.sh relationship create document:fresh owner user:eve --json
+bash platform/manifests/spicedb/zed.sh schema read
+bash platform/manifests/spicedb/zed.sh permission check document:welcome view user:jason
+bash platform/manifests/spicedb/zed.sh relationship create document:fresh owner user:eve --json
 ```
 
 Each invocation spawns a one-shot pod (~5s). For batch operations, `kubectl exec` into the long-lived `zed-check-runner` pod that `check-permissions.sh` provisions.
@@ -34,7 +34,7 @@ Each invocation spawns a one-shot pod (~5s). For batch operations, `kubectl exec
 ### Re-run the schema validators (no cluster needed)
 
 ```bash
-bash infrastructure/spicedb/tests/run.sh
+bash platform/manifests/spicedb/tests/run.sh
 ```
 
 Each `*.yaml` file is a self-contained schema + relationships + assertions. Validates schema syntax, permission expressions, and the assert-true/assert-false outcomes.
@@ -42,14 +42,14 @@ Each `*.yaml` file is a self-contained schema + relationships + assertions. Vali
 ### Apply a schema change
 
 ```bash
-# 1. Edit infrastructure/spicedb/schema.zed
-# 2. Add or update assertion files in infrastructure/spicedb/tests/
+# 1. Edit platform/manifests/spicedb/schema.zed
+# 2. Add or update assertion files in platform/manifests/spicedb/tests/
 # 3. Validate locally
-bash infrastructure/spicedb/tests/run.sh
+bash platform/manifests/spicedb/tests/run.sh
 # 4. Push to live SpiceDB
-bash infrastructure/spicedb/apply-schema.sh
+bash platform/manifests/spicedb/apply-schema.sh
 # 5. Confirm
-bash infrastructure/spicedb/zed.sh schema read | diff - infrastructure/spicedb/schema.zed
+bash platform/manifests/spicedb/zed.sh schema read | diff - platform/manifests/spicedb/schema.zed
 ```
 
 Schema apply is idempotent: same schema is a no-op. Different schema goes through SpiceDB's schema-migration validation; relationships referencing removed types/relations cause the write to fail (preserves data integrity).
@@ -57,7 +57,7 @@ Schema apply is idempotent: same schema is a no-op. Different schema goes throug
 ### Re-run Phase 4.5 verification
 
 ```bash
-bash infrastructure/spicedb/check-permissions.sh
+bash platform/manifests/spicedb/check-permissions.sh
 ```
 
 Runs:
@@ -230,7 +230,7 @@ kubectl get spicedbcluster -n spicedb spicedb -o json \
 # expected: /tls/ca.crt
 ```
 
-If empty, edit `infrastructure/spicedb/04-spicedb-cr.yaml` to add the line, re-apply, and bounce the pod. The CA cert is mounted from the `spicedb-grpc-tls` cert-manager Secret.
+If empty, edit `platform/manifests/spicedb/04-spicedb-cr.yaml` to add the line, re-apply, and bounce the pod. The CA cert is mounted from the `spicedb-grpc-tls` cert-manager Secret.
 
 ### `context deadline exceeded while waiting for connections to become ready`
 
@@ -264,7 +264,7 @@ The cascade requires intermediate relations:
 - `app:Z#tenant@tenant:X` — app Z is bound to tenant X
 - `<resource>:R#app@app:Z` — resource R is bound to app Z
 
-If any of these are missing, the cascade short-circuits to false. Re-run `infrastructure/spicedb/seed-test-data.sh` to ensure the baseline relationships are present, then check yours.
+If any of these are missing, the cascade short-circuits to false. Re-run `platform/manifests/spicedb/seed-test-data.sh` to ensure the baseline relationships are present, then check yours.
 
 ### "Acquisition timeout while waiting for new connection" from Postgres
 
@@ -291,14 +291,14 @@ kubectl exec -n spicedb secforge-spicedb-db-1 -- \
     psql -U spicedb -d spicedb -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
 # 3. Re-apply Phase 4.3.
-bash infrastructure/spicedb/apply.sh
+bash platform/manifests/spicedb/apply.sh
 
 # 4. Re-seed.
-bash infrastructure/spicedb/apply-schema.sh
-bash infrastructure/spicedb/seed-test-data.sh
+bash platform/manifests/spicedb/apply-schema.sh
+bash platform/manifests/spicedb/seed-test-data.sh
 
 # 5. Verify.
-bash infrastructure/spicedb/check-permissions.sh
+bash platform/manifests/spicedb/check-permissions.sh
 ```
 
 Destroys all relationships, schema state, and dispatch caches. Use only on a fresh dev environment or after backing up the DB.

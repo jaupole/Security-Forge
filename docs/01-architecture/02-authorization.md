@@ -7,7 +7,7 @@
 > - [ADR-0001 — Local-first build](../02-decisions/0001-local-first.md)
 >
 > Runbook: [spicedb-operations.md](../03-runbooks/spicedb-operations.md).
-> Schema source-of-truth: [`infrastructure/spicedb/schema.zed`](../../infrastructure/spicedb/schema.zed).
+> Schema source-of-truth: [`platform/manifests/spicedb/schema.zed`](../../platform/manifests/spicedb/schema.zed).
 > Companion architecture: [01-iam-platform.md](./01-iam-platform.md) (Keycloak issues the JWT; SpiceDB answers "is this user allowed to do this on this resource?").
 
 This document describes how the platform separates **authorization** ("who can do what to what") from **authentication** ("who is this user"). Authentication is Keycloak's job; authorization is SpiceDB's. The two never collapse: a valid JWT means the request is from a known user; a CheckPermission `ALLOWED` means that user is permitted on a specific resource. Both are required on every sensitive endpoint.
@@ -60,7 +60,7 @@ The SpiceDB API is **never** exposed via Ingress. Only the façade has a Service
 
 ## Schema (three-tier)
 
-> **Canonical source:** [`infrastructure/spicedb/schema.zed`](../../infrastructure/spicedb/schema.zed). The schema below is a **copy for reference only**; do NOT edit it here. Update `schema.zed` and resync this doc — drift between the two is a defect (closes F-ADR-7).
+> **Canonical source:** [`platform/manifests/spicedb/schema.zed`](../../platform/manifests/spicedb/schema.zed). The schema below is a **copy for reference only**; do NOT edit it here. Update `schema.zed` and resync this doc — drift between the two is a defect (closes F-ADR-7).
 
 Editing is via PR review against `schema.zed` — see [ADR-0008](../02-decisions/0008-authz-schema.md) for the design and rationale. Here is the current (synced) version:
 

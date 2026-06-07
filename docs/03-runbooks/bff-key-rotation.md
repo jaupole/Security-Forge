@@ -29,7 +29,7 @@ Use this for ad-hoc rotation, suspected compromise, or to verify the procedure e
 
 **Prerequisites:**
 
-- `BAO_TOKEN` exported in your shell with the capabilities listed in [`infrastructure/openbao/policies/bff-key-rotator.hcl`](../../infrastructure/openbao/policies/bff-key-rotator.hcl) (or admin-tier, e.g., from `bao login -method=oidc role=admin`).
+- `BAO_TOKEN` exported in your shell with the capabilities listed in [`platform/manifests/openbao/policies/bff-key-rotator.hcl`](../../platform/manifests/openbao/policies/bff-key-rotator.hcl) (or admin-tier, e.g., from `bao login -method=oidc role=admin`).
 - The target BFF Deployment is up and `Ready` in `app` ns.
 
 **Run:**
@@ -103,7 +103,7 @@ kubectl create job -n app bff-key-rotator-manual-$(date +%s) \
 1. The `spiffe-helper` init container writes a JWT-SVID (audience=`openbao`) to `/shared/openbao.jwt`.
 2. `wrapper.sh` POSTs the JWT to OpenBao `auth/jwt/login` (role `bff-key-rotator`), captures `client_token` as `BAO_TOKEN`.
 3. `wrapper.sh` execs `rotate-bff-key.sh`. The script's `_lib/kcadm-auth.sh` helper (mounted into `/scripts/kcadm-auth.sh`, override via `KCADM_AUTH_HELPER` env) reads kcadm-admin's client_secret from `secret/data/keycloak/clients/kcadm-admin` and authenticates `kcadm.sh` against the master realm.
-4. The OpenBao policy `bff-key-rotator` ([source](../../infrastructure/openbao/policies/bff-key-rotator.hcl)) allows: read on the kcadm-admin path, read/create/update on each `secret/data/keycloak/clients/<bff>` path.
+4. The OpenBao policy `bff-key-rotator` ([source](../../platform/manifests/openbao/policies/bff-key-rotator.hcl)) allows: read on the kcadm-admin path, read/create/update on each `secret/data/keycloak/clients/<bff>` path.
 
 The cron pod has the K8s RBAC required to (a) `pods/exec` on `openbao-0` and `keycloak-0` (specific pods, scoped via `resourceNames`), (b) `patch` and `get/list/watch` on the four BFF `Deployments`, (c) `get/list/watch` on `replicasets` and `pods` in `app` ns (for `kubectl rollout status`).
 
@@ -230,7 +230,7 @@ If a pod is stuck on `wait-for-spiffe-csi`, the SPIFFE-CSI cold-boot race is bit
 | [`infrastructure/keycloak/realms/cron/01-rotate-bff-key.yaml`](../../infrastructure/keycloak/realms/cron/01-rotate-bff-key.yaml) | All K8s resources (SA, RBAC, helper-conf ConfigMap, four CronJobs). |
 | [`infrastructure/keycloak/realms/cron/configure-openbao-role.sh`](../../infrastructure/keycloak/realms/cron/configure-openbao-role.sh) | Configures the OpenBao JWT auth role `bff-key-rotator`. |
 | [`infrastructure/keycloak/realms/cron/apply.sh`](../../infrastructure/keycloak/realms/cron/apply.sh) | Applies the manifest + builds the scripts ConfigMap from on-disk sources. |
-| [`infrastructure/openbao/policies/bff-key-rotator.hcl`](../../infrastructure/openbao/policies/bff-key-rotator.hcl) | OpenBao policy for the rotator role. |
+| [`platform/manifests/openbao/policies/bff-key-rotator.hcl`](../../platform/manifests/openbao/policies/bff-key-rotator.hcl) | OpenBao policy for the rotator role. |
 | [`infrastructure/keycloak/_lib/kcadm-auth.sh`](../../infrastructure/keycloak/_lib/kcadm-auth.sh) | kcadm-admin auth helper (shared with the four bootstrap scripts). |
 
 ---

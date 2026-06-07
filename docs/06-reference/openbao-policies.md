@@ -1,7 +1,7 @@
 # OpenBao Policy Reference
 
 > Architecture: [docs/01-architecture/05-secrets-management.md](../01-architecture/05-secrets-management.md)
-> Source-of-truth files: [`infrastructure/openbao/policies/`](../../infrastructure/openbao/policies/)
+> Source-of-truth files: [`platform/manifests/openbao/policies/`](../../platform/manifests/openbao/policies/)
 
 The platform's three policies, what they grant, and how to extend.
 
@@ -9,7 +9,7 @@ The platform's three policies, what they grant, and how to extend.
 
 ## `admin`
 
-Source: [`infrastructure/openbao/policies/admin.hcl`](../../infrastructure/openbao/policies/admin.hcl)
+Source: [`platform/manifests/openbao/policies/admin.hcl`](../../platform/manifests/openbao/policies/admin.hcl)
 
 ```hcl
 path "*" {
@@ -28,7 +28,7 @@ path "*" {
 
 ## `reader`
 
-Source: [`infrastructure/openbao/policies/reader.hcl`](../../infrastructure/openbao/policies/reader.hcl)
+Source: [`platform/manifests/openbao/policies/reader.hcl`](../../platform/manifests/openbao/policies/reader.hcl)
 
 ```hcl
 path "secret/data/users/{{identity.entity.name}}/*" {
@@ -47,7 +47,7 @@ path "secret/metadata/users/{{identity.entity.name}}/*" {
 
 ## `helloworld-bff`
 
-Source: [`infrastructure/openbao/policies/helloworld-bff.hcl`](../../infrastructure/openbao/policies/helloworld-bff.hcl)
+Source: [`platform/manifests/openbao/policies/helloworld-bff.hcl`](../../platform/manifests/openbao/policies/helloworld-bff.hcl)
 
 ```hcl
 path "secret/data/apps/helloworld/+" {
@@ -84,8 +84,8 @@ path "transit/decrypt/pii-encryption" {
 
 ## Adding a new policy
 
-1. Author `infrastructure/openbao/policies/<name>.hcl`. Keep it minimal — list specific paths and capabilities, not `*`.
-2. `bash infrastructure/openbao/load-policies.sh` (idempotent — overwrites by name).
+1. Author `platform/manifests/openbao/policies/<name>.hcl`. Keep it minimal — list specific paths and capabilities, not `*`.
+2. Apply via the OpenBao configure component — `bash platform/components/05c-openbao-configure.sh` (idempotent — overwrites by name).
 3. Bind it to an auth role:
    - For workload-issued tokens: `bao write auth/jwt/role/<name> ... policies=<name> bound_subject=<spiffe-id>`
    - For human admins: extend `auth/oidc/role/<name>` similarly.
