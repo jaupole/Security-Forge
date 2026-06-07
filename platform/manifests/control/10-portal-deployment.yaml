@@ -51,10 +51,10 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 86e707f0 = ecosystem-ui 0.1.6: mobile bottom
-          # nav portals to <body> so it stays viewport-locked instead of
-          # scrolling with the page. (portal-image-build, commit 9a1fb59).
-          image: ghcr.io/jaupole/portal@sha256:86e707f057c2ae1bd6e348512dd0906dabc9fdd3cf7cd7d09172d8af7ff313e4
+          # automate the bump. f06c438b = org-graphics Phase 5 (PR #33,
+          # 8f55176): unified "Brand & Graphics" page — converter-backed logo
+          # upload to org_graphics; logo uploaders removed from Branding/BrandKit.
+          image: ghcr.io/jaupole/portal@sha256:f06c438b0f643bccf6e504fc36dd1376b63ae25a7e3398bec722f26647406075
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
