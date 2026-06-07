@@ -27,6 +27,14 @@ kube-apiserver-arg:
 # them alone rather than reset them on start.
 kubelet-arg:
   - "protect-kernel-defaults=true"
+  # ─── image garbage collection (added 2026-06-07) ──────────────────
+  # Default thresholds are 85/80, which let the containerd image store
+  # creep to 85% of /var/lib/rancher before GC kicks in — too close to
+  # full on a 100G volume (hit 83% / 304 images from digest-pinned
+  # redeploy churn before a manual prune). Start GC at 70%, reclaim
+  # unused images down to 55%, so it self-manages well clear of full.
+  - "image-gc-high-threshold=70"
+  - "image-gc-low-threshold=55"
 
 
 # ─── etcd Secrets encryption-at-rest (added 2026-05-28) ──────────────
