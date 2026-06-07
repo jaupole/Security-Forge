@@ -51,11 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 10184fa2 = Remove-from-Organization Danger
-          # Zone action in the member edit panel (clears orphaned
-          # "(deleted user)" rows via the new Control endpoint).
-          # (portal-image-build run 27077136741, commit 1782329).
-          image: ghcr.io/jaupole/portal@sha256:10184fa2183d74b84c8804a7bb3999f27ce8e07f423880b55598e27965a49ebb
+          # automate the bump. 7bc0c072 = nav dropdown active-state respects
+          # leaf `end` (fixes two dropdowns highlighting at once, e.g.
+          # Organization + Administration on /admin/members/structure).
+          # (portal-image-build run 27078060628, commit 8b781b3).
+          image: ghcr.io/jaupole/portal@sha256:7bc0c072934f5c7015d7583c8a9296ee4c5ef6dc9b46bdd3c5e5a6b1539a6c6a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
