@@ -131,9 +131,15 @@ keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *no
 **vendor-image signature Audit** (#41) · **no tamper-evident audit chain (X-R1)** · **single operator
 (X-R3)** — no separation-of-duties.
 
-**Detective gaps worth closing** (actionable, not residuals): CT-log monitoring for `secforge.dev`
-(P2/P3); a WAF / gateway rate-limiter in front of the public surfaces (P4); tamper-evident audit
-anchoring for the log sink (X-R1 — `audit-anchors.md` covers the OpenBao Transit-signed path; extend it).
+**Detective gaps** (actionable, not residuals) — status 2026-06-07:
+- **CT-log monitoring (P2/P3)** — ✅ **implemented** (operator-backlog #83): daily CronJob asserts every
+  logged cert for `secforge.dev` is Let's Encrypt-issued → alerts on any other issuer.
+- **Gateway rate-limiter (P4)** — ✅ **deployed monitor-first** (#84): Envoy `local_ratelimit` on the
+  gateway, `filter_enforced=0` (counts, rejects nothing); enforce-flip pending a real-traffic observation
+  window.
+- **Tamper-evident anchoring for the log sink (X-R1)** — **designed, open** (#85): the *app* audit is
+  already hash-chained + Transit-signed; extending the anchor to the platform Loki/Wazuh sink is the
+  remaining work.
 
 ---
 

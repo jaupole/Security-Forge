@@ -353,3 +353,21 @@ spec:
               kyverno_policy_results_total has been absent for 30m. Image-signature
               verification alerts are blind. Check the kyverno ServiceMonitor and the
               allow-prometheus-to-kyverno-metrics NetworkPolicy.
+    - name: security-detective-controls
+      interval: 1h
+      rules:
+        # CT-log monitor (manifests/observability/20-ct-monitor.yaml) exits non-zero
+        # when a cert for secforge.dev is logged from a non-Let's-Encrypt issuer, or
+        # when crt.sh is unreachable — either way the Job fails and this fires (P2/P3).
+        - alert: CTMonitorAnomalyOrFailure
+          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"ct-monitor.*"}[26h]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CT monitor flagged a cert anomaly for secforge.dev (or failed to run)"
+            description: |
+              The ct-monitor CronJob exited non-zero — either a certificate from an
+              unexpected (non-Let's-Encrypt) issuer was logged for secforge.dev
+              (possible mis-issuance — investigate https://crt.sh/?q=secforge.dev), or
+              crt.sh was unreachable. Inspect: kubectl -n observability logs job/<latest ct-monitor job>.

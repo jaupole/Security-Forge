@@ -106,6 +106,13 @@ done
 # 8. Ingress + Certificate + NetworkPolicy
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/06-grafana-ingress.yaml"
 
+# 9. PrometheusRules + the CT-log monitor (detective controls). 09-platform-alerts
+#    was previously applied ad-hoc; wired here so a rebuild restores the alerts +
+#    the ct-monitor CronJob (threat-model P2/P3 — see 20-ct-monitor.yaml).
+"$LIB/apply-manifest.sh" \
+  "$PLATFORM_DIR/manifests/observability/09-platform-alerts.yaml" \
+  "$PLATFORM_DIR/manifests/observability/20-ct-monitor.yaml"
+
 echo
 green "✓ kube-prometheus-stack deployed."
 echo

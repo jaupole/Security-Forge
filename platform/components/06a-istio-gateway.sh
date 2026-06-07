@@ -39,6 +39,7 @@ M="$PLATFORM_DIR/manifests/istio-ingress"
   "$M/20-virtualservices.yaml" \
   "$M/30-destinationrules.yaml" \
   "$M/40-envoyfilter-security-headers.yaml" \
+  "$M/41-envoyfilter-ratelimit.yaml" \
   "$M/50-authorizationpolicies.yaml"
 
 echo

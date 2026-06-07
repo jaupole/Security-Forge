@@ -1,0 +1,64 @@
+# Gateway local rate-limit — detective/protective control for threat-model P4
+# (single public node, no WAF/rate-limiter; a flood or noisy tenant degrades the
+# whole node). Envoy `local_ratelimit` HTTP filter = a per-gateway-pod token
+# bucket; no external rate-limit service (right-sized for one gateway pod on one
+# node). Sibling of 40-envoyfilter-security-headers.yaml (same GATEWAY-context
+# HTTP_FILTER pattern). See ADR-0032 + manifests/istio-ingress/README.md.
+#
+# ┌─ MONITOR-FIRST ─────────────────────────────────────────────────────────────┐
+# │ `filter_enforced` numerator is 0 → the filter EVALUATES every request and    │
+# │ increments the `rate_limited` counter, but REJECTS NOTHING. No tenant can be │
+# │ blocked by this object. Observe the counter (see "Observe" below), confirm   │
+# │ real traffic stays well under the bucket, THEN flip `filter_enforced`        │
+# │ numerator 0 → 100 and re-apply to start enforcing (returns 429 over ceiling).│
+# └──────────────────────────────────────────────────────────────────────────────┘
+#
+# Bucket: 2000 tokens, refilled 2000/1s ≈ a 2000 req/s global ceiling at the
+# gateway — far above real traffic, but caps a volumetric flood. Tune from the
+# observed counter before enforcing.
+#
+# Observe (during the monitor window):
+#   POD=$(kubectl -n istio-ingress get pod -l istio=ingress -o name | head -1)
+#   kubectl -n istio-ingress exec "$POD" -c istio-proxy -- \
+#     pilot-agent request GET stats | grep 'local_rate_limit.secforge_gateway_rl'
+#   # ok / rate_limited / enabled / enforced counters.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-local-ratelimit
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  workloadSelector:
+    labels:
+      istio: ingress
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            stat_prefix: secforge_gateway_rl
+            token_bucket:
+              max_tokens: 2000
+              tokens_per_fill: 2000
+              fill_interval: 1s
+            filter_enabled:
+              default_value: {numerator: 100, denominator: HUNDRED}
+              runtime_key: secforge_gateway_rl_enabled
+            filter_enforced:
+              # MONITOR-FIRST: 0 = count only, reject nothing. Flip to 100 to enforce.
+              default_value: {numerator: 0, denominator: HUNDRED}
+              runtime_key: secforge_gateway_rl_enforced
+            response_headers_to_add:
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                header: {key: x-secforge-ratelimit, value: "gateway"}
