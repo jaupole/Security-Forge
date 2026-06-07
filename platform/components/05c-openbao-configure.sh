@@ -94,6 +94,24 @@ else
   bao bao write transit/keys/audit-signing/config deletion_allowed=false 2>&1 | tail -1
 fi
 
+# File audit device — append-only HMAC'd audit trail at /openbao/audit/audit.log
+# (the `auditStorage` volume from values/openbao.yaml). The platform-audit-anchor
+# CronJob (manifests/openbao/12-*) hash-chains + Transit-signs this off-node for
+# tamper-evidence (threat-model X-R1). HMAC'd by default — records who/what/when,
+# NOT secret values.
+# ⚠️ Enabling an audit device makes OpenBao REJECT requests if it can't write, so
+#    the volume is dedicated (can't be filled by Raft data) + monitored (PVC-usage
+#    alert in 09-platform-alerts.yaml). Confirm OpenBao still serves after enabling.
+echo ">>> audit device: file at /openbao/audit/audit.log"
+if bao bao audit list -format=json 2>/dev/null | grep -q '"file/":'; then
+  echo "    already enabled"
+else
+  # mode=0644: the anchor CronJob runs as a different uid and must read this file.
+  # Safe because audit entries are HMAC'd (no secret values), and the volume is
+  # only reachable in-cluster by the audit-anchor pod (egress/NetworkPolicy gated).
+  bao bao audit enable file file_path=/openbao/audit/audit.log mode=0644 2>&1 | tail -1
+fi
+
 # ─── 4. Kubernetes auth method ─────────────────────────────────────────────
 echo ">>> Enabling kubernetes auth"
 if bao bao auth list -format=json 2>/dev/null | grep -q '"kubernetes/":'; then

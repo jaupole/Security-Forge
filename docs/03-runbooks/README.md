@@ -64,7 +64,8 @@ Each runbook should have:
 **Observability & SIEM**
 - [`grafana-dashboards.md`](./grafana-dashboards.md) · [`alerts.md`](./alerts.md) — dashboards + alert tuning
 - [`wazuh-operations.md`](./wazuh-operations.md) — Wazuh manager/indexer ops
-- [`audit-anchors.md`](./audit-anchors.md) — audit-log anchoring/signing
+- [`audit-anchors.md`](./audit-anchors.md) — app audit-log anchoring/signing
+- [`platform-audit-anchor-activation.md`](./platform-audit-anchor-activation.md) — activate the OpenBao audit-log anchor (X-R1)
 
 **Security, DR & maintenance**
 - [`k3s-encryption-reenable.md`](./k3s-encryption-reenable.md) — secrets-at-rest re-enable

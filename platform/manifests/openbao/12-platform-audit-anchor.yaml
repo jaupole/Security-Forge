@@ -1,0 +1,426 @@
+# Platform audit anchor — tamper-evident anchoring of the OpenBao audit log.
+# operator-backlog #85 Phase 1 / threat-model X-R1 (+ P1).
+#
+# The app-level audit trail (member-hub audit.event) is already tamper-evident
+# (DB hash-chain → nightly Transit-signed → off-node public repo). This closes
+# the PLATFORM gap: a node-root attacker who rewrites OpenBao's audit log to
+# cover a secret-exfil cannot forge the Ed25519 signature already committed
+# off-node, so any rewrite of an anchored byte range is provable after the fact.
+#
+# Source of truth = the OpenBao `file` audit device at /openbao/audit/audit.log
+# (enabled in 05c-openbao-configure.sh; HMAC'd — records who/what/when, NOT
+# secret values; deterministic append-only). The anchor reads the new byte
+# segment since the last anchored offset, sha256-chains it, signs the chain head
+# via transit/sign/audit-signing (Ed25519, deletion_allowed=false), and commits a
+# signed anchor to jaupole/secforge-audit-anchors under platform/openbao/. The
+# hourly verifier (13-...) re-reads the ranges and proves they still match.
+#
+# Reuses: transit/keys/audit-signing + the audit-signer policy (05c), the
+# platform-audit-signer k8s-auth role (05j), and the member-hub VSO-PAT +
+# hardened-nonroot-pod patterns.
+#
+# Runs in the openbao ns to mount openbao-0's audit PVC (RWO, same node — single
+# node) read-only. MVP anchors openbao-0; multi-node leader-failover coverage is a
+# documented follow-up (operator-backlog #85). The CronJob ships SUSPENDED — the
+# operator unsuspends it after provisioning the OpenBao-admin one-time steps (see
+# docs/03-runbooks/platform-audit-anchor-activation.md).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-audit-signer
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: platform-audit-anchor
+    secforge.platform/component: platform-audit
+# No automatic API access — the anchor authenticates to OpenBao with a
+# projected, audience-scoped token (volume below), not the default SA token.
+automountServiceAccountToken: false
+---
+# VaultAuth: lets the platform-audit-signer SA log into OpenBao under its own
+# role (policies: audit-signer + platform-audit) so VSO can render the GitHub
+# PAT. The anchor pod ALSO logs in directly (in Python) for transit/sign.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: platform-audit-signer
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: platform-audit-anchor
+    secforge.platform/component: platform-audit
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: platform-audit-signer
+    serviceAccount: platform-audit-signer
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+---
+# VSO binding: the GitHub push token (operator-provisioned in OpenBao at
+# secret/platform/audit-anchors-push-token, key `token` — fine-grained PAT with
+# contents:write on jaupole/secforge-audit-anchors only). Rendered into the
+# `audit-anchors-push-token` k8s Secret, mounted as a file (never env) by the
+# CronJob below.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: audit-anchors-push-token
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: platform-audit-anchor
+    secforge.platform/component: platform-audit
+spec:
+  type: kv-v2
+  mount: secret
+  path: platform/audit-anchors-push-token
+  refreshAfter: 1h
+  vaultAuthRef: platform-audit-signer
+  destination:
+    create: true
+    name: audit-anchors-push-token
+    type: Opaque
+---
+# Egress for the anchor pod ONLY: DNS + OpenBao :8200 (in-cluster, sign + login)
+# + the public internet on :443 (api.github.com). Excludes the k3s pod/service
+# CIDRs from the 443 rule so it cannot reach arbitrary in-cluster services on 443.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-audit-anchor-egress
+  namespace: openbao
+  labels:
+    secforge.platform/component: platform-audit
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: platform-audit-anchor
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - {port: 8200, protocol: TCP}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16     # k3s pod CIDR
+              - 10.43.0.0/16     # k3s service CIDR
+              - 169.254.0.0/16   # link-local
+      ports:
+        - {port: 443, protocol: TCP}
+---
+# Ingress allow: the anchor pod → openbao:8200 (the ns default-deny-ingress
+# blocks same-ns pod→openbao otherwise). Scoped to the anchor pod label only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-audit-anchor-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: platform-audit
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: platform-audit-anchor
+      ports:
+        - {port: 8200, protocol: TCP}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-audit-anchor-script
+  namespace: openbao
+  labels:
+    secforge.platform/component: platform-audit
+data:
+  anchor.py: |
+    #!/usr/bin/env python3
+    """platform-audit-anchor — tamper-evident anchor of the OpenBao file audit log.
+
+    Reads the OpenBao `file` audit log from the last anchored byte offset,
+    sha256-chains the new segment, signs the chain head via OpenBao Transit
+    (Ed25519, key `audit-signing`), and commits a signed anchor to the off-node
+    public repo under platform/openbao/. Idempotent: no new bytes -> exit 0.
+
+    Exit 0 = anchored (or nothing new). Non-zero = operational failure (surfaces
+    via kube_job_status_failed -> PlatformAuditAnchorFailed)."""
+    import base64, hashlib, json, os, ssl, sys, urllib.request, urllib.error
+    from datetime import datetime, timezone
+
+    OPENBAO_ADDR = os.environ["OPENBAO_ADDR"]
+    OPENBAO_ROLE = os.environ.get("OPENBAO_ROLE", "platform-audit-signer")
+    OPENBAO_CACERT = os.environ.get("OPENBAO_CACERT", "/etc/ssl/openbao-ca/ca.crt")
+    REPO = os.environ["ANCHORS_REPO"]                 # owner/repo
+    BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
+    ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/openbao")
+    STATE_PATH = ANCHOR_DIR + "/_state.json"
+    AUDIT_FILE = os.environ.get("AUDIT_FILE", "/openbao/audit/audit.log")
+    NODE = os.environ.get("NODE_NAME", "openbao-0")
+    SA_TOKEN_FILE = "/var/run/secrets/openbao/token"
+    GH_TOKEN_FILE = "/run/secrets/gh/token"
+    GH_API = "https://api.github.com"
+
+    def read_file(path):
+        with open(path) as f:
+            return f.read().strip()
+
+    def http(method, url, headers, body=None, cafile=None):
+        data = body.encode() if isinstance(body, str) else body
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        ctx = ssl.create_default_context(cafile=cafile) if cafile else None
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def gh_headers(token):
+        return {"Authorization": "Bearer " + token,
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "secforge-platform-audit-anchor/1.0"}
+
+    def gh_get_json(token, path):
+        url = "{}/repos/{}/contents/{}?ref={}".format(GH_API, REPO, path, BRANCH)
+        status, body = http("GET", url, gh_headers(token))
+        if status == 404:
+            return None, None
+        if status != 200:
+            raise RuntimeError("GitHub GET {} -> {}: {}".format(path, status, body[:300]))
+        obj = json.loads(body)
+        return json.loads(base64.b64decode(obj["content"]).decode()), obj["sha"]
+
+    def gh_exists(token, path):
+        url = "{}/repos/{}/contents/{}?ref={}".format(GH_API, REPO, path, BRANCH)
+        status, _ = http("GET", url, gh_headers(token))
+        return status == 200
+
+    def gh_put_json(token, path, payload, sha, message):
+        url = "{}/repos/{}/contents/{}".format(GH_API, REPO, path)
+        body = {"message": message,
+                "content": base64.b64encode(
+                    json.dumps(payload, indent=2, sort_keys=True).encode()).decode(),
+                "branch": BRANCH}
+        if sha:
+            body["sha"] = sha
+        h = gh_headers(token); h["Content-Type"] = "application/json"
+        status, resp = http("PUT", url, h, json.dumps(body))
+        if status not in (200, 201):
+            raise RuntimeError("GitHub PUT {} -> {}: {}".format(path, status, resp[:300]))
+
+    def bao_login(sa_jwt):
+        url = OPENBAO_ADDR + "/v1/auth/kubernetes/login"
+        status, body = http("POST", url, {"Content-Type": "application/json"},
+                            json.dumps({"role": OPENBAO_ROLE, "jwt": sa_jwt}),
+                            cafile=OPENBAO_CACERT)
+        if status != 200:
+            raise RuntimeError("OpenBao login -> {}: {}".format(status, body[:300]))
+        return json.loads(body)["auth"]["client_token"]
+
+    def bao_sign(token, message_hex):
+        url = OPENBAO_ADDR + "/v1/transit/sign/audit-signing"
+        inp = base64.b64encode(message_hex.encode()).decode()
+        status, body = http("POST", url, {"X-Vault-Token": token,
+                                          "Content-Type": "application/json"},
+                            json.dumps({"input": inp}), cafile=OPENBAO_CACERT)
+        if status != 200:
+            raise RuntimeError("Transit sign -> {}: {}".format(status, body[:300]))
+        return json.loads(body)["data"]["signature"]
+
+    def bao_pubkey(token):
+        url = OPENBAO_ADDR + "/v1/transit/keys/audit-signing"
+        status, body = http("GET", url, {"X-Vault-Token": token}, cafile=OPENBAO_CACERT)
+        if status != 200:
+            return "", ""
+        data = json.loads(body)["data"]
+        latest = str(data.get("latest_version", ""))
+        pub = (data.get("keys", {}).get(latest, {}) or {}).get("public_key", "")
+        return latest, pub
+
+    def main():
+        gh_token = read_file(GH_TOKEN_FILE)
+        sa_jwt = read_file(SA_TOKEN_FILE)
+
+        state, state_sha = gh_get_json(gh_token, STATE_PATH)
+        if state is None:
+            offset_from, prev_full, prev_file = 0, "", ""
+        else:
+            offset_from = int(state["offset"])
+            prev_full = state["full_hash"]
+            prev_file = state.get("head_file", "")
+
+        try:
+            size = os.path.getsize(AUDIT_FILE)
+        except FileNotFoundError:
+            print("ERROR: audit file {} not found — is the file audit device "
+                  "enabled?".format(AUDIT_FILE), file=sys.stderr)
+            sys.exit(2)
+        if size < offset_from:
+            print("ERROR: audit file shrank (size {} < anchored offset {}) — possible "
+                  "truncation/rotation. Refusing to anchor; investigate."
+                  .format(size, offset_from), file=sys.stderr)
+            sys.exit(3)
+        if size == offset_from:
+            print("no new audit bytes since offset {} — nothing to anchor.".format(offset_from))
+            sys.exit(0)
+        with open(AUDIT_FILE, "rb") as f:
+            f.seek(offset_from)
+            segment = f.read(size - offset_from)
+        offset_to = offset_from + len(segment)
+        line_count = segment.count(b"\n")
+        segment_sha = hashlib.sha256(segment).hexdigest()
+        full_hash = hashlib.sha256((prev_full + segment_sha).encode()).hexdigest()
+
+        bao_token = bao_login(sa_jwt)
+        signature = bao_sign(bao_token, full_hash)
+        key_version, pubkey = bao_pubkey(bao_token)
+
+        now = datetime.now(timezone.utc)
+        date = now.strftime("%Y-%m-%d")
+        anchored_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        anchor_path = "{}/{}.json".format(ANCHOR_DIR, date)
+        if gh_exists(gh_token, anchor_path):
+            anchor_path = "{}/{}--{}.json".format(ANCHOR_DIR, date, offset_to)
+
+        payload = {"schema": "secforge.platform-audit-anchor/v1",
+                   "source": "openbao-file-audit", "node": NODE,
+                   "date": date, "anchored_at": anchored_at,
+                   "offset_from": offset_from, "offset_to": offset_to,
+                   "line_count": line_count, "segment_sha256": segment_sha,
+                   "prev_full_hash": prev_full, "prev_file": prev_file,
+                   "full_hash": full_hash, "sign_alg": "ed25519",
+                   "key_version": key_version, "pubkey": pubkey, "signature": signature}
+
+        gh_put_json(gh_token, anchor_path, payload, None,
+                    "platform-audit anchor {} [{}..{}]".format(date, offset_from, offset_to))
+        new_state = {"offset": offset_to, "full_hash": full_hash,
+                     "head_file": anchor_path, "node": NODE, "updated_at": anchored_at}
+        gh_put_json(gh_token, STATE_PATH, new_state, state_sha,
+                    "platform-audit state -> offset {}".format(offset_to))
+        print("anchored {} bytes [{}..{}], {} lines, full_hash={} -> {}".format(
+            len(segment), offset_from, offset_to, line_count, full_hash, anchor_path))
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-audit-anchor
+  namespace: openbao
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+  labels:
+    app.kubernetes.io/name: platform-audit-anchor
+    secforge.platform/component: platform-audit
+spec:
+  # SHIPS SUSPENDED — operator unsuspends after the one-time OpenBao-admin steps
+  # (audit device enable + role + PAT). See the activation runbook.
+  suspend: true
+  schedule: "23 0 * * *"            # daily 00:23 UTC (staggered from member-hub 00:17)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: platform-audit-anchor
+            secforge.platform/component: platform-audit
+        spec:
+          serviceAccountName: platform-audit-signer
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            # Supplemental group 1000 = the openbao pod's fsGroup, so this uid can
+            # read the audit dir/file (uid100:gid1000, mode 0644) on the shared PVC.
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: anchor
+              # mirror.gcr.io/library/* is on the restrict-image-registries
+              # allow-list; require-image-digest is Audit-mode (tag acceptable).
+              image: mirror.gcr.io/library/python:3.13-slim
+              command: ["python3", "/app/anchor.py"]
+              env:
+                - {name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200"}
+                - {name: OPENBAO_ROLE, value: "platform-audit-signer"}
+                - {name: OPENBAO_CACERT, value: "/etc/ssl/openbao-ca/ca.crt"}
+                - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
+                - {name: ANCHORS_BRANCH, value: "main"}
+                - {name: ANCHOR_DIR, value: "platform/openbao"}
+                - {name: AUDIT_FILE, value: "/openbao/audit/audit.log"}
+                - {name: NODE_NAME, value: "openbao-0"}
+                - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                - {name: HOME, value: "/tmp"}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: "20m", memory: "64Mi"}
+                limits: {cpu: "300m", memory: "192Mi"}
+              volumeMounts:
+                - {name: script, mountPath: /app, readOnly: true}
+                - {name: audit, mountPath: /openbao/audit, readOnly: true}
+                - {name: openbao-ca, mountPath: /etc/ssl/openbao-ca, readOnly: true}
+                - {name: bao-token, mountPath: /var/run/secrets/openbao, readOnly: true}
+                - {name: gh-creds, mountPath: /run/secrets/gh, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: script
+              configMap: {name: platform-audit-anchor-script, defaultMode: 0444}
+            # openbao-0's audit PVC (chart auditStorage volumeClaimTemplate).
+            # RWO, mounted read-only alongside openbao-0 on the single node.
+            - name: audit
+              persistentVolumeClaim:
+                claimName: audit-openbao-0
+                readOnly: true
+            # OpenBao internal CA only (NOT the server key) for in-cluster TLS.
+            - name: openbao-ca
+              secret:
+                secretName: openbao-tls
+                items:
+                  - {key: ca.crt, path: ca.crt}
+                defaultMode: 0444
+            # Audience-scoped projected token for OpenBao k8s-auth login.
+            - name: bao-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: https://kubernetes.default.svc.cluster.local
+                      expirationSeconds: 600
+            - name: gh-creds
+              secret:
+                secretName: audit-anchors-push-token
+                items:
+                  - {key: token, path: token}
+                defaultMode: 0400
+            - name: tmp
+              emptyDir: {}

@@ -207,5 +207,10 @@ tailnet admin / app-ns STRICT), dead-construct drops (Valkey §3.7 RETIRED, ingr
 and production accepted residuals + detective gaps (CT-log monitoring, WAF/rate-limiter, audit
 anchoring). The multi-operator + HSM inversions remain future (still single-operator, software-keyed).
 
+**Detective-gap follow-ups built on the back of the re-rating** (separate from the doc sweep, but
+spawned by §0.5): **#83** CT-log monitoring (deployed), **#84** gateway rate-limiter (enforcing), and
+**#85 Phase 1** OpenBao audit-log anchoring (built 2026-06-07, ships suspended, awaiting operator
+activation per `platform-audit-anchor-activation.md`). #85 Phase 2 (broad Loki anchor) remains open.
+
 **The documentation drift audit is now fully closed** — every in-scope surface reconciled, #40 + #82
 + #42 all resolved.

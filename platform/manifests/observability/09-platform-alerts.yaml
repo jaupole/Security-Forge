@@ -371,3 +371,78 @@ spec:
               unexpected (non-Let's-Encrypt) issuer was logged for secforge.dev
               (possible mis-issuance — investigate https://crt.sh/?q=secforge.dev), or
               crt.sh was unreachable. Inspect: kubectl -n observability logs job/<latest ct-monitor job>.
+
+    # ─── Platform audit anchoring (operator-backlog #85 / threat-model X-R1) ──
+    # Tamper-evidence for the OpenBao audit log. The anchor (daily) hash-chains +
+    # Transit-signs the audit-log byte stream off-node; the verifier (hourly)
+    # re-reads the anchored ranges from the local file and fails the Job on any
+    # mismatch. Both are in the openbao ns (12/13-platform-audit-*.yaml).
+    - name: platform-audit-anchoring
+      interval: 1m
+      rules:
+        # Verifier non-zero exit = an anchored byte range no longer matches the
+        # local audit log (rewrite/truncation), OR an operational failure. Either
+        # is high-signal — treat as critical and inspect the job log to classify.
+        - alert: PlatformAuditVerifierFailing
+          expr: max_over_time(kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-verifier.*"}[2h]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao audit-log tamper check FAILED (platform-audit-verifier)"
+            description: |
+              The platform-audit-verifier CronJob exited non-zero. A "TAMPER:" log line means
+              an anchored byte range of /openbao/audit/audit.log no longer matches the signed
+              off-node anchor (jaupole/secforge-audit-anchors, platform/openbao/) — the OpenBao
+              audit log was rewritten or truncated. Any other non-zero exit is operational
+              (raw.githubusercontent unreachable, chain-integrity error). CLASSIFY via:
+                kubectl -n openbao logs job/<latest platform-audit-verifier job>
+              On confirmed tamper, treat as an active node compromise (threat-model X-R1/P1).
+        # Anchor failing for >26h means the audit log is no longer being committed
+        # off-node — tamper-evidence is degrading. Warning (next run self-heals;
+        # the chain is gapless via byte offset), escalate if it persists.
+        - alert: PlatformAuditAnchorFailing
+          expr: max_over_time(kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-anchor.*"}[26h]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao audit-log anchor failed to run (platform-audit-anchor)"
+            description: |
+              The daily platform-audit-anchor CronJob exited non-zero — the OpenBao audit log
+              has not been signed + committed off-node this cycle. Tamper-evidence is degrading
+              until it succeeds. Inspect: kubectl -n openbao logs job/<latest platform-audit-anchor job>.
+              Common causes: OpenBao login/sign failure, GitHub PAT expired
+              (secret/platform/audit-anchors-push-token), or the file audit device disabled.
+        # The file audit device is fail-CLOSED: if its dedicated PVC fills, OpenBao
+        # REJECTS requests. Warn early (75%), page before the wall (90%).
+        - alert: OpenBaoAuditVolumeFilling
+          expr: |
+            max by (persistentvolumeclaim) (
+              kubelet_volume_stats_used_bytes{namespace="openbao", persistentvolumeclaim=~"audit-openbao-.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace="openbao", persistentvolumeclaim=~"audit-openbao-.*"}
+            ) > 0.75
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao audit PVC {{ $labels.persistentvolumeclaim }} >75% full"
+            description: |
+              The dedicated OpenBao audit volume is >75% full. The `file` audit device fails
+              CLOSED — if this PVC reaches 100%, OpenBao REJECTS all requests. Rotate the audit
+              log (see the platform-audit-anchor rotation runbook) or grow the PVC well before then.
+        - alert: OpenBaoAuditVolumeCritical
+          expr: |
+            max by (persistentvolumeclaim) (
+              kubelet_volume_stats_used_bytes{namespace="openbao", persistentvolumeclaim=~"audit-openbao-.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace="openbao", persistentvolumeclaim=~"audit-openbao-.*"}
+            ) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao audit PVC {{ $labels.persistentvolumeclaim }} >90% full — OpenBao will reject requests at 100%"
+            description: |
+              The OpenBao audit volume is critically full. The file audit device fails CLOSED;
+              at 100% OpenBao stops serving (secret access + platform identity break). Act now:
+              rotate/truncate the anchored audit log or expand the PVC.

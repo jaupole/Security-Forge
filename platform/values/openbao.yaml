@@ -44,6 +44,20 @@ server:
     storageClass: ${STORAGE_CLASS}
     accessMode: ReadWriteOnce
 
+  # Dedicated audit volume for the `file` audit device (enabled in
+  # 05c-openbao-configure.sh: `bao audit enable file file_path=/openbao/audit/audit.log`).
+  # Separate from dataStorage so audit-log growth can't fill the Raft data volume.
+  # The platform-audit-anchor CronJob (manifests/openbao/12-*) reads this RWO PVC
+  # (read-only, same node) to hash-chain + Transit-sign the OpenBao audit trail
+  # off-node (threat-model X-R1). Monitor usage — a full audit volume makes the
+  # file device fail, which makes OpenBao reject requests.
+  auditStorage:
+    enabled: true
+    size: 2Gi
+    mountPath: /openbao/audit
+    storageClass: ${STORAGE_CLASS}
+    accessMode: ReadWriteOnce
+
   ha:
     enabled: true
     replicas: 3

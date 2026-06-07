@@ -138,9 +138,14 @@ keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *no
   (~2000 req/s global ceiling). Deployed monitor-first, observed `rate_limited=0` under real traffic,
   then flipped `filter_enforced` 0→100 (2026-06-07). Floods over the ceiling now get 429; real traffic
   is far below it.
-- **Tamper-evident anchoring for the log sink (X-R1)** — **designed, open** (#85): the *app* audit is
-  already hash-chained + Transit-signed; extending the anchor to the platform Loki/Wazuh sink is the
-  remaining work.
+- **Tamper-evident anchoring for the log sink (X-R1)** — **Phase 1 built, awaiting operator activation**
+  (#85): the *app* audit was already hash-chained + Transit-signed. Phase 1 extends the same off-node
+  signed-anchor design to the **OpenBao audit log** (the crown-jewel secret-access stream) from a
+  deterministic `file` audit device — daily anchor + hourly re-read verifier in the `openbao` ns
+  (`platform/manifests/openbao/12-/13-`), `PlatformAuditVerifierFailing` (critical) on any rewrite of an
+  anchored range. Ships suspended; one-time OpenBao-admin activation per
+  `docs/03-runbooks/platform-audit-anchor-activation.md` (needs the root token). **Phase 2 (open):** a
+  broad Loki anchor over the security-critical namespaces.
 
 ---
 

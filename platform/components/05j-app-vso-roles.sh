@@ -22,6 +22,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
+
 NS=openbao
 POD=openbao-0
 K8S_AUDIENCE="https://kubernetes.default.svc.cluster.local"
@@ -53,6 +56,10 @@ APP_ROLES=(
   "control-vso|control|control-vso|vso|3600|86400"
   "member-hub-vso|member-hub|member-hub-vso|vso|3600|86400"
   "member-hub-audit-signer|member-hub|member-hub-audit-signer|audit-signer|900|1800"
+  # platform audit anchor (threat-model X-R1) — signs the OpenBao audit-log chain
+  # AND reads its GitHub PAT (secret/platform/audit-anchors-push-token). Two policies:
+  # audit-signer (transit/sign) + platform-audit (PAT read). SA in the openbao ns.
+  "platform-audit-signer|openbao|platform-audit-signer|audit-signer,platform-audit|900|1800"
   # proposal-forge (proposalapp) — VSO renders OIDC/SpiceDB/session/Gemini/GSA
   # runtime bundle + ghcr-pull + the proposal-forge-files MinIO key. No
   # audit-signer (PF has no OpenBao Transit usage). Policy paths: vso.hcl
@@ -80,10 +87,27 @@ done
 
 unset ROOT_TOKEN
 
+# ─── Platform audit anchor + verifier (operator-backlog #85 / X-R1) ────────
+# Applies the SA, VaultAuth, VaultStaticSecret, NetworkPolicies, ConfigMaps and
+# the (SUSPENDED) anchor/verifier CronJobs. Runs here because both VSO (05d, for
+# the VaultAuth/VaultStaticSecret CRDs) and the platform-audit-signer role (added
+# above) must exist first. No envsubst placeholders → raw apply is safe (same as
+# 05b's 06-networkpolicies-main.yaml). The CronJobs stay suspended until the
+# operator completes the one-time OpenBao-admin steps — see
+# docs/03-runbooks/platform-audit-anchor-activation.md.
+M="$PLATFORM_DIR/manifests/openbao"
+echo ">>> Applying platform audit anchor + verifier manifests (CronJobs ship suspended)"
+kubectl apply -f "$M/12-platform-audit-anchor.yaml"
+kubectl apply -f "$M/13-platform-audit-verifier.yaml"
+
 cat <<EOF
 
 ✓ App-level OpenBao roles applied.
 
   Roles upserted: ${#APP_ROLES[@]}.
   Add new apps by appending to APP_ROLES in this script.
+
+  Platform audit anchor + verifier manifests applied (CronJobs SUSPENDED).
+  Activate with docs/03-runbooks/platform-audit-anchor-activation.md after
+  provisioning the PAT at secret/platform/audit-anchors-push-token.
 EOF
