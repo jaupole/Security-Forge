@@ -1,6 +1,6 @@
 # SecForge — Threat Model (Local-Edition baseline)
 
-**Version:** 0.1 (initial) · **Date:** 2026-05-01 · **Scope as written:** Local Edition (Docker Desktop K8s)
+**Version:** 0.2 (production re-rating — see §0) · **Date:** 2026-05-01 (v0.1) / 2026-06-07 (v0.2) · **Scope:** public Hetzner bare-metal node (v0.1 body was written for the Local Edition)
 **Next review:** **NOW OWED** — production revalidation for the public Hetzner node (operator-backlog #82b). Out of date if the trust-boundary set or the threat-actor set changes without a corresponding revision here.
 
 > ## ⚠️ Production reframe (2026-06-07) — read before relying on this
@@ -74,6 +74,66 @@
 - **Physical access to a running, unlocked laptop.** Out-of-scope per standard threat-model assumption. Cloud edition: bastion hosts, console access via cloud provider, physical-data-center risks.
 - **Local network attacker.** Implicitly out-of-scope today; cluster bound to localhost. Cloud edition: VPC peering, transit gateways, public-subnet exposure all in-scope.
 - **Quantum attack on ed25519 / RSA.** Out of scope at any horizon this document covers. Re-evaluate if PQ migration becomes load-bearing pre-deployment.
+
+---
+
+## 0. Production re-rating (2026-06-07) — supersedes the local-edition ratings below
+
+This is the **current** risk posture for the public Hetzner node. §1–§6 are the local-edition
+baseline, kept for the threat *mechanics* (largely unchanged); **where a rating here conflicts with a
+§3 cell, this section wins.**
+
+Production is a **partial** inversion of the "cloud edition" the doc anticipated: the substrate went
+**public** (internet-facing single node, real DNS, real CA) — but it is still **single-operator** and
+**software-keyed** (no HSM, no separation-of-duties). So the WAN/DNS/node items invert to in-scope;
+the multi-operator/HSM items do **not**.
+
+### 0.1 — Actor re-rating
+
+| Actor | Local likelihood | Production | Why |
+|---|---|---|---|
+| **A1 External unauthenticated attacker** | Unlikely (laptop-local) | **Almost Certain** | The public surfaces (`auth`, `portal`, `members`, `billing`, `qbo`, `stripe-connect`) are internet-reachable and continuously scanned/probed. |
+| **A2 Malicious tenant user** | Hypothetical (no tenants) | **Likely** | Real tenants exist (Portal / Member Hub onboarding). Cross-tenant isolation (SpiceDB + RLS) is now load-bearing, not a drill. |
+| **A4 Malicious / compromised operator** | Single operator | **Single operator (unchanged)** | Still one operator; admin reachable only over the Tailscale tailnet. The multi-operator inversion has NOT happened. |
+| **A10 Host / node compromise (NEW)** | Out-of-scope (trusted laptop) | **In-scope — Severe** | The Hetzner node *is* the platform. Root on the node ≈ etcd + every Secret + SPIRE CA + OpenBao runtime + Keycloak DB. See P1. |
+
+### 0.2 — New / elevated first-class threats (moved in from "out-of-scope"), rated on the §3.0 matrix
+
+| ID | Threat | Severity | Mitigation (existing) | Residual |
+|---|---|---|---|---|
+| **P1 Node / host compromise** | Root on the public node → total platform compromise (etcd, all K8s Secrets, SPIRE upstream CA, OpenBao runtime, Keycloak realm keys). | **H** (Severe × Unlikely) | Public SSH closed (Tailscale-only); CIS host hardening (auditd, fail2ban, GRUB password) per `host-hardening-tracker`; k3s secrets-encryption-at-rest enabled (etcd) 2026-06-05; Kyverno PSS-baseline + run-as-nonroot Enforce; Wazuh host agent (auditd → SIEM). | **Accepted residual** — single public node, no hardware root of trust; a kernel/k3s-API RCE or supply-chain foothold reaching root collapses every in-cluster boundary. The seal-OpenBao Shamir shares are **off-node** (offline), so *cold* OpenBao data is not decryptable from node state alone — the one boundary node-root does NOT trivially cross. |
+| **P2 Public DNS hijack / registrar takeover** | Control of `*.secforge.dev` resolution → MITM the public surfaces or mint a fraudulent LE cert via DNS-01. | **M** (Severe × Rare) | The registrar / DNS-provider account is a **tier-0 credential** — strong auth, registry-lock if available; HSTS preload limits silent downgrade. | **Accepted residual** — DNS-account compromise is out of cluster scope. **Gap:** CT-log monitoring for `secforge.dev` (would detect a rogue cert) is not configured. |
+| **P3 Fraudulent TLS cert (ACME / CA)** | Mis-issued Let's Encrypt cert for a SecForge host. | **M** (Severe × Rare) | cert-manager + LE DNS-01; issuance gated by the DNS-provider account (P2). | **Accepted residual** — same root as P2; CT-log monitoring is the detective control and is a **gap**. |
+| **P4 Single-node availability / DoS** | One public node, no HA; resource exhaustion, a noisy tenant, or a volumetric attack downs the whole platform. | **M** (Major × Moderate) | Per-namespace ResourceQuotas + Kyverno `require-resource-limits` (Enforce); single-node reboot-recovery runbook; Hetzner network-level DDoS scrubbing (provider default); Keycloak brute-force detection. | **Accepted residual** — no HA, no autoscaling, **no WAF / gateway rate-limiter** in front of the public surfaces. A determined volumetric attacker can degrade availability. |
+| **P5 Live cross-tenant escape** | A real tenant reads/writes another tenant's data. | **H** (Severe × Unlikely) | Two independent layers: SpiceDB ReBAC check on every sensitive endpoint (CLAUDE.md "authn ≠ authz") **and** Postgres RLS with FORCE on multi-tenant tables (ADR-0018) + per-app DBs (ADR-0029). | **Tracked** — FORCE-RLS cutover done; residual is an app-code path that forgets the SpiceDB check (caught by review, not structurally prevented). |
+
+### 0.3 — Threats that WEAKENED in production (mitigations landed)
+
+| Threat class | Local | Production | Why it dropped |
+|---|---|---|---|
+| Credential phishing (fake login / stolen factor) | elevated | **lower** | **Passkeys** (WebAuthn, phishing-resistant) replaced TOTP (ADR-0036); operator realm mandatory passkey — no phishable shared secret. |
+| Supply chain — *our* images (BFF:E2, X-R2) | Audit (not blocked) | **lower** | `verify-image-signature-secforge` is **Enforce** — a missing/invalid signature on a SecForge image is *blocked* at admission. Vendor images remain Audit (#41). |
+| Secrets at rest in etcd | plaintext | **lower** | k3s secrets-encryption-at-rest enabled + reboot-validated (2026-06-05); 209/211 Secrets encrypted at rest. |
+| Operator / admin-surface exposure | laptop-local | **lower** | Admin surfaces are **tailnet-only** (Kyverno `admin-ingress-must-be-tailnet-only`) — not on the public internet. |
+| App-ns lateral movement | PERMISSIVE mesh | **partially lower** | `app`-ns STRICT mTLS (7c-1); mesh-wide PeerAuth still PERMISSIVE (7c-2 deferred, #21). |
+
+### 0.4 — Local-edition constructs to disregard
+
+- **§3.7 Valkey** — not deployed; the apps use **HttpOnly-cookie sessions**. The §3.7 table applies only to the Go BFF reference pattern, not production.
+- **§3.11 Ingress** — `ingress-nginx` is replaced by the **Istio gateway** (`secforge-gateway` public + `secforge-gateway-tailnet`), TLS from **Let's Encrypt**. The S1 CA-compromise row re-rates to **P3**; nginx-specific rows map to the gateway / `EnvoyFilter` + `AuthorizationPolicy`.
+- **Teleport** — stopped; operator access is the Tailscale tailnet (ADR-0035).
+
+### 0.5 — Production accepted residuals (operator sign-off; supersedes §5 for production)
+
+For a single public single-operator node, the operator accepts: **P1** (node-root ≈ platform-root, no
+HW root of trust; cold OpenBao data gated by off-node Shamir) · **P4** (no HA / no WAF) · **software
+keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *not* add an HSM) ·
+**vendor-image signature Audit** (#41) · **no tamper-evident audit chain (X-R1)** · **single operator
+(X-R3)** — no separation-of-duties.
+
+**Detective gaps worth closing** (actionable, not residuals): CT-log monitoring for `secforge.dev`
+(P2/P3); a WAF / gateway rate-limiter in front of the public surfaces (P4); tamper-evident audit
+anchoring for the log sink (X-R1 — `audit-anchors.md` covers the OpenBao Transit-signed path; extend it).
 
 ---
 
@@ -367,7 +427,11 @@ Severity is a single letter (`L` / `M` / `H`) computed from a 5×5 risk matrix. 
 | **Minor** | L | L | L | M | M |
 | **Insignificant** | L | L | L | L | L |
 
-> **⚠️ Cloud-edition re-rate required.** Every threat in this section will re-rate when the cloud-edition threat model is written, because the actor set inverts: multi-operator (A4 grows to A4a/A4b/A4c), WAN attackers (A1 likelihood jumps from "Unlikely" to "Almost Certain"), real DNS attack surface (was out-of-scope), and HSM-vs-software-key decisions all shift Impact and Likelihood independently. Treat the local-edition ratings as today's snapshot, not the platform's permanent risk posture.
+> **⚠️ Production re-rate is in §0** (top of this document). The public-node inversion — A1 WAN
+> likelihood → Almost Certain, real DNS/CA in-scope, node compromise first-class (P1–P5) — has
+> happened and is re-rated there. The **multi-operator + HSM** inversions have NOT (still
+> single-operator, software keys), so those parts of the cloud-edition re-rate remain future. Read the
+> ratings in *this* section through §0; where they conflict, §0 wins.
 
 ### 3.0a — Mitigation citation rule
 
@@ -509,7 +573,11 @@ Workload-identity authority. SPIRE server in `spire` ns; agents on each node via
 | **(D1) Agent socket flood** | L (Minor × Rare) | Per-pod CSI socket; OS-level rate-limit; the wait-for-spiffe-csi init container gates main start until socket exists (7.0.a) | — |
 | **(E1) Compromised SPIRE server = full SPIFFE trust-domain compromise** | H (Severe × Unlikely) | SPIRE server in `spire` ns with strict RBAC; PVC access via `spire` SA only; no admin-API exposed cross-ns | **Z3 SPIFFE trust domain** is the realization of this row's blast radius. **Accepted residual** — see §5 (added in pass 3). Cloud-edition: HSM-backed root key. |
 
-### 3.7 — Valkey
+### 3.7 — Valkey — RETIRED (not deployed in production)
+
+> **Not in production.** Valkey is not deployed; the ecosystem apps use HttpOnly-cookie sessions
+> (Keycloak-driven). The table below is the local-edition analysis for the Go BFF reference pattern
+> only — see §0.4.
 
 Session storage. In-cluster only; reachable from `app/helloworld-bff` only.
 
@@ -560,7 +628,11 @@ Service mesh — ztunnel DaemonSet at node level (no per-pod sidecars). Today PE
 | **(D1) ztunnel resource exhaustion** | M (Significant × Moderate) | K8s resource limits + readinessProbe + alert `IstioTCPConnectionFailureSpike` per Phase 7.8 | — |
 | **(E1) Privileged escape from sidecar** | L (Severe × Rare) | Ambient mode = no per-pod sidecar; smaller surface than legacy sidecar mode | — |
 
-### 3.11 — Ingress (ingress-nginx)
+### 3.11 — Ingress (Istio gateway in production; table written for ingress-nginx)
+
+> **Production:** ingress is the **Istio gateway** (`secforge-gateway` public +
+> `secforge-gateway-tailnet`), TLS from **Let's Encrypt**. Map each nginx row to its gateway
+> equivalent; the S1 CA-compromise row re-rates to **P3** in §0.2. See §0.4.
 
 TLS termination + routing. mkcert-issued cert today.
 
@@ -849,4 +921,5 @@ Cosign in Audit-mode per [ADR-0004](../02-decisions/0004-kyverno-audit-mode.md);
 
 | Date | Reviewer | Changes |
 |------|----------|---------|
+| 2026-06-07 | Claude (doc-drift sweep, operator-backlog #82b) | **Production re-rating (v0.2).** Added **§0** (supersedes the §1–§6 local ratings for the public Hetzner node): A1 WAN likelihood → Almost Certain, A2 tenant threat now live, new actor **A10** host/node compromise; new first-class threats **P1** node-compromise, **P2** DNS hijack, **P3** ACME/CA mis-issuance, **P4** single-node DoS, **P5** live cross-tenant escape (rated on the §3.0 matrix); §0.3 threats that *weakened* (passkeys, signature-Enforce, secrets-at-rest, tailnet-only admin, app-ns STRICT); §0.4 dead constructs (Valkey §3.7, ingress-nginx §3.11→Istio, Teleport); §0.5 production accepted residuals + detective gaps (CT-log monitoring, WAF/rate-limiter, audit anchoring). §3.7 marked RETIRED, §3.11 re-headed Istio, §3.0 re-rate note repointed to §0. The **multi-operator + HSM** inversions remain future (still single-operator, software-keyed). Earlier in the same sweep: production-reframe banner + substrate-fact corrections + image-signing settled (secforge=Enforce / vendor=Audit). |
 | 2026-05-01 | jaupole + Claude (Fix-after-07 §F) | Pass 1: §1 system diagram + boundaries + actors + out-of-scope. Pass 2: §1 diagram tweaks (kubelet→SPIRE-CSI edge, Promtail→Loki edge, dashed inter-pod-mesh edges, sub-zone fill, K8s-control-plane legend, diagram legend table); §2 four data flows; §3.0 5×5 severity matrix + cloud-edition re-rate disclaimer; §3.0a mitigation citation rule; §3.0b residual-risk escalation rule; §3.1 BFF STRIDE row (format-setter, 15 threat rows after R1 hoist); §3.14 "Threats Phase 7c closes" cross-component checklist; §3.15 inverse index (actor → threats); §4 X-R1 populated + X-R2..R6 stubbed. Pass 3: §3.2 AuthZEN-facade · §3.3 Keycloak · §3.4 SpiceDB · §3.5 OpenBao+Transit · §3.6 SPIRE · §3.7 Valkey · §3.8 Postgres+RLS · §3.9 MinIO · §3.10 Istio mesh · §3.11 Ingress · §3.12 Observability · §3.13 Phase 9+ apps placeholder; §3.14 extended with 7c-closing rows from §3.2/3.4/3.10; §3.15 inverse index extended across all 13 components with `<component>:<row>` ID scheme; §4 X-R2..R6 fully populated; §5 sign-off blocks for I3/I4/E2/X-R1 + four candidate-residual rows (KC:T2, OB:E1, SP:E1, X-R3) awaiting pause-#3 operator decision; §6 seven NIST family mappings. Pass 3 addendum (operator pause-#3 decisions): §6 expanded to all 20 NIST 800-53 Rev 5 families with Covered/Partial/Gap/Out-of-scope status per family; §3.13 Phase 9+ apps confirmed inheritance-only; §3.8 added PG:T3 (CNPG operator compromise → all Postgres clusters); §3.12 added Wazuh-as-attacker-target rows (S2 dashboard login, T2 indexer tamper, I3 SIEM read, E2 manager/indexer CVE); §4 added X-R7 (apps/lib/api-auth library bug = platform-wide elevation) + X-R8 (CNPG operator = cross-component Postgres elevation); §3.15 inverse index updated with new threats. **Pass 4 (residual-risk sign-off): all four pause-#2 residuals (BFF:I3, BFF:I4, BFF:E2, X-R1) Accepted with full §5.1–§5.4 sign-off blocks; all four pause-#3 candidates (KC:T2, OB:E1, SP:E1, X-R3) Accepted with full §5.5–§5.8 sign-off blocks; §5.5 candidates table replaced with the eight Accepted-residual sign-off blocks. Threat-model v0.1 complete and committed at fix-after-07 §F.** |

@@ -159,7 +159,7 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 ### Security Forge — 04-security / 06-reference
 | Doc | Verdict | Note |
 |---|---|---|
-| `04-security/threat-model.md` | ✏️ REFRAMED | Production-reframe banner + scope set to the public node; substrate facts corrected (Istio ingress / no Valkey / passkeys / Tailscale / LE); image-signing verified secforge=Enforce, vendor=Audit; out-of-scope inversions flagged in-scope; broken ADR-0006 links fixed. **Per-threat STRIDE re-rating owed** (operator security exercise, #82b). |
+| `04-security/threat-model.md` | ✏️ REWRITE | Reframed (banner, public-node scope, substrate facts, image-signing) **and** re-rated: added **§0 production re-rating** (v0.2) — A1→Almost Certain, A10 host-compromise actor, P1–P5 new first-class threats, weakened-mitigation table, dead-construct drops (Valkey/ingress-nginx), production accepted residuals + detective gaps. #82b ✅. |
 | `06-reference/glossary.md` | ✏️ FIX | EKS→k3s, trust domain, Terraform/Valkey "in use" corrected; relocated from 00-getting-started. |
 | `06-reference/README.md` | ✏️ REWRITE | Accurate index; migration/iam briefs pointed to archive. |
 | `06-reference/operator-backlog.md` | ✏️ FIX | #21 trust-domain (`secforge.platform`) + teleport ns removed; #40 addressed. |
@@ -199,9 +199,13 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 
 **`03-runbooks/keycloak-operations.md`** — ✅ **rewritten production-accurate 2026-06-07** (615→282 lines).
 
-**`04-security/threat-model.md`** — ✅ **reframed 2026-06-07**: production-reframe banner, scope set to
-the public node, substrate facts corrected, image-signing settled (secforge=Enforce / vendor=Audit),
-out-of-scope inversions flagged. **Remaining (operator-backlog #82b)** — the per-threat STRIDE
-**re-rating** for the public node is a deliberate security exercise (move inverted out-of-scope items
-into the tables, drop Valkey/ingress-nginx STRIDE sub-zones, add node-compromise as a first-class
-threat), intentionally not auto-edited in this sweep.
+**`04-security/threat-model.md`** — ✅ **reframed + re-rated 2026-06-07** (#82b done). The production
+re-rating is **§0** (v0.2): A1 WAN likelihood → Almost Certain, new actor A10 (host/node compromise),
+new first-class threats P1–P5 (node compromise, DNS hijack, ACME/CA mis-issuance, single-node DoS, live
+cross-tenant escape), a weakened-mitigations table (passkeys / signature-Enforce / secrets-at-rest /
+tailnet admin / app-ns STRICT), dead-construct drops (Valkey §3.7 RETIRED, ingress-nginx §3.11→Istio),
+and production accepted residuals + detective gaps (CT-log monitoring, WAF/rate-limiter, audit
+anchoring). The multi-operator + HSM inversions remain future (still single-operator, software-keyed).
+
+**The documentation drift audit is now fully closed** — every in-scope surface reconciled, #40 + #82
++ #42 all resolved.
