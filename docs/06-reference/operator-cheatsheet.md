@@ -43,11 +43,13 @@ If it's been more than 24 hours since the cluster was last running, see Section 
 
 **What you're doing:** you're providing 3 of 5 Shamir secret-shares to the seal-pod (`openbao-seal-0`). Once it has 3 valid shares, it unseals itself, and the main OpenBao (`openbao-0/1/2`) auto-unseals via the Transit endpoint within ~10 seconds.
 
-**The command (one-liner from your WSL shell, in the project root):**
+**The command** (over the tailnet — `ssh secforge`, then on the box). The local-edition wrapper is retired; unseal manually with 3 of your 5 offline Shamir keys:
 
 ```bash
-bash infrastructure/openbao/unseal-seal.sh
+sudo kubectl exec -it -n openbao openbao-seal-0 -c openbao -- \
+    env BAO_SKIP_VERIFY=1 bao operator unseal      # repeat 3× with 3 distinct keys
 ```
+(See [openbao-seal-unseal.md](../03-runbooks/openbao-seal-unseal.md).)
 
 **What happens when you run it:**
 - The script prompts you for an unseal key, no echo (you paste, press Enter, nothing shows).
@@ -70,13 +72,7 @@ bash infrastructure/openbao/unseal-seal.sh
 
 **Symptom:** you ran `unseal-seal.sh`, the seal-pod shows `1/1 Running`, but `openbao-0/1/2` are still in a `0/1 Running` or `CrashLoopBackOff` state. The main OpenBao logs show `403 permission denied` (NOT `503 Vault is sealed` — that's the routine case in Section 2).
 
-**The recovery — one command:**
-
-```bash
-bash infrastructure/openbao/rotate-transit-token.sh
-```
-
-Prompts you for the **seal-OpenBao initial root token** (NOT the 5 unseal keys, NOT the main OpenBao root — the seal-OpenBao's own root from your offline password manager; not echoed back, wiped from memory after use). Then it does the full mint-fresh-token → patch `openbao-transit-token` Secret → run `apply-main.sh` → roll `openbao-2 → 1 → 0` → `kubectl wait --for=condition=Ready` sequence in one go and exits 0 when all three pods are `1/1 Running` (or non-zero with diagnostic hints if the wait times out at 180s).
+**The recovery:** rotate the Transit unseal token — mint a fresh token using the seal-OpenBao's own root, write it into the **`openbao-seal-block`** Secret (the seal config now lives there, not the retired `openbao-transit-token` Secret), and roll the main pods. Full procedure in [openbao-recovery.md § Rotate the Transit unseal token](../03-runbooks/openbao-recovery.md#rotate-the-transit-unseal-token).
 
 The script absorbs the 2026-05-01 gotcha: if `apply-main.sh` "bails" with a too-many-restarts watchdog message on openbao-0, the seal block has already been re-rendered before the watchdog fires; the script proceeds to the pod roll which is what completes recovery.
 
@@ -133,7 +129,7 @@ kubectl delete pod -n <namespace> <pod-name>
 
 **If the script fails at "Main OpenBao pods didn't reach Ready in 90s":** that's a deeper issue than the routine backoff cycle (Raft state, NetworkPolicy, etc.). The script intentionally stops there rather than restart apps against a broken OpenBao. See `kubectl get pods -n openbao` and `kubectl logs -n openbao openbao-0 -c openbao --tail=30` for the actual error.
 
-**See also:** the script lives at [`infrastructure/openbao/unseal-seal.sh`](../../infrastructure/openbao/unseal-seal.sh); the broader SPIFFE workload-identity model is in [`docs/01-architecture/02-workload-identity.md`](../01-architecture/02-workload-identity.md).
+**See also:** the manual unseal is in [openbao-seal-unseal.md](../03-runbooks/openbao-seal-unseal.md); the broader SPIFFE workload-identity model is in [docs/01-architecture/06-workload-identity.md](../01-architecture/06-workload-identity.md).
 
 ---
 
@@ -189,7 +185,9 @@ kubectl delete pod -n <namespace> <pod-name>
 - "user lacks permission to manage clients in `<realm>`" → step 4 missed a role; re-open the Users → service-account-kcadm-admin → Role mappings page and check the realm-management client's listed roles against the table above.
 - Step 5's `kcadm-admin.sh` exits with "OpenBao read returned empty" → BAO_TOKEN doesn't have read capability on the path; re-mint with `bao token create -policy=admin` (5 min ttl is fine).
 
-**See also:** [ADR-0022](../02-decisions/0022-kcadm-admin-service-account.md) (the architectural rationale), [`infrastructure/keycloak/clients/kcadm-admin.sh`](../../infrastructure/keycloak/clients/kcadm-admin.sh) (script header reproduces these steps), [`infrastructure/keycloak/_lib/kcadm-auth.sh`](../../infrastructure/keycloak/_lib/kcadm-auth.sh) (the shared fetch+auth helper every consumer script uses). The ADR text itself is being updated to match this 5-step reality — see operator-backlog #11.
+> **⚠️ Retired in production.** This kcadm-admin bootstrap is local-edition. Production Keycloak admin is **DB-only** (no `kcadm`/admin-API — see [keycloak-operations.md](../03-runbooks/keycloak-operations.md)); realm clients are codified in the realm-import (`platform/manifests/keycloak/realms/platform-realm.yaml`). The section above is kept as historical context.
+
+**See also:** [ADR-0022](../02-decisions/0022-kcadm-admin-long-lived-credential.md) (the original rationale).
 
 ---
 

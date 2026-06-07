@@ -1,8 +1,14 @@
-# Keycloak Client Provisioning — Path A pattern
+# Keycloak Client Provisioning — Path A pattern (RETIRED)
 
-> Companion: [keycloak-operations.md](./keycloak-operations.md), [PLAN.md kcadm-admin migration phase](../../PLAN.md).
+> Companion: [keycloak-operations.md](./keycloak-operations.md).
 
-This runbook covers **how** to provision new Keycloak clients via committed scripts during the interim period before the kcadm-admin migration phase ships. Phase 7 and earlier scripts use this pattern. The kcadm-admin migration phase (planned post-Phase-7) consolidates everything described here behind a single durable provisioning path.
+> ⚠️ **Superseded in production.** Realm clients are now **codified in the realm-import**
+> (`platform/manifests/keycloak/realms/platform-realm.yaml` — all 9 custom platform clients),
+> applied by the Keycloak Operator and bridged by `platform/components/05l-keycloak-secret-publish.sh`.
+> The interim **kcadm-spike / throwaway-client** pattern below is retired: production admin is
+> **DB-only** (no kcadm/admin-API). To add or change a client, edit the realm-import YAML and re-apply
+> (see [keycloak-operations.md § Realm management](./keycloak-operations.md)). The detail below is kept
+> as historical record.
 
 ---
 
