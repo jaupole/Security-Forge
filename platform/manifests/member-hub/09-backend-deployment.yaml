@@ -84,9 +84,10 @@ spec:
           # 0.1.1 fixes the __Host- cookie clear. commit 3437181.
           # 03bf92c6 = consume per-app accent via GET /me?app=member_hub, so an
           # org can wear a Member-Hub-specific accent. commit bbbb28a.
-          # f38149d6 = ecosystem-ui 0.1.6: mobile bottom nav portals to <body>
-          # (viewport-locked). commit 44a04ae.
-          image: ghcr.io/jaupole/member-hub@sha256:f38149d60bf95442ddb00f1ea21d127212bfedacdcb52ac6f5fcec6316a42690
+          # e953b2bd = org-graphics Phase 4 (PR #76, 5a5704a): graphics-list
+          # schema accepts canonical org_logo purposes + webp; email header
+          # falls back to org_logo.
+          image: ghcr.io/jaupole/member-hub@sha256:e953b2bd6cbf5574594c6cc70d50d7c9c88f4146b51341fd027603106b7b1910
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
