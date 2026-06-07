@@ -1,7 +1,29 @@
-# SecForge Local — Threat Model
+# SecForge — Threat Model (Local-Edition baseline)
 
-**Version:** 0.1 (initial) · **Date:** 2026-05-01 · **Scope:** Local Edition (Docker Desktop K8s)
-**Next review:** at Phase 9 (first real apps land), Phase 10 (production-hardening), or any major architecture change. Out of date if the trust-boundary set or the threat-actor set changes without a corresponding revision here.
+**Version:** 0.1 (initial) · **Date:** 2026-05-01 · **Scope as written:** Local Edition (Docker Desktop K8s)
+**Next review:** **NOW OWED** — production revalidation for the public Hetzner node (operator-backlog #82b). Out of date if the trust-boundary set or the threat-actor set changes without a corresponding revision here.
+
+> ## ⚠️ Production reframe (2026-06-07) — read before relying on this
+>
+> **This is the original *local-edition* threat model** (Docker Desktop / WSL2 / `secforge.local`,
+> single-operator dev). SecForge now runs on a **single public, internet-facing Hetzner bare-metal
+> node** — precisely the "cloud-edition inversion" this document anticipated. Several out-of-scope
+> assumptions below have **inverted to in-scope**, and the per-threat STRIDE ratings (§2–§5) predate
+> that. Treat the tables as the local-edition analysis of record; a production revalidation pass is
+> owed (operator-backlog #82b).
+>
+> **Now IN-scope that the body lists as out-of-scope/trusted:** node-level compromise (a public node,
+> not a trusted laptop); a public **network attacker** (the cluster is no longer "bound to localhost");
+> **real DNS** hijack/rebinding (`*.secforge.dev` is real public DNS, not `/etc/hosts`).
+>
+> **Substrate/control facts the framing has been corrected to (the §2–§5 STRIDE tables still say the
+> old thing):** ingress is the **Istio gateway** (not ingress-nginx); sessions are **HttpOnly cookies**
+> (Valkey is not deployed); auth factor is **passkeys**
+> ([ADR-0036](../02-decisions/0036-production-authentication-factors-passkeys.md), not TOTP); operator
+> access is the **Tailscale tailnet** (not Teleport, [ADR-0035](../02-decisions/0035-tailscale-replaces-teleport.md));
+> TLS is **Let's Encrypt** (not mkcert); **our own** images are signature-**Enforced**
+> (`verify-image-signature-secforge`), while vendor images remain Audit (`verify-image-signature-vendors`);
+> secrets-at-rest encryption is enabled (k3s + etcd).
 
 > **Audience:** every reviewer of a future change to this platform. Before adding a new control, removing one, or accepting a new residual risk, check whether the threat model still describes reality. If it doesn't, update the threat model in the same change.
 >
@@ -14,15 +36,15 @@
 ### Trust zones (12 — see [§1 system diagram](#1-system-diagram-with-trust-boundaries) for the topology)
 
 1. **Operator laptop** — browser, kubectl, helm, bao CLI, SSH + commit-signing keys, Shamir + Transit-token custody, WSL2 VM. Trust = HIGH; a compromise here approaches root for the platform.
-2. **Image registry + supply chain** — vendored Wazuh chart, every upstream Helm chart, Cosign keys (currently Audit-mode per [ADR-0004](../02-decisions/0004-kyverno-audit-mode.md)), image pull paths.
+2. **Image registry + supply chain** — vendored Wazuh chart, every upstream Helm chart, Cosign signing (our own images are signature-**Enforced** via Kyverno `verify-image-signature-secforge`; vendor images remain **Audit** via `verify-image-signature-vendors`), image pull paths.
 3. **SPIFFE trust domain** — `spiffe://secforge.platform`. Workload-identity authority. Compromise = ability to mint any SVID = impersonate any workload. Distinct from the SPIRE component because the trust domain is the abstract authority; SPIRE is one (replaceable) implementation.
-4. **Ingress edge** — `*.secforge.dev`, cert-manager + mkcert local CA, ingress-nginx, HSTS preload, CSP nonces, security-header policy. The boundary between "public" and "platform-internal."
+4. **Ingress edge** — `*.secforge.dev`, cert-manager + Let's Encrypt, the **Istio ingress gateway** (public `secforge-gateway` + operator-only `secforge-gateway-tailnet`), HSTS preload, CSP nonces, security-header policy. The boundary between "public" and "platform-internal."
 5. **K8s control plane** — kube-apiserver, etcd, kubelet. Holds every K8s Secret, every RBAC binding, every CRD. Compromise = total platform compromise. **Distinct from workloads scheduled by it** (the diagram shows this as a separate zone, not as the parent of the per-component zones). Listed explicitly because CLAUDE.md's "no SA cluster-admin" rule does not protect against this zone — it protects flows *through* it.
 6. **Istio ambient mesh** — workloads with `istio.io/dataplane-mode=ambient`. Currently `app` namespace only. PeerAuth PERMISSIVE today; tightens to STRICT in [Phase 7c](../99-archive/05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md).
-7. **Keycloak** — `secforge-tenants` realm. OAuth 2.1 + PAR + DPoP + TOTP (interim per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md)). Realm signing keys with 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-realm-signing-key-rotation.md).
+7. **Keycloak** — `platform` + `secforge-tenants` realms. OAuth 2.1 + PAR + DPoP + **passkeys** (WebAuthn per [ADR-0036](../02-decisions/0036-production-authentication-factors-passkeys.md); TOTP removed). Realm signing keys with 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-keys-local.md).
 8. **SpiceDB** — authorization decision engine. Every sensitive endpoint must hit this per CLAUDE.md "Authentication ≠ authorization."
 9. **OpenBao** — KV-v2 secrets, JWT auth via SPIFFE-JWT, DB secrets engine, Raft storage. **Sub-zone: Transit** — app-level KEK + main-bao auto-unseal. Treat as a high-value zone within OpenBao but not a top-level boundary.
-10. **Data plane** — Valkey (sessions), Postgres, MinIO (audit + session recording). **Sub-zone: Postgres data-at-rest** — RLS = primary tenant separation per [ADR-0018](../02-decisions/0018-multi-tenancy-rls-strategy.md). Sub-zone (not top-level boundary) because RLS is *inside* Postgres; the access path still goes through the Postgres component boundary.
+10. **Data plane** — Postgres, MinIO (audit + documents). Sessions are HttpOnly cookies held server-side (Valkey is not deployed). **Sub-zone: Postgres data-at-rest** — RLS = primary tenant separation per [ADR-0018](../02-decisions/0018-multi-tenancy-rls-strategy.md). Sub-zone (not top-level boundary) because RLS is *inside* Postgres; the access path still goes through the Postgres component boundary.
 11. **Observability stack** — Loki, Tempo, Prometheus + Grafana, Wazuh, OTel collector. Sees authn + authz outcomes for every request — privacy-relevant + reconnaissance-valuable.
 12. **External IdP / future Cognito** — forward-looking, dotted line. Today this is empty (Keycloak is local); migration target documented in [migration-keycloak-to-cognito.md](../99-archive/migration-keycloak-to-cognito.md). Listed so the cloud-edition threat model has an existing slot to populate.
 
@@ -41,6 +63,8 @@
 ### Out of scope (cloud-edition inversion checklist)
 
 > **⚠️ Cloud-edition reviewer:** every one of these out-of-scope items **inverts to in-scope** when this threat model is rewritten for the cloud edition. Treat this list as your starting checklist. If you don't address each item explicitly in the cloud-edition rewrite, you've left a gap.
+>
+> **⚠️ This inversion has happened.** Production is the single public Hetzner node — so the node-compromise, real-CA, real-DNS, and public-network-attacker items below are **already in-scope**. The list is retained as the local-edition record; the production revalidation (operator-backlog #82b) must move them up into the threat tables.
 
 - **Multi-operator threat model.** Single-developer assumption today. Cloud edition: operator vs. team-member vs. SRE-on-call vs. compliance-auditor vs. break-glass.
 - **Docker Desktop / WSL2 host compromise.** Trusted today. Cloud edition: K8s nodes are EC2/EKS instances; node-level compromise becomes in-scope.
@@ -433,7 +457,7 @@ OIDC identity provider (`secforge-tenants` realm + `master` realm). Holds the re
 | **(S2) Spoof user via stolen TOTP** | M (Major × Moderate) | TOTP per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md) (interim); brute-force-detection enabled in Keycloak; recovery codes in Shamir custody | **TOTP is interim.** Passkeys/FIDO2 land at production-hardening per ADR-0007. **Tracked-but-not-accepted** (production hardening). |
 | **(S3) Spoof admin via stolen master-realm credential** | M (Major × Unlikely) | Admin console on separate hostname per CLAUDE.md; admin auth requires TOTP; master-realm separated from tenant realm | Operator's TOTP device = single point of failure; recovery codes Shamir-distributed mitigate device loss. |
 | **(T1) Tamper realm configuration** | M (Major × Unlikely) | All kcadm changes via committed Path-A scripts at `infrastructure/keycloak/clients/`; Keycloak admin-event log captures changes | **See X-R1** (no tamper-evident log chain). |
-| **(T2) Tamper realm signing key** | H (Severe × Rare) | Realm signing keys 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-realm-signing-key-rotation.md); keys at rest in Postgres backing Keycloak; access requires master-realm admin + Postgres role | If signing key leaks before rotation, attacker mints valid tokens for `secforge-tenants` users. **Accepted residual** — see [§5](#5-accepted-residual-risks-require-operator-sign-off) (added in pass 3). |
+| **(T2) Tamper realm signing key** | H (Severe × Rare) | Realm signing keys 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-keys-local.md); keys at rest in Postgres backing Keycloak; access requires master-realm admin + Postgres role | If signing key leaks before rotation, attacker mints valid tokens for `secforge-tenants` users. **Accepted residual** — see [§5](#5-accepted-residual-risks-require-operator-sign-off) (added in pass 3). |
 | **(I1) Userinfo claim plumbing leakage** | L (Minor × Rare) | Keycloak emits only declared claims; openbao role uses `preferred_username` fallback (Phase 7.0.b deferred — defect is OpenBao 2.5.3 upstream) | `realm_access.roles` plumbing is a Phase 7.0.b watching brief. |
 | **(I2) `private_key_jwt` per-client key leakage** | M (Major × Unlikely) | Per-client RSA-2048 keys in OpenBao (`secret/data/keycloak/clients/<id>`); 90-day rotation runbook in Phase 7d | Pre-Phase-7d, no automated rotation cron. **Tracked-but-not-accepted** (Phase 7d). |
 | **(D1) Login flood** | L (Minor × Moderate) | Keycloak brute-force-detection enabled; ingress rate-limit | — |
@@ -689,7 +713,7 @@ Each item below is a residual that **remains after the listed mitigation**, has 
 |---|---|
 | **Threat (one-line)** | Keycloak realm signing key extracted from Postgres-backing-Keycloak before its 90-day rotation; attacker mints valid `secforge-tenants` tokens for the rotation window. |
 | **Severity** | **H** (Severe × Rare) |
-| **Mitigations applied** | 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-realm-signing-key-rotation.md); keys at rest in Postgres backing Keycloak (encrypted-at-rest at the storage-class layer if supported); access requires master-realm admin credential + Postgres role; admin console on separate hostname per CLAUDE.md; admin authentication requires TOTP per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md). |
+| **Mitigations applied** | 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-keys-local.md); keys at rest in Postgres backing Keycloak (encrypted-at-rest at the storage-class layer if supported); access requires master-realm admin credential + Postgres role; admin console on separate hostname per CLAUDE.md; admin authentication requires TOTP per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md). |
 | **Why it remains** | Software-only key storage at local edition; the key has to be readable by Keycloak at process start. No HSM-backed signing-key custody available locally. |
 | **Why accepted (cost/benefit)** | The combined gates (master-realm admin + Postgres role + TOTP + 90-day window) make extraction Rare-likelihood for the in-scope actor set. HSM integration locally is theater (no real HSM); cloud-edition fix path is correctly scoped to IdP migration (Cognito with KMS-backed keys, or an alternative IdP with HSM-backed signing per its compliance posture). |
 | **Re-open trigger** | (a) cloud-edition migration begins → MUST be remediated before public exposure; (b) Postgres-backing-Keycloak ever exposed beyond the cluster; (c) high-impact CVE in Keycloak's key-storage path; (d) realm signing-key rotation cadence stretched beyond 90 days for any reason; (e) compliance trigger requiring HSM-backed signing keys (FedRAMP Moderate IA-7 / FIPS 140-2 cryptographic-module requirement). |

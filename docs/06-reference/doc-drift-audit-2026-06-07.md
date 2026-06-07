@@ -159,7 +159,7 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 ### Security Forge — 04-security / 06-reference
 | Doc | Verdict | Note |
 |---|---|---|
-| `04-security/threat-model.md` | ⚠️ PARTIAL | Teleport cells fixed; large point-in-time doc — **full production refresh tracked in operator-backlog**. |
+| `04-security/threat-model.md` | ✏️ REFRAMED | Production-reframe banner + scope set to the public node; substrate facts corrected (Istio ingress / no Valkey / passkeys / Tailscale / LE); image-signing verified secforge=Enforce, vendor=Audit; out-of-scope inversions flagged in-scope; broken ADR-0006 links fixed. **Per-threat STRIDE re-rating owed** (operator security exercise, #82b). |
 | `06-reference/glossary.md` | ✏️ FIX | EKS→k3s, trust domain, Terraform/Valkey "in use" corrected; relocated from 00-getting-started. |
 | `06-reference/README.md` | ✏️ REWRITE | Accurate index; migration/iam briefs pointed to archive. |
 | `06-reference/operator-backlog.md` | ✏️ FIX | #21 trust-domain (`secforge.platform`) + teleport ns removed; #40 addressed. |
@@ -197,7 +197,11 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 
 ## Flagged for follow-up (tracked in operator-backlog)
 
-**`03-runbooks/keycloak-operations.md`** — ✅ **rewritten production-accurate 2026-06-07** (615→282
-lines). Remaining (operator-backlog #82): **`04-security/threat-model.md`** (~800-line point-in-time
-analysis) still warrants a dedicated full rewrite — including verifying the image-signing
-Audit-vs-Enforce claim (X-R2) against the live `verify-image-signature-secforge` policy.
+**`03-runbooks/keycloak-operations.md`** — ✅ **rewritten production-accurate 2026-06-07** (615→282 lines).
+
+**`04-security/threat-model.md`** — ✅ **reframed 2026-06-07**: production-reframe banner, scope set to
+the public node, substrate facts corrected, image-signing settled (secforge=Enforce / vendor=Audit),
+out-of-scope inversions flagged. **Remaining (operator-backlog #82b)** — the per-threat STRIDE
+**re-rating** for the public node is a deliberate security exercise (move inverted out-of-scope items
+into the tables, drop Valkey/ingress-nginx STRIDE sub-zones, add node-compromise as a first-class
+threat), intentionally not auto-edited in this sweep.
