@@ -239,7 +239,7 @@ The `unseal-seal.sh` step is the existing daily-habit step from Phase 5 — runn
   livenessProbe:
     # …existing liveness probe; only kicks in once startupProbe succeeds…
   ```
-  HTTP-probe over socket-exec because the readiness path proves the SPIFFE mount AND the app's HTTP server are both up — single check covers both. Files: `apps/helloworld-bff/deploy/02-deployment.yaml`, `apps/authzen-facade/deploy/02-deployment.yaml`.
+  HTTP-probe over socket-exec because the readiness path proves the SPIFFE mount AND the app's HTTP server are both up — single check covers both. Files: `apps/authzen-facade/deploy/02-deployment.yaml` (and the `templates/app-repo/` scaffold).
 
 - **OpenBao StatefulSets (`openbao-0/1/2`, `openbao-seal-0`)** — chart-constrained, no server-level `startupProbe`. Used `server.extraInitContainers` instead: an init container that polls `/spiffe-workload-api/spire-agent.sock` for up to 5 minutes (30×10s, matching the same grace window) before letting the chart's main containers start. Same defensive intent, different mechanism. Files: `platform/values/openbao-seal.yaml`, `platform/values/openbao.yaml`.
 

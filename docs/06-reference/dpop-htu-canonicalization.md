@@ -94,7 +94,7 @@ When you build a new component that mints or validates DPoP proofs:
 | You're building | You consume | Where it implements this rule |
 |---|---|---|
 | A backend API (Phase 9+) | `apps/lib/api-auth/Middleware` | `ValidateInbound` does the canonicalization for you |
-| A new BFF for a new app (Phase 10) | The BFF reference implementation in `apps/helloworld-bff/dpop.go` | Already correct; copy the pattern |
+| A new BFF for a new app | The DPoP canonicalization in `apps/lib/api-auth` (the `helloworld-bff` demo that used it was removed) | Already correct; copy the pattern |
 | A future direct-DPoP test client | This document | Implement `canonical_htu` per the rule above; do not normalize the path |
 | A custom auth-proxy | This document | Same |
 

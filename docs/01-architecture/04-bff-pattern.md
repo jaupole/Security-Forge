@@ -3,7 +3,7 @@
 > **Production note.** This is the reference Go BFF pattern (Valkey-backed sessions, per-pod DPoP keys). The deployed ecosystem apps (Portal, Control, Member Hub, Proposal Forge) are TypeScript/Hono services that use **HttpOnly-cookie sessions** and do **not** run Valkey; this doc describes the pattern for new first-class Go services. Substrate deltas: ingress is the **Istio gateway** (not ingress-nginx); `X-Forwarded-*` headers are set by the Istio gateway. See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion: [docs/01-architecture/01-iam-platform.md](./01-iam-platform.md), [docs/01-architecture/07-service-mesh.md](./07-service-mesh.md).
-> Implementation lives in `apps/helloworld-bff/` (Phase 6.6).
+> Reference implementation: `apps/lib/api-auth` + `apps/lib/secrets` (the `helloworld-bff` demo that exercised them was removed); scaffold at `templates/app-repo/`.
 > Operational runbook: [docs/03-runbooks/bff-operations.md](../03-runbooks/bff-operations.md).
 > Secret distribution: [ADR-0015](../02-decisions/0015-secret-distribution-pattern.md) — the BFF reads `private_key_jwt` directly from OpenBao via SPIFFE-bound JWT auth (the "first-class app" path; no VSO, no K8s Secret).
 

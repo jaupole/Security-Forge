@@ -40,7 +40,7 @@ and `outcome` are closed enums. Any unknown value fails validation.
 |---|---|---|---|
 | 1 — Pre-commit | Developer machine | None (advisory) | CI mirrors the same checks for the auditable record |
 | 2 — CI | GitHub Actions / equivalent | Job log `::error::` line + webhook POST to `security-events-collector` (when `SECURITY_EVENTS_WEBHOOK_URL` is configured) | Phase 7b wires the webhook URL into the workflow |
-| 3 — Build-time | Trivy + hadolint | `build.sh` parses Trivy JSON, emits one event per detected secret | `apps/helloworld-bff/build.sh` is the reference; commit 3 flipped Trivy to `--scanners vuln,secret --severity HIGH,CRITICAL` |
+| 3 — Build-time | Trivy + hadolint | `build.sh` parses Trivy JSON, emits one event per detected secret | `apps/security-events-collector/build.sh` is the reference; commit 3 flipped Trivy to `--scanners vuln,secret --severity HIGH,CRITICAL` |
 | 4 — Admission | Kyverno | `policy-reporter` (or built-in `PolicyViolation` event exporter) translates into the canonical schema. Includes `annotated-bypass` on legacy-env-annotated admissions | Phase 7b wires policy-reporter; until then PolicyReports are the audit trail |
 | 5 — K8s Secret in `app` ns | Kyverno (Audit mode) | One event per Secret created in `app` ns post-cutover | Drift detector — catches operators who fall back to `kubectl create secret` for outbound creds |
 | 6 — Library redaction | `apps/lib/secrets/` + `apps/lib/errreport/` | Hardened-mode-disabled at startup (severity high), `Secret.String()` called (severity warn — defensive — only happens via reflection in serializers), Scrubber rule fires (severity high) | All emissions go through `apps/lib/errreport/` `ScrubbingReporter` to the same collector |
