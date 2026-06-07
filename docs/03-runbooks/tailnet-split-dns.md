@@ -15,10 +15,17 @@ else. A **Tailscale split-DNS** entry routes `secforge.dev` queries from every t
 device (incl. phones) to it — no per-device hosts file.
 
 ```
-phone (Tailscale) ──*.secforge.dev──▶ dnsmasq @100.77.117.112:53
+phone (Tailscale) ──*.secforge.dev──▶ dnsmasq @100.77.117.112:53  (authoritative)
                                          ├─ operator host  → 100.77.117.112 (tailnet gateway)
-                                         └─ everything else → 127.0.0.53 (resolved) → public IP
+                                         └─ everything else → 65.21.25.40   (public node IP)
 ```
+
+> **dnsmasq is authoritative for `secforge.dev` and forwards nothing.** Tailscale
+> split-DNS routes *all* `*.secforge.dev` here — including the node's own resolved (which
+> gets a `~secforge.dev` route to the Tailscale resolver). A forwarder would bounce public
+> hosts back through Tailscale → dnsmasq → **infinite loop** (public hosts like
+> `auth.secforge.dev` time out, breaking the admin login redirect). So dnsmasq answers
+> every name itself: operator hosts → tailnet IP, all others → the public node IP.
 
 ## Node side (done 2026-06-07)
 
@@ -41,10 +48,10 @@ phone (Tailscale) ──*.secforge.dev──▶ dnsmasq @100.77.117.112:53
    ```
 4. `sudo systemctl daemon-reload && sudo dnsmasq --test && sudo systemctl enable --now dnsmasq`.
 
-Notes: upstream is the host resolver `127.0.0.53` because the node's egress filter blocks
-arbitrary public `:53` (`1.1.1.1` times out). UFW already allows all on `tailscale0`, so no
-firewall change. The resolver listens **only** on `100.77.117.112` — not a public open
-resolver.
+Notes: dnsmasq forwards nothing (authoritative for `secforge.dev`) — see the loop warning
+above; a forwarder (`server=127.0.0.53` or any resolver) re-enters via Tailscale and loops.
+UFW already allows all on `tailscale0`, so no firewall change. The resolver listens **only**
+on `100.77.117.112` — not a public open resolver.
 
 ## Tailscale side (admin-console, one-time)
 
@@ -63,7 +70,7 @@ On the node (or any tailnet device, swapping `@100.77.117.112` for a normal quer
 split-DNS is live):
 ```sh
 dig +short admin.secforge.dev  @100.77.117.112   # → 100.77.117.112   (tailnet)
-dig +short portal.secforge.dev @100.77.117.112   # → 65.21.25.40      (public, forwarded)
+dig +short portal.secforge.dev @100.77.117.112   # → 65.21.25.40      (public node IP)
 dig +short AAAA admin.secforge.dev @100.77.117.112   # → (empty: NODATA, no v6 leak)
 ```
 On the phone: open `https://admin.secforge.dev` over Tailscale — the Admin Console loads
