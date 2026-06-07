@@ -1,7 +1,13 @@
 # k3s config — read automatically from /etc/rancher/k3s/config.yaml on
 # k3s start. Cleaner than editing the systemd unit's ExecStart args.
 #
-# This file should be installed at /etc/rancher/k3s/config.yaml on the host.
+# ⚠️ SOURCE OF TRUTH. 00-host-bootstrap.sh installs THIS file to
+# /etc/rancher/k3s/config.yaml (cmp + install, restart-on-diff) and WILL
+# OVERWRITE the host copy on its next run. Never hand-edit the host file
+# alone — mirror every change here and commit, or the next bootstrap run
+# silently reverts it (write-kubeconfig-mode drifted exactly this way,
+# caught 2026-06-07). Detect drift any time with:
+#   sudo platform/scripts/host-config-drift-check.sh
 #
 # Existing flags (from install): --disable traefik (set by installer at
 # k3s install time). Don't restate those here — they're already on

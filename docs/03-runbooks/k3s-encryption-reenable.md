@@ -47,6 +47,10 @@ sudo mv /var/lib/rancher/k3s/server/cred/encryption-state.json  "$BK/disk-moved-
 #       UPDATE kine SET deleted=1 WHERE name='/bootstrap/<hash>' AND deleted=0;
 #       then PRAGMA wal_checkpoint(TRUNCATE); PRAGMA integrity_check;
 #  c) uncomment `secrets-encryption: true` in /etc/rancher/k3s/config.yaml
+#  d) ⚠️ MIRROR the same edit into platform/host/k3s/config.yaml and commit.
+#     That repo file is source-of-truth; 00-host-bootstrap.sh reinstalls it
+#     and a host-only edit is silently reverted on its next run. Confirm
+#     in-sync afterward: sudo platform/scripts/host-config-drift-check.sh
 
 # Phase 2 — start: k3s sees flag ON + no config + no bootstrap → mints a fresh
 #           AES-CBC key (new-cluster code path) and re-saves the bootstrap.
