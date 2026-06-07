@@ -92,10 +92,10 @@ kubectl patch statefulset spire-server -n spire \
   -p='[{"op":"replace","path":"/spec/template/spec/volumes","value":[ ... use spire-upstream-ca-new ... ]}]'
 ```
 
-The exact patch depends on whether the deployment is templated by Helm (preferred). If managed by Helm, edit `infrastructure/spire/values.yaml` to point the volume `secretName` at `spire-upstream-ca-new` and run:
+The exact patch depends on whether the deployment is templated by Helm (preferred). If managed by Helm, edit `platform/values/spire.yaml` to point the volume `secretName` at `spire-upstream-ca-new` and run:
 
 ```bash
-helm upgrade spire spiffe/spire -n spire -f infrastructure/spire/values.yaml
+helm upgrade spire spiffe/spire -n spire -f platform/values/spire.yaml
 ```
 
 Wait for spire-server to come back up. Check that newly issued SVIDs now have the new root in their chain:

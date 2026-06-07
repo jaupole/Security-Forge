@@ -73,18 +73,18 @@ For each namespace in the order above, do this dance:
 
 ### 3.1 Apply the AuthorizationPolicies for the namespace
 
-If the namespace doesn't yet have a default-deny AuthorizationPolicy plus its specific ALLOWs, write them now (as `infrastructure/istio/authz/<ns>/*.yaml`) and `kubectl apply`. Per the per-namespace ALLOW specifications in [Fix-after-07 § B.2](../../Fix%20after%2007/01-fix-prompt.md):
+If the namespace doesn't yet have a default-deny AuthorizationPolicy plus its specific ALLOWs, write them now (as `platform/manifests/istio/<ns>/*.yaml`) and `kubectl apply`. Per the per-namespace ALLOW specifications in [Fix-after-07 § B.2](../../Fix%20after%2007/01-fix-prompt.md):
 
 | ns | What to allow |
 |---|---|
 | istio-system | (no traffic in/out today; default-deny is fine, no ALLOWs required for the canary stage) |
 | keycloak | ingress-nginx → keycloak:8443 |
 | spicedb | `app/authzen-facade` SPIFFE-ID → spicedb:50051 |
-| openbao | `app/helloworld-bff` SPIFFE-ID → openbao:8200 (and any other SPIFFE-bound caller — read `infrastructure/openbao/policies/` to inventory) |
+| openbao | `app/helloworld-bff` SPIFFE-ID → openbao:8200 (and any other SPIFFE-bound caller — read `platform/manifests/openbao/policies/` to inventory) |
 | app | (already has policies from Phase 6.3) — confirm `default-deny` covers the ns |
 | observability | Promtail (DaemonSet) → Loki:3100; Grafana → Loki/Prometheus/Tempo; Alertmanager → Prometheus |
 
-Apply ALL of these with `kubectl apply -f infrastructure/istio/authz/<ns>/`. Wait 30 s for Istio to propagate.
+Apply ALL of these with `kubectl apply -f platform/manifests/istio/<ns>/`. Wait 30 s for Istio to propagate.
 
 ### 3.2 Smoke-test BEFORE flipping STRICT
 
@@ -160,7 +160,7 @@ NS=<the-stage-ns>
 kubectl delete peerauthentication -n $NS default
 ```
 
-This returns the namespace to the cluster default (PERMISSIVE — set in `istio-system`). Traffic flows again. Add the missing ALLOW to `infrastructure/istio/authz/<ns>/`, smoke-test again, then re-attempt 3.3.
+This returns the namespace to the cluster default (PERMISSIVE — set in `istio-system`). Traffic flows again. Add the missing ALLOW to `platform/manifests/istio/<ns>/`, smoke-test again, then re-attempt 3.3.
 
 **Do NOT delete the AuthorizationPolicies**. They aren't the cause of the issue; they're scaffolding for the eventual STRICT cutover.
 
@@ -191,8 +191,9 @@ echo "=== every namespace's PeerAuthentication ==="
 kubectl get peerauthentication -A
 # Expect: every target ns shows mode: STRICT.
 
-echo "=== run verify-e2e.sh ==="
-bash infrastructure/observability/verify-e2e.sh
+echo "=== verify end-to-end ==="
+# The local-edition observability verify-e2e.sh is retired; verify the mesh edges
+# directly (curl through the gateway + check ztunnel/Wazuh for deny events).
 # Expect: still 8/10 or 10/10 (not regressed by the cutover).
 
 echo "=== synthetic AuthZ-deny smoke test ==="

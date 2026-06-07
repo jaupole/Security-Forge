@@ -161,7 +161,7 @@ end-to-end without access to any SecForge infra.
 - `Member Hub/src/lib/audit.ts` (chain-on-insert)
 - `Member Hub/workers/audit-verifier/verify.ts` (continuous verify)
 - `Member Hub/src/scripts/clear-audit-tamper-flag.ts` (operator escape hatch)
-- `infrastructure/spicedb/ecosystem-schema.zed` (`auditor` + `read_audit`)
+- `platform/manifests/spicedb/ecosystem-schema.zed` (`auditor` + `read_audit`)
 - `platform/manifests/member-hub/12-audit-anchor-cronjob.yaml` (signer)
 - `platform/manifests/member-hub/13-audit-verifier-cronjob.yaml` (verifier)
 - <https://github.com/jaupole/secforge-audit-anchors>

@@ -7,8 +7,8 @@ This is for **operational rotation** of SVIDs and recovery from common SPIRE pro
 **Companion docs:**
 - Architecture: [docs/01-architecture/06-workload-identity.md](../01-architecture/06-workload-identity.md)
 - ADR: [docs/02-decisions/0005-spire-architecture-local.md](../02-decisions/0005-spire-architecture-local.md)
-- Helm values: `infrastructure/spire/values.yaml`
-- Registrations: `infrastructure/spire/cluster-spiffe-ids.yaml`
+- Helm values: `platform/values/spire.yaml`
+- Registrations: `platform/manifests/spire/cluster-spiffe-ids.yaml`
 
 ---
 
@@ -73,7 +73,7 @@ kubectl logs -n spire ds/spire-agent --tail=50 | grep -i "no identity"
 ```
 
 **Fix:**
-- Add the opt-in label, OR confirm the namespace is in `infrastructure/spire/cluster-spiffe-ids.yaml`.
+- Add the opt-in label, OR confirm the namespace is in `platform/manifests/spire/cluster-spiffe-ids.yaml`.
 - Wait ~30s for the controller-manager to reconcile.
 - Verify the SA name matches the registration template's `{{ .PodSpec.ServiceAccountName }}` expansion.
 
@@ -130,7 +130,7 @@ If the spire-server PVC has been deleted (datastore lost), follow the bootstrap-
 
 **Cause:** the `fsgroupfix` init container hasn't run, or its chown didn't apply (e.g., values.yaml was changed to remove `fsGroup`). The agent's UID 1000 cannot create the UDS in `/tmp/spire-agent/private/` because that directory is owned by root.
 
-**Fix:** ensure `infrastructure/spire/values.yaml` has all three of `runAsUser: 1000`, `runAsGroup: 1000`, **and** `fsGroup: 1000` under `spire-agent.podSecurityContext`. Re-apply with `helm upgrade`.
+**Fix:** ensure `platform/values/spire.yaml` has all three of `runAsUser: 1000`, `runAsGroup: 1000`, **and** `fsGroup: 1000` under `spire-agent.podSecurityContext`. Re-apply with `helm upgrade`.
 
 ---
 
@@ -149,7 +149,8 @@ If the spire-server PVC has been deleted (datastore lost), follow the bootstrap-
 **Fix:** apply the updated quota:
 
 ```bash
-kubectl apply -f infrastructure/namespaces/namespaces.yaml
+# Namespaces + quotas are now per-app under platform/manifests/<ns>/ (e.g. 01-namespace.yaml);
+# re-apply the spire namespace/quota manifest via platform/lib/apply-manifest.sh if it was lost.
 # Then nudge the StatefulSet to retry pod creation:
 kubectl rollout restart statefulset -n spire spire-server
 ```
@@ -219,8 +220,8 @@ kubectl delete pod -n openbao openbao-seal-0
 kubectl delete pod -n app -l app=helloworld-bff
 kubectl delete pod -n app -l app=authzen-facade
 
-# After OpenBao pods come back, unseal main from seal:
-bash infrastructure/openbao/unseal-seal.sh
+# After OpenBao pods come back, unseal the seal node manually (main then auto-unseals):
+# see openbao-seal-unseal.md — `bao operator unseal` ×3 against openbao-seal-0.
 ```
 
 The `unseal-seal.sh` step is the existing daily-habit step from Phase 5 — running it after the pod-delete is the same operation, just triggered explicitly.
@@ -240,7 +241,7 @@ The `unseal-seal.sh` step is the existing daily-habit step from Phase 5 — runn
   ```
   HTTP-probe over socket-exec because the readiness path proves the SPIFFE mount AND the app's HTTP server are both up — single check covers both. Files: `apps/helloworld-bff/deploy/02-deployment.yaml`, `apps/authzen-facade/deploy/02-deployment.yaml`.
 
-- **OpenBao StatefulSets (`openbao-0/1/2`, `openbao-seal-0`)** — chart-constrained, no server-level `startupProbe`. Used `server.extraInitContainers` instead: an init container that polls `/spiffe-workload-api/spire-agent.sock` for up to 5 minutes (30×10s, matching the same grace window) before letting the chart's main containers start. Same defensive intent, different mechanism. Files: `infrastructure/openbao/03-openbao-seal-values.yaml`, `infrastructure/openbao/04-openbao-values.yaml`.
+- **OpenBao StatefulSets (`openbao-0/1/2`, `openbao-seal-0`)** — chart-constrained, no server-level `startupProbe`. Used `server.extraInitContainers` instead: an init container that polls `/spiffe-workload-api/spire-agent.sock` for up to 5 minutes (30×10s, matching the same grace window) before letting the chart's main containers start. Same defensive intent, different mechanism. Files: `platform/values/openbao-seal.yaml`, `platform/values/openbao.yaml`.
 
 For every future SPIFFE-CSI consumer, prefer the native `startupProbe` shape; fall back to `extraInitContainers` only when the workload is chart-managed and the chart lacks `startupProbe` exposure.
 

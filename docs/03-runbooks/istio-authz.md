@@ -1,7 +1,7 @@
 # Istio AuthorizationPolicy patterns
 
 > Companion: [docs/01-architecture/07-service-mesh.md](../01-architecture/07-service-mesh.md), [ADR-0010](../02-decisions/0010-istio-ambient-vs-sidecar.md).
-> Source-of-truth manifests: `infrastructure/istio/06-authz-default-deny.yaml`.
+> Source-of-truth manifests: `platform/manifests/istio/peer-auth.yaml`.
 
 This runbook documents how AuthorizationPolicy is structured in `app` (and how to extend it as new workloads land), why the choices were made, and known gotchas.
 
@@ -136,7 +136,7 @@ The output's `authorizationPolicies` array shows which policies are attached. If
 
 In `STRICT`, plaintext from non-mesh peers is denied at L4 by ztunnel **before** AuthorizationPolicy evaluates. STRICT is only safe once every legitimate source for every ambient destination is mesh-resident.
 
-**As of Phase 7c-1 (2026-05-05) the `app` namespace is STRICT** under a namespace-scoped override at `infrastructure/istio/05-peer-auth-app-strict.yaml`. The mesh-wide default at `infrastructure/istio/05-peer-auth.yaml` stays PERMISSIVE for all other namespaces. See § "PeerAuthentication STRICT in `app` (Phase 7c-1)" below for the CNPG-specific workload override that this required and its 7c-2 removal trigger.
+**As of Phase 7c-1 (2026-05-05) the `app` namespace is STRICT** under a namespace-scoped override at `platform/manifests/istio/peer-auth.yaml`. The mesh-wide default at `platform/manifests/istio/peer-auth.yaml` stays PERMISSIVE for all other namespaces. See § "PeerAuthentication STRICT in `app` (Phase 7c-1)" below for the CNPG-specific workload override that this required and its 7c-2 removal trigger.
 
 ### 3. AuthorizationPolicy with empty rules denies
 
@@ -187,7 +187,7 @@ When debugging, check NetworkPolicy first (`kubectl get networkpolicy -n <ns>`) 
 
 ```bash
 # 1. Re-run Phase 4 SpiceDB checks (mesh-internal AuthZEN → SpiceDB path)
-bash infrastructure/spicedb/check-permissions.sh
+bash platform/manifests/spicedb/tests/run.sh
 
 # 2. Mint a dynamic Postgres credential (cross-boundary OpenBao → Postgres)
 NS=openbao POD=openbao-0
@@ -213,10 +213,10 @@ Phase 7c-1 (2026-05-05) flipped the `app` namespace from the mesh-wide PERMISSIV
 
 | File | Kind / scope | Purpose |
 |---|---|---|
-| `infrastructure/istio/05-peer-auth-app-strict.yaml` | `PeerAuthentication` namespace-scoped (`namespace: app`, no selector) | Set `mtls.mode: STRICT` for all pods in `app`. |
-| `infrastructure/istio/05-peer-auth-app-cnpg-permissive.yaml` | `PeerAuthentication` workload-scoped (`namespace: app`, `selector.matchLabels.cnpg.io/cluster: secforge-app-db`) | Override the namespace STRICT back to PERMISSIVE for the CNPG Postgres pod only — keeps non-mesh callers reachable. |
+| `platform/manifests/istio/peer-auth.yaml` | `PeerAuthentication` namespace-scoped (`namespace: app`, no selector) | Set `mtls.mode: STRICT` for all pods in `app`. |
+| `platform/manifests/istio/peer-auth.yaml` | `PeerAuthentication` workload-scoped (`namespace: app`, `selector.matchLabels.cnpg.io/cluster: secforge-app-db`) | Override the namespace STRICT back to PERMISSIVE for the CNPG Postgres pod only — keeps non-mesh callers reachable. |
 
-The mesh-wide `infrastructure/istio/05-peer-auth.yaml` (PERMISSIVE) is unchanged.
+The mesh-wide `platform/manifests/istio/peer-auth.yaml` (PERMISSIVE) is unchanged.
 
 ### Why CNPG needs the workload-scoped PERMISSIVE override
 

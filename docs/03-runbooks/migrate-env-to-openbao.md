@@ -128,7 +128,8 @@ including pre-commit install + branch-protection setup.
 ## Step 6 — Verify
 
 ```bash
-bash infrastructure/secrets-guardrails/verify/run-all.sh
+# Guardrails are now Kyverno-enforced; self-test at
+# platform/manifests/kyverno/07-guardrail-selftest.yaml. See secrets-guardrails-verification.md.
 ```
 
 Expected: all 9 scripts PASS. Any FAIL means a guardrail layer

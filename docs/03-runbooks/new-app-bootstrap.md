@@ -77,13 +77,14 @@ The app needs:
 
 1. A SPIFFE-ID issued by the namespace ClusterSPIFFEID. Convention:
    `spiffe://secforge.platform/ns/<ns>/sa/<app-name>`.
-2. An OpenBao JWT-auth role bound to that SPIFFE-ID with the templated
-   policy from `infrastructure/openbao/policies/app-template.hcl`.
+2. An OpenBao JWT-auth role bound to that SPIFFE-ID with a per-app policy
+   under `platform/manifests/openbao/policies/` (model it on the existing
+   per-app policies there; app VSO roles are wired via `05j-app-vso-roles.sh`).
 3. The policy authorizes reads from `secret/data/apps/<app-name>/*`
    automatically via the SPIFFE-ID's `metadata.app` attribute.
 
 For step 1+2, mirror the helloworld-bff onboarding script in
-`infrastructure/openbao/configure-engines.sh` and Phase 5.10's
+`platform/components/05c-openbao-configure.sh` and Phase 5.10's
 test-workload pattern. Step 3 is automatic once 1+2 are in place.
 
 Verify:
@@ -177,7 +178,9 @@ branch.
 Run the full guardrail suite against the new app:
 
 ```bash
-bash infrastructure/secrets-guardrails/verify/run-all.sh
+# Guardrails are now Kyverno-enforced (no-secret-shaped-env-vars, legacy-secret-env-expiry,
+# etc.) with a self-test at platform/manifests/kyverno/07-guardrail-selftest.yaml.
+# See secrets-guardrails-verification.md.
 ```
 
 Expected: all 9 scripts PASS.
