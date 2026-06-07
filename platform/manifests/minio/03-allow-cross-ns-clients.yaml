@@ -39,9 +39,9 @@ spec:
           protocol: TCP
     # CNPG cluster pods write WAL + base backups to MinIO. They run in
     # their app namespace (keycloak, spicedb, app, control, member-hub,
-    # verify-restore, ...) and don't get the minio-client label
-    # automatically (the chart manages the pod template). Instead, allow
-    # any pod in the listed namespaces matching the cnpg.io/cluster
+    # proposal-forge, verify-restore, ...) and don't get the minio-client
+    # label automatically (the chart manages the pod template). Instead,
+    # allow any pod in the listed namespaces matching the cnpg.io/cluster
     # label. `verify-restore` is the conventional ns for restore drills
     # (see docs/03-runbooks for the procedure).
     - from:
@@ -49,7 +49,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [keycloak, spicedb, app, control, member-hub, verify-restore]
+                values: [keycloak, spicedb, app, control, member-hub, proposal-forge, verify-restore]
           podSelector:
             matchExpressions:
               - key: cnpg.io/cluster
