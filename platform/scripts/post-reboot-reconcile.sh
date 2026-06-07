@@ -18,6 +18,10 @@
 #   3. Stale-CA certs — a CA rotation can leave leaf serving-certs on a dead CA
 #      (the spicedb-grpc-tls landmine); consumers fail "unable to verify cert".
 #   4. Crash-loopers / node-lost pods — surface + optionally bounce.
+#   5. Host-config drift — verify codified platform/host/** still matches the
+#      live host; a reboot is a natural moment to catch hand-edits that a
+#      00-host-bootstrap.sh re-run would silently revert (see
+#      project_host_config_drift_guard).
 #
 # kubectl: uses your shell's kubeconfig. Override with KUBECTL='sudo kubectl'.
 set -uo pipefail
@@ -117,7 +121,20 @@ else
   fi
 fi
 
-hr "5. Health summary"
+hr "5. Host-config drift (codified platform/host/** vs live host)"
+DRIFT_SH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/host-config-drift-check.sh"
+if [ -f "$DRIFT_SH" ]; then
+  if sudo -n bash "$DRIFT_SH"; then
+    :  # script prints its own green all-in-sync summary
+  else
+    yel "host-config drift above — reconcile before the next 00-host-bootstrap.sh run,"
+    yel "or it overwrites the host with the (possibly stale) repo copy and reverts host-only edits"
+  fi
+else
+  yel "host-config-drift-check.sh not found at $DRIFT_SH (skipping drift check)"
+fi
+
+hr "6. Health summary"
 $KUBECTL get pods -A --no-headers 2>/dev/null | awk '{print $4}' | sort | uniq -c
 if command -v k3s >/dev/null 2>&1; then
   echo "encryption: $(sudo -n k3s secrets-encrypt status 2>/dev/null | awk -F': ' '/Encryption Status/{print $2}')"
