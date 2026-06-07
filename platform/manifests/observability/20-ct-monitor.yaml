@@ -28,7 +28,7 @@ data:
     Exit 1 = at least one cert from an unexpected issuer (ANOMALY — investigate).
     Exit 2 = could not reach/parse crt.sh (operational failure).
     Both 1 and 2 trip the CTMonitorAnomalyOrFailure alert by design."""
-    import json, os, sys, urllib.request
+    import json, os, sys, time, urllib.request
 
     DOMAIN = os.environ.get("DOMAIN", "secforge.dev")
     # Our only legitimate issuer. crt.sh reports issuer_name like
@@ -38,10 +38,22 @@ data:
     UA = "secforge-ct-monitor/1.0 (+https://secforge.dev)"
 
     def fetch(query):
+        # crt.sh is frequently flaky (transient 502/timeout). Retry with backoff so
+        # the daily run only fails (and alerts) on a PERSISTENT outage, not a blip.
         url = "https://crt.sh/?q={}&output=json&exclude=expired".format(query)
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=45) as r:
-            return json.load(r)
+        last = None
+        for attempt in range(4):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": UA})
+                with urllib.request.urlopen(req, timeout=45) as r:
+                    return json.load(r)
+            except Exception as e:
+                last = e
+                print("WARN: crt.sh attempt {}/4 for {!r} failed: {}".format(attempt + 1, query, e),
+                      file=sys.stderr)
+                if attempt < 3:
+                    time.sleep(15 * (attempt + 1))   # 15s, 30s, 45s
+        raise last
 
     seen, anomalies = 0, []
     for q in ("%25.{}".format(DOMAIN), DOMAIN):   # %25 == urlencoded '%'
@@ -113,7 +125,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 0             # one shot — a failure is the alert signal
-      activeDeadlineSeconds: 300
+      activeDeadlineSeconds: 720  # room for the crt.sh retry/backoff budget
       template:
         metadata:
           labels:
