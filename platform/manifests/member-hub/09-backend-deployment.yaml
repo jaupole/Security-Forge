@@ -82,7 +82,9 @@ spec:
           # BFF cutover (centralized-login): @jaupole/ecosystem-auth session
           # store; tokens server-side, sealed __Host-mh_sess cookie only.
           # 0.1.1 fixes the __Host- cookie clear. commit 3437181.
-          image: ghcr.io/jaupole/member-hub@sha256:2b67dc11178eb31cac6681fd7cad4c255547347127c94cdf35a077670dc1756e
+          # 03bf92c6 = consume per-app accent via GET /me?app=member_hub, so an
+          # org can wear a Member-Hub-specific accent. commit bbbb28a.
+          image: ghcr.io/jaupole/member-hub@sha256:03bf92c627a647024854e450c27b5a0ab685288306130cdda8b119dc71a2908f
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }

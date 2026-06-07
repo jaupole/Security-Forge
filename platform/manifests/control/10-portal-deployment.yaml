@@ -51,10 +51,10 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 4891e688 = Phase 2 adopt @jaupole/ecosystem-ui
-          # shell + primitives (shared <Shell>, ⌘K + bell, Card/Button on the
-          # package). (portal-image-build, commit ee0676e).
-          image: ghcr.io/jaupole/portal@sha256:4891e688bb037a0fdeb17e44c2162d2247ffc84a3bb57637917da82ad55fc5bb
+          # automate the bump. 776f36d6 = per-app accent overrides in the
+          # Branding page (Per-App Accent section) on top of the Phase 2
+          # ecosystem-ui shell. (portal-image-build, commit 1f14467).
+          image: ghcr.io/jaupole/portal@sha256:776f36d68f8b4c3ecb99b58aa0fddbda0f307dc303c8038fe47061d3a4bd747c
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }

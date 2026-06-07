@@ -71,8 +71,10 @@ spec:
           # positions + manager refs + SpiceDB tuples; clears orphaned
           # "(deleted user)" rows). Also carries the prior dead-cookie auth
           # cleanup already on master.
-          # (control-image-build run 27077132813, commit be579c3).
-          image: ghcr.io/jaupole/control@sha256:bda20d70136034f12fb085f87f405cb25a646b6ea86712927993b5907e5542ad
+          # 682fd0ac = per-(org × app) branding: GET /me?app=<slug> overlays
+          # the org's per-app accent; branding GET/PATCH carry the appBranding
+          # map (#49). (control-image-build, commit c31e164).
+          image: ghcr.io/jaupole/control@sha256:682fd0ace305f9add6857f067d84ae8515657f104976ba723d93aaa9d8fe7db0
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
