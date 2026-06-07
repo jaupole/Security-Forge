@@ -134,9 +134,10 @@ keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *no
 **Detective gaps** (actionable, not residuals) — status 2026-06-07:
 - **CT-log monitoring (P2/P3)** — ✅ **implemented** (operator-backlog #83): daily CronJob asserts every
   logged cert for `secforge.dev` is Let's Encrypt-issued → alerts on any other issuer.
-- **Gateway rate-limiter (P4)** — ✅ **deployed monitor-first** (#84): Envoy `local_ratelimit` on the
-  gateway, `filter_enforced=0` (counts, rejects nothing); enforce-flip pending a real-traffic observation
-  window.
+- **Gateway rate-limiter (P4)** — ✅ **enforcing** (#84): Envoy `local_ratelimit` on the gateway
+  (~2000 req/s global ceiling). Deployed monitor-first, observed `rate_limited=0` under real traffic,
+  then flipped `filter_enforced` 0→100 (2026-06-07). Floods over the ceiling now get 429; real traffic
+  is far below it.
 - **Tamper-evident anchoring for the log sink (X-R1)** — **designed, open** (#85): the *app* audit is
   already hash-chained + Transit-signed; extending the anchor to the platform Loki/Wazuh sink is the
   remaining work.
