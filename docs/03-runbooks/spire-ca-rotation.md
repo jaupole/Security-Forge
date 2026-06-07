@@ -1,4 +1,6 @@
-# Runbook: Rotating the SPIRE Upstream CA (Local Edition)
+# Runbook: Rotating the SPIRE Upstream CA
+
+> **Production note.** Written for the local edition. In production the SPIRE trust domain is **`secforge.platform`** and the cluster is **Hetzner k3s** single node. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 **Frequency:** Every ~9 years (CA validity is 10y; rotate at least 6 months before expiry).
 **Estimated duration:** 30 minutes including verification.
@@ -71,7 +73,7 @@ This makes the new root trusted by every agent and workload **before** spire-ser
 ```bash
 NEW_BUNDLE=$(cat /tmp/spire-ca-rotate/root-ca-new.crt)
 kubectl exec -n spire statefulset/spire-server -- /opt/spire/bin/spire-server bundle set \
-  -id spiffe://secforge.local \
+  -id spiffe://secforge.platform \
   -path /dev/stdin <<<"$NEW_BUNDLE"
 ```
 
@@ -116,7 +118,7 @@ kubectl exec -n spire statefulset/spire-server -- /opt/spire/bin/spire-server bu
 # Identify and remove the old bundle entry; the exact CLI invocation depends on
 # SPIRE version. As of 1.14.x:
 kubectl exec -n spire statefulset/spire-server -- /opt/spire/bin/spire-server bundle delete \
-  -id "spiffe://secforge.local"
+  -id "spiffe://secforge.platform"
 # (if 'bundle delete' is not appropriate, prune via 'bundle set' replacing the bundle
 #  with new-only contents)
 ```

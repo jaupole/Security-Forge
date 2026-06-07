@@ -1,4 +1,6 @@
-# SpiceDB Operations Runbook (Local Edition)
+# SpiceDB Operations Runbook
+
+> **Production note.** Written for the local edition. In production: SpiceDB is v1.51.1 (operator v1.24.0), CNPG-backed; the cluster is **Hetzner k3s**; operator access is the **Tailscale tailnet**. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 > Architecture: [docs/01-architecture/02-authorization.md](../01-architecture/02-authorization.md)
 > ADR: [docs/02-decisions/0008-authz-schema.md](../02-decisions/0008-authz-schema.md)

@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Claude Code Prompts — Phase by Phase (Local Edition)
 
 This directory contains the prompts you'll copy and paste into Claude Code, one phase at a time. Read [first-claude-code-session.md](../00-getting-started/05-first-claude-code-session.md) before starting if you haven't.

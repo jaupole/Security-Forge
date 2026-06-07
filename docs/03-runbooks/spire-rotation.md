@@ -1,4 +1,6 @@
-# Runbook: SPIRE SVID Rotation and Recovery (Local Edition)
+# Runbook: SPIRE SVID Rotation and Recovery
+
+> **Production note.** Written for the local edition. In production the SPIRE trust domain is **`secforge.platform`** and the cluster is **Hetzner k3s** single node. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 This is for **operational rotation** of SVIDs and recovery from common SPIRE problems. For the every-decade upstream-CA rotation, see [spire-ca-rotation.md](./spire-ca-rotation.md).
 
@@ -37,7 +39,7 @@ kubectl logs -n spire ds/spire-agent --tail=20 \
 
 # A known workload still has a registration?
 kubectl exec -n spire spire-server-0 -c spire-server -- \
-  /opt/spire/bin/spire-server entry show -spiffeID spiffe://secforge.local/ns/test-spire/sa/test-app
+  /opt/spire/bin/spire-server entry show -spiffeID spiffe://secforge.platform/ns/test-spire/sa/test-app
 
 # Trust bundle exposed?
 kubectl exec -n spire spire-server-0 -c spire-server -- \

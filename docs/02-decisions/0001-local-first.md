@@ -119,6 +119,6 @@ We revisit this decision if:
 
 ## References
 
-- [docs/06-reference/iam-oss-edition.md](../06-reference/iam-oss-edition.md) — full architecture and component rationale.
-- [docs/06-reference/migration-to-aws.md](../06-reference/) — when you're ready to go to AWS.
-- [docs/06-reference/migration-to-vps.md](../06-reference/) — when you're ready to go to a single server.
+- [docs/99-archive/iam-oss-edition.md](../99-archive/iam-oss-edition.md) — full architecture and component rationale.
+- [docs/99-archive/migration-to-aws.md](../06-reference/) — when you're ready to go to AWS.
+- [docs/99-archive/migration-to-vps.md](../06-reference/) — when you're ready to go to a single server.

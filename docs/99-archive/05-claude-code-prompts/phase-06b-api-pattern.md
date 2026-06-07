@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 6b-1 — API Auth Pattern (audience-at-login)
 
 > **Navigation:** ⬅ [Previous: Phase 6b-0 — Token-exchange spike](./phase-06b-0-token-exchange-spike.md) · [Next: Phase 7 — Observability](./phase-07-observability.md) ➡ (or run [Phase 6b-2 — Outbound Secrets](./phase-06b-2-outbound-secrets.md) in parallel) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

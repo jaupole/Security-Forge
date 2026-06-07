@@ -1,4 +1,6 @@
-# Workload Identity (SPIRE) — Local Edition
+# Workload Identity (SPIRE)
+
+> **Production note.** Written for the local edition; the SPIRE model below is unchanged in production. The trust domain is **`secforge.platform`** (the Istio mesh trustDomain is `cluster.local`); the cluster is **Hetzner k3s** (not Docker Desktop). See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion ADR: [ADR-0005 — SPIRE Architecture (Local Edition)](../02-decisions/0005-spire-architecture-local.md).
 > Operations: [SPIRE upstream CA rotation runbook](../03-runbooks/spire-ca-rotation.md), [SPIRE rotation runbook](../03-runbooks/spire-rotation.md).
@@ -13,13 +15,13 @@ This document describes how every workload in the SecForge cluster gets a crypto
 1. **Every pod has a unique, attested identity** before it talks to anything sensitive (Keycloak, OpenBao, SpiceDB, the database, MinIO).
 2. **Identities are short-lived and rotate automatically.** No 30-day API keys.
 3. **Identity issuance is bound to the platform's attestation surface** — service account + namespace + node — not to a static secret.
-4. **The same SPIFFE IDs work locally and in cloud.** Trust domain naming differs (`secforge.local` vs `dev.secforge.internal`); the structure is the same.
+4. **The same SPIFFE IDs work locally and in cloud.** Trust domain naming differs (`secforge.dev` vs `dev.secforge.internal`); the structure is the same.
 
 ---
 
 ## Trust domain
 
-`spiffe://secforge.local`
+`spiffe://secforge.platform`
 
 A single trust domain for the local cluster. No federation. The cloud edition will use a different trust domain per environment (e.g., `spiffe://dev.secforge.internal`); migration is a re-bootstrap, not a federated handoff, since dev → prod boundaries should not be crossed by SVIDs.
 
@@ -28,18 +30,18 @@ A single trust domain for the local cluster. No federation. The cloud edition wi
 ## SPIFFE ID naming convention
 
 ```
-spiffe://secforge.local/ns/{namespace}/sa/{serviceaccount}
+spiffe://secforge.platform/ns/{namespace}/sa/{serviceaccount}
 ```
 
 Examples:
 
 | Workload | SPIFFE ID |
 |---|---|
-| BFF in `app` ns, SA `bff` | `spiffe://secforge.local/ns/app/sa/bff` |
-| Keycloak in `keycloak` ns, SA `keycloak` | `spiffe://secforge.local/ns/keycloak/sa/keycloak` |
-| OpenBao in `openbao` ns, SA `openbao` | `spiffe://secforge.local/ns/openbao/sa/openbao` |
-| SpiceDB in `spicedb` ns, SA `spicedb` | `spiffe://secforge.local/ns/spicedb/sa/spicedb` |
-| Test workload in `test-spire` ns, SA `test-app` | `spiffe://secforge.local/ns/test-spire/sa/test-app` |
+| BFF in `app` ns, SA `bff` | `spiffe://secforge.platform/ns/app/sa/bff` |
+| Keycloak in `keycloak` ns, SA `keycloak` | `spiffe://secforge.platform/ns/keycloak/sa/keycloak` |
+| OpenBao in `openbao` ns, SA `openbao` | `spiffe://secforge.platform/ns/openbao/sa/openbao` |
+| SpiceDB in `spicedb` ns, SA `spicedb` | `spiffe://secforge.platform/ns/spicedb/sa/spicedb` |
+| Test workload in `test-spire` ns, SA `test-app` | `spiffe://secforge.platform/ns/test-spire/sa/test-app` |
 
 The full naming reference (including how to add `/component/...` segments for sub-identities when one workload presents multiple personas) is in [docs/06-reference/spiffe-ids.md](../06-reference/spiffe-ids.md).
 
@@ -158,7 +160,7 @@ Two patterns:
 
 A `ClusterSPIFFEID` with a `podSelector` matching the label `spiffe.io/spire-managed-identity: "true"`. Pods that should have an identity must add this label. This is the safe default — it forces explicit consent.
 
-The "default" registration uses this pattern and templates the SPIFFE ID from namespace and service account, so any opted-in pod automatically gets `spiffe://secforge.local/ns/{namespace}/sa/{serviceaccount}`.
+The "default" registration uses this pattern and templates the SPIFFE ID from namespace and service account, so any opted-in pod automatically gets `spiffe://secforge.platform/ns/{namespace}/sa/{serviceaccount}`.
 
 ### Pattern 2: Namespace-scoped (for namespaces where every pod gets an identity)
 
@@ -215,7 +217,7 @@ kubectl exec -n test-spire deploy/spiffe-test -- /app/spiffe-test
 Expected output of the test workload (Phase 2.5):
 
 ```
-SPIFFE ID:   spiffe://secforge.local/ns/test-spire/sa/test-app
+SPIFFE ID:   spiffe://secforge.platform/ns/test-spire/sa/test-app
 Not before:  2026-04-29T11:00:00Z
 Not after:   2026-04-29T12:00:00Z
 Issuer CN:   SecForge Local SPIRE Root CA
@@ -232,7 +234,7 @@ When this platform moves to a cloud destination, the following pieces change:
 |---|---|
 | Disk-based UpstreamAuthority (`disk` plugin) | KMS-backed UpstreamAuthority (`aws_kms`, `gcp_cloudkms`, `azure_keyvault` plugins) |
 | K8s Secret with file-CA | KMS-managed key with no file copy |
-| `spiffe://secforge.local` | `spiffe://dev.secforge.internal`, `spiffe://prod.secforge.internal`, ... per environment |
+| `spiffe://secforge.platform` | `spiffe://dev.secforge.internal`, `spiffe://prod.secforge.internal`, ... per environment |
 | `k8s_psat` node attestor only | `aws_iid` / `gcp_iit` / `azure_msi` *plus* `k8s_psat` |
 | SQLite datastore | Postgres (RDS) for the spire-server |
 

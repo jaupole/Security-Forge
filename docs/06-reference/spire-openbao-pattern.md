@@ -89,21 +89,21 @@ In OpenBao:
 bao write auth/spire/config \
     oidc_discovery_url="https://spire-spiffe-oidc-discovery-provider.spire.svc.cluster.local" \
     oidc_discovery_ca_pem=@/run/spire/ca.pem \
-    bound_issuer="https://oidc-discovery.secforge.local"
+    bound_issuer="https://oidc-discovery.secforge.dev"
 ```
 
-The `bound_issuer` value must match the `iss` claim that SPIRE puts in the JWT-SVID — observed in Phase 2.5 as `https://oidc-discovery.secforge.local`.
+The `bound_issuer` value must match the `iss` claim that SPIRE puts in the JWT-SVID — observed in Phase 2.5 as `https://oidc-discovery.secforge.dev`.
 
 #### 3. Define a role per consuming workload
 
-Example for the BFF (`spiffe://secforge.local/ns/app/sa/bff`):
+Example for the BFF (`spiffe://secforge.platform/ns/app/sa/bff`):
 
 ```bash
 bao write auth/spire/role/app-bff \
     role_type=jwt \
     bound_audiences="openbao" \
     user_claim="sub" \
-    bound_subject="spiffe://secforge.local/ns/app/sa/bff" \
+    bound_subject="spiffe://secforge.platform/ns/app/sa/bff" \
     token_policies="app-bff" \
     token_ttl="15m" \
     token_max_ttl="1h"
@@ -122,7 +122,7 @@ import (
 client, _ := workloadapi.New(ctx)
 defer client.Close()
 
-myID := spiffeid.RequireFromString("spiffe://secforge.local/ns/app/sa/bff")
+myID := spiffeid.RequireFromString("spiffe://secforge.platform/ns/app/sa/bff")
 jwt, _ := client.FetchJWTSVID(ctx, jwtsvid.Params{
     Audience: "openbao",
     Subject:  myID,
@@ -167,7 +167,7 @@ We use SPIRE for everything that's a workload-to-platform-service auth boundary,
    The health-check should fetch a JWT-SVID, exchange it for an OpenBao token, and read a known KV path — all without any long-lived credential mounted.
 4. The OpenBao audit log should record:
    ```
-   auth.spire login type=jwt sub=spiffe://secforge.local/ns/app/sa/bff role=app-bff
+   auth.spire login type=jwt sub=spiffe://secforge.platform/ns/app/sa/bff role=app-bff
    ```
 
 ## Pitfalls (learned the hard way elsewhere)

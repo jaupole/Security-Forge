@@ -66,7 +66,7 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **KMS (Key Management Service).** A service that stores encryption keys in hardware and lets applications use them. AWS KMS, Azure Key Vault, GCP Cloud KMS.
 
-**Kubernetes (K8s).** A platform for running containerized applications across many machines. Managed for us by EKS.
+**Kubernetes (K8s).** A platform for running containerized applications across many machines. Runs here as single-node k3s on the Hetzner bare-metal host.
 
 **kubectl.** The command-line tool for talking to Kubernetes.
 
@@ -108,7 +108,7 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **Tenant.** A logically isolated customer of the platform. In Keycloak, one realm per tenant. In Postgres, every multi-tenant table carries a `tenant_id` and an RLS policy that prevents cross-tenant reads. In SpiceDB, the tenant is the top-level object in the three-tier ReBAC schema.
 
-**Trust domain (SPIFFE).** The administrative scope of a SPIRE deployment, identified by its DNS-style root (e.g., `secforge.local`). Workloads in the same trust domain share one CA. Cross-domain trust requires explicit federation.
+**Trust domain (SPIFFE).** The administrative scope of a SPIRE deployment, identified by its DNS-style root (in production: `secforge.platform`). Workloads in the same trust domain share one CA. Cross-domain trust requires explicit federation.
 
 **RFC.** A formal technical specification (Request for Comments). RFC 9700 is the current OAuth 2.0 best-practices document.
 
@@ -120,21 +120,21 @@ If a term is used anywhere in this project's documentation and you don't know wh
 
 **SOC 2.** A widely-used compliance framework, especially in B2B SaaS. We're targeting SOC 2 Type 2 readiness.
 
-**SPIFFE / SPIRE.** SPIFFE is a standard for workload identity ("this container is running version X of service Y in environment Z"). SPIRE is the implementation we use. Each workload's identity is a **SPIFFE-ID** of the form `spiffe://<trust-domain>/...`; the platform's trust domain is `spiffe://secforge.local`.
+**SPIFFE / SPIRE.** SPIFFE is a standard for workload identity ("this container is running version X of service Y in environment Z"). SPIRE is the implementation we use. Each workload's identity is a **SPIFFE-ID** of the form `spiffe://<trust-domain>/...`; the platform's trust domain is `spiffe://secforge.platform`.
 
-**SPIFFE-ID.** The URI-shaped name SPIRE assigns to a workload — e.g., `spiffe://secforge.local/ns/app/sa/helloworld-backend`. Used as the `sub` of JWT-SVIDs and as the X.509-SVID's URI SAN. AuthorizationPolicies, OpenBao auth/jwt roles, and SpiceDB writers all reference SPIFFE-IDs to identify workloads.
+**SPIFFE-ID.** The URI-shaped name SPIRE assigns to a workload — e.g., `spiffe://secforge.platform/ns/app/sa/helloworld-backend`. Used as the `sub` of JWT-SVIDs and as the X.509-SVID's URI SAN. AuthorizationPolicies, OpenBao auth/jwt roles, and SpiceDB writers all reference SPIFFE-IDs to identify workloads.
 
 **SpiceDB.** Our authorization engine. Open-source implementation of Google's Zanzibar paper.
 
 **SSO (Single Sign-On).** Logging in once and being authenticated to multiple applications.
 
-**Terraform.** The Infrastructure-as-Code tool we're using. Declaratively describes AWS resources; we apply changes through Git, code review, and CI.
+**Terraform.** An Infrastructure-as-Code tool. Not used here — the platform is deployed with pure Helm + kubectl manifests; relevant if you migrate to managed cloud.
 
 **TLS (Transport Layer Security).** The encryption that secures HTTPS connections. We use TLS 1.3 only.
 
 **Token (OAuth).** A credential issued by an IdP that a client uses to access a resource. Access tokens are short-lived; refresh tokens are longer-lived and can be exchanged for new access tokens.
 
-**Valkey.** Our session store. BSD-3-Clause Linux Foundation fork of Redis after Redis's license change.
+**Valkey.** A BSD-3-Clause Linux Foundation fork of Redis. The planned session store for the Go BFF pattern; not currently deployed — the ecosystem apps use HttpOnly-cookie sessions.
 
 **Vault.** HashiCorp's secrets manager. Now under BSL license; we use OpenBao instead.
 

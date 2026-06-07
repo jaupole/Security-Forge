@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Migration Playbook: Local → Single VPS / Homelab Server
 
 > **Snapshot date: 2026-05-04 (post-Phase 9).** This playbook assumes Phases 1–9 of the local build are complete: SPIRE workload identity, Keycloak with TOTP+recovery codes, SpiceDB + AuthZEN façade, OpenBao with two-instance Transit auto-unseal, Istio Ambient (PERMISSIVE), the BFF + api-auth library + outbound-secrets pattern, the full observability stack (Loki/Tempo/Prometheus/Wazuh), Teleport CE with GitHub OAuth, and the Hello World end-to-end checkpoint. Phase 10 (Proposal Forge + Project Tracker integration) follows the same per-app pattern in the cloud destination — repeat the steps once per app rather than restarting from Phase 1. If your local cluster is in an earlier state, complete the missing phases locally first; this playbook is not a shortcut.

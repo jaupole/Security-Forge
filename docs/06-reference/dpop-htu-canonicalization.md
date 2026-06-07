@@ -39,12 +39,12 @@ Where:
 
 | Request URL | Canonical `htu` |
 |---|---|
-| `https://app.secforge.local/api/orders` | `https://app.secforge.local/api/orders` |
-| `HTTPS://APP.SECFORGE.LOCAL:443/api/orders` | `https://app.secforge.local/api/orders` |
-| `https://app.secforge.local:8443/api/orders` | `https://app.secforge.local:8443/api/orders` |
-| `https://app.secforge.local/api/orders?id=42` | `https://app.secforge.local/api/orders` |
-| `https://app.secforge.local/api/orders/` | `https://app.secforge.local/api/orders/` (trailing slash kept) |
-| `https://user:pass@app.secforge.local/api` | `https://app.secforge.local/api` (userinfo stripped) |
+| `https://app.secforge.dev/api/orders` | `https://app.secforge.dev/api/orders` |
+| `HTTPS://APP.SECFORGE.LOCAL:443/api/orders` | `https://app.secforge.dev/api/orders` |
+| `https://app.secforge.dev:8443/api/orders` | `https://app.secforge.dev:8443/api/orders` |
+| `https://app.secforge.dev/api/orders?id=42` | `https://app.secforge.dev/api/orders` |
+| `https://app.secforge.dev/api/orders/` | `https://app.secforge.dev/api/orders/` (trailing slash kept) |
+| `https://user:pass@app.secforge.dev/api` | `https://app.secforge.dev/api` (userinfo stripped) |
 
 ### Anti-pattern (what the rule deliberately does NOT do)
 
@@ -59,7 +59,7 @@ Some DPoP implementations normalize path (collapsing `//` to `/`, decoding `%2F`
 The BFF computes the canonical `htu` from request headers, NOT from its own URL config or `r.Host`. Specifically:
 
 - `scheme` from `X-Forwarded-Proto` (set by ingress-nginx, always `https` in practice)
-- `host` from `X-Forwarded-Host` (set by ingress-nginx, `app.secforge.local`)
+- `host` from `X-Forwarded-Host` (set by ingress-nginx, `app.secforge.dev`)
 - `path` from `r.URL.Path` (request line)
 
 `X-Forwarded-*` is the wire truth (what the browser saw); `r.Host` would be the internal Service name and would silently break the DPoP chain.

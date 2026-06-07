@@ -15,16 +15,16 @@
 
 1. **Operator laptop** — browser, kubectl, helm, bao CLI, SSH + commit-signing keys, Shamir + Transit-token custody, WSL2 VM. Trust = HIGH; a compromise here approaches root for the platform.
 2. **Image registry + supply chain** — vendored Wazuh chart, every upstream Helm chart, Cosign keys (currently Audit-mode per [ADR-0004](../02-decisions/0004-kyverno-audit-mode.md)), image pull paths.
-3. **SPIFFE trust domain** — `spiffe://secforge.local`. Workload-identity authority. Compromise = ability to mint any SVID = impersonate any workload. Distinct from the SPIRE component because the trust domain is the abstract authority; SPIRE is one (replaceable) implementation.
-4. **Ingress edge** — `*.secforge.local`, cert-manager + mkcert local CA, ingress-nginx, HSTS preload, CSP nonces, security-header policy. The boundary between "public" and "platform-internal."
+3. **SPIFFE trust domain** — `spiffe://secforge.platform`. Workload-identity authority. Compromise = ability to mint any SVID = impersonate any workload. Distinct from the SPIRE component because the trust domain is the abstract authority; SPIRE is one (replaceable) implementation.
+4. **Ingress edge** — `*.secforge.dev`, cert-manager + mkcert local CA, ingress-nginx, HSTS preload, CSP nonces, security-header policy. The boundary between "public" and "platform-internal."
 5. **K8s control plane** — kube-apiserver, etcd, kubelet. Holds every K8s Secret, every RBAC binding, every CRD. Compromise = total platform compromise. **Distinct from workloads scheduled by it** (the diagram shows this as a separate zone, not as the parent of the per-component zones). Listed explicitly because CLAUDE.md's "no SA cluster-admin" rule does not protect against this zone — it protects flows *through* it.
-6. **Istio ambient mesh** — workloads with `istio.io/dataplane-mode=ambient`. Currently `app` namespace only. PeerAuth PERMISSIVE today; tightens to STRICT in [Phase 7c](../05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md).
+6. **Istio ambient mesh** — workloads with `istio.io/dataplane-mode=ambient`. Currently `app` namespace only. PeerAuth PERMISSIVE today; tightens to STRICT in [Phase 7c](../99-archive/05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md).
 7. **Keycloak** — `secforge-tenants` realm. OAuth 2.1 + PAR + DPoP + TOTP (interim per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md)). Realm signing keys with 90-day rotation per [ADR-0006](../02-decisions/0006-keycloak-realm-signing-key-rotation.md).
 8. **SpiceDB** — authorization decision engine. Every sensitive endpoint must hit this per CLAUDE.md "Authentication ≠ authorization."
 9. **OpenBao** — KV-v2 secrets, JWT auth via SPIFFE-JWT, DB secrets engine, Raft storage. **Sub-zone: Transit** — app-level KEK + main-bao auto-unseal. Treat as a high-value zone within OpenBao but not a top-level boundary.
 10. **Data plane** — Valkey (sessions), Postgres, MinIO (audit + session recording). **Sub-zone: Postgres data-at-rest** — RLS = primary tenant separation per [ADR-0018](../02-decisions/0018-multi-tenancy-rls-strategy.md). Sub-zone (not top-level boundary) because RLS is *inside* Postgres; the access path still goes through the Postgres component boundary.
 11. **Observability stack** — Loki, Tempo, Prometheus + Grafana, Wazuh, OTel collector. Sees authn + authz outcomes for every request — privacy-relevant + reconnaissance-valuable.
-12. **External IdP / future Cognito** — forward-looking, dotted line. Today this is empty (Keycloak is local); migration target documented in [migration-keycloak-to-cognito.md](../06-reference/migration-keycloak-to-cognito.md). Listed so the cloud-edition threat model has an existing slot to populate.
+12. **External IdP / future Cognito** — forward-looking, dotted line. Today this is empty (Keycloak is local); migration target documented in [migration-keycloak-to-cognito.md](../99-archive/migration-keycloak-to-cognito.md). Listed so the cloud-edition threat model has an existing slot to populate.
 
 ### Threat actors (9)
 
@@ -70,12 +70,12 @@ flowchart TB
         CHARTS[Helm charts incl. vendored Wazuh]
     end
 
-    subgraph Z3 ["3) SPIFFE Trust Domain — spiffe://secforge.local<br/>(workload-identity authority — compromise = mint any SVID)"]
+    subgraph Z3 ["3) SPIFFE Trust Domain — spiffe://secforge.platform<br/>(workload-identity authority — compromise = mint any SVID)"]
         SPIRE_S[SPIRE server]
         SPIRE_A[SPIRE agents · CSI driver]
     end
 
-    subgraph Z4 ["4) Ingress Edge *.secforge.local<br/>(cert-manager + mkcert CA · ingress-nginx · HSTS preload · strict CSP)"]
+    subgraph Z4 ["4) Ingress Edge *.secforge.dev<br/>(cert-manager + mkcert CA · ingress-nginx · HSTS preload · strict CSP)"]
         NGINX[ingress-nginx]
     end
 
@@ -183,7 +183,7 @@ flowchart TB
 | Convention | Meaning |
 |---|---|
 | Solid arrow `─▶` | Currently-enforced edge with the labeled control |
-| **Dashed arrow `┄▶`** | **Currently-PERMISSIVE mesh edge — NOT enforced as mTLS today.** Tightens to STRICT in [Phase 7c](../05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md) per [`docs/03-runbooks/istio-peer-auth-tighten.md`](../03-runbooks/istio-peer-auth-tighten.md). When 7c lands, swap dashed → solid in the same edit that flips PeerAuth. |
+| **Dashed arrow `┄▶`** | **Currently-PERMISSIVE mesh edge — NOT enforced as mTLS today.** Tightens to STRICT in [Phase 7c](../99-archive/05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md) per [`docs/03-runbooks/istio-peer-auth-tighten.md`](../03-runbooks/istio-peer-auth-tighten.md). When 7c lands, swap dashed → solid in the same edit that flips PeerAuth. |
 | Diamond + yellow fill `🔐` | Sub-zone (high-value zone within a parent component) — Transit inside OpenBao, RLS inside Postgres |
 | Dotted-outline future node `┈┈┈┈┈` | Forward-looking; not deployed today |
 | Z5 vs Z6/Z7/.../Z11 | **Z5 (control plane) is the substrate** — kube-apiserver / etcd / kubelet — and is **distinct from the workloads scheduled by it (Z6–Z11)**. Compromising Z5 compromises everything else; compromising Z6–Z11 does not, by itself, compromise Z5. |
@@ -195,7 +195,7 @@ flowchart TB
     │
     ▼  HTTPS · HSTS · DPoP-bound
 ┌───────────────────────────────────────────────────────────────────────────┐
-│ Z4) Ingress edge *.secforge.local · cert-manager + mkcert · ingress-nginx │
+│ Z4) Ingress edge *.secforge.dev · cert-manager + mkcert · ingress-nginx │
 └─────────────────────────────────┬─────────────────────────────────────────┘
                                   │
                                   ▼
@@ -208,7 +208,7 @@ flowchart TB
                                                        Z10) MinIO
                                   ▲
                                   │ SVID issuance
-                    Z3) SPIFFE trust domain (spiffe://secforge.local)
+                    Z3) SPIFFE trust domain (spiffe://secforge.platform)
 
 [Operator laptop Z1] ─kubectl─▶ Z5) K8s control plane (apiserver+etcd+kubelet)
                                        └──stores every Secret + RBAC binding
@@ -222,7 +222,7 @@ flowchart TB
 
 - Every cross-zone edge must list a control. Edges with no listed control are gaps; surface them in this section's review-history.
 - Sub-zones (Transit, Postgres-RLS) are inside their parent zone for ingress purposes but require an additional access decision once the parent boundary is crossed (defense-in-depth). E.g., reaching Postgres at all is the first gate; reading another tenant's row through it is the RLS gate.
-- The **mesh boundary (Z6)** is currently weaker than the diagram suggests because PeerAuth is PERMISSIVE. STRICT cutover is [Phase 7c](../05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md); residual risks include what STRICT closes.
+- The **mesh boundary (Z6)** is currently weaker than the diagram suggests because PeerAuth is PERMISSIVE. STRICT cutover is [Phase 7c](../99-archive/05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md); residual risks include what STRICT closes.
 
 ---
 
@@ -395,7 +395,7 @@ Phase 7c (SPIRE-as-CA + PeerAuthentication STRICT) closes a specific set of "Pre
 
 | Threat row | Component | Why 7c closes it |
 |---|---|---|
-| **S2** Spoof a backend → BFF | BFF (§3.1) | STRICT mTLS rejects callers without a valid SPIRE-issued SVID; a backend impostor without `spiffe://secforge.local/ns/.../sa/...` cannot complete the handshake |
+| **S2** Spoof a backend → BFF | BFF (§3.1) | STRICT mTLS rejects callers without a valid SPIRE-issued SVID; a backend impostor without `spiffe://secforge.platform/ns/.../sa/...` cannot complete the handshake |
 | **T3** Tamper response body in flight | BFF (§3.1) | STRICT mTLS protects in-mesh response bodies between SVID-bearing peers |
 | **E3** Compromised app pod → BFF SPIFFE-ID escalation | BFF (§3.1) | Per-namespace AuthorizationPolicy in `app` ns + STRICT denies non-BFF callers; NetworkPolicy moves from sole defense to L4 belt-and-suspenders |
 | **S1** Spoof BFF caller → AuthZEN | AuthZEN-facade (§3.2) | STRICT mTLS + per-namespace AuthorizationPolicy restricts to BFF SPIFFE-ID specifically; PSK becomes belt-and-suspenders |
@@ -406,7 +406,7 @@ Phase 7c (SPIRE-as-CA + PeerAuthentication STRICT) closes a specific set of "Pre
 | **S1** Spoof workload identity | Istio mesh (§3.10) | The whole point of Phase 7c — STRICT enforces SVID-based mTLS |
 | **T1** Tamper traffic in flight | Istio mesh (§3.10) | Same |
 
-> **Cross-link from PLAN.md Phase 7c:** the [Phase 7c quick-ref row](../../PLAN.md#phase-7c--istio-spire-as-ca-cutover--peerauthentication-strict-1-2-days) and the [phase prompt](../05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md) reference this section. When 7c executes against [`docs/03-runbooks/istio-peer-auth-tighten.md`](../03-runbooks/istio-peer-auth-tighten.md), tick each row off here and bump §7 review history.
+> **Cross-link from PLAN.md Phase 7c:** the [Phase 7c quick-ref row](../../PLAN.md#phase-7c--istio-spire-as-ca-cutover--peerauthentication-strict-1-2-days) and the [phase prompt](../99-archive/05-claude-code-prompts/phase-07c-istio-spire-ca-and-strict.md) reference this section. When 7c executes against [`docs/03-runbooks/istio-peer-auth-tighten.md`](../03-runbooks/istio-peer-auth-tighten.md), tick each row off here and bump §7 review history.
 
 ---
 
@@ -429,7 +429,7 @@ OIDC identity provider (`secforge-tenants` realm + `master` realm). Holds the re
 
 | Threat | Severity | Mitigation (existing) | Residual risk |
 |---|---|---|---|
-| **(S1) Spoof IdP via phishing fake login page** | L (Severe × Rare) | HSTS preload + browser cert-pinning (mkcert OS-level CA trust); operator's browser tab indicates valid cert | Local edition: phishing requires gaining `auth.secforge.local` DNS resolution (laptop-local). Cloud-edition: jumps in likelihood. |
+| **(S1) Spoof IdP via phishing fake login page** | L (Severe × Rare) | HSTS preload + browser cert-pinning (mkcert OS-level CA trust); operator's browser tab indicates valid cert | Local edition: phishing requires gaining `auth.secforge.dev` DNS resolution (laptop-local). Cloud-edition: jumps in likelihood. |
 | **(S2) Spoof user via stolen TOTP** | M (Major × Moderate) | TOTP per [ADR-0007](../02-decisions/0007-totp-instead-of-passkeys-locally.md) (interim); brute-force-detection enabled in Keycloak; recovery codes in Shamir custody | **TOTP is interim.** Passkeys/FIDO2 land at production-hardening per ADR-0007. **Tracked-but-not-accepted** (production hardening). |
 | **(S3) Spoof admin via stolen master-realm credential** | M (Major × Unlikely) | Admin console on separate hostname per CLAUDE.md; admin auth requires TOTP; master-realm separated from tenant realm | Operator's TOTP device = single point of failure; recovery codes Shamir-distributed mitigate device loss. |
 | **(T1) Tamper realm configuration** | M (Major × Unlikely) | All kcadm changes via committed Path-A scripts at `infrastructure/keycloak/clients/`; Keycloak admin-event log captures changes | **See X-R1** (no tamper-evident log chain). |
@@ -567,7 +567,7 @@ Privileged read+write across the platform. Compromise = privacy issue + audit-tr
 
 | Threat | Severity | Mitigation (existing) | Residual risk |
 |---|---|---|---|
-| **(S2) Spoof Wazuh dashboard login** | M (Major × Unlikely) | Internal `admin` user with strong password (in `wazuh-indexer-creds` Secret); HTTPS via ingress; dashboard ingress is on a separate hostname (`wazuh.secforge.local`) | Today: shared admin login = single password at risk. Phase 7d adds OIDC federation binding admin to `platform_admin` realm role per Phase 7d follow-ups. **Tracked-but-not-accepted** (Phase 7d). |
+| **(S2) Spoof Wazuh dashboard login** | M (Major × Unlikely) | Internal `admin` user with strong password (in `wazuh-indexer-creds` Secret); HTTPS via ingress; dashboard ingress is on a separate hostname (`wazuh.secforge.dev`) | Today: shared admin login = single password at risk. Phase 7d adds OIDC federation binding admin to `platform_admin` realm role per Phase 7d follow-ups. **Tracked-but-not-accepted** (Phase 7d). |
 | **(T2) Tamper Wazuh indexer events** (rewrite or delete SIEM history) | H (Major × Unlikely) | Wazuh-internal mTLS between manager↔indexer; admin-only write API; cluster green health check + alert; per Phase 7d, Keycloak/OpenBao events forwarded via syslog with custom decoders | Cluster-admin (A4) bypass; admin-credential leak = full event-log tamper. **See X-R1** — Wazuh events are part of the audit-trail-integrity envelope. |
 | **(I3) Wazuh indexer reveals all SIEM data** (cross-tenant SIEM read) | M (Major × Unlikely) | Wazuh dashboard ACL on indexer indices; admin-only delete; Phase 7d adds OIDC-bound role mapping (admin → `platform_admin`) | Same admin-credential dependency. Pre-Phase-7d, the dashboard `admin` is shared. |
 | **(E2) Wazuh manager / indexer CVE → host process** | M (Severe × Rare) | Pod runs as non-root; Wazuh ns explicitly `pod-security.kubernetes.io/enforce: baseline` (relaxed from cluster-default `restricted`); image pinned by chart version; agent DaemonSet deferred to Phase 7d (avoids privileged escalation surface); vendor patches P-001 (NET_RAW removal) + P-002 (nodeSelector removal) applied in `platform/manifests/wazuh/vendor-chart/` | **F-ADR-12 flag** — Wazuh images not yet Cosign-signed. **Tracked-but-not-accepted** (supply-chain phase). |
@@ -616,7 +616,7 @@ These threats are not specific to one component; they apply across the platform 
 |---|---|---|---|---|
 | **X-R1** | Audit-trail integrity — **no tamper-evident log chain.** Anyone who reaches Loki / Tempo / Wazuh write paths (cluster-admin kubectl, compromised observability pod, misconfigured NetworkPolicy) can delete or rewrite history. Repudiation defense across every component depends on this — that's why this is X-R1, not BFF-specific R1. | M (Significant × Moderate) | Per-hop `request_id` propagation per [ADR-0014 § Audit.LogHop](../02-decisions/0014-api-auth-library-design.md); SPIFFE-ID + `caller_user_sub` per audit line per [ADR-0012 § Resolution Q4](../02-decisions/0012-token-exchange-feasibility.md#resolution-2026-05-01); 90-day Loki retention for `secrets.guardrail.bypass` per Phase 7b plan; Wazuh ingestion of OpenBao+Keycloak events lands in Phase 7d | **No hash-chained or signed audit log today.** Cloud-edition mitigation (HSM-backed log signing, immutable log sink) is the fix path, but cloud-edition is not scheduled. **Accepted residual** — see [§5](#5-accepted-residual-risks-require-operator-sign-off). |
 | **X-R2** | Supply chain — image signing in **Audit-mode** today per [ADR-0004](../02-decisions/0004-kyverno-audit-mode.md). A malicious image with a missing or invalid Cosign signature is logged but **not blocked** at admission. Affects every component (BFF, AuthZEN, Keycloak, SpiceDB, OpenBao, etc.). | M (Severe × Unlikely) | Cosign signing infrastructure exists locally (per [ADR-0004](../02-decisions/0004-kyverno-audit-mode.md)); Kyverno `verify-image-signatures` policy attached to every workload-pod-creating namespace; BFF + AuthZEN images Trivy + Grype scanned (CRITICAL gate) at build; SBOMs generated; vendored Wazuh chart pinned by chart version | **Audit-mode = log-only.** F-ADR-12 schedules Audit→Enforce flip at the supply-chain phase (after Cosign keyless via in-cluster OIDC is set up since GitHub OIDC isn't available locally). **Tracked-but-not-accepted** (supply-chain phase). |
-| **X-R3** | Insider / operator with kubectl access (Z5 K8s control plane). Cluster-admin can `kubectl exec` into any pod, `kubectl edit` any CRD, `kubectl get secret` for every K8s Secret, bypass any application-level audit. The BFF's per-pod DPoP key, the SPIRE server's signing key, OpenBao's seal-bao Shamir keys (when on operator's laptop), and Keycloak's master-realm credentials all sit in zones reachable from the operator's kubeconfig. | M (Severe × Unlikely) | CLAUDE.md "no SA cluster-admin" rule for service accounts — human admins still exist; kcadm-admin pattern (Phase 3 follow-up) replaces password+TOTP-concat with service-account credentials, narrowing the human-credential surface; commit-signing per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md) (audit trail of admin changes via git); Phase 8 Teleport (optional locally) provides cert-based admin access | **Single-operator threat model is in scope here.** Cloud-edition inverts: multi-operator, separation-of-duties, break-glass procedures all become first-class. **Accepted residual** at local edition — the operator IS the only admin; loss of credentials = recovery via Shamir + ed25519 SSH key + recovery codes. **See §5.** |
+| **X-R3** | Insider / operator with kubectl access (Z5 K8s control plane). Cluster-admin can `kubectl exec` into any pod, `kubectl edit` any CRD, `kubectl get secret` for every K8s Secret, bypass any application-level audit. The BFF's per-pod DPoP key, the SPIRE server's signing key, OpenBao's seal-bao Shamir keys (when on operator's laptop), and Keycloak's master-realm credentials all sit in zones reachable from the operator's kubeconfig. | M (Severe × Unlikely) | CLAUDE.md "no SA cluster-admin" rule for service accounts — human admins still exist; kcadm-admin pattern (Phase 3 follow-up) replaces password+TOTP-concat with service-account credentials, narrowing the human-credential surface; commit-signing per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md) (audit trail of admin changes via git); operator access is the Tailscale tailnet (host SSH + tailnet-only admin gateway) per [ADR-0035](../02-decisions/0035-tailscale-replaces-teleport.md), and host/cluster activity is captured by Wazuh | **Single-operator threat model is in scope here.** Cloud-edition inverts: multi-operator, separation-of-duties, break-glass procedures all become first-class. **Accepted residual** at local edition — the operator IS the only admin; loss of credentials = recovery via Shamir + ed25519 SSH key + recovery codes. **See §5.** |
 | **X-R4** | Cold-boot Transit token expiry → cluster fails to auto-unseal. Hit 2026-05-01: cluster paused multi-day → 24h renewable Transit-unseal-token didn't auto-renew while main-bao was sealed → next start hit `403 permission denied`. Workaround required Shamir unseal AND Transit token rotation. Affects platform availability for any part-time / lab cluster. | M (Significant × Likely) | Workaround in [`openbao-seal-unseal.md § Main openbao stuck sealed=true`](../03-runbooks/openbao-seal-unseal.md); Shamir keys retained on operator-laptop with off-device passphrase | **Tracked-but-not-accepted** (Phase 7d TTL strategy review per [ADR-0009](../02-decisions/0009-openbao-seal-strategy.md)). Three options on the table for the permanent fix: longer TTL (e.g. 720h) + explicit periodic rotation; `period` instead of `ttl` so renewal isn't required; script-driven mint on every cluster bring-up. Decision in Phase 7d. |
 | **X-R5** | Token theft / replay across the BFF, backend, and AuthZEN-facade boundaries. Stolen access tokens are bearer-equivalent unless DPoP-bound. | L (Severe × Rare) | DPoP-bound access tokens per [ADR-0011](../02-decisions/0011-bff-single-replica-local.md) + [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449); canonicalization rule [`dpop-htu-canonicalization.md`](../06-reference/dpop-htu-canonicalization.md) consumed by every minter and validator (single source of truth); BFF inbound fail-closed on missing `X-Forwarded-*`; replay-cache 60s + skew per [ADR-0014](../02-decisions/0014-api-auth-library-design.md) step 15; per-pod DPoP key per [ADR-0011](../02-decisions/0011-bff-single-replica-local.md) | DPoP key compromise = bypass of the proof-of-possession property. Covered as `BFF:I3` (Accepted residual) in §3.1. |
 | **X-R6** | Phase-9-onward dependency — **every component must emit per-request structured logs** with `request_id` + `caller_user_sub` + SPIFFE-ID. The BFF currently emits **only startup logs** (Phase 7.9 verify-e2e identified this gap). Without per-request logs, repudiation defense (X-R1) is degraded for every flow that goes through the BFF. | M (Significant × Likely) | Per-hop `request_id` schema defined in [ADR-0014 § Audit.LogHop](../02-decisions/0014-api-auth-library-design.md); apps/lib/api-auth Phase 6b-1 implements `LogHop` for every backend; backend-side coverage is automatic via the library | **BFF itself doesn't use the library** (BFF mints inbound DPoP, doesn't validate it). BFF needs its own per-request logger. **Tracked-but-not-accepted** (Phase 9 will be the first place this gap is felt; remediation can be added inline at Phase 9 or as a Phase 6b-1 sub-task). |
@@ -711,7 +711,7 @@ Each item below is a residual that **remains after the listed mitigation**, has 
 
 | Field | Value |
 |---|---|
-| **Threat (one-line)** | SPIRE server compromised → attacker mints arbitrary SVIDs → impersonates any workload in `spiffe://secforge.local`. Realization of the Z3 trust-domain boundary. |
+| **Threat (one-line)** | SPIRE server compromised → attacker mints arbitrary SVIDs → impersonates any workload in `spiffe://secforge.platform`. Realization of the Z3 trust-domain boundary. |
 | **Severity** | **H** (Severe × Unlikely) |
 | **Mitigations applied** | SPIRE server in `spire` ns with strict RBAC (only `spire-server` SA can access); private signing key in PVC, encrypted-at-rest at storage-class layer if supported; StatefulSet with replicas=1 (no multi-replica key-sync risk); ClusterSPIFFEID CRDs require cluster-admin to modify; agent↔server connection via mTLS bootstrap per SPIRE design; PVC access requires `spire-server` pod-exec which itself requires cluster-admin (= A4 actor). |
 | **Why it remains** | SPIRE server is the trust authority — it MUST hold the private key to mint SVIDs. Software-only key storage at local edition; no HSM-backed root key. |
@@ -725,7 +725,7 @@ Each item below is a residual that **remains after the listed mitigation**, has 
 |---|---|
 | **Threat (one-line)** | Operator with kubectl access can `kubectl exec` into any pod, `kubectl get secret` for every K8s Secret, bypass any application-level audit. Single-operator local edition assumes the operator is trusted. |
 | **Severity** | **M** (Severe × Unlikely) |
-| **Mitigations applied** | CLAUDE.md "no SA cluster-admin" rule narrows the SA-bound surface; kcadm-admin Phase 3 follow-up replaces password+TOTP-concat with service-account credentials; commit-signing per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md) provides an audit trail of admin-driven changes via git history; Phase 8 Teleport (optional locally) provides cert-based admin access if elected; kubeconfig itself protected by laptop FDE + SSH-key passphrase; physical-access OOS. |
+| **Mitigations applied** | CLAUDE.md "no SA cluster-admin" rule narrows the SA-bound surface; kcadm-admin Phase 3 follow-up replaces password+TOTP-concat with service-account credentials; commit-signing per [ADR-0021](../02-decisions/0021-git-initialization-and-commit-signing.md) provides an audit trail of admin-driven changes via git history; operator access is the Tailscale tailnet (no Teleport) per [ADR-0035](../02-decisions/0035-tailscale-replaces-teleport.md), with host/cluster activity captured by Wazuh; kubeconfig itself protected by laptop FDE + SSH-key passphrase; physical-access OOS. |
 | **Why it remains** | Local-edition is **definitionally single-operator** (per §Scope). The operator IS the only admin; loss of operator credentials = recovery via Shamir + ed25519 SSH key + recovery codes (which the operator also controls). Separation-of-duties and break-glass procedures are cloud-edition concepts that don't have a single-operator equivalent. |
 | **Why accepted (cost/benefit)** | The whole local-edition threat model carves out single-operator as the operating assumption. Pretending otherwise here would be inconsistent with the rest of the threat model. The mitigation chain (FDE + commit-signing audit trail + kcadm-admin narrowing + cluster-internal-only) is the local-edition discipline; the next step up is cloud-edition's multi-operator framework. |
 | **Re-open trigger** | (a) **second operator joins the project** — this immediately inverts the threat-model's actor-set assumption and forces a full re-rate of every component STRIDE row; (b) cloud-edition migration begins; (c) any compliance regime requiring separation-of-duties (FedRAMP Moderate AC-5; NIST 800-53 PS-2/PS-3); (d) the operator's role changes such that someone else needs administrative access (contractor work, second-machine setup, vacation-coverage). |

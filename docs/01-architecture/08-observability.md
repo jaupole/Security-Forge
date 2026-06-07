@@ -1,4 +1,6 @@
-# Observability — Local Edition
+# Observability
+
+> **Production note.** Written for the local edition; the observability stack below is unchanged in production. Substrate deltas: ingress is the **Istio gateway**; the admin UIs (`grafana.secforge.dev`, `wazuh.secforge.dev`) are **tailnet-only** (not ingress-nginx + hosts file). See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion runbooks (built alongside Phase 7): [Wazuh operations](../03-runbooks/wazuh-operations.md), [Grafana dashboards](../03-runbooks/grafana-dashboards.md), [Alerts](../03-runbooks/alerts.md).
 > Stack choices: per-component rows in [CLAUDE.md § Architecture stack](../../CLAUDE.md).
@@ -34,7 +36,7 @@ Cloud edition runs 3+ Wazuh managers, 3+ indexer nodes, 1 dashboard. Local runs 
 
 - Manager: 1 replica, 1 GB heap. Receives Wazuh agent traffic over TCP/1514 and dashboard queries over 55000.
 - Indexer: 1 replica, 4 GB heap (locally bumped down to 2 GB if memory-pressured), 20 GB PVC.
-- Dashboard: 1 replica, exposed at `https://wazuh.secforge.local`.
+- Dashboard: 1 replica, exposed at `https://wazuh.secforge.dev`.
 
 Wazuh agent runs as a DaemonSet on the single node and audits:
 - File integrity in `/etc`, `/var/log`, `/usr/bin`
@@ -44,7 +46,7 @@ Wazuh agent runs as a DaemonSet on the single node and audits:
 
 Critical alerts forward to STDOUT locally. Cloud edition routes to PagerDuty/Slack via Wazuh's integration framework — same rules, swapped receiver.
 
-NetworkPolicy on `wazuh.secforge.local`: ingress only from ingress-nginx; no east-west reach to Wazuh dashboard from other namespaces.
+NetworkPolicy on `wazuh.secforge.dev`: ingress only from ingress-nginx; no east-west reach to Wazuh dashboard from other namespaces.
 
 ---
 
@@ -122,7 +124,7 @@ Two new Keycloak clients in the `platform` realm (provisioned in Phase 7 via com
 
 | Client | Confidential | Redirect | Realm-role mapping |
 |---|---|---|---|
-| `grafana` | yes (client-secret) | `https://grafana.secforge.local/login/generic_oauth` | `platform_admin` → Grafana `Admin` |
+| `grafana` | yes (client-secret) | `https://grafana.secforge.dev/login/generic_oauth` | `platform_admin` → Grafana `Admin` |
 | `wazuh-dashboard` | yes (client-secret) | per Wazuh OIDC docs | `platform_admin` → Wazuh `admin` |
 
 Both use the `roles` default scope so `realm_access.roles` ships in tokens. Same passkey (or TOTP fallback during 2026-09 → 2026-12 interim, per ADR-0007) drives every admin login.

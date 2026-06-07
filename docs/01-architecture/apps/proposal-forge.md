@@ -14,9 +14,9 @@
 
 ## Pattern note — this follows the LIVE Member Hub shape, not the local edition
 
-The earlier [phase-10 integrate-proposal-forge prompt](../../05-claude-code-prompts/phase-10-integrate-proposal-forge-project-tracker.md)
+The earlier [phase-10 integrate-proposal-forge prompt](../../99-archive/05-claude-code-prompts/phase-10-integrate-proposal-forge-project-tracker.md)
 and the project-tracker audit were written for the **retired local edition**
-(separate BFF deployment, shared `secforge-app-db`, `secforge.local`, mkcert,
+(separate BFF deployment, shared `secforge-app-db`, `secforge.dev`, mkcert,
 `infrastructure/spicedb`). The live bare-metal platform does **not** use that
 shape. Proposal Forge clones the **Member Hub** production pattern instead:
 
@@ -26,7 +26,7 @@ shape. Proposal Forge clones the **Member Hub** production pattern instead:
 | Database | shared `secforge-app-db`, per-app schema | **per-app CNPG cluster** `proposal-forge-db` |
 | Secrets | `apps/lib/secrets` Go library | **OpenBao → VSO-rendered Secrets** + spiffe-helper sidecar for Transit |
 | Files | n/a | **MinIO + SSE-S3**, bucket-scoped creds via VSO |
-| Domain | `secforge.local`, mkcert | `pf.secforge.dev`, LE via DNS-01 |
+| Domain | `secforge.dev`, mkcert | `pf.secforge.dev`, LE via DNS-01 |
 | Exposure | public ingress | **tailnet-only** (CGNAT whitelist + Kyverno enforce) |
 | Images | local registry, local cosign key | **GHCR digest-pinned + cosign keyless**, Kyverno-verified |
 

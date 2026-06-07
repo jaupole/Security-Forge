@@ -87,7 +87,7 @@ spec:
     - from:
         - source:
                 principals:
-                - "spiffe://cluster.local/ns/app/sa/helloworld-bff"   # <- becomes spiffe://secforge.local/... after 6.2b
+                - "spiffe://cluster.local/ns/app/sa/helloworld-bff"   # <- becomes spiffe://secforge.platform/... after 6.2b
         to:
         - operation:
                 methods: ["GET", "POST"]

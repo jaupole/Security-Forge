@@ -69,4 +69,4 @@ Then: edit the policy's `validationFailureAction` from `Audit` to `Enforce`, app
 
 - Kyverno docs — Validation modes: https://kyverno.io/docs/policy-types/cluster-policy/validate/
 - Pod Security Standards: https://kubernetes.io/docs/concepts/security/pod-security-standards/
-- Phase 1.7 prompt: [phase-01-foundation.md](../05-claude-code-prompts/phase-01-foundation.md)
+- Phase 1.7 prompt: [phase-01-foundation.md](../99-archive/05-claude-code-prompts/phase-01-foundation.md)

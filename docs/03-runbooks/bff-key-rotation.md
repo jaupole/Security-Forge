@@ -59,9 +59,9 @@ Output is one structured-JSON line per step (`event=bff.key.rotation.step` for p
 
 3. **Fresh end-to-end login** (the high-confidence test):
    ```bash
-   curl -fsS https://app.secforge.local/healthz   # should be 200
+   curl -fsS https://app.secforge.dev/healthz   # should be 200
    ```
-   Then perform a real login at `https://app.secforge.local/login` and confirm the redirect chain through Keycloak completes. The BFF logs (Loki) will show `oidc client ready` with the new `kid`.
+   Then perform a real login at `https://app.secforge.dev/login` and confirm the redirect chain through Keycloak completes. The BFF logs (Loki) will show `oidc client ready` with the new `kid`.
 
 4. The new `kid` appears in Keycloak event logs for `client_assertion` validation:
    ```
@@ -194,7 +194,7 @@ kubectl exec -n openbao openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN=
     bao read auth/jwt/role/bff-key-rotator
 ```
 
-`bound_subject` should be `spiffe://secforge.local/ns/app/sa/bff-key-rotator`. The pod's SVID can be inspected via SPIRE Server's CLI; if it doesn't match, the namespace-scoped ClusterSPIFFEID for `app` may need an update.
+`bound_subject` should be `spiffe://secforge.platform/ns/app/sa/bff-key-rotator`. The pod's SVID can be inspected via SPIRE Server's CLI; if it doesn't match, the namespace-scoped ClusterSPIFFEID for `app` may need an update.
 
 ### CronJob fails: `pods 'openbao-0' is forbidden`
 

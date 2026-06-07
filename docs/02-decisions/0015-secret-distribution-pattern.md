@@ -173,7 +173,7 @@ explicit hand-offs documented in PLAN.md follow-ups:
 
 - [ADR-0013 — Outbound secrets: no env vars](./0013-outbound-secrets-no-env.md)
 - [ADR-0014 — API auth library design](./0014-api-auth-library-design.md)
-- [Phase 6.10b prompt](../05-claude-code-prompts/phase-06.10b-vso-and-secret-cleanup.md)
+- [Phase 6.10b prompt](../99-archive/05-claude-code-prompts/phase-06.10b-vso-and-secret-cleanup.md)
 - CLAUDE.md architecture stack table — "Outbound Secret Sync" row
 - `infrastructure/openbao/policies/vso.hcl` — the policy
 - `infrastructure/vault-secrets-operator/` — VSO platform install

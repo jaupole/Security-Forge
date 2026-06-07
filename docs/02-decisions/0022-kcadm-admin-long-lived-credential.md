@@ -78,7 +78,7 @@ CLAUDE.md "Things that should NEVER happen" forbids "Generating long-lived (>24h
 
 - **Operational muscle memory**: a credential that is never rotated is one whose rotation procedure has never been tested. 90 days is short enough that the operator runs the procedure ~4× a year — frequent enough to keep the runbook honest, infrequent enough not to be a chore.
 - **Blast-radius reduction**: a leaked secret is valid for at most 90 days. For a service-account credential restricted to non-cluster-admin roles in a single Keycloak realm, the 90-day window is acceptable.
-- **Cloud-edition handoff**: when this platform migrates to a managed Keycloak (Cognito, Auth0) per [`docs/06-reference/migration-keycloak-to-cognito.md`](../06-reference/migration-keycloak-to-cognito.md), this credential disappears (replaced by the cloud provider's native admin-API auth). The 90-day cadence won't be load-bearing forever.
+- **Cloud-edition handoff**: when this platform migrates to a managed Keycloak (Cognito, Auth0) per [`docs/99-archive/migration-keycloak-to-cognito.md`](../99-archive/migration-keycloak-to-cognito.md), this credential disappears (replaced by the cloud provider's native admin-API auth). The 90-day cadence won't be load-bearing forever.
 
 Shorter rotation (e.g., 30 days) would be operationally heavier than the local-edition single-operator threat model warrants. Longer rotation (180+ days) drifts past industry best-practice for non-HSM-backed shared secrets.
 

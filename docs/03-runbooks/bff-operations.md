@@ -1,4 +1,6 @@
-# BFF Operations Runbook (Local Edition)
+# BFF Operations Runbook
+
+> **Production note.** Written for the local edition. In production: the cluster is **Hetzner k3s** single node (a "Docker Desktop restart" = a **node reboot**); ingress is the **Istio gateway** (not ingress-nginx); operator access is the **Tailscale tailnet**; the SPIRE trust domain is **`secforge.platform`**. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 > Architecture: [docs/01-architecture/04-bff-pattern.md](../01-architecture/04-bff-pattern.md)
 > ADRs: [0011 — single replica](../02-decisions/0011-bff-single-replica-local.md), [0015 — secret distribution](../02-decisions/0015-secret-distribution-pattern.md)
@@ -35,7 +37,7 @@ kubectl get pod -n app -l app.kubernetes.io/name=helloworld-bff
 ```
 
 The BFF listens on port 3000 inside the pod. External traffic enters
-via ingress-nginx at `https://hello.secforge.local`. For ad-hoc local
+via ingress-nginx at `https://hello.secforge.dev`. For ad-hoc local
 testing without going through ingress, port-forward:
 
 ```bash
@@ -89,7 +91,7 @@ kubectl -n app rollout status deployment/helloworld-bff --timeout=120s
 ```
 
 A restart triggers:
-1. spiffe-helper init container re-fetches a JWT-SVID for `spiffe://secforge.local/ns/app/sa/helloworld-bff`.
+1. spiffe-helper init container re-fetches a JWT-SVID for `spiffe://secforge.platform/ns/app/sa/helloworld-bff`.
 2. Main container reads `secret/data/keycloak/clients/helloworld-bff` from OpenBao using the SVID.
 3. Generates a fresh per-pod ECDSA P-256 DPoP keypair (in memory only).
 4. Starts the HTTP server on :3000.
@@ -114,7 +116,7 @@ kill $PF; wait 2>/dev/null
 
 Expected:
 - `HTTP/1.1 302 Found`
-- `Location: https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/auth?client_id=helloworld-bff&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3A<UUID>`
+- `Location: https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/auth?client_id=helloworld-bff&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3A<UUID>`
 
 If the `request_uri` parameter is missing, the BFF could not call
 Keycloak's PAR endpoint — most likely cause is OpenBao or Keycloak
@@ -162,7 +164,7 @@ kubectl -n app exec deploy/helloworld-bff -- /bff -openbao-probe
 # (if -openbao-probe isn't implemented, port-forward to OpenBao directly)
 
 # Keycloak JWKS reachability
-kubectl -n app exec deploy/helloworld-bff -- wget -qO- https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/certs
+kubectl -n app exec deploy/helloworld-bff -- wget -qO- https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/certs
 
 # Valkey reachability
 kubectl -n valkey port-forward svc/valkey-primary 6379:6379 &
@@ -234,7 +236,7 @@ When implemented, the rotation flow will be:
 | Deployment `helloworld-bff` | `app` | `apps/helloworld-bff/deploy/02-deployment.yaml` |
 | Service `helloworld-bff` | `app` | `apps/helloworld-bff/deploy/03-service.yaml` |
 | ServiceAccount `helloworld-bff` | `app` | `apps/helloworld-bff/deploy/01-serviceaccount.yaml` |
-| Ingress (`hello.secforge.local`) | `app` | `apps/helloworld-bff/deploy/06-ingress.yaml` |
+| Ingress (`hello.secforge.dev`) | `app` | `apps/helloworld-bff/deploy/06-ingress.yaml` |
 | OpenBao private_key_jwt source | `openbao` | `secret/data/keycloak/clients/helloworld-bff` |
 | OpenBao policy granting BFF reads | n/a | `infrastructure/openbao/policies/helloworld-bff.hcl` |
 | SPIRE workload registration | `spire` | `infrastructure/spire/04-clusterspiffeids.yaml` |

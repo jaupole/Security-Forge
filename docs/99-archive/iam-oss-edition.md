@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # IAM Architecture — Open-Source Edition (No CMMC, Compliance-Ready)
 
 **Companion to the full IAM Architecture report.** This document specifies the same architecture using only open-source components, with explicit upgrade paths for each layer when CMMC, FedRAMP, or regulated-industry customers enter scope. The goal: spend ~$0 on software today, and when a contract demands compliance, swap components without changing protocols, APIs, or application code.

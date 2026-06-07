@@ -92,7 +92,7 @@ Per the staged order, every dependency this namespace has should already be STRI
 
 ```bash
 # ingress-nginx → keycloak (stage 2)
-curl -sk -o /dev/null -w "keycloak: %{http_code}\n" https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration
+curl -sk -o /dev/null -w "keycloak: %{http_code}\n" https://auth.secforge.dev/realms/secforge-tenants/.well-known/openid-configuration
 
 # app/authzen-facade → spicedb (stage 3)
 kubectl port-forward -n app svc/authzen-facade 18080:8080 &
@@ -132,7 +132,7 @@ Wait 5 minutes for any background callers to fire:
 START=$(( $(date +%s) - 600 ))000000000
 END=$(date +%s)000000000
 PASS=$(kubectl get secret -n observability kps-grafana -o jsonpath='{.data.admin-password}' | base64 -d)
-curl -sk -u "admin:$PASS" -G "https://grafana.secforge.local/api/datasources/proxy/uid/loki/loki/api/v1/query_range" \
+curl -sk -u "admin:$PASS" -G "https://grafana.secforge.dev/api/datasources/proxy/uid/loki/loki/api/v1/query_range" \
   --data-urlencode "query={namespace=\"istio-system\"} |~ \"PERMISSION_DENIED|RBAC: access denied\"" \
   --data-urlencode "start=$START" --data-urlencode "end=$END" --data-urlencode "limit=20" \
   | python3 -c "

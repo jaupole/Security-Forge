@@ -84,7 +84,7 @@ Policy without enforcement is decoration. Outbound-credential leak prevention is
 
 Each layer captures a different attack surface. Pre-commit catches the careless author. CI catches `--no-verify`. Build-time catches the developer who commits a non-`.env` file containing a secret. Admission catches the Pod authored outside the template entirely. Runtime catches the secret successfully fetched but accidentally `fmt.Printf`-ed. The scrubber catches a secret value reaching an outbound error payload (Sentry/Rollbar context dictionary, panic stack).
 
-Every layer's bypass emits a structured `secrets.guardrail.bypass` event ([Section 8 of the Phase 6b-2 prompt](../05-claude-code-prompts/phase-06b-2-outbound-secrets.md) defines the schema). Phase 7 ingests these via Promtail / Loki and adds Grafana dashboard + Alertmanager rules.
+Every layer's bypass emits a structured `secrets.guardrail.bypass` event ([Section 8 of the Phase 6b-2 prompt](../99-archive/05-claude-code-prompts/phase-06b-2-outbound-secrets.md) defines the schema). Phase 7 ingests these via Promtail / Loki and adds Grafana dashboard + Alertmanager rules.
 
 ### 7. `Hardened` mode and runtime hygiene
 
@@ -182,7 +182,7 @@ The `actor` override closes a "trust the payload" weakness: a compromised CI run
 - [ADR-0014 — API auth library design](./0014-api-auth-library-design.md) — the library that secures inbound API calls; complements this ADR's outbound surface.
 - [ADR-0015 — Secret distribution pattern (VSO + direct-API)](./0015-secret-distribution-pattern.md) — the asymmetric split this ADR builds on.
 - [ADR-0019 — Secret distribution interface (`SecretBootstrapper`)](./0019-secret-distribution-interface.md) — the bootstrap interface; ADR-0013 is the outbound-credential extension.
-- [Phase 6b-2 prompt](../05-claude-code-prompts/phase-06b-2-outbound-secrets.md) — the runnable phase that implements this ADR.
+- [Phase 6b-2 prompt](../99-archive/05-claude-code-prompts/phase-06b-2-outbound-secrets.md) — the runnable phase that implements this ADR.
 - [PLAN.md § Phase 6b-2](../../PLAN.md) — phase tracking, follow-ups, success criteria.
 - CLAUDE.md "Things that should NEVER happen" — the corresponding bright-line rule lands in CLAUDE.md as part of Phase 6b-2 commit 6.
 

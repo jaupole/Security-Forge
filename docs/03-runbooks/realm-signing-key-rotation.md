@@ -63,7 +63,7 @@ kubectl exec -n $NS $KC -- /opt/keycloak/bin/kcadm.sh \
 ### 3. Verify the new key is in the JWKS
 
 ```bash
-curl -sk https://auth.secforge.local/realms/$REALM/protocol/openid-connect/certs | jq '.keys[] | {kid, alg, use}'
+curl -sk https://auth.secforge.dev/realms/$REALM/protocol/openid-connect/certs | jq '.keys[] | {kid, alg, use}'
 ```
 
 You should see TWO `sig` keys with `alg: RS256` — the old one and the new one. Tokens issued from this point on use the new key; tokens issued before still verify against the old key (since both are advertised in JWKS).
@@ -114,12 +114,12 @@ kubectl exec -n $NS $KC -- /opt/keycloak/bin/kcadm.sh \
     get keys -r $REALM | jq '.keys[] | {kid, status, providerPriority, algorithm, use}'
 
 # JWKS still resolves
-curl -sk https://auth.secforge.local/realms/$REALM/protocol/openid-connect/certs \
+curl -sk https://auth.secforge.dev/realms/$REALM/protocol/openid-connect/certs \
   | jq '.keys | length'   # ≥ 2 during overlap window
 
 # Discovery still serves
 curl -sk -o /dev/null -w "%{http_code}\n" \
-  https://auth.secforge.local/realms/$REALM/.well-known/openid-configuration
+  https://auth.secforge.dev/realms/$REALM/.well-known/openid-configuration
 
 # A fresh token signed under the new kid
 # (run from a client that's already authenticated; the kid in the

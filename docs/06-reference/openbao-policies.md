@@ -70,8 +70,8 @@ path "transit/decrypt/pii-encryption" {
 ```
 
 **Mapped to:**
-- `auth/jwt/role/helloworld-bff` bound to `spiffe://secforge.local/ns/app/sa/helloworld-bff`
-- `auth/jwt/role/authzen-facade` bound to `spiffe://secforge.local/ns/app/sa/authzen-facade` (for testing)
+- `auth/jwt/role/helloworld-bff` bound to `spiffe://secforge.platform/ns/app/sa/helloworld-bff`
+- `auth/jwt/role/authzen-facade` bound to `spiffe://secforge.platform/ns/app/sa/authzen-facade` (for testing)
 
 **Use:** the policy a Phase 9 BFF (or the AuthZEN façade test path) holds at runtime. Lets the workload:
 - read static config from `secret/data/apps/helloworld/<key>`

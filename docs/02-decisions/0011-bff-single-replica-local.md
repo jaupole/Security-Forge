@@ -82,6 +82,6 @@ Revisit if any of these become true:
 ## References
 
 - [docs/01-architecture/04-bff-pattern.md](../01-architecture/04-bff-pattern.md) — BFF pattern design, including the "Replica strategy in Phase 6 (local)" section that references this ADR.
-- [docs/05-claude-code-prompts/phase-06-istio-bff.md](../05-claude-code-prompts/phase-06-istio-bff.md) — Phase 6.8 spec from which this deviates.
+- [docs/99-archive/05-claude-code-prompts/phase-06-istio-bff.md](../99-archive/05-claude-code-prompts/phase-06-istio-bff.md) — Phase 6.8 spec from which this deviates.
 - [PLAN.md](../../PLAN.md) — Phase 6 follow-up tracking the pre-migration cloud cutover to per-session keys.
 - [RFC 9449 — DPoP](https://datatracker.ietf.org/doc/html/rfc9449)

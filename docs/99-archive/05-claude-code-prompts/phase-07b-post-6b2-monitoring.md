@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 7b — Post-6b-2 Monitoring Wire-up
 
 > **Navigation:** ⬅ [Previous: Phase 7 — Observability](./phase-07-observability.md) AND [Phase 6b-2 — Outbound Secrets](./phase-06b-2-outbound-secrets.md) · [Next: Phase 8 — Teleport](./phase-08-teleport.md) ➡ (or skip to [Phase 9 — Hello World](./phase-09-hello-world.md) if Teleport is skipped) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

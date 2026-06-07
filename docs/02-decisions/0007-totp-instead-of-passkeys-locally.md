@@ -1,6 +1,6 @@
 # ADR-0007: TOTP (Software Authenticator) as Primary Factor for Local-Edition Realms; Defer Passkeys/Hardware FIDO2 Until Production Hardening
 
-**Status**: Accepted
+**Status**: **Superseded by [ADR-0036](./0036-production-authentication-factors-passkeys.md)** (2026-06-07 — production runs passkeys; TOTP removed). The interim TOTP posture below applied only to the local edition; its own revert clause has now fired.
 **Date**: 2026-04-29
 **Decision-makers**: Project owner
 **Supersedes (for the local-dev window)**: [ADR-0002 — Use Windows Hello as the Local-Edition Admin Passkey](./0002-local-passkey-via-windows-hello.md)

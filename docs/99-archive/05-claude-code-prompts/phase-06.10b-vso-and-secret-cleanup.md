@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 6.10b — VSO install + secret cutover cleanup
 
 > **Navigation:** ⬅ [Previous: Phase 6 — Istio + BFF](./phase-06-istio-bff.md) · [Next: Phase 6b-0 — Token-exchange spike](./phase-06b-0-token-exchange-spike.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

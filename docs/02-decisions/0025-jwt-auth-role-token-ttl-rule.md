@@ -14,7 +14,7 @@ The platform uses two OpenBao surfaces in concert:
 
 OpenBao **binds child leases (the dynamic credential) to the parent token (the BAO_TOKEN)**. When the parent token expires, **all child leases are revoked immediately**, regardless of the credential's own `default_ttl`.
 
-This was discovered the hard way during Phase 9 deployment (2026-05-03/04). The `spicedb-datastore-refresher` JWT auth role had `token_ttl=10m`; the `spicedb-readwrite` database role had `default_ttl=14h`. Each refresher firing minted a fresh credential — and OpenBao revoked it 10 minutes later when the parent token died, even though the credential was supposed to live 14 hours. SpiceDB then crash-looped on `28P01` SASL auth failures for the rest of every cycle, in turn taking down `authzen-facade` (its sole client), in turn breaking every authorization decision in the platform. See [Phase 9 retrospective § "SpiceDB orphan-lease bug"](../05-claude-code-prompts/phase-09-retrospective.md#spicedb-orphan-lease-bug-the-big-one) for the full incident write-up.
+This was discovered the hard way during Phase 9 deployment (2026-05-03/04). The `spicedb-datastore-refresher` JWT auth role had `token_ttl=10m`; the `spicedb-readwrite` database role had `default_ttl=14h`. Each refresher firing minted a fresh credential — and OpenBao revoked it 10 minutes later when the parent token died, even though the credential was supposed to live 14 hours. SpiceDB then crash-looped on `28P01` SASL auth failures for the rest of every cycle, in turn taking down `authzen-facade` (its sole client), in turn breaking every authorization decision in the platform. See [Phase 9 retrospective § "SpiceDB orphan-lease bug"](../99-archive/05-claude-code-prompts/phase-09-retrospective.md#spicedb-orphan-lease-bug-the-big-one) for the full incident write-up.
 
 The same shape exists for any first-class app that uses `apps/lib/secrets/` to mint dynamic Postgres credentials at request time. `helloworld-backend` had the same defect — caught the same week, same root cause.
 
@@ -97,7 +97,7 @@ Revisit if either of:
 
 ## References
 
-- [Phase 9 retrospective § "SpiceDB orphan-lease bug"](../05-claude-code-prompts/phase-09-retrospective.md#spicedb-orphan-lease-bug-the-big-one) — the precipitating incident.
+- [Phase 9 retrospective § "SpiceDB orphan-lease bug"](../99-archive/05-claude-code-prompts/phase-09-retrospective.md#spicedb-orphan-lease-bug-the-big-one) — the precipitating incident.
 - [ADR-0013 — Outbound secrets: no `.env`](./0013-outbound-secrets-no-env.md) — the broader pattern this rule supports.
 - [ADR-0015 — Secret distribution pattern](./0015-secret-distribution-pattern.md) — VSO vs direct-API split that frames where this rule applies.
 - [ADR-0023 — SpiceDB `datastore_uri` rotation pattern](./0023-spicedb-datastore-uri-rotation-pattern.md) — adjacent context (SpiceDB-specific refresher CronJob; the lease-vs-token confusion was first amended there 2026-05-03).

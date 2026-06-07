@@ -1,4 +1,6 @@
-# IAM Platform (Keycloak) — Local Edition
+# IAM Platform (Keycloak)
+
+> **Production note.** Written for the local edition; the security architecture below is unchanged in production, but the substrate differs. In prod: ingress is the **Istio gateway** (not ingress-nginx); TLS is **Let's Encrypt** (not mkcert); DNS is real **`*.secforge.dev`** (not a hosts file); the cluster is **Hetzner k3s** (not Docker Desktop); the Keycloak admin console is **`kc.secforge.dev` (tailnet-only)** (not `auth-admin.secforge.dev`); the SPIRE trust domain is **`secforge.platform`**; auth factor is **passkeys** ([ADR-0036](../02-decisions/0036-production-authentication-factors-passkeys.md)). See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion ADRs:
 > - [ADR-0006 — Keycloak realm signing keys (local edition)](../02-decisions/0006-keycloak-keys-local.md)
@@ -51,8 +53,8 @@ The cost is operational: more realms means more places to check for a misconfigu
 
 | Hostname | Purpose | Network policy |
 |---|---|---|
-| `auth.secforge.local` | Public OIDC/OAuth/SAML endpoints (`/realms/{realm}/...`, JWKS, token, authorize, introspect, revoke) | open within the cluster + ingress |
-| `auth-admin.secforge.local` | Keycloak admin console (`/admin/...`) | NetworkPolicy restricting source — locally, just the developer machine |
+| `auth.secforge.dev` | Public OIDC/OAuth/SAML endpoints (`/realms/{realm}/...`, JWKS, token, authorize, introspect, revoke) | open within the cluster + ingress |
+| `auth-admin.secforge.dev` | Keycloak admin console (`/admin/...`) | NetworkPolicy restricting source — locally, just the developer machine |
 
 **Why split hostnames.** Putting the admin console on the same hostname as the public OIDC endpoints forfeits the most useful network-layer control we have: "the admin UI should never be reachable from the open internet." Even when the admin UI requires authentication, exposing it on a public hostname grows the attack surface unnecessarily (CSRF tokens, version-fingerprinting, brute force on bootstrap accounts during migrations). We split locally so the muscle memory carries to cloud, where the admin host sits behind a bastion or VPN.
 
@@ -151,10 +153,10 @@ Four BFF clients are pre-registered in `secforge-tenants` for the apps coming in
 
 | Client ID | App | Public URL | Redirect URI |
 |---|---|---|---|
-| `helloworld-bff` | Phase 9 demo app | `https://app.secforge.local` | `https://app.secforge.local/auth/callback` |
-| `proposal-forge-bff` | Proposal Forge | `https://pf.secforge.local` | `https://pf.secforge.local/auth/callback` |
-| `project-tracker-bff` | Project Tracker | `https://pt.secforge.local` | `https://pt.secforge.local/auth/callback` |
-| `pm-bff` | Future PM app | `https://pm.secforge.local` | `https://pm.secforge.local/auth/callback` |
+| `helloworld-bff` | Phase 9 demo app | `https://app.secforge.dev` | `https://app.secforge.dev/auth/callback` |
+| `proposal-forge-bff` | Proposal Forge | `https://pf.secforge.dev` | `https://pf.secforge.dev/auth/callback` |
+| `project-tracker-bff` | Project Tracker | `https://pt.secforge.dev` | `https://pt.secforge.dev/auth/callback` |
+| `pm-bff` | Future PM app | `https://pm.secforge.dev` | `https://pm.secforge.dev/auth/callback` |
 
 For each client:
 
@@ -192,7 +194,7 @@ Event TTL in DB: 7 days (the durable copy is in Loki/Wazuh; the DB copy is for t
 - **In-cluster TLS to Keycloak**: ingress-nginx → Keycloak Service is HTTP within the namespace. Locally acceptable; cloud will add Istio Ambient mTLS (Phase 6) so the in-cluster hop is encrypted.
 - **Postgres connection**: Keycloak → `secforge-keycloak-db` uses TLS (`sslmode=require`; encrypts in transit, no certificate verification). Tightening to `sslmode=verify-full` requires mounting the CA cert as `sslrootcert` in the JDBC URL — tracked as a follow-up at production-hardening time. The CA is already loaded into Keycloak's Java truststore via `spec.truststores.pg-ca`.
 - **Postgres ingress NetworkPolicy**: `default-deny-ingress` (selector `{}`) applies to the Postgres pod too because it's in the same namespace. An explicit `allow-postgres-ingress` policy permits 5432 from Keycloak pods, realm-import job pods, same-cluster replicas, and the `postgres-operator` namespace. Without this allow-rule, Keycloak's first cold-start after the NetworkPolicies are applied fails with `Failed to obtain JDBC connection` because TCP/5432 is blocked at the destination pod.
-- **Workload identity**: Keycloak pod gets a SPIFFE ID `spiffe://secforge.local/ns/keycloak/sa/keycloak` via the SPIFFE-CSI volume. It doesn't *use* the SVID for anything yet (Postgres auth is still password-based at this stage); the volume is mounted now so the SPIFFE library is in place when Phase 5 introduces JWT-SVID-bound credentials.
+- **Workload identity**: Keycloak pod gets a SPIFFE ID `spiffe://secforge.platform/ns/keycloak/sa/keycloak` via the SPIFFE-CSI volume. It doesn't *use* the SVID for anything yet (Postgres auth is still password-based at this stage); the volume is mounted now so the SPIFFE library is in place when Phase 5 introduces JWT-SVID-bound credentials.
 
 ### Pod security
 

@@ -1,4 +1,6 @@
-# Secrets Management (OpenBao) — Local Edition
+# Secrets Management (OpenBao)
+
+> **Production note.** Written for the local edition; the Transit auto-unseal model below is unchanged in production (OpenBao 2.5.4, 3 nodes + 1 seal node). Substrate deltas: a "Docker Desktop restart" maps to a **node reboot**; ingress is the **Istio gateway**; OpenBao is reached at **`bao.secforge.dev` (tailnet-only)**; TLS is **Let's Encrypt**; the SPIRE trust domain is **`secforge.platform`**. See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion ADRs:
 > - [ADR-0009 — OpenBao seal strategy (two-instance Transit auto-unseal)](../02-decisions/0009-openbao-seal-strategy.md)
@@ -48,7 +50,7 @@ The cloud-edition pattern is "main OpenBao auto-unseals via cloud KMS." Locally 
                              │ HTTPS
                              ↓ (cert-manager-issued)
               ─────────────────────────────────
-                 https://bao.secforge.local
+                 https://bao.secforge.dev
                  (Ingress, NetworkPolicy
                   source-restricted to laptop)
 ```
@@ -97,8 +99,8 @@ The auth method's `kubernetes_host` and `kubernetes_ca_cert` come from the stand
 ### OIDC (Keycloak)
 
 A confidential Keycloak client `openbao` lives in the **`platform`** realm (the staff realm), with redirect URIs:
-- `https://bao.secforge.local/ui/vault/auth/oidc/oidc/callback` — UI
-- `https://bao.secforge.local/oidc/callback` — CLI flow
+- `https://bao.secforge.dev/ui/vault/auth/oidc/oidc/callback` — UI
+- `https://bao.secforge.dev/oidc/callback` — CLI flow
 
 Keycloak realm roles map to OpenBao policies via `auth/oidc/role/<keycloak-role>` bindings. The `platform_admin` realm role → OpenBao `admin` policy is the only mapping today.
 
@@ -109,7 +111,7 @@ The most-used path in the running platform. OpenBao validates JWT-SVIDs by fetch
 ```
 auth/jwt/role/helloworld-bff
   bound_audiences=openbao
-  bound_subject=spiffe://secforge.local/ns/app/sa/helloworld-bff
+  bound_subject=spiffe://secforge.platform/ns/app/sa/helloworld-bff
   user_claim=sub
   policies=helloworld-bff
   ttl=1h
@@ -186,7 +188,7 @@ The seal-OpenBao audits to the same channel.
 OpenBao serves HTTPS on port 8200 with a cert from cert-manager (`mkcert-issuer`). Two separate certs, mounted at `/openbao/tls/{tls.crt,tls.key}`:
 
 - `openbao-seal-tls` — DNS names: `openbao-seal`, `openbao-seal.openbao.svc`, `openbao-seal.openbao.svc.cluster.local`. Internal-only; the seal-OpenBao is never exposed via Ingress.
-- `openbao-tls` — DNS names: same in-cluster shortcuts plus `bao.secforge.local` for the public Ingress.
+- `openbao-tls` — DNS names: same in-cluster shortcuts plus `bao.secforge.dev` for the public Ingress.
 
 ### Pod hardening
 
@@ -201,8 +203,8 @@ Same standard as the rest of the platform (PSS-restricted enforced):
 ### Workload identity
 
 Both OpenBao instances get SPIFFE-CSI volumes mounted at `/spiffe-workload-api`. Their SPIFFE IDs:
-- `spiffe://secforge.local/ns/openbao/sa/openbao-seal`
-- `spiffe://secforge.local/ns/openbao/sa/openbao`
+- `spiffe://secforge.platform/ns/openbao/sa/openbao-seal`
+- `spiffe://secforge.platform/ns/openbao/sa/openbao`
 
 The seal-OpenBao doesn't actively use its SVID today; the main OpenBao uses its SVID for outbound calls to SPIRE (JWKS fetch for the JWT auth method) and Keycloak (OIDC discovery).
 
@@ -224,7 +226,7 @@ Egress is restricted on both pod sets to the listed destinations.
 
 ### Source-IP restriction on the public Ingress
 
-`https://bao.secforge.local` ingress carries `nginx.ingress.kubernetes.io/whitelist-source-range: "172.19.0.0/16,127.0.0.1/32"` — Docker Desktop's bridge range plus loopback, same pattern as Phase 3.6's admin ingress. Cloud edition swaps for a bastion/VPN CIDR.
+`https://bao.secforge.dev` ingress carries `nginx.ingress.kubernetes.io/whitelist-source-range: "172.19.0.0/16,127.0.0.1/32"` — Docker Desktop's bridge range plus loopback, same pattern as Phase 3.6's admin ingress. Cloud edition swaps for a bastion/VPN CIDR.
 
 ---
 

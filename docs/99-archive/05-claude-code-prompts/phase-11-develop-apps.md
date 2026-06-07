@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 11 — Develop Additional Apps
 
 > **Navigation:** ⬅ [Previous: Phase 10 — Integrate Proposal Forge + Project Tracker](./phase-10-integrate-proposal-forge-project-tracker.md) · (open-ended — no fixed next phase) · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

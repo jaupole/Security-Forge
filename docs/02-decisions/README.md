@@ -12,7 +12,7 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0004](./0004-kyverno-audit-mode.md) | Kyverno verify-signatures starts in Audit, pod-security in Enforce | Accepted |
 | [0005](./0005-spire-architecture-local.md) | SPIRE architecture (Local Edition) | Accepted |
 | [0006](./0006-keycloak-keys-local.md) | Keycloak Realm Signing Keys (Local Edition) | Accepted |
-| [0007](./0007-totp-instead-of-passkeys-locally.md) | TOTP as Primary Factor for Local-Edition Realms; Defer Passkeys/Hardware FIDO2 | Accepted |
+| [0007](./0007-totp-instead-of-passkeys-locally.md) | TOTP as Primary Factor for Local-Edition Realms; Defer Passkeys/Hardware FIDO2 | Superseded by 0036 |
 | [0008](./0008-authz-schema.md) | Authorization Schema — Three-Tier ReBAC (tenant → app → resource) | Accepted |
 | [0009](./0009-openbao-seal-strategy.md) | OpenBao Seal Strategy — Two-Instance Transit Auto-Unseal (Local) | Accepted |
 | [0010](./0010-istio-ambient-vs-sidecar.md) | Istio Ambient mode (not sidecar); SPIRE as external CA deferred | Accepted (with deferral) |
@@ -29,7 +29,7 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0021](./0021-git-initialization-and-commit-signing.md) | Git initialization + signed-commit policy | Accepted |
 | [0022](./0022-kcadm-admin-long-lived-credential.md) | kcadm-admin long-lived credential carve-out (90-day rotation) | Accepted |
 | [0023](./0023-spicedb-datastore-uri-rotation-pattern.md) | SpiceDB datastore_uri rotation pattern (Path B — refresher CronJob) | Accepted |
-| [0024](./0024-teleport-community-edition-local.md) | Teleport Community Edition for local; GitHub OAuth pivot | Accepted (amended 2026-05-03) |
+| [0024](./0024-teleport-community-edition-local.md) | Teleport Community Edition for local; GitHub OAuth pivot | Superseded by 0035 |
 | [0025](./0025-jwt-auth-role-token-ttl-rule.md) | JWT auth role `token_ttl` MUST exceed dynamic-credential `default_ttl` | Accepted |
 | [0026](./0026-org-defined-custom-roles-rbac-layer.md) | Org-defined custom roles as an RBAC layer on SpiceDB ReBAC | Accepted |
 | [0027](./0027-multi-org-membership-and-hierarchy.md) | Multi-organization membership and no-cascade hierarchy | In progress (stub) |
@@ -40,6 +40,8 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0032](./0032-istio-gateway-replaces-ingress-nginx.md) | Istio ingress gateway replaces EOL ingress-nginx | Accepted — cutover 2026-06-03 |
 | [0033](./0033-trivy-operator-clientserver-mode.md) | Trivy Operator runs in ClientServer mode (built-in trivy-server) | Accepted — applied 2026-06-03 |
 | [0034](./0034-stripe-connect-oauth-for-tenant-payments.md) | Stripe Connect (OAuth, Standard accounts) for tenant payments — replaces bring-your-own-keys | Accepted (strategy) — implementation phased |
+| [0035](./0035-tailscale-replaces-teleport.md) | Tailscale replaces Teleport for operator access | Accepted (supersedes 0024) |
+| [0036](./0036-production-authentication-factors-passkeys.md) | Production authentication factors — passkeys (mandatory for operators, flexible for tenants) | Accepted (supersedes 0007 posture) |
 
 ## Template
 

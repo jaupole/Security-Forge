@@ -1,7 +1,7 @@
 # `infrastructure/` → `platform/` retirement
 
 `infrastructure/` is the **retired Local Edition** (Docker Desktop K8s,
-`secforge.local`, mkcert, file-based keys). `platform/` is the **live
+`secforge.dev`, mkcert, file-based keys). `platform/` is the **live
 production deploy** (bare-metal k3s, `secforge.dev`, real certs,
 `install-all.sh` orchestration).
 

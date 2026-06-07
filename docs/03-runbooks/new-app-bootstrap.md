@@ -76,7 +76,7 @@ the [`templates/app-repo/`](../../templates/app-repo/) source of truth.
 The app needs:
 
 1. A SPIFFE-ID issued by the namespace ClusterSPIFFEID. Convention:
-   `spiffe://secforge.local/ns/<ns>/sa/<app-name>`.
+   `spiffe://secforge.platform/ns/<ns>/sa/<app-name>`.
 2. An OpenBao JWT-auth role bound to that SPIFFE-ID with the templated
    policy from `infrastructure/openbao/policies/app-template.hcl`.
 3. The policy authorizes reads from `secret/data/apps/<app-name>/*`

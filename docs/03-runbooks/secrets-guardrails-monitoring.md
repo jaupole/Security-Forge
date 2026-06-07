@@ -1,6 +1,6 @@
 # Outbound-secrets guardrail monitoring
 
-> **Source of truth:** [Phase 6b-2 prompt § Section 8](../05-claude-code-prompts/phase-06b-2-outbound-secrets.md#section-8) +
+> **Source of truth:** [Phase 6b-2 prompt § Section 8](../99-archive/05-claude-code-prompts/phase-06b-2-outbound-secrets.md#section-8) +
 > [`apps/security-events-collector/event.go`](../../apps/security-events-collector/event.go)
 > **ADR:** [ADR-0013 § 8](../02-decisions/0013-outbound-secrets-no-env.md)
 
@@ -55,7 +55,7 @@ verified caller identity:
 
 - **In-cluster callers** (Kyverno reporter, library hygiene checks,
   in-cluster image-build pipeline): SPIFFE-SVID via Istio Ambient mTLS;
-  resolved to `spiffe://secforge.local/ns/<ns>/sa/<sa>` form.
+  resolved to `spiffe://secforge.platform/ns/<ns>/sa/<sa>` form.
 - **Out-of-cluster callers** (CI runners outside Docker Desktop):
   short-lived JWT issued by the `security-events-ci` Keycloak client;
   resolved to `kc:<sub>` form.

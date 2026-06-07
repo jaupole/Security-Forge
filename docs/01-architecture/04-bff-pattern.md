@@ -1,4 +1,6 @@
-# BFF Pattern — Local Edition
+# BFF Pattern
+
+> **Production note.** This is the reference Go BFF pattern (Valkey-backed sessions, per-pod DPoP keys). The deployed ecosystem apps (Portal, Control, Member Hub, Proposal Forge) are TypeScript/Hono services that use **HttpOnly-cookie sessions** and do **not** run Valkey; this doc describes the pattern for new first-class Go services. Substrate deltas: ingress is the **Istio gateway** (not ingress-nginx); `X-Forwarded-*` headers are set by the Istio gateway. See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion: [docs/01-architecture/01-iam-platform.md](./01-iam-platform.md), [docs/01-architecture/07-service-mesh.md](./07-service-mesh.md).
 > Implementation lives in `apps/helloworld-bff/` (Phase 6.6).
@@ -61,11 +63,11 @@ Three URL surfaces:
 
 | URL | Purpose | Where served |
 |---|---|---|
-| `https://app.secforge.local/login` | Initiate OIDC flow | BFF |
-| `https://app.secforge.local/callback` | OIDC code-exchange | BFF |
-| `https://app.secforge.local/logout` | End session | BFF |
-| `https://app.secforge.local/api/*` | Reverse-proxy to backend | BFF |
-| `https://app.secforge.local/*` | Reverse-proxy to frontend | BFF |
+| `https://app.secforge.dev/login` | Initiate OIDC flow | BFF |
+| `https://app.secforge.dev/callback` | OIDC code-exchange | BFF |
+| `https://app.secforge.dev/logout` | End session | BFF |
+| `https://app.secforge.dev/api/*` | Reverse-proxy to backend | BFF |
+| `https://app.secforge.dev/*` | Reverse-proxy to frontend | BFF |
 
 The BFF never speaks HTML directly. Anything HTML-rendered comes from the frontend pod (Phase 9+); the BFF's only response bodies are 302 redirects, 401 JSON errors, and proxied bytes.
 
@@ -225,7 +227,7 @@ Where:
 
 **The BFF computes `htu` from request headers, not its own URL config.** For inbound requests, the canonical `htu` is built from `X-Forwarded-Proto` and `X-Forwarded-Host` (set by ingress-nginx) plus the request path. For outbound requests (BFF → backend), `htu` is the exact URL the BFF dialed.
 
-**The `htu` MUST be consistent across the request chain.** ingress-nginx is configured with `proxy_redirect off` and forwards `X-Forwarded-Host` = `app.secforge.local`, never the internal Service hostname. The BFF rejects requests whose `X-Forwarded-Host` doesn't match the configured `BFF_PUBLIC_ORIGIN` env var.
+**The `htu` MUST be consistent across the request chain.** ingress-nginx is configured with `proxy_redirect off` and forwards `X-Forwarded-Host` = `app.secforge.dev`, never the internal Service hostname. The BFF rejects requests whose `X-Forwarded-Host` doesn't match the configured `BFF_PUBLIC_ORIGIN` env var.
 
 **Fail closed on missing forwarded headers.** If `X-Forwarded-Proto` or `X-Forwarded-Host` is absent on an inbound request that requires DPoP validation, the BFF returns 400 with `{"error":"missing_forwarded_headers"}`. **The BFF MUST NOT fall back to `r.Host` or `r.TLS != nil` to synthesise the missing header values.** Those fallbacks would silently re-enable connections that bypassed ingress-nginx (e.g., from a misconfigured port-forward, a debug Service, or a future direct-pod-IP probe), producing DPoP proofs whose `htu` matches an internal-only URL. That is exactly the gotcha CLAUDE.md §"Local-specific gotchas to remember" #3 warns about — and the failure mode is silent (DPoP signs whatever the BFF computed; the backend validates against its own canonical URL; mismatch returns 401 with no obvious cause). Fail-closed makes the misconfiguration loud at the inbound boundary instead.
 
@@ -251,7 +253,7 @@ The BFF takes the access token from Valkey and uses it directly as the upstream 
 
 ### Composition with Phase 6b (RFC 8693 token-exchange)
 
-Phase 6b layers an RFC 8693 token-exchange step: the BFF takes the inbound user access token, calls Keycloak's token-exchange endpoint, and gets back a **downstream-audience-scoped** token (e.g., `aud=helloworld-backend` instead of `aud=app.secforge.local`). That downstream token is what gets forwarded.
+Phase 6b layers an RFC 8693 token-exchange step: the BFF takes the inbound user access token, calls Keycloak's token-exchange endpoint, and gets back a **downstream-audience-scoped** token (e.g., `aud=helloworld-backend` instead of `aud=app.secforge.dev`). That downstream token is what gets forwarded.
 
 This composes cleanly with option A — same wire shape (Authorization + DPoP), just a different opaque token. The backend's validation logic is unchanged: `iss=Keycloak`, `aud=its-own-client-id`, `cnf.jkt=BFF's-jkt`. Option B or C would either duplicate the token-exchange machinery or bypass it.
 
@@ -308,7 +310,7 @@ Content-Security-Policy:
     connect-src 'self';
     frame-ancestors 'none';
     base-uri 'none';
-    form-action 'self' https://auth.secforge.local;
+    form-action 'self' https://auth.secforge.dev;
     require-trusted-types-for 'script';
     upgrade-insecure-requests
 ```
@@ -328,7 +330,7 @@ Content-Security-Policy:
        - Failure mode: log structured event {"event":"logout_revoke_failed","sub":...,"err":...} and continue.
        - The local session is already gone (step 3); the cookie is cleared (step 4). The refresh token remains valid at Keycloak for its TTL, BUT a third party would need to (a) have stolen it from Valkey before step 3, (b) hold the BFF's private_key_jwt key, and (c) be able to dial Keycloak. Marginal residual risk; fail-open is correct.
 6. 302 to Keycloak end-session endpoint:
-       https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/logout
+       https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/logout
            ?id_token_hint={id_token}
            &post_logout_redirect_uri={BFF_PUBLIC_ORIGIN}/
        (id_token_hint is required by Keycloak to correlate the logout to a specific session.)
@@ -397,9 +399,9 @@ The following are intentionally NOT pre-decided here. The Phase 6.6 PR settles t
 | Concept | Local | Cloud |
 |---|---|---|
 | BFF replicas | 1 | 2-3 with per-session DPoP keys persisted in Valkey (encrypted via OpenBao Transit KEK) |
-| Cookie domain | `app.secforge.local` (no `Domain`, only `__Host-` allows this) | `app.<org>.com` (still no `Domain` attribute; `__Host-` preserved) |
+| Cookie domain | `app.secforge.dev` (no `Domain`, only `__Host-` allows this) | `app.<org>.com` (still no `Domain` attribute; `__Host-` preserved) |
 | Valkey | single pod | ElastiCache Valkey, primary + replicas, encryption-at-rest enabled |
-| Keycloak issuer | `https://auth.secforge.local/realms/secforge-tenants` | `https://auth.<org>.com/realms/<tenant>` |
+| Keycloak issuer | `https://auth.secforge.dev/realms/secforge-tenants` | `https://auth.<org>.com/realms/<tenant>` |
 | OpenBao Transit KEK for session-key encryption (cloud) | n/a (no per-session keys) | New key, BFF role binding |
 
 The wire protocol does not change. The BFF code does not change except for replica config, the per-session-key codepath being enabled, and ENV-driven URLs.

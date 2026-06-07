@@ -113,7 +113,7 @@ Test #3 and #4 are the critical defense-in-depth tests. Tests that only cover ha
 - [ADR-0008](./0008-authz-schema.md) — SpiceDB schema (defines the relationship graph this ADR's check #1 evaluates against)
 - [`apps/lib/authzn`](../../apps/lib/authzn) — Fix-after-07 §A.4 (the AuthZN interface this ADR's check #1 calls)
 - [`apps/lib/api-auth`](../../apps/lib/api-auth) — Phase 6b-1 (the inbound JWT validator that produces the `claims.TenantID` this ADR's #3 reads)
-- [`docs/05-claude-code-prompts/phase-09-hello-world.md`](../05-claude-code-prompts/phase-09-hello-world.md) — first consumer
+- [`docs/99-archive/05-claude-code-prompts/phase-09-hello-world.md`](../99-archive/05-claude-code-prompts/phase-09-hello-world.md) — first consumer
 - [Fix after 07 § F-ADR-9](../../Fix%20after%2007/00-audit-findings.md#f-adr-9--high--missing-adr--db-multi-tenancy--rls-strategy) — the audit finding this ADR closes
 
 ## Re-evaluation triggers

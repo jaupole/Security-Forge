@@ -6,7 +6,7 @@
 
 ## Project mission
 
-Build a secure, open-source Identity and Access Management platform that runs on a single public Hetzner bare-metal k3s node, supporting three applications (Proposal Forge, Project Tracker, future PM app). The owner is a senior security developer who values security over convenience and runs the platform on a public node serving real traffic over real DNS and TLS.
+Build a secure, open-source Identity and Access Management platform that runs on a single public Hetzner bare-metal k3s node, supporting a multi-tenant ecosystem of applications (Ecosystem Portal + Control plane, Member Hub, Proposal Forge, and Project Tracker). The owner is a senior security developer who values security over convenience and runs the platform on a public node serving real traffic over real DNS and TLS.
 
 ## We are running on a single public Hetzner node
 
@@ -21,14 +21,14 @@ This is a single public bare-metal deployment. Every decision in this CLAUDE.md 
 - **Public DNS / Let's Encrypt**: real public DNS for `*.secforge.dev`; cert-manager issues from Let's Encrypt
 - **Image signatures**: keyless Cosign via GitHub OIDC against the public Sigstore Rekor
 
-The node is hardened: public SSH is closed (Tailscale-only) and ingress is IP-allowlisted.
+The node is hardened: public SSH is closed (Tailscale-only) and operator/admin ingress is reachable only over the Tailscale tailnet (the `secforge-gateway-tailnet` Istio gateway, enforced by the Kyverno `admin-ingress-must-be-tailnet-only` policy). Public app surfaces (`auth`, `portal`, `members`, `billing`, `qbo`, `stripe-connect`) are internet-facing over real TLS.
 
 ## How to work in this repository
 
-1. **Read [PLAN.md](./PLAN.md) first.** It tells you which phase the project is currently in.
-2. **Follow the current phase's prompt document** in `docs/05-claude-code-prompts/`. Each phase has a single document with a prompt the human will paste.
-3. **Reference, don't duplicate.** All architecture decisions are in `docs/01-architecture/` and `docs/02-decisions/`. Reference docs in `docs/06-reference/`.
-4. **Update PLAN.md as you complete phases.**
+1. **Read [PLAN.md](./PLAN.md) first.** It is the production status snapshot — what is deployed and where. Open work lives in [docs/06-reference/operator-backlog.md](./docs/06-reference/operator-backlog.md).
+2. **The platform build is complete and live.** The original phase-by-phase build prompts are archived at [docs/99-archive/05-claude-code-prompts/](./docs/99-archive/05-claude-code-prompts/) for history; day-to-day work is now feature and operations work against the running cluster.
+3. **Reference, don't duplicate.** All architecture decisions are in `docs/01-architecture/` and `docs/02-decisions/`. Operational procedures in `docs/03-runbooks/`. Reference docs in `docs/06-reference/`.
+4. **Keep PLAN.md and the trackers current** as deployed state changes.
 5. **Write decisions down.** Non-trivial choices become ADRs in `docs/02-decisions/`. Number sequentially.
 
 ## Architecture stack (committed decisions)
@@ -40,13 +40,14 @@ The node is hardened: public SSH is closed (Tailscale-only) and ingress is IP-al
 | Authorization | SpiceDB | Same |
 | Secrets | OpenBao | Same |
 | Outbound Secret Sync | Vault Secrets Operator (VSO) | Renders OpenBao secrets to K8s Secrets for operator-owned/-shaped consumers (SpiceDB, AuthZEN façade). Direct-API via `apps/lib/secrets/` for first-class apps — see [ADR-0015](./docs/02-decisions/0015-secret-distribution-pattern.md). |
-| Workload Identity | SPIRE | Same; `spiffe://secforge.dev` trust domain |
+| Workload Identity | SPIRE | Same; `spiffe://secforge.platform` trust domain (Istio mesh trustDomain is `cluster.local`) |
 | Service Mesh | Istio Ambient | Same |
-| Privileged Access | Teleport Community | Optional |
+| Ingress | Istio ingress gateway (Ambient) | `secforge-gateway` (public) + `secforge-gateway-tailnet` (operator-only); replaced EOL ingress-nginx — see [ADR-0032](./docs/02-decisions/0032-istio-gateway-replaces-ingress-nginx.md). |
+| Privileged Access | Tailscale (operator-access mesh) | Admin ingress is tailnet-only. Teleport was evaluated and stopped — see [ADR-0024](./docs/02-decisions/0024-teleport-community-edition-local.md) → [ADR-0035](./docs/02-decisions/0035-tailscale-replaces-teleport.md). |
 | Browser Pattern | BFF | Same |
 | Token Strategy | OAuth 2.1 + PAR + DPoP-bound | Same |
-| Auth Factor | TOTP (interim — see [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md)) + recovery codes; passkeys + hardware FIDO2 at production hardening | Same; passkeys work on `*.secforge.dev` over real TLS |
-| Session Store | Valkey (BSD-3-Clause) | Same |
+| Auth Factor | Passkeys (WebAuthn, RpId `secforge.dev`). Operator/admin (`platform` realm): mandatory passkey + recovery codes (`browser-webauthn-required`). Tenants (`secforge-tenants` realm): password-or-passkey + optional 2FA (`browser-flexible`). TOTP removed. | Supersedes the interim TOTP posture of [ADR-0007](./docs/02-decisions/0007-totp-instead-of-passkeys-locally.md). |
+| Session Store | HttpOnly-cookie sessions (Keycloak-driven) for the ecosystem apps | Valkey was the planned store for the Go BFF pattern (helloworld reference, since torn down); not currently deployed. |
 | Database | Postgres (in-cluster) | Cloud equivalent: RDS Postgres |
 | Object Storage | MinIO | Cloud equivalent: S3 |
 | KMS | OpenBao Transit | Cloud equivalent: AWS KMS / GCP KMS |
@@ -95,7 +96,7 @@ These are easy to forget but cause real bugs:
 1. **Passkeys require HTTPS.** Do not test passkey flows over plain HTTP, ever. The browser will silently downgrade or fail.
 2. **WebAuthn needs a trusted cert.** `secforge.dev` works because cert-manager issues real Let's Encrypt certs; never fall back to a self-signed cert.
 3. **DPoP `htu` claim must match exactly.** If the URL is `https://app.secforge.dev:8443` but the BFF resolves it as `https://app.secforge.dev`, validation fails. Pick one and stick with it everywhere.
-4. **Ingress is IP-allowlisted and SSH is Tailscale-only.** When a request or admin action is refused, check the allowlist and the Tailscale path before assuming an app bug.
+4. **Operator/admin surfaces are tailnet-only; SSH is Tailscale-only.** Admin hosts (`control`, `admin`, `kc`, `bao`, `grafana`, `wazuh`, `pf`) route only through the `secforge-gateway-tailnet` Istio gateway. When a request or admin action is refused, check the Tailscale path and the tailnet gateway before assuming an app bug.
 5. **Resource quotas matter on a single node.** Without them, one component can starve the cluster.
 
 ## Verification habits
@@ -130,13 +131,13 @@ ADRs are the project's append-only decision log. The numbering matters as much a
 | You need... | Look in... |
 |---|---|
 | The plan | [PLAN.md](./PLAN.md) |
-| Current phase instructions | [docs/05-claude-code-prompts/](./docs/05-claude-code-prompts/) |
+| The build history (archived phase prompts) | [docs/99-archive/05-claude-code-prompts/](./docs/99-archive/05-claude-code-prompts/) |
 | Why we made a particular tech choice | [docs/02-decisions/](./docs/02-decisions/) |
 | How a component works | [docs/01-architecture/](./docs/01-architecture/) |
 | Operational procedures | [docs/03-runbooks/](./docs/03-runbooks/) |
 | Open follow-ups not yet cleared | [docs/06-reference/operator-backlog.md](./docs/06-reference/operator-backlog.md) |
-| Migration paths to managed cloud | [docs/06-reference/migration-to-vps.md](./docs/06-reference/migration-to-vps.md) and [migration-to-aws.md](./docs/06-reference/migration-to-aws.md) |
-| Glossary | [docs/00-getting-started/00-glossary.md](./docs/00-getting-started/00-glossary.md) |
+| Migration paths to managed cloud (archived alt-paths) | [docs/99-archive/migration-to-vps.md](./docs/99-archive/migration-to-vps.md) and [migration-to-aws.md](./docs/99-archive/migration-to-aws.md) |
+| Glossary | [docs/06-reference/glossary.md](./docs/06-reference/glossary.md) |
 | Which Claude model to use for which task | [docs/06-reference/claude-model-selection.md](./docs/06-reference/claude-model-selection.md) |
 
 ## Model selection (token-cost discipline)
@@ -145,7 +146,7 @@ This project explicitly optimizes for token cost. Both Claude instances (VS Code
 
 ## Updating PLAN.md
 
-PLAN.md has two places that record phase status: the **"Phase order — quick reference"** table near the top, and the per-phase **`**Status:**`** line inside each phase's detail block. **When a phase status changes, update BOTH in the same edit.** The quick-reference table is the at-a-glance source of truth; if it drifts from the detail blocks, the table is wrong by definition. Bump the "Last updated" date in the quick-reference header on every edit.
+PLAN.md is the **production status snapshot** — the deployed-state summary and the app/surface map. Keep it current as deployments change; detailed open work and follow-ups live in [docs/06-reference/operator-backlog.md](./docs/06-reference/operator-backlog.md). The original phase-by-phase build plan (local edition) is archived at [docs/99-archive/PLAN-local-edition.md](./docs/99-archive/PLAN-local-edition.md).
 
 ## Updating this file
 

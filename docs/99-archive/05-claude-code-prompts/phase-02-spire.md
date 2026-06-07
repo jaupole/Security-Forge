@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 2 — Workload Identity (SPIRE)
 
 > **Navigation:** ⬅ [Previous: Phase 1 — Foundation](./phase-01-foundation.md) · [Next: Phase 3 — Keycloak](./phase-03-keycloak.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

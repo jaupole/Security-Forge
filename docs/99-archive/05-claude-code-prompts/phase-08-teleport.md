@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 8 — Privileged Access (Teleport) — Optional Locally
 
 > **Navigation:** ⬅ [Previous: Phase 7d — Rotation + housekeeping](./phase-07d-rotation-housekeeping.md) · [Next: Phase 9 — Hello World](./phase-09-hello-world.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

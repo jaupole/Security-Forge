@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Migration Playbook: Local → AWS
 
 > **Snapshot date: 2026-05-04 (post-Phase 9).** This playbook assumes Phases 1–9 of the local build are complete (SPIRE / Keycloak / SpiceDB / OpenBao / Istio Ambient / BFF + api-auth library + outbound-secrets / observability stack / Teleport CE / Hello World end-to-end checkpoint). Phase 10 (per-app integration) reuses the same pattern in the cloud destination — repeat per app rather than restarting from Phase 1. If your local cluster is in an earlier state, complete the missing phases locally first; this playbook is not a shortcut. Cloud-edition specifics (KMS instead of Transit-on-OpenBao, S3 with Object Lock instead of MinIO, IRSA instead of SPIFFE-bound OpenBao roles, Teleport Enterprise with OIDC restored, etc.) are listed in the substrate-changes table below.

@@ -347,7 +347,7 @@ This is the safe rotation pattern. **Do NOT** delete the key version (`min_avail
 
 **Failure modes.** When OpenBao is down or the auth/jwt role is misconfigured, all encrypted reads fail. Cache strategically: it's reasonable for a BFF to cache decrypted user emails for the request lifetime, so a single OpenBao blip doesn't blow up the page. Don't cache across requests unless you have a clear policy on cache eviction (e.g., session-scoped).
 
-**Audit trail.** OpenBao audit logs every `transit/encrypt` and `transit/decrypt` call with the caller's identity (the SPIFFE-ID via JWT auth alias). This is a privileged-action log: who decrypted whose PII, when. Wire it to Loki via the openbao-audit Promtail pipeline (see [migration-to-vps.md](migration-to-vps.md) Phase E).
+**Audit trail.** OpenBao audit logs every `transit/encrypt` and `transit/decrypt` call with the caller's identity (the SPIFFE-ID via JWT auth alias). This is a privileged-action log: who decrypted whose PII, when. Wire it to Loki via the openbao-audit Promtail pipeline (see [migration-to-vps.md](../99-archive/migration-to-vps.md) Phase E).
 
 **Backup compatibility.** CNPG backups are now SSE-S3 encrypted at rest in MinIO (Phase C #2 storage-layer hardening). The Postgres-row contents (`vault:v1:...` strings) are also application-layer encrypted via Transit. **Both layers must be available to restore working data**:
 

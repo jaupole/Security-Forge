@@ -13,12 +13,12 @@ You're at the stage where you're iterating on three applications and discovering
 ## Where to start (read in this order)
 
 1. **[PLAN.md](./PLAN.md)** — the master plan with phases and where you are in it
-2. **[docs/00-getting-started/00-glossary.md](./docs/00-getting-started/00-glossary.md)** — every technical term used, defined plainly
-3. **[docs/00-getting-started/01-prerequisites.md](./docs/00-getting-started/01-prerequisites.md)** — what to install on your computer
-4. **[docs/00-getting-started/02-docker-desktop-setup.md](./docs/00-getting-started/02-docker-desktop-setup.md)** — k3s node configuration
-5. **[docs/00-getting-started/03-local-dns-and-tls.md](./docs/00-getting-started/03-local-dns-and-tls.md)** — `*.secforge.dev` public DNS and Let's Encrypt TLS
-6. **[docs/00-getting-started/05-first-claude-code-session.md](./docs/00-getting-started/05-first-claude-code-session.md)** — how to use Claude Code
-7. **[docs/05-claude-code-prompts/README.md](./docs/05-claude-code-prompts/README.md)** — phase-by-phase prompts to paste into Claude Code
+2. **[docs/06-reference/glossary.md](./docs/06-reference/glossary.md)** — every technical term used, defined plainly
+3. **[docs/99-archive/00-getting-started/01-prerequisites.md](./docs/99-archive/00-getting-started/01-prerequisites.md)** — what to install on your computer
+4. **[docs/99-archive/00-getting-started/02-docker-desktop-setup.md](./docs/99-archive/00-getting-started/02-docker-desktop-setup.md)** — k3s node configuration
+5. **[docs/99-archive/00-getting-started/03-local-dns-and-tls.md](./docs/99-archive/00-getting-started/03-local-dns-and-tls.md)** — `*.secforge.dev` public DNS and Let's Encrypt TLS
+6. **[docs/99-archive/00-getting-started/05-first-claude-code-session.md](./docs/99-archive/00-getting-started/05-first-claude-code-session.md)** — how to use Claude Code
+7. **[docs/99-archive/05-claude-code-prompts/README.md](./docs/99-archive/05-claude-code-prompts/README.md)** — phase-by-phase prompts to paste into Claude Code
 
 ## What "done" looks like
 
@@ -42,8 +42,8 @@ That leaves you 14+ GB headroom for VS Code, browser, etc. on a 32 GB machine. N
 ## When you eventually move to managed cloud
 
 Two paths are documented for "what changes":
-- **To another single VPS / homelab server** (still self-hosted): see `docs/06-reference/migration-to-vps.md`
-- **To AWS** (managed cloud): see `docs/06-reference/migration-to-aws.md` — most of the AWS-Edition phase prompts become applicable
+- **To another single VPS / homelab server** (still self-hosted): see `docs/99-archive/migration-to-vps.md`
+- **To AWS** (managed cloud): see `docs/99-archive/migration-to-aws.md` — most of the AWS-Edition phase prompts become applicable
 
 The platform itself doesn't change in either case. Only the substrate.
 

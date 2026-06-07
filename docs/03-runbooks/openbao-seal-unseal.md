@@ -1,4 +1,6 @@
-# OpenBao Seal-Unseal Runbook (Local Edition)
+# OpenBao Seal-Unseal Runbook
+
+> **Production note.** Written for the local edition. In production: OpenBao is 2.5.4 (3 nodes + 1 seal node, Transit auto-unseal); a "Docker Desktop restart" maps to a **node reboot** — after a power-cycle the seal instance needs manual unsealing; the cluster is **Hetzner k3s**. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 > Architecture: [docs/01-architecture/05-secrets-management.md](../01-architecture/05-secrets-management.md)
 > ADR: [docs/02-decisions/0009-openbao-seal-strategy.md](../02-decisions/0009-openbao-seal-strategy.md)

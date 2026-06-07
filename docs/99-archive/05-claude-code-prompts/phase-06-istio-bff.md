@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 6 — Service Mesh and BFF
 
 > **Navigation:** ⬅ [Previous: Phase 5 — OpenBao](./phase-05-openbao.md) · [Next: Phase 6.10b — VSO + secret cleanup](./phase-06.10b-vso-and-secret-cleanup.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

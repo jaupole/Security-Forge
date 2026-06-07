@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Migration: Keycloak → AWS Cognito (compliance-cutover playbook)
 
 > **Status:** forward-looking reference. AWS Cognito is the current first-pick compliance-time IdP because of its FedRAMP authorizations; the same pattern applies to any OIDC-compliant managed IdP (Okta, Auth0, Ping). This doc exists to make the operator's "easy compliance transition" promise inspectable: you can read it today and know what changes (and what doesn't).

@@ -145,7 +145,7 @@ kubectl delete pod -n <namespace> <pod-name>
 
 **The procedure (five steps, ~10 minutes, browser + one OpenBao write):**
 
-1. **Create the client.** Open `https://auth-admin.secforge.local/admin/master/console/`. Realm: `master` → **Clients** → **Create client**.
+1. **Create the client.** Open `https://auth-admin.secforge.dev/admin/master/console/`. Realm: `master` → **Clients** → **Create client**.
    - Client ID: `kcadm-admin`
    - Client authentication: **ON**
    - Authorization: OFF

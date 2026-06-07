@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 9 — Retrospective
 
 > Phase 9 (Hello World End-to-End) closed 2026-05-04 with the 9.10.5 checkpoint passed and Phase 9.12 teardown + 9.13 verify-clean run. This document captures the **bugs that surfaced**, the **fixes that shipped**, and the **lessons that should travel forward into Phase 10** so they don't get re-discovered.

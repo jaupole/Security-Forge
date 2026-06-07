@@ -40,7 +40,7 @@ The kcadm-admin client itself cannot bootstrap itself; the operator creates it o
    - For wider work, optionally: `view-authorization`, `manage-authorization`
 4. **Credentials tab** — copy the client secret into `KCADM_CLIENT_SECRET` for the script.
 
-**Naming convention is the inventory marker.** Earlier guidance proposed a Keycloak client attribute (`secforge.local/temporary: yes`) for the grep target, but Keycloak 26.x relocated the per-client Attributes UI to Advanced / JSON-only. Rather than chase the moving UI, we use the `kcadm-*-tmp` clientId suffix as the durable convention. The migration phase's inventory step enumerates kcadm-using clients via `kcadm get clients -r master --query 'clientId LIKE %-tmp'` (or equivalent jq filter).
+**Naming convention is the inventory marker.** Earlier guidance proposed a Keycloak client attribute (`secforge.dev/temporary: yes`) for the grep target, but Keycloak 26.x relocated the per-client Attributes UI to Advanced / JSON-only. Rather than chase the moving UI, we use the `kcadm-*-tmp` clientId suffix as the durable convention. The migration phase's inventory step enumerates kcadm-using clients via `kcadm get clients -r master --query 'clientId LIKE %-tmp'` (or equivalent jq filter).
 
 ### Step 2 — Author the provisioning script
 
@@ -79,7 +79,7 @@ KCADM_CLIENT_SECRET='<from-master-realm-UI>' \
 
 The kcadm-admin migration phase will:
 1. Replace each script's `kcadm_auth` with a centralized entry
-2. Grep for clients tagged `secforge.local/temporary=yes` in the master realm
+2. Grep for clients tagged `secforge.dev/temporary=yes` in the master realm
 3. Delete them all in one pass
 
 Until then, the throwaway clients **stay** so the scripts remain re-runnable for fresh-cluster bootstraps.

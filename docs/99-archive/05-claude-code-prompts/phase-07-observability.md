@@ -1,3 +1,8 @@
+> 🗄️ **ARCHIVED 2026-06-07 — local-first / build-era document.**
+> This describes the original Docker Desktop / WSL2 / `secforge.local` build, **not** the current
+> bare-metal `secforge-prod` deployment. Kept for history only. For current state see `PLAN.md`,
+> `docs/01-architecture/`, and `docs/06-reference/operator-backlog.md` (archive index: `docs/99-archive/README.md`).
+
 # Phase 7 — Observability
 
 > **Navigation:** ⬅ [Previous: Phase 6b-1 — API Auth Pattern](./phase-06b-api-pattern.md) (or Phase 6.10b if running 7 before 6b-1) · [Next: Phase 7b/7c/7d (parallel) → Fix-after-07 → Phase 8/9](./phase-07b-post-6b2-monitoring.md) ➡ · [📋 PLAN.md](../../PLAN.md) · [Phase prompts index](./README.md)

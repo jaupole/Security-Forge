@@ -4,7 +4,7 @@
 **Original status**: Accepted (2026-04-28)
 **Date**: 2026-04-28
 **Decision-makers**: Project owner
-**Supersedes / amends**: Section "Hardware FIDO2 keys" guidance in [docs/00-getting-started/01-prerequisites.md](../00-getting-started/01-prerequisites.md)
+**Supersedes / amends**: Section "Hardware FIDO2 keys" guidance in [docs/99-archive/00-getting-started/01-prerequisites.md](../99-archive/00-getting-started/01-prerequisites.md)
 
 ## Context
 
@@ -79,7 +79,7 @@ This is required regardless of which passkey factor is in use, and matches what 
 
 - Phase 3 Keycloak configuration must use the policy values listed above and **must not** enforce attestation conveyance.
 - A break-glass account is provisioned in Phase 3, with credentials stored offline, before the owner registers Windows Hello as the primary factor.
-- The migration playbooks ([migration-to-vps.md](../06-reference/migration-to-vps.md), [migration-to-aws.md](../06-reference/migration-to-aws.md)) include a dedicated step to register hardware FIDO2 keys and tighten the WebAuthn policy *before* the platform is exposed beyond the local network.
+- The migration playbooks ([migration-to-vps.md](../99-archive/migration-to-vps.md), [migration-to-aws.md](../99-archive/migration-to-aws.md)) include a dedicated step to register hardware FIDO2 keys and tighten the WebAuthn policy *before* the platform is exposed beyond the local network.
 
 ### What this does not change
 
@@ -106,6 +106,6 @@ When the trigger fires, the migration is roughly:
 
 - [CLAUDE.md](../../CLAUDE.md) — stack-table commitment to "passkeys + hardware keys for admin."
 - [ADR-0001](./0001-local-first.md) — local-first decision that this ADR amends.
-- [docs/00-getting-started/01-prerequisites.md](../00-getting-started/01-prerequisites.md) — section 6, which now points at this ADR.
-- [docs/06-reference/migration-to-vps.md](../06-reference/migration-to-vps.md) — VPS migration playbook (includes hardware-key registration step).
-- [docs/06-reference/migration-to-aws.md](../06-reference/migration-to-aws.md) — AWS migration playbook (includes hardware-key registration step).
+- [docs/99-archive/00-getting-started/01-prerequisites.md](../99-archive/00-getting-started/01-prerequisites.md) — section 6, which now points at this ADR.
+- [docs/99-archive/migration-to-vps.md](../99-archive/migration-to-vps.md) — VPS migration playbook (includes hardware-key registration step).
+- [docs/99-archive/migration-to-aws.md](../99-archive/migration-to-aws.md) — AWS migration playbook (includes hardware-key registration step).

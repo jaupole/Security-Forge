@@ -115,7 +115,7 @@ Failures from `Middleware.ValidateInbound` and `Client.MintTokenForAudience` are
 
 ## References
 
-- [Phase 6b-1 prompt](../05-claude-code-prompts/phase-06b-api-pattern.md) — implements this ADR
+- [Phase 6b-1 prompt](../99-archive/05-claude-code-prompts/phase-06b-api-pattern.md) — implements this ADR
 - [Architecture: API pattern](../01-architecture/06-api-pattern.md) — narrative description of the audience-at-login model
 - [RFC 8693 — OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693) — what we did NOT use
 - [RFC 9449 — OAuth 2.0 Demonstrating Proof of Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449) — what we DID use, for sender-constraining

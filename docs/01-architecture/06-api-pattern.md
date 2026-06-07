@@ -107,7 +107,7 @@ The library's `Audit.LogHop` emits one structured-JSON line per call-chain hop. 
 {
   "request_id":         "ULID-or-equivalent",
   "hop_index":          1,
-  "caller_workload_id": "spiffe://secforge.local/ns/<ns>/sa/<sa>",
+  "caller_workload_id": "spiffe://secforge.platform/ns/<ns>/sa/<sa>",
   "caller_user_sub":    "user-1",
   "target_audience":    "backend-a",
   "timestamp":          "2026-05-01T12:34:56.789Z",

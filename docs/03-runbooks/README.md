@@ -10,30 +10,71 @@ Each runbook should have:
 5. **Recovery** — what to do if it doesn't work
 6. **Last tested** — date
 
-## Expected runbooks (created during the corresponding phases)
+## Runbook index
 
-| File | Created in | Purpose |
-|---|---|---|
-| `incident-response.md` | Phase 7 | General on-call playbook |
-| `key-rotation.md` | Phase 1 / 3 | KMS keys, realm signing keys, OpenBao recovery |
-| `backup-and-restore.md` | Phase 1 | RDS, OpenBao, Wazuh data |
-| [`control-db-restore.md`](./control-db-restore.md) | EC-003 | FORCE-RLS-aware control-db restore + full-DR ordering |
-| [`deploy-app-image.md`](./deploy-app-image.md) | Deploy | Manual app image bump by `@sha256` digest (control/portal/member-hub); why tag deploys are denied |
-| `breaking-glass.md` | Phase 8 | Emergency admin access |
-| [`spire-rotation.md`](./spire-rotation.md) | Phase 2 | SPIRE operational rotation, troubleshooting, recovery |
-| [`spire-ca-rotation.md`](./spire-ca-rotation.md) | Phase 2 | SPIRE upstream CA rotation (every ~9 years) |
-| `keycloak-operations.md` | Phase 3 | Realm management, user lockout recovery |
-| `realm-signing-key-rotation.md` | Phase 3 | 90-day key rotation procedure |
-| `spicedb-operations.md` | Phase 4 | Schema migration, data corruption recovery |
-| `openbao-recovery.md` | Phase 5 | Recovery key use, quorum loss |
-| `openbao-policy-changes.md` | Phase 5 | PR/review process for policy changes |
-| [`bff-operations.md`](./bff-operations.md) | Phase 6 | BFF debugging |
-| [`istio-authz.md`](./istio-authz.md) | Phase 6 | AuthorizationPolicy patterns |
-| `observability.md` | Phase 7 | Adding dashboards, tuning alerts |
-| `teleport-operations.md` | Phase 8 | Teleport admin tasks |
-| `teleport-break-glass.md` | Phase 8 | Bootstrap admin recovery |
-| `access-request-procedure.md` | Phase 8 | Production access workflow |
-| `helloworld-deployment.md` | Phase 9 | Demo app deployment |
+**Identity & Keycloak**
+- [`keycloak-operations.md`](./keycloak-operations.md) — realm management, user recovery, DB-only admin
+- [`keycloak-client-provisioning.md`](./keycloak-client-provisioning.md) — adding/wiring realm clients
+- [`keycloak-realm-hardening-replay.md`](./keycloak-realm-hardening-replay.md) — re-apply realm hardening (DR)
+- [`keycloak-master-flow-replay.md`](./keycloak-master-flow-replay.md) — master-realm browser flow replay
+- [`keycloak-smtp-setup.md`](./keycloak-smtp-setup.md) — realm SMTP for email
+- [`realm-signing-key-rotation.md`](./realm-signing-key-rotation.md) — 90-day signing-key rotation
+
+**Authorization (SpiceDB)**
+- [`spicedb-operations.md`](./spicedb-operations.md) — schema migration, datastore-URI rotation, recovery
+
+**Secrets & OpenBao**
+- [`openbao-recovery.md`](./openbao-recovery.md) — recovery-key use, quorum loss, break-glass
+- [`openbao-seal-unseal.md`](./openbao-seal-unseal.md) — transit auto-unseal + manual unseal
+- [`secrets-library.md`](./secrets-library.md) · [`secrets-guardrails-verification.md`](./secrets-guardrails-verification.md) · [`secrets-guardrails-monitoring.md`](./secrets-guardrails-monitoring.md) — `apps/lib/secrets` + guardrails
+- [`migrate-env-to-openbao.md`](./migrate-env-to-openbao.md) — move env secrets into OpenBao
+- [`transit-key-rotation.md`](./transit-key-rotation.md) — Transit/SSE key rotation
+- [`ci-secrets-check.md`](./ci-secrets-check.md) — CI secret-leak gate
+
+**Workload identity (SPIRE)**
+- [`spire-rotation.md`](./spire-rotation.md) — operational rotation/troubleshooting
+- [`spire-ca-rotation.md`](./spire-ca-rotation.md) — upstream CA rotation
+
+**Service mesh, ingress & network**
+- [`istio-authz.md`](./istio-authz.md) — AuthorizationPolicy patterns
+- [`istio-peer-auth-tighten.md`](./istio-peer-auth-tighten.md) — PeerAuthentication STRICT staging
+- [`ingress-nginx-to-istio-cutover.md`](./ingress-nginx-to-istio-cutover.md) — the ingress-nginx → Istio gateway cutover (ADR-0032)
+- [`system-ns-netpol-apply.md`](./system-ns-netpol-apply.md) — system-namespace NetworkPolicies
+
+**BFF & API**
+- [`bff-operations.md`](./bff-operations.md) — BFF debugging
+- [`bff-key-rotation.md`](./bff-key-rotation.md) — BFF DPoP key rotation
+- [`api-auth-library.md`](./api-auth-library.md) — `apps/lib/api-auth` operations
+
+**Databases & RLS**
+- [`control-db-restore.md`](./control-db-restore.md) — FORCE-RLS-aware control-db restore + DR ordering
+- [`force-rls-cutover.md`](./force-rls-cutover.md) — FORCE-RLS migration procedure
+
+**Storage (MinIO)**
+- [`minio-sse-rotation.md`](./minio-sse-rotation.md) — SSE-S3 key rotation
+- [`minio-version-upgrade.md`](./minio-version-upgrade.md) — MinIO version upgrades
+- [`member-hub-documents-bucket.md`](./member-hub-documents-bucket.md) — Member Hub documents bucket + svcacct
+
+**Apps & deploys**
+- [`deploy-app-image.md`](./deploy-app-image.md) — manual digest-pinned image bump (control/portal/member-hub)
+- [`proposal-forge-deploy.md`](./proposal-forge-deploy.md) — Proposal Forge deploy
+- [`new-app-bootstrap.md`](./new-app-bootstrap.md) — onboarding a new app
+- [`quickbooks-online-setup.md`](./quickbooks-online-setup.md) — QBO integration setup
+
+**Observability & SIEM**
+- [`grafana-dashboards.md`](./grafana-dashboards.md) · [`alerts.md`](./alerts.md) — dashboards + alert tuning
+- [`wazuh-operations.md`](./wazuh-operations.md) — Wazuh manager/indexer ops
+- [`audit-anchors.md`](./audit-anchors.md) — audit-log anchoring/signing
+
+**Security, DR & maintenance**
+- [`k3s-encryption-reenable.md`](./k3s-encryption-reenable.md) — secrets-at-rest re-enable
+- [`base-image-cve-cadence.md`](./base-image-cve-cadence.md) — base-image CVE cadence
+- [`velero-restore-drill-leastpriv.md`](./velero-restore-drill-leastpriv.md) — Velero restore drill
+- [`dr-drill-tier1-findings.md`](./dr-drill-tier1-findings.md) — Tier-1 DR drill findings
+
+> Operator access is the **Tailscale tailnet** (no Teleport) — see
+> [01-architecture/09-privileged-access.md](../01-architecture/09-privileged-access.md) and
+> [06-reference/operator-cheatsheet.md](../06-reference/operator-cheatsheet.md).
 
 ## Quarterly habit
 

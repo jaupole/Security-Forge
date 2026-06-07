@@ -1,6 +1,6 @@
 # ADR-0024: Teleport Community Edition for privileged access (Local Edition)
 
-**Status**: Amended 2026-05-03 (see § Amendment 2026-05-03 — CE has no OIDC; pivot to GitHub OAuth)
+**Status**: **Superseded by [ADR-0035](./0035-tailscale-replaces-teleport.md)** (2026-06-07 — Teleport stopped; operator access is the Tailscale tailnet). Historical record below; amended 2026-05-03 (CE has no OIDC; pivot to GitHub OAuth).
 **Date**: 2026-05-02
 **Decision-makers**: Project owner
 **Phase**: 8 (8a foundation, 8b prototype B)
@@ -170,7 +170,7 @@ SSO flows.
 Cross-references:
 - [ADR-0007 § Amendment 2026-05-02 — Teleport adopts TOTP posture](./0007-totp-instead-of-passkeys-locally.md)
   documents the same decision from ADR-0007's side.
-- [`docs/06-reference/migration-to-vps.md` § Phase C Phase 3](../06-reference/migration-to-vps.md)
+- [`docs/99-archive/migration-to-vps.md` § Phase C Phase 3](../99-archive/migration-to-vps.md)
   is the production-cutover trigger for hardware-FIDO2 enforcement.
 
 ### Why MinIO for session recording
@@ -285,10 +285,10 @@ Re-open this ADR if:
 ## References
 
 - [docs/01-architecture/09-privileged-access.md](../01-architecture/09-privileged-access.md) — phase 8a design (this commit).
-- [docs/05-claude-code-prompts/phase-08-teleport.md](../05-claude-code-prompts/phase-08-teleport.md) — phase prompt (will be updated to reference this ADR).
+- [docs/99-archive/05-claude-code-prompts/phase-08-teleport.md](../99-archive/05-claude-code-prompts/phase-08-teleport.md) — phase prompt (will be updated to reference this ADR).
 - [ADR-0003](./0003-cloudnativepg-vs-others.md) — CNPG choice (Postgres backend uses the same pattern).
 - [ADR-0007](./0007-totp-instead-of-passkeys-locally.md) — TOTP-vs-passkeys interim decision; Teleport's hardware-FIDO2 enforcement is independent of the realm's primary-factor choice.
-- [docs/03-runbooks/teleport-operations.md](../03-runbooks/teleport-operations.md) — daily ops + bootstrap + troubleshooting (added 2026-05-03).
+- `docs/03-runbooks/teleport-operations.md` — daily ops runbook (existed 2026-05-03; **removed** when Teleport was retired per [ADR-0035](./0035-tailscale-replaces-teleport.md)).
 
 ---
 

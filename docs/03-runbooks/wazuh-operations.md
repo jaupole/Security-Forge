@@ -13,7 +13,7 @@ Wazuh is the SecForge platform's SIEM (5th pillar). Deployed in Phase 7.2 (Sessi
 | Wazuh Dashboard | Deployment `wazuh-dashboard` | 1 | 5601 | OpenSearch Dashboards fork — UI |
 | Cleanup CronJob | `wazuh-manager-cleanup` | every 2h | — | Drops orphaned monitoring/statistics indices |
 
-URL: `https://wazuh.secforge.local/` (cert-manager-issued via `mkcert-issuer`; ingress terminates TLS, plain HTTP backend → dashboard:5601).
+URL: `https://wazuh.secforge.dev/` (cert-manager-issued via `mkcert-issuer`; ingress terminates TLS, plain HTTP backend → dashboard:5601).
 
 ## First login
 
@@ -29,7 +29,7 @@ The four chart-managed Secrets map to **different users** — the names are easy
 **Dashboard UI login (the one you want for the browser):**
 
 ```bash
-# URL:      https://wazuh.secforge.local/
+# URL:      https://wazuh.secforge.dev/
 # Username: admin
 # Password:
 kubectl get secret -n wazuh wazuh-indexer-creds -o jsonpath='{.data.password}' | base64 -d; echo
@@ -219,7 +219,7 @@ JSON
 # "OpenBao audit: actor=jason op=read path=secret/data/foo".
 
 # 3. End-to-end (operator hits Keycloak + OpenBao, alerts land in dashboard).
-curl -sk https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration >/dev/null
+curl -sk https://auth.secforge.dev/realms/secforge-tenants/.well-known/openid-configuration >/dev/null
 kubectl exec -n openbao openbao-0 -- bao kv get secret/foo 2>/dev/null
 # Then in Wazuh dashboard, Discover view: filter `rule.id: 100300 OR rule.id: 100320`.
 ```
@@ -292,10 +292,10 @@ TS_BEFORE=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo "$TS_BEFORE"
 
 # 2. Trigger Keycloak audit events (1 well-known fetch + 3 failed logins → LOGIN_ERROR).
 curl -sk -o /dev/null -w 'HTTP %{http_code}\n' \
-    https://auth.secforge.local/realms/secforge-tenants/.well-known/openid-configuration
+    https://auth.secforge.dev/realms/secforge-tenants/.well-known/openid-configuration
 for i in 1 2 3; do
     curl -sk -o /dev/null -w 'HTTP %{http_code}\n' \
-        -X POST https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/token \
+        -X POST https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/token \
         -d "grant_type=password&client_id=helloworld-bff&username=wrong-user&password=wrong-pw-$i"
 done
 

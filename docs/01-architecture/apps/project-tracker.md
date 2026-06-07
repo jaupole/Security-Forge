@@ -4,7 +4,7 @@
 >
 > Last updated: 2026-05-04 (audit)
 >
-> **Companion docs:** [phase-10 prompt](../../05-claude-code-prompts/phase-10-integrate-proposal-forge-project-tracker.md) · [04-bff-pattern.md](../04-bff-pattern.md) · [06-api-pattern.md](../06-api-pattern.md) · [10-helloworld-demo.md](../10-helloworld-demo.md)
+> **Companion docs:** [phase-10 prompt](../../99-archive/05-claude-code-prompts/phase-10-integrate-proposal-forge-project-tracker.md) · [04-bff-pattern.md](../04-bff-pattern.md) · [06-api-pattern.md](../06-api-pattern.md) · [10-helloworld-demo.md](../10-helloworld-demo.md)
 
 ---
 

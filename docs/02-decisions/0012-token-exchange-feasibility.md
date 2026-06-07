@@ -8,7 +8,7 @@
 
 Phase 6b-1 planned to build the api-auth library against Keycloak's RFC 8693 `token-exchange` endpoint so the BFF could mint per-call audience-scoped tokens for downstream APIs. Keycloak ships token-exchange as a **preview** feature, with a known history of deviations from RFC 8693 in `subject_token_type` handling, `audience` parameter format, and `act` claim shape, and an API surface that can shift between minor versions.
 
-Phase 6b-0 ran a 2-hour spike against the running Keycloak 26.3.3 instance to find out whether the deviations were documentable-and-wrappable (GO) or whether the surface was too unstable for a long-lived dependency (NO-GO). See [phase-06b-0-token-exchange-spike.md](../05-claude-code-prompts/phase-06b-0-token-exchange-spike.md) for the spike protocol; spike scripts are at `infrastructure/keycloak/spike-token-exchange.sh` and `infrastructure/keycloak/spike-token-exchange-test.sh`.
+Phase 6b-0 ran a 2-hour spike against the running Keycloak 26.3.3 instance to find out whether the deviations were documentable-and-wrappable (GO) or whether the surface was too unstable for a long-lived dependency (NO-GO). See [phase-06b-0-token-exchange-spike.md](../99-archive/05-claude-code-prompts/phase-06b-0-token-exchange-spike.md) for the spike protocol; spike scripts are at `infrastructure/keycloak/spike-token-exchange.sh` and `infrastructure/keycloak/spike-token-exchange-test.sh`.
 
 The spike ran 2026-04-30. It exceeded its 2-hour budget; the spike prompt's own discipline ("if you hit 3 hours without a clear go/no-go, that itself is the answer; NO-GO") triggered.
 
@@ -144,8 +144,8 @@ Additionally, the `apiauth.ExchangeFor(ctx, audience)` library function this spi
 
 ## References
 
-- [Phase 6b-0 spike prompt](../05-claude-code-prompts/phase-06b-0-token-exchange-spike.md)
-- [Phase 6b-1 api-auth library prompt](../05-claude-code-prompts/phase-06b-api-pattern.md) — must be updated to reflect the audience-at-login pivot
+- [Phase 6b-0 spike prompt](../99-archive/05-claude-code-prompts/phase-06b-0-token-exchange-spike.md)
+- [Phase 6b-1 api-auth library prompt](../99-archive/05-claude-code-prompts/phase-06b-api-pattern.md) — must be updated to reflect the audience-at-login pivot
 - [PLAN.md — Phase 6b-0 entry](../../PLAN.md) — must be updated with NO-GO outcome and re-evaluation triggers
 - [RFC 8693 — OAuth 2.0 Token Exchange](https://datatracker.ietf.org/doc/html/rfc8693)
 - [ADR-0011 — BFF single replica in local edition](./0011-bff-single-replica-local.md) — establishes the per-pod DPoP key model that this ADR's audience-at-login pivot leaves unchanged

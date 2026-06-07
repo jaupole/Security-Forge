@@ -1,4 +1,6 @@
-# Keycloak Operations Runbook (Local Edition)
+# Keycloak Operations Runbook
+
+> ⚠️ **Production note — this runbook is largely local-edition and needs a full rewrite (tracked in operator-backlog).** In production: the admin console is **`kc.secforge.dev` (tailnet-only)**, not `auth-admin.secforge.dev`; the master-realm admin is **WebAuthn-required and DB-only** (no `kcadm`/admin-API — scripted changes go via direct Postgres writes against `secforge-keycloak-db-1`); ingress is the **Istio gateway** (not ingress-nginx); TLS is **Let's Encrypt** (not mkcert); the cluster is **Hetzner k3s** (not Docker Desktop). Verify every step against the live cluster before acting. See [PLAN.md](../../PLAN.md).
 
 > Architecture: [docs/01-architecture/01-iam-platform.md](../01-architecture/01-iam-platform.md)
 > Realm signing keys: [docs/03-runbooks/realm-signing-key-rotation.md](./realm-signing-key-rotation.md)
@@ -13,10 +15,10 @@ This runbook covers day-2 operations for the Keycloak deployment in the SecForge
 All commands assume:
 - `kubectl` on PATH, default context = Docker Desktop K8s
 - Working directory: `infrastructure/keycloak/`
-- `auth.secforge.local` and `auth-admin.secforge.local` resolve to 127.0.0.1 (hosts file)
+- `auth.secforge.dev` and `auth-admin.secforge.dev` resolve to 127.0.0.1 (hosts file)
 - mkcert local CA is trusted by the developer's browser
 
-If any of those break, reset per [docs/00-getting-started/03-local-dns-and-tls.md](../00-getting-started/03-local-dns-and-tls.md).
+If any of those break, reset per [docs/99-archive/00-getting-started/03-local-dns-and-tls.md](../99-archive/00-getting-started/03-local-dns-and-tls.md).
 
 ---
 
@@ -32,7 +34,7 @@ Steps:
 ### 1. Open the admin console.
 
 ```
-https://auth-admin.secforge.local/admin/master/console/
+https://auth-admin.secforge.dev/admin/master/console/
 ```
 
 Browser may need the mkcert CA installed in Windows trust store. If you see a cert warning, fix that before proceeding.
@@ -68,7 +70,7 @@ In the admin console, switch to the **`platform`** realm:
 Sign out of the admin console. Open the account console:
 
 ```
-https://auth.secforge.local/realms/platform/account
+https://auth.secforge.dev/realms/platform/account
 ```
 
 (yes, the public host — the account console for platform-realm users belongs there, not on `auth-admin`)
@@ -85,7 +87,7 @@ Log into the admin console with your new user (you'll be prompted for TOTP). Swi
 
 ### 6. Delete the bootstrap admin.
 
-You also need a TOTP-enrolled admin in the **master** realm (not just the platform realm) — otherwise you can't manage realm-level config. Create one in the admin console first (master → Users → "Create new user", email + required actions [Configure OTP, Recovery Authentication Codes], assign role `admin` and `create-realm`), then enroll TOTP for that user via the master account console (`https://auth.secforge.local/realms/master/account`).
+You also need a TOTP-enrolled admin in the **master** realm (not just the platform realm) — otherwise you can't manage realm-level config. Create one in the admin console first (master → Users → "Create new user", email + required actions [Configure OTP, Recovery Authentication Codes], assign role `admin` and `create-realm`), then enroll TOTP for that user via the master account console (`https://auth.secforge.dev/realms/master/account`).
 
 Once your master-realm and platform-realm users are both TOTP-enrolled and you've verified you can log in as them:
 
@@ -213,7 +215,7 @@ kubectl exec -n keycloak keycloak-0 -- /opt/keycloak/bin/kcadm.sh \
 
 ### Recover access if you lost your TOTP authenticator
 
-1. Open the account console at `https://auth.secforge.local/realms/<your-realm>/account`
+1. Open the account console at `https://auth.secforge.dev/realms/<your-realm>/account`
 2. Username → "Sign in with recovery code" link on the OTP prompt
 3. Enter one of your saved recovery codes
 4. Once in: Account console → Signing in → remove the old TOTP, register a new one
@@ -246,7 +248,7 @@ kubectl rollout restart -n keycloak statefulset/keycloak
 ### Get a fresh discovery doc
 
 ```bash
-curl -ks https://auth.secforge.local/realms/REALM/.well-known/openid-configuration | jq
+curl -ks https://auth.secforge.dev/realms/REALM/.well-known/openid-configuration | jq
 ```
 
 ### Inspect realm signing keys
@@ -310,7 +312,7 @@ You enabled a build-time feature (e.g., `dpop`, `recovery-codes`) without settin
 
 `readOnlyRootFilesystem` is too tight for `startOptimized: false` (Quarkus re-augments JARs on every start). Set `readOnlyRootFilesystem: false` on the Keycloak container; the rest of the hardening (no privesc, drop ALL caps, non-root, seccomp) stays. Documented in [iam-platform.md "Pod security"](../01-architecture/01-iam-platform.md).
 
-### Cannot reach `auth-admin.secforge.local` from your laptop
+### Cannot reach `auth-admin.secforge.dev` from your laptop
 
 The admin Ingress has a `whitelist-source-range` annotation. On Docker Desktop, requests from your laptop appear to ingress-nginx with source IPs from `172.19.0.0/16` (the docker0 bridge). If your bridge subnet differs, update the annotation in `06-ingress-admin.yaml`.
 
@@ -337,7 +339,7 @@ Even though Keycloak's `roles` client scope is attached to the `openbao` client 
 
 **Diagnosis: use Keycloak's Evaluate tool.** This is the definitive source for "what does Keycloak emit for this user via this client":
 
-1. Browser → `https://auth-admin.secforge.local`
+1. Browser → `https://auth-admin.secforge.dev`
 2. Realm dropdown → `platform`
 3. Clients → `openbao` → top tabs → **Client scopes** → **Evaluate** sub-tab/button
 4. Pick the user (`jason.upole`), click Evaluate
@@ -353,7 +355,7 @@ Even though Keycloak's `roles` client scope is attached to the `openbao` client 
 
 …meaning Keycloak IS emitting the claim, with `platform_admin` present. Yet OpenBao 2.5.3 reports it missing during the actual auth flow. Conclusion: **defect is on the OpenBao side**, not Keycloak. The `preferred_username` workaround in `infrastructure/openbao/configure-auth-oidc.sh` remains in place; same for Grafana's `role_attribute_path` in `infrastructure/observability/01-kube-prometheus-stack-values.yaml`. Tracked in PLAN.md follow-up #1; defer per the 90-day fallback trigger 2026-07-29.
 
-**If you need to extend this debug:** OpenBao 2.5.3 ignores `verbose_oidc_logging` (silently — it's a Vault Enterprise feature). To capture the actual userinfo response OpenBao receives, mint an access_token via `client_credentials` against the openbao client and curl `https://auth.secforge.local/realms/platform/protocol/openid-connect/userinfo` with that token; compare the response body to what OpenBao's role rejects.
+**If you need to extend this debug:** OpenBao 2.5.3 ignores `verbose_oidc_logging` (silently — it's a Vault Enterprise feature). To capture the actual userinfo response OpenBao receives, mint an access_token via `client_credentials` against the openbao client and curl `https://auth.secforge.dev/realms/platform/protocol/openid-connect/userinfo` with that token; compare the response body to what OpenBao's role rejects.
 
 ---
 
@@ -424,7 +426,7 @@ Every kcadm-driven script in `infrastructure/keycloak/` authenticates as the `kc
 
 The chicken-and-egg case: the provisioning script needs `kcadm-admin` to authenticate, but the client doesn't yet exist on a fresh install. So the very first creation is a manual step:
 
-1. Open `https://auth-admin.secforge.local/admin/master/console/`.
+1. Open `https://auth-admin.secforge.dev/admin/master/console/`.
 2. Realm: `master` → **Clients → Create client**.
    - Client ID: `kcadm-admin`
    - Client authentication: **ON**
@@ -523,7 +525,7 @@ The helper's error message points at three likely causes; verify each in order:
 > **Edition note.** This section covers the bare-metal `platform/` deployment
 > (`platform/manifests/keycloak/`, host `auth.secforge.dev`, single-node k3s on
 > the Hetzner box). Everything above predates that edition and still describes
-> the retired Local Edition (`infrastructure/keycloak/`, `auth.secforge.local`,
+> the retired Local Edition (`infrastructure/keycloak/`, `auth.secforge.dev`,
 > Docker Desktop) — treat it as historical until this runbook is rewritten.
 
 The IdP runs the GHA-built, cosign-signed image pinned by digest in

@@ -58,5 +58,5 @@ The Bitnami chart is fine for a one-off database, but managing five of them by h
 ## References
 
 - CloudNativePG docs: https://cloudnative-pg.io/documentation/
-- Phase 1.4 prompt: [phase-01-foundation.md](../05-claude-code-prompts/phase-01-foundation.md)
+- Phase 1.4 prompt: [phase-01-foundation.md](../99-archive/05-claude-code-prompts/phase-01-foundation.md)
 - Postgres instance inventory: [postgres-instances.md](../06-reference/postgres-instances.md)

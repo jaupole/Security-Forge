@@ -1,4 +1,6 @@
-# Authorization (SpiceDB) — Local Edition
+# Authorization (SpiceDB)
+
+> **Production note.** Written for the local edition; the authorization model below is unchanged in production. Substrate deltas: ingress is the **Istio gateway**, TLS is **Let's Encrypt**, the cluster is **Hetzner k3s**, and the SPIRE trust domain is **`secforge.platform`**. See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion ADRs:
 > - [ADR-0008 — Authorization schema (three-tier)](../02-decisions/0008-authz-schema.md)
@@ -208,7 +210,7 @@ Same standard as the rest of the platform (PSS `restricted` enforced):
 
 ### Workload identity
 
-SpiceDB pod gets a SPIFFE ID `spiffe://secforge.local/ns/spicedb/sa/spicedb` via the SPIFFE-CSI volume. Used in Phase 5 for OpenBao credential fetch (SpiceDB pulls its Postgres credential and PSK rotation from OpenBao via JWT-SVID).
+SpiceDB pod gets a SPIFFE ID `spiffe://secforge.platform/ns/spicedb/sa/spicedb` via the SPIFFE-CSI volume. Used in Phase 5 for OpenBao credential fetch (SpiceDB pulls its Postgres credential and PSK rotation from OpenBao via JWT-SVID).
 
 ### Network policy
 

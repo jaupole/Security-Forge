@@ -32,13 +32,13 @@ import (
 
 // 1. Configure once at process start.
 mw := apiauth.NewMiddleware(apiauth.MiddlewareConfig{
-    Issuer:           "https://auth.secforge.local/realms/secforge-tenants",
+    Issuer:           "https://auth.secforge.dev/realms/secforge-tenants",
     ExpectedAudience: "my-backend-svc",   // exactly this backend's audience
-    JWKSEndpoint:     "https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/certs",
+    JWKSEndpoint:     "https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/certs",
     ReplayCache:      myValkeyReplayCache, // production: Valkey; tests: in-memory
     HTTPClient:       myMTLSAwareClient,
     Audit:            myAuditEmitter,      // optional but recommended
-    WorkloadID:       "spiffe://secforge.local/ns/<ns>/sa/<sa>",
+    WorkloadID:       "spiffe://secforge.platform/ns/<ns>/sa/<sa>",
 })
 
 // 2. Wrap every protected route. Wrap calls Audit.LogHop on both
@@ -89,7 +89,7 @@ Each step short-circuits on failure with the typed error documented in [ADR-0014
 
 ```go
 cli := apiauth.NewClient(apiauth.ClientConfig{
-    TokenEndpoint:      "https://auth.secforge.local/realms/secforge-tenants/protocol/openid-connect/token",
+    TokenEndpoint:      "https://auth.secforge.dev/realms/secforge-tenants/protocol/openid-connect/token",
     ClientID:           "my-bff",
     ClientAssertionPEM: pemBytesFromOpenBao,    // private_key_jwt PEM, RSA-2048
     AudienceList:       []string{"backend-a", "backend-b"},  // BFF_AUDIENCE_LIST
@@ -156,7 +156,7 @@ Loki LogQL uses regex to extract fields when you don't have a JSON parser pipeli
 # Substitute your request_id; logfmt query works for the schema above.
 PASS=$(kubectl get secret -n observability kps-grafana -o jsonpath='{.data.admin-password}' | base64 -d)
 curl -sk -u "admin:${PASS}" -G \
-  "https://grafana.secforge.local/api/datasources/proxy/uid/loki/loki/api/v1/query_range" \
+  "https://grafana.secforge.dev/api/datasources/proxy/uid/loki/loki/api/v1/query_range" \
   --data-urlencode 'query={namespace="app"} |= "your-request-id-here"' \
   --data-urlencode "start=$(($(date +%s) - 3600))000000000" \
   --data-urlencode "end=$(date +%s)000000000"

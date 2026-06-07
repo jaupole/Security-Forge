@@ -1,4 +1,6 @@
-# Service Mesh (Istio Ambient + SPIRE) — Local Edition
+# Service Mesh (Istio Ambient + SPIRE)
+
+> **Production note.** Written for the local edition; the Istio Ambient model below is unchanged in production (pilot 1.30.0). Substrate deltas: the cluster is **Hetzner k3s** single node (not Docker Desktop); **ingress is the Istio gateway** (`secforge-gateway` public + `secforge-gateway-tailnet`), which replaced ingress-nginx ([ADR-0032](../02-decisions/0032-istio-gateway-replaces-ingress-nginx.md)); the SPIRE trust domain is **`secforge.platform`**. See [PLAN.md](../../PLAN.md) and [00-overview.md](./00-overview.md).
 
 > Companion ADR: [ADR-0010 — Istio Ambient vs. Sidecar (with SPIRE-CA deferral)](../02-decisions/0010-istio-ambient-vs-sidecar.md).
 > Operational runbook: [Istio AuthorizationPolicy patterns](../03-runbooks/istio-authz.md).
@@ -6,7 +8,7 @@
 
 This document describes the **target** state: every pod-to-pod hop is mTLS-protected, identified by a SPIRE-issued SPIFFE ID, and authorized by least-privilege `AuthorizationPolicy`. The cloud edition is identical except for the SPIRE upstream-CA backing (file vs. KMS).
 
-> **Interim state (Phase 6.2 → 6.2b):** Phase 6.2 ships Ambient with **Istio's built-in CA**, not SPIRE. Workload-to-OpenBao, workload-to-SpiceDB, and any flow using the SPIRE Workload API socket continue to use SPIRE-issued IDs (`spiffe://secforge.local/ns/.../sa/...`). Mesh peer mTLS uses Istio-CA-issued IDs (`spiffe://cluster.local/ns/.../sa/...`). The two trust domains coexist; AuthorizationPolicies in `app` reference `spiffe://cluster.local/...` until 6.2b cuts over. See ADR-0010 for the deferral rationale and timing.
+> **Interim state (Phase 6.2 → 6.2b):** Phase 6.2 ships Ambient with **Istio's built-in CA**, not SPIRE. Workload-to-OpenBao, workload-to-SpiceDB, and any flow using the SPIRE Workload API socket continue to use SPIRE-issued IDs (`spiffe://secforge.platform/ns/.../sa/...`). Mesh peer mTLS uses Istio-CA-issued IDs (`spiffe://cluster.local/ns/.../sa/...`). The two trust domains coexist; AuthorizationPolicies in `app` reference `spiffe://cluster.local/...` until 6.2b cuts over. See ADR-0010 for the deferral rationale and timing.
 
 ---
 
@@ -47,7 +49,7 @@ We choose **Ambient**. Rationale captured in [ADR-0010](../02-decisions/0010-ist
 │  │  │    cert-manager-csi-driver-    │     identity; istiod itself  │ │
 │  │  │    spiffe                      │     does NOT mint workload   │ │
 │  │  │  - meshConfig.trustDomain =    │     certs.                   │ │
-│  │  │    secforge.local              │                              │ │
+│  │  │    secforge.dev              │                              │ │
 │  │  └───────────────────────────────┘                              │ │
 │  │                                                                  │ │
 │  │  ┌───────────────────────────────┐                              │ │
@@ -96,13 +98,13 @@ We choose **Ambient**. Rationale captured in [ADR-0010](../02-decisions/0010-ist
 
 - **1 replica.** No HA locally; fine.
 - **CA (Phase 6.2 interim)**: Istio's built-in Citadel. Mints `spiffe://cluster.local/ns/{ns}/sa/{sa}` for ztunnel and waypoints. PeerAuthentication remains STRICT.
-- **CA (target, Phase 6.2b)**: SPIRE Workload API mounted into istiod, ztunnel, and CNI. Istiod no longer signs workload certs; each component fetches its SVID from SPIRE. trustDomain becomes `secforge.local`. AuthorizationPolicies move from `spiffe://cluster.local/...` to `spiffe://secforge.local/...`.
+- **CA (target, Phase 6.2b)**: SPIRE Workload API mounted into istiod, ztunnel, and CNI. Istiod no longer signs workload certs; each component fetches its SVID from SPIRE. trustDomain becomes `secforge.dev`. AuthorizationPolicies move from `spiffe://cluster.local/...` to `spiffe://secforge.platform/...`.
 - **PeerAuthentication (Phase 6.2 interim)**: `PERMISSIVE` mesh-wide. Mesh peers prefer mTLS; non-mesh peers (ingress-nginx, openbao→postgres, kubelet probes) are tolerated. Tightens to `STRICT` once every legitimate caller is mesh-resident or has an explicit AuthorizationPolicy ALLOW.
 
 ### ztunnel
 
 - **DaemonSet** (1 pod on the single local node; same shape on multi-node clusters).
-- **Identity**: ztunnel itself runs with SPIFFE ID `spiffe://secforge.local/ns/istio-system/sa/ztunnel`. It uses an SVID from cert-manager-csi-driver-spiffe.
+- **Identity**: ztunnel itself runs with SPIFFE ID `spiffe://secforge.platform/ns/istio-system/sa/ztunnel`. It uses an SVID from cert-manager-csi-driver-spiffe.
 - **HBONE tunnel** (HTTP/2 CONNECT over mTLS, TCP/**15008**) is the wire format between ztunnels. Even on a **single node** the hop still rides HBONE on 15008 (it is *not* a no-op for the data path — `NetworkPolicy` sees 15008, not the app port). Cross-node hops are HBONE-encrypted the same way. **This has a hard NetworkPolicy consequence — see ["Ambient + Kubernetes NetworkPolicy"](#ambient--kubernetes-networkpolicy) below.**
 - **L4 enforcement**: applies `PeerAuthentication` (always STRICT here) and any `AuthorizationPolicy` rules that resolve at L4 (e.g., allow/deny by SPIFFE ID, by namespace, by ports).
 
@@ -117,7 +119,7 @@ We choose **Ambient**. Rationale captured in [ADR-0010](../02-decisions/0010-ist
   - **SPIRE Workload API** (Unix-domain socket, `FetchX509SVID` RPC). Same protocol used by every other workload that wants an SVID.
   - **cert-manager CSR signing** (`spiffe://...` URIs in CertificateSigningRequests, signed by an Issuer of type `csi-driver-spiffe`). This is what Istio's external-CA integration expects.
 - **Why not have istiod call SPIRE directly?** Istio's external-CA integration reads from a cert-manager Issuer interface. Going through cert-manager-csi-driver-spiffe is the canonical path; it also gives us a clean audit trail and the ability to reuse the same Issuer for non-Istio workloads that need cert-manager-issued SVIDs.
-- **Identity of the driver itself**: `spiffe://secforge.local/ns/istio-system/sa/cert-manager-csi-driver-spiffe`.
+- **Identity of the driver itself**: `spiffe://secforge.platform/ns/istio-system/sa/cert-manager-csi-driver-spiffe`.
 
 ### Waypoints (deployed on demand, not by default)
 
@@ -134,12 +136,12 @@ We choose **Ambient**. Rationale captured in [ADR-0010](../02-decisions/0010-ist
 
 | Caller | SPIFFE ID (one universe) |
 |---|---|
-| ztunnel pod | `spiffe://secforge.local/ns/istio-system/sa/ztunnel` |
-| BFF pod | `spiffe://secforge.local/ns/app/sa/helloworld-bff` |
-| AuthZEN façade pod | `spiffe://secforge.local/ns/app/sa/authzen-facade` |
-| SpiceDB pod | `spiffe://secforge.local/ns/spicedb/sa/spicedb` |
-| Keycloak pod | `spiffe://secforge.local/ns/keycloak/sa/keycloak` |
-| OpenBao pod | `spiffe://secforge.local/ns/openbao/sa/openbao` |
+| ztunnel pod | `spiffe://secforge.platform/ns/istio-system/sa/ztunnel` |
+| BFF pod | `spiffe://secforge.platform/ns/app/sa/helloworld-bff` |
+| AuthZEN façade pod | `spiffe://secforge.platform/ns/app/sa/authzen-facade` |
+| SpiceDB pod | `spiffe://secforge.platform/ns/spicedb/sa/spicedb` |
+| Keycloak pod | `spiffe://secforge.platform/ns/keycloak/sa/keycloak` |
+| OpenBao pod | `spiffe://secforge.platform/ns/openbao/sa/openbao` |
 
 **Critical invariant** (post-6.2b): the same SPIFFE ID a workload presents to OpenBao (Phase 5 JWT-SVID auth) is the one Istio uses for mTLS peer identification. No "Istio identity" separate from the "platform identity."
 
@@ -150,10 +152,10 @@ Two trust domains coexist temporarily:
 | Caller | What ztunnel sees on the wire (Istio CA) | What OpenBao / SpiceDB sees (SPIRE) |
 |---|---|---|
 | ztunnel pod | `spiffe://cluster.local/ns/istio-system/sa/ztunnel` | n/a (ztunnel doesn't authenticate to OpenBao/SpiceDB) |
-| BFF pod | `spiffe://cluster.local/ns/app/sa/helloworld-bff` | `spiffe://secforge.local/ns/app/sa/helloworld-bff` |
-| Backend pod | `spiffe://cluster.local/ns/app/sa/<name>` | `spiffe://secforge.local/ns/app/sa/<name>` |
-| AuthZEN façade pod | `spiffe://cluster.local/ns/app/sa/authzen-facade` | `spiffe://secforge.local/ns/app/sa/authzen-facade` |
-| SpiceDB / Keycloak / OpenBao | unchanged (those namespaces are not ambient-labeled in 6.2) | `spiffe://secforge.local/ns/<ns>/sa/<sa>` |
+| BFF pod | `spiffe://cluster.local/ns/app/sa/helloworld-bff` | `spiffe://secforge.platform/ns/app/sa/helloworld-bff` |
+| Backend pod | `spiffe://cluster.local/ns/app/sa/<name>` | `spiffe://secforge.platform/ns/app/sa/<name>` |
+| AuthZEN façade pod | `spiffe://cluster.local/ns/app/sa/authzen-facade` | `spiffe://secforge.platform/ns/app/sa/authzen-facade` |
+| SpiceDB / Keycloak / OpenBao | unchanged (those namespaces are not ambient-labeled in 6.2) | `spiffe://secforge.platform/ns/<ns>/sa/<sa>` |
 
 **AuthorizationPolicies in `app` reference `spiffe://cluster.local/...` principals during this interim** — that's what ztunnel actually sees. They will be rewritten in 6.2b. App-layer code (BFF→OpenBao, backend→SpiceDB peer-mTLS, etc.) continues to read SPIRE-issued SVIDs from `spiffe-csi`; that path doesn't change.
 
@@ -189,7 +191,7 @@ spec:
     - from:
         - source:
                 principals:
-                - "spiffe://secforge.local/ns/app/sa/helloworld-bff"
+                - "spiffe://secforge.platform/ns/app/sa/helloworld-bff"
         to:
         - operation:
                 paths: ["/api/*"]
@@ -198,7 +200,7 @@ spec:
 
 We use **principals** (SPIFFE IDs), never `namespaces` or `serviceAccounts`, because principals match the actual SVID on the wire. Namespace/SA matching is convenient but lossy — it can be spoofed by a misconfigured admission policy or a renamed pod; an SVID cannot.
 
-> **Interim caveat (Phase 6.2 → 6.2b):** the principal string is `spiffe://cluster.local/...` not `spiffe://secforge.local/...` until the SPIRE-CA cutover. Same value structure (`/ns/{ns}/sa/{sa}`), different trust-domain prefix. Examples in this doc and the runbook will be updated when 6.2b lands.
+> **Interim caveat (Phase 6.2 → 6.2b):** the principal string is `spiffe://cluster.local/...` not `spiffe://secforge.platform/...` until the SPIRE-CA cutover. Same value structure (`/ns/{ns}/sa/{sa}`), different trust-domain prefix. Examples in this doc and the runbook will be updated when 6.2b lands.
 
 The full set of patterns (gateway-from-internet, BFF-to-backend, backend-to-SpiceDB, backend-to-OpenBao, etc.) is in [docs/03-runbooks/istio-authz.md](../03-runbooks/istio-authz.md).
 
@@ -315,7 +317,7 @@ The test manifests live in `infrastructure/istio/test/`.
 | Local | Cloud equivalent |
 |---|---|
 | SPIRE upstream CA = `disk` plugin | SPIRE upstream CA = KMS-backed plugin (`aws_kms` etc.) |
-| `spiffe://secforge.local` trust domain | `spiffe://dev.secforge.internal` (or per-env) |
+| `spiffe://secforge.platform` trust domain | `spiffe://dev.secforge.internal` (or per-env) |
 | Single ztunnel pod | One ztunnel per node (DaemonSet shape unchanged) |
 | Waypoints deployed per service-account | Same; HPA is the only addition |
 | cert-manager-csi-driver-spiffe | Same (it's K8s-native; no cloud dependency) |
