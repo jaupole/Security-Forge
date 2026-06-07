@@ -72,8 +72,7 @@ if err != nil {
 (`bootstrap` is the existing `SecretBootstrapper` your BFF or service
 already uses — typically constructed by `NewOpenBaoBootstrapper(...)`.)
 
-Reference: [`apps/helloworld-bff/main.go`](../../apps/helloworld-bff/main.go) +
-[`apps/helloworld-bff/admin.go`](../../apps/helloworld-bff/admin.go).
+Reference: `apps/security-events-collector/main.go` (a live `SecretBootstrapper` consumer).
 
 ## Step 3 — Swap each call site
 

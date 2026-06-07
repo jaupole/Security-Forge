@@ -226,7 +226,7 @@ If Loki/Promtail/the local stdout pipe slows down, `LogHop`'s 100ms write timeou
 ## Constraints worth re-stating
 
 - **Library API surface is fixed by [ADR-0014](../02-decisions/0014-api-auth-library-design.md).** Don't invent helpers — open an issue if you need one.
-- **No new third-party deps.** `apps/lib/api-auth` uses only `lestrrat-go/jwx/v2` and stdlib. If you reach for a new dep in a fix, verify it's already in `apps/helloworld-bff/go.mod`.
+- **No new third-party deps.** `apps/lib/api-auth` uses only `lestrrat-go/jwx/v2` and stdlib. If you reach for a new dep in a fix, verify it's already in `apps/lib/go.mod`.
 - **No panics.** Every code path returns a typed error.
 - **Library does not load secrets.** Caller passes already-loaded values via Config structs (per [ADR-0019](../02-decisions/0019-secret-distribution-interface.md)).
 - **Audit log emits on every protected request, including denials.** Don't gate `LogHop` on success.

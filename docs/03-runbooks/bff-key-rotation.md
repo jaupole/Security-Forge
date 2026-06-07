@@ -1,6 +1,8 @@
 # BFF `private_key_jwt` rotation
 
-> **Scope:** the four BFF clients in the `secforge-tenants` Keycloak realm — `helloworld-bff`, `proposal-forge-bff`, `project-tracker-bff`, `pm-bff`. Each holds an RSA-2048 keypair used for `private_key_jwt` client authentication (PS256). Phase 6.10b moved the keys into OpenBao at `secret/data/keycloak/clients/<id>`; Phase 7d.1 added rotation tooling.
+> **Scope:** the `private_key_jwt` BFF clients in the Keycloak realms. Each holds an RSA-2048 keypair used for `private_key_jwt` client authentication (PS256), with keys in OpenBao at `secret/data/keycloak/clients/<id>`. The `helloworld-bff` client was **removed** with the helloworld demo; the live BFF clients are codified in the realm-import (`platform/manifests/keycloak/realms/`) — verify the current client IDs there before rotating.
+>
+> **Production note.** Written for the local edition (helloworld-bff worked example, now removed); the rotation pattern applies to the live clients. Admin is DB-only — verify against the live cluster before acting.
 >
 > **Cadence:** 90 days, automated via four staggered CronJobs (`bff-key-rotator-<bff>` in `app` ns). Manual rotation is supported for ad-hoc events (suspected compromise, off-cycle rollover).
 

@@ -83,9 +83,9 @@ The app needs:
 3. The policy authorizes reads from `secret/data/apps/<app-name>/*`
    automatically via the SPIFFE-ID's `metadata.app` attribute.
 
-For step 1+2, mirror the helloworld-bff onboarding script in
-`platform/components/05c-openbao-configure.sh` and Phase 5.10's
-test-workload pattern. Step 3 is automatic once 1+2 are in place.
+For step 1+2, mirror the per-app onboarding in
+`platform/components/05c-openbao-configure.sh` + `05j-app-vso-roles.sh`.
+Step 3 is automatic once 1+2 are in place.
 
 Verify:
 
@@ -122,8 +122,8 @@ pattern.
 
 ## Step 5 — Adopt the API-auth library (if the app accepts inbound traffic)
 
-Mirror [`apps/helloworld-bff/auth.go`](../../apps/helloworld-bff/auth.go). The
-library is `apps/lib/api-auth/`; ADR-0014 documents the design.
+Adopt the `apps/lib/api-auth/` library (see its `client.go` + tests for the
+integration shape); ADR-0014 documents the design.
 
 ## Step 6 — Wire the error reporter
 
@@ -140,12 +140,12 @@ Use `reporter.Capture(ctx, err, tags)` at every error-emission site that
 would otherwise reach Sentry/Rollbar/OTel error events. Phase 7 swaps
 the Sink for the production reporter; you change zero lines.
 
-See [`apps/helloworld-bff/errreport.go`](../../apps/helloworld-bff/errreport.go)
+See `apps/lib/errreport/` and its live consumer `apps/security-events-collector/`
 for the singleton pattern.
 
 ## Step 7 — Adopt the deployment pattern
 
-Mirror [`apps/helloworld-bff/deploy/`](../../apps/helloworld-bff/deploy/):
+Mirror the deployment scaffold in [`templates/app-repo/`](../../templates/app-repo/) (live example: `apps/security-events-collector/deploy/`):
 
 1. ServiceAccount with `spiffe.io/spire-managed-identity: "true"` label
 2. Deployment with the spiffe-helper init container writing JWT-SVID to
@@ -157,7 +157,7 @@ Mirror [`apps/helloworld-bff/deploy/`](../../apps/helloworld-bff/deploy/):
 
 ## Step 8 — Adopt the build pattern
 
-Copy `apps/helloworld-bff/build.sh` and adjust:
+Copy `apps/security-events-collector/build.sh` (or `templates/app-repo/Dockerfile.example`) and adjust:
 
 - Image name + version
 - Build context (one level above the app's go.mod when using the

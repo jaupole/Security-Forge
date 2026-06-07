@@ -1,6 +1,6 @@
 # BFF Operations Runbook
 
-> **Production note.** Written for the local edition. In production: the cluster is **Hetzner k3s** single node (a "Docker Desktop restart" = a **node reboot**); ingress is the **Istio gateway** (not ingress-nginx); operator access is the **Tailscale tailnet**; the SPIRE trust domain is **`secforge.platform`**. Verify steps against the live cluster before acting. See [PLAN.md](../../PLAN.md).
+> **Production note.** Written for the local edition. In production: the cluster is **Hetzner k3s** single node (a "Docker Desktop restart" = a **node reboot**); ingress is the **Istio gateway** (not ingress-nginx); operator access is the **Tailscale tailnet**; the SPIRE trust domain is **`secforge.platform`**. Verify steps against the live cluster before acting. **This runbook used the now-removed `helloworld-bff` demo as its worked example; the live BFF-pattern reference is [04-bff-pattern.md](../01-architecture/04-bff-pattern.md) + `apps/lib` + `templates/app-repo/`.** See [PLAN.md](../../PLAN.md).
 
 > Architecture: [docs/01-architecture/04-bff-pattern.md](../01-architecture/04-bff-pattern.md)
 > ADRs: [0011 — single replica](../02-decisions/0011-bff-single-replica-local.md), [0015 — secret distribution](../02-decisions/0015-secret-distribution-pattern.md)

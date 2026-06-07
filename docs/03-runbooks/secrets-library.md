@@ -2,7 +2,7 @@
 
 > **Source of truth:** [ADR-0013 — outbound secrets pattern](../02-decisions/0013-outbound-secrets-no-env.md)
 > **Library code:** `apps/lib/secrets/`
-> **Reference adopter:** `apps/helloworld-bff/` (admin.go, errreport.go)
+> **Reference adopter:** `apps/security-events-collector/` (a live Go consumer of `apps/lib/secrets`)
 
 This runbook is the operator-facing guide to the outbound-secrets library
 that ships with Phase 6b-2. If you're an SecForge developer reaching for
@@ -19,8 +19,8 @@ same in every case.
 
 If you're bootstrapping a `private_key_jwt` PEM at startup (BFF-shape),
 you're already on the *bootstrapper* side of the same package — see
-`SecretBootstrapper` in `bootstrapper.go` and the helloworld-bff
-construction in `apps/helloworld-bff/main.go`.
+`SecretBootstrapper` in `bootstrapper.go` and its construction in
+`apps/security-events-collector/main.go`.
 
 ## When NOT to use this library
 
@@ -125,7 +125,7 @@ Each helper invokes `Use` internally, so the same zeroing semantics apply.
 3. Use `client.GetField(ctx, "<integration>", "<field>")` in code.
 4. Add a test that exercises the call site — the standard pattern is a
    `fakeBootstrapper` returning a canned KV-v2 envelope; see
-   [`apps/helloworld-bff/admin_test.go`](../../apps/helloworld-bff/admin_test.go).
+   `apps/security-events-collector/bootstrap_test.go`.
 5. Document the integration's rotation cadence in your app's README.
    ADR-0013 mandates rotation MUST be possible without redeploying any
    app — the library's TTL cache will pick up a fresh value automatically.
