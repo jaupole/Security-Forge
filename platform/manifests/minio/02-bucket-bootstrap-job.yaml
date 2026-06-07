@@ -100,7 +100,8 @@ spec:
               # Holds member file attachments uploaded via Member Hub's
               # member-documents API. Versioning protects against accidental
               # operator DELETE; SSE-S3 encrypts at rest. The MinIO service
-              # account that the app uses is provisioned out-of-band (see
+              # account that the app uses is provisioned out-of-band by
+              # 03-member-hub-documents-credentials-job.yaml (see
               # docs/03-runbooks/member-hub-documents-bucket.md) — this Job
               # only owns bucket creation, never credentials.
               mc mb --ignore-existing local/member-hub-documents
