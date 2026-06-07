@@ -74,7 +74,7 @@ spec:
           # 682fd0ac = per-(org × app) branding: GET /me?app=<slug> overlays
           # the org's per-app accent; branding GET/PATCH carry the appBranding
           # map (#49). (control-image-build, commit c31e164).
-          image: ghcr.io/jaupole/control@sha256:682fd0ace305f9add6857f067d84ae8515657f104976ba723d93aaa9d8fe7db0
+          image: ghcr.io/jaupole/control@sha256:71324982c53dcb7714830745ea44825a5d13b87c3e1ba16598acc59b96fe87e0
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
