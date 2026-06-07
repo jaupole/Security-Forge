@@ -58,8 +58,8 @@ spec:
         # applied deliberately at a maintenance window, not on every reconcile.
         proxy.istio.io/config: |
           proxyStatsMatcher:
-            inclusionPrefixes:
-            - http_local_rate_limit
+            inclusionRegexps:
+            - ".*http_local_rate_limit.*"
       labels:
         app: istio-ingress
         istio: ingress                    # selector for the Gateway CR + AuthorizationPolicies
