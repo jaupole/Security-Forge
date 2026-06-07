@@ -51,10 +51,10 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. f06c438b = org-graphics Phase 5 (PR #33,
-          # 8f55176): unified "Brand & Graphics" page — converter-backed logo
-          # upload to org_graphics; logo uploaders removed from Branding/BrandKit.
-          image: ghcr.io/jaupole/portal@sha256:f06c438b0f643bccf6e504fc36dd1376b63ae25a7e3398bec722f26647406075
+          # automate the bump. b5db1991 = org-graphics Phase 6 (PR #34,
+          # c4fd313): dead branding-logo patch surface removed + per-surface
+          # SlotCard replace-409 fixed. (Phase 5 was f06c438b.)
+          image: ghcr.io/jaupole/portal@sha256:b5db1991437d6736ebf10d13c10b6ed0551a21e45e7fcfc6408ec1f54e651c96
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
