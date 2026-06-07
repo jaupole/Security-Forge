@@ -152,7 +152,7 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 | Doc | Verdict | Note |
 |---|---|---|
 | `README.md` | ✏️ REWRITE | "Expected runbooks" replaced with accurate index of the 41 real runbooks. |
-| `keycloak-operations.md` | ⚠️ BANNER | Heavy local-edition; production banner added; **full rewrite tracked in operator-backlog**. |
+| `keycloak-operations.md` | ✏️ REWRITE | **Rewritten production-accurate 2026-06-07** — DB-only admin model, `kc.secforge.dev` tailnet console, realm-import + 03a/05l replay paths, client-secret-rotation Infinispan gotcha, Istio-gateway troubleshooting (615→282 lines). |
 | `bff-operations`, `openbao-recovery`, `openbao-seal-unseal`, `spicedb-operations`, `spire-ca-rotation`, `spire-rotation` | ⚠️ BANNER | Dropped "Local Edition" title + production-delta banner. |
 | all runbooks | ✏️ FIX | `secforge.local`→`secforge.dev`, SPIFFE→`secforge.platform`, dead links. |
 
@@ -197,6 +197,7 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 
 ## Flagged for follow-up (tracked in operator-backlog)
 
-Two large local-edition docs got a protective production banner now but warrant a dedicated full
-rewrite (out of scope for a one-pass sweep): **`03-runbooks/keycloak-operations.md`** (~550 lines of
-local-edition procedure) and **`04-security/threat-model.md`** (~800-line point-in-time analysis).
+**`03-runbooks/keycloak-operations.md`** — ✅ **rewritten production-accurate 2026-06-07** (615→282
+lines). Remaining (operator-backlog #82): **`04-security/threat-model.md`** (~800-line point-in-time
+analysis) still warrants a dedicated full rewrite — including verifying the image-signing
+Audit-vs-Enforce claim (X-R2) against the live `verify-image-signature-secforge` policy.
