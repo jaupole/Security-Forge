@@ -82,7 +82,7 @@ spec:
           # BFF cutover (centralized-login): @jaupole/ecosystem-auth session
           # store; tokens server-side, sealed __Host-mh_sess cookie only.
           # 0.1.1 fixes the __Host- cookie clear. commit 3437181.
-          image: ghcr.io/jaupole/member-hub@sha256:7ea9ba5ed2945b9bc5f2655783b40343472562b14871397a87661a1580f68534
+          image: ghcr.io/jaupole/member-hub@sha256:9532640007beb9de43d230836593dda2cbe96a482d8ed7b3247403124bed103e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
