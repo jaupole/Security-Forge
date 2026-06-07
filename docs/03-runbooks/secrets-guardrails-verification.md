@@ -1,6 +1,12 @@
 # Outbound-secrets guardrail verification suite
 
-> **Source of truth:** [`infrastructure/secrets-guardrails/verify/`](../../infrastructure/secrets-guardrails/verify/)
+> ⚠️ **Production note.** The local-edition `infrastructure/secrets-guardrails/verify/` scripts are
+> retired. In production the guardrails are **Kyverno-enforced** (`no-secret-shaped-env-vars`,
+> `legacy-secret-env-expiry`, `restrict-image-registries`, etc.) with a self-test at
+> `platform/manifests/kyverno/07-guardrail-selftest.yaml`. Verify by confirming those ClusterPolicies
+> are `Enforce` and the self-test admits/denies as expected. The script-by-script detail below is the
+> historical local-edition suite.
+>
 > **ADR:** [ADR-0013 § Multi-layer prevention guardrails](../02-decisions/0013-outbound-secrets-no-env.md#3-multi-layer-prevention-guardrails)
 
 This runbook documents the executable verification suite that probes

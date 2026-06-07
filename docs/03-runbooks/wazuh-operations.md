@@ -56,7 +56,7 @@ The Phase 7.2 deploy intentionally omits four pieces. Each has a clear "when to 
 
 **Status:** infrastructure shipped (separate ns `wazuh-agent` with PSS=privileged), agent registers with manager + connects. **`/var/ossec/etc/client.keys` persistence resolved 2026-05-05** via `bootstrap-agent-key.sh` (pre-register agent on manager → extract key → persist as K8s Secret `wazuh-agent/wazuh-agent-key`) + DaemonSet init-container injection (the etc-overlay init copies the Secret content into `/var/ossec/etc/client.keys` at every pod start, so the agent uses the pre-registered key directly and never auto-enrolls). Verified: kill the agent pod, watch the new pod come back with the SAME agent ID (010) and Active state in `agent_control -l`; manager logs show zero re-enrollment events.
 
-**What's in `infrastructure/wazuh-agent/`:**
+**What's in `platform/manifests/wazuh-agent/`:**
 
 - Standalone DaemonSet (NOT chart-managed — the chart's `agent.enabled` template hard-codes `privileged: true` + `hostPID: true` + hostPath, all of which PSS=baseline blocks; we rejected forking the chart in favor of cleanly separated manifests).
 - New ns `wazuh-agent` with PSS=`privileged` (so hostPath mounts admit; the rest of `wazuh` ns stays PSS=`baseline`).
@@ -227,7 +227,7 @@ kubectl exec -n openbao openbao-0 -- bao kv get secret/foo 2>/dev/null
 ### 3. OIDC federation with Keycloak — deferred (medium follow-up)
 
 The dashboard authenticates via local admin password today. To federate against Keycloak:
-1. Create the `wazuh-dashboard` Keycloak client (Path A pattern; mirror `infrastructure/keycloak/clients/grafana.sh`)
+1. The `wazuh-dashboard` Keycloak client is codified in the realm-import (`platform/manifests/keycloak/realms/platform-realm.yaml`); add/adjust it there and re-apply (admin is DB-only — no kcadm)
 2. Configure the OpenSearch Security plugin (`config.yml` + `roles_mapping.yml` inside the dashboard pod) to accept OIDC tokens from Keycloak
 3. Map `platform_admin` realm role → Wazuh `admin` backend role
 

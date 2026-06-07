@@ -17,7 +17,7 @@
 The earlier [phase-10 integrate-proposal-forge prompt](../../99-archive/05-claude-code-prompts/phase-10-integrate-proposal-forge-project-tracker.md)
 and the project-tracker audit were written for the **retired local edition**
 (separate BFF deployment, shared `secforge-app-db`, `secforge.dev`, mkcert,
-`infrastructure/spicedb`). The live bare-metal platform does **not** use that
+`platform/manifests/spicedb`). The live bare-metal platform does **not** use that
 shape. Proposal Forge clones the **Member Hub** production pattern instead:
 
 | Concern | Local-edition plan (stale) | Live pattern (this doc) |

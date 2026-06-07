@@ -77,7 +77,7 @@ Phase 7b's Promtail tails the container logs.
 The sketch in the section below is now the live config. Three pieces:
 
 **1. Promtail scrape job `secrets-guardrails`** (committed in
-`infrastructure/observability/04-promtail-values.yaml` §
+`platform/values/promtail.yaml` §
 `extraScrapeConfigs`):
 
 - Discovers Pods labeled `app.kubernetes.io/name=security-events-collector` across all namespaces.
@@ -92,7 +92,7 @@ The sketch in the section below is now the live config. Three pieces:
   which is easy to miss when writing PrometheusRule expressions
   against it.
 
-**2. Loki per-stream retention** (`infrastructure/observability/03-loki-values.yaml` §
+**2. Loki per-stream retention** (`platform/values/loki.yaml` §
 `limits_config.retention_stream`): 90d for `{job="secrets-guardrails"}`,
 14d global. Aspirational until `compactor.retention_enabled: true`
 flips — the diagnostic comment in the values file documents why
@@ -102,7 +102,7 @@ has accumulated at least one delete request and Loki still reaches
 `/ready` post-restart.
 
 **3. PrometheusRule group `secforge.secrets-guardrails`** (4 rules in
-`infrastructure/observability/13-alerting-rules.yaml`):
+`platform/manifests/observability/09-platform-alerts.yaml`):
 
 | Alert | Trigger | Severity |
 |---|---|---|
@@ -113,7 +113,7 @@ has accumulated at least one delete request and Loki still reaches
 
 ## Phase 7b — secrets-guardrails CronJobs
 
-Two weekly CronJobs in `infrastructure/secrets-guardrails/cron/`,
+Two weekly CronJobs (deployed under `platform/manifests/`),
 applied via `bash apply.sh`:
 
 - **`weekly-guardrail-verify`** (Sunday 02:00 UTC): mounts the verify

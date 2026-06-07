@@ -55,7 +55,7 @@ Use Haiku when you don't need the model to think, only to wire calls.
 - "Where is X defined?" — grep + return location
 - "Does this file contain Y?" — read + boolean answer
 - One-shot kubectl status checks
-- File-tree listings, "what files are in `infrastructure/openbao/`?"
+- File-tree listings, "what files are in `platform/manifests/openbao/`?"
 - Slash-command-style scripted ops (`/health-check`, `/reset-cluster`)
 - "Read this log, find any line containing ERROR"
 

@@ -143,7 +143,7 @@ The refresher logs are structured JSON with discriminator `event=spicedb.datasto
 
 If the CNPG `secforge-spicedb-db` cluster's `spicedb` user password is rotated outside OpenBao (e.g., by an operator running `ALTER USER spicedb WITH PASSWORD ...` directly, or by a CNPG version upgrade that re-issues credentials), OpenBao's stored connection root credential goes stale and **the next `spicedb-datastore-refresher` run will fail** with a SASL authentication error. The static `datastore_uri` in the rendered Secret continues to work for SpiceDB (it carries the same password OpenBao knows about, until VSO renders a new dynamic-cred-based URI), but new dynamic-cred mints are blocked.
 
-Recovery procedure (mirrors [`infrastructure/openbao/database-roles/spicedb-readwrite.sh`](../../infrastructure/openbao/database-roles/spicedb-readwrite.sh) §3):
+Recovery procedure (mirrors the `spicedb-readwrite` OpenBao database role, provisioned by `platform/components/05c-openbao-configure.sh`):
 
 ```bash
 # 1. Read the current CNPG-issued password.
