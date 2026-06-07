@@ -171,19 +171,29 @@ realm-imports run from the custom Keycloak image. Keycloak admin is DB-only (no 
 | `00-getting-started/*`, `05-claude-code-prompts/*`, `migration-to-{aws,vps}`, `migration-keycloak-to-cognito`, `iam-oss-edition`, `iam-license-procurement-addendum`, `PLAN-local-edition.md` | 🪦 ARCHIVE | Moved via `git mv` (+ tombstone banners + `99-archive/README.md`). |
 
 ### App repos (Proposal Forge, Member Hub, Control, Portal, ecosystem-auth/ui)
-| Doc | Verdict | Note |
+| Repo / doc | Verdict | Note |
 |---|---|---|
-| *(Phase 5 — see below)* | | Processed after SecForge core commit. |
+| **Proposal Forge** `CLAUDE.md` | ✅ ACCURATE | Already current (ecosystem-auth, deployed). |
+| **Proposal Forge** `docs/architecture.md`, `api-spec.md`, `database-schema.md` | ✏️ FIX | Pre-integration standalone-JWT auth contradicted CLAUDE.md → production banners added (auth = ecosystem-auth BFF); product content kept. Committed `4263870`. |
+| **Proposal Forge** `docs/wizard-steps.md`, `ai-prompts.md` | ✅ ACCURATE | Product feature docs; no prod-infra drift. |
+| **Member Hub** README / CLAUDE.md / docs | ✅ ACCURATE | CLAUDE.md current; no infra-fact drift. |
+| **Ecosystem Control / Portal** README, SECURITY.md, `apps-and-access-rework/` | ✅ ACCURATE | No prod-fact drift (TOTP/ingress-nginx hits are in dated `.claude/audit-history/` records — left as history). |
+| **ecosystem-auth** README | ✅ ACCURATE | Dual-realm (platform/secforge-tenants) AuthCode+PKCE — matches prod. |
+| **ecosystem-ui** README | ✏️ FIX | Documented the vendored-tarball consumption reality (registry path 403s in CI). Committed `b1e6b53`. |
 
 ### .claude/ tooling (prod-fact tier)
-| Doc | Verdict | Note |
+| Repo / file | Verdict | Note |
 |---|---|---|
-| *(Phase 6 — see below)* | | Prod-fact files only; static OWASP/NIST refs untouched. |
+| **Member Hub** `k3s-deploy/SKILL.md` | ✏️ FIX | Ingress = Istio gateway (not ingress-nginx); MH host = `members.secforge.dev` public (not `memberhub` tailnet). Committed. |
+| **Member Hub** `secrets-openbao-vso/SKILL.md` | ✏️ FIX | SPIFFE → `secforge.platform`; legacy-secret-env annotation → `secforge.dev`. |
+| **Member Hub** `secforge-idp/SKILL.md` | ✏️ FIX | Keycloak issuer host → `auth.secforge.dev`. |
+| **Member Hub** other skills, **Control/Portal** stripe skills, **PF** `.claude/rules` | ✅ ACCURATE | No prod-fact drift found. |
+| `.claude/refs/*` (OWASP/NIST), `.claude/audit-history/*` | — LEFT | Static standards / dated audit records — out of scope. |
 
 ### Top-level handoff docs
 | Doc | Verdict | Note |
 |---|---|---|
-| *(Phase 5)* | | CENTRALIZED-LOGIN-HANDOFF, ECOSYSTEM-UI-PLAN/TRANSITION-HANDOFF. |
+| `CENTRALIZED-LOGIN-HANDOFF.md`, `ECOSYSTEM-UI-PLAN.md`, `ECOSYSTEM-UI-TRANSITION-HANDOFF.md` | ✅ NO PROD DRIFT | Program-tracking playbooks; no `secforge-prod` fact drift (no Teleport/ingress-nginx/secforge.local). Phase-completion status is internal bookkeeping, out of the prod-drift scope. |
 
 ## Flagged for follow-up (tracked in operator-backlog)
 
