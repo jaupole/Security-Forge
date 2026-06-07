@@ -18,10 +18,17 @@
 # observed counter before enforcing.
 #
 # Observe (during the monitor window):
-#   POD=$(kubectl -n istio-ingress get pod -l istio=ingress -o name | head -1)
-#   kubectl -n istio-ingress exec "$POD" -c istio-proxy -- \
-#     pilot-agent request GET stats | grep 'local_rate_limit.secforge_gateway_rl'
-#   # ok / rate_limited / enabled / enforced counters.
+#   Istio drops `http_local_rate_limit.*` from Envoy's stats by default, so the
+#   counters are INVISIBLE until the gateway is restarted with the proxyStatsMatcher
+#   inclusion codified in 11-public-gateway.yaml (Recreate strategy → ~15s blip):
+#     kubectl -n istio-ingress rollout restart deploy/istio-ingress
+#   Then, after some real traffic:
+#     POD=$(kubectl -n istio-ingress get pod -l istio=ingress -o name | head -1)
+#     kubectl -n istio-ingress exec "$POD" -c istio-proxy -- \
+#       pilot-agent request GET stats | grep 'http_local_rate_limit.secforge_gateway_rl'
+#   # .ok / .rate_limited / .enabled / .enforced counters. `rate_limited` should stay
+#   # ~0 under real traffic; if so, flip filter_enforced numerator 0 -> 100 below and
+#   # re-apply this file (xDS push, NO gateway restart) to start enforcing.
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
 metadata:

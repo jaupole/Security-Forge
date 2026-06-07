@@ -50,6 +50,16 @@ spec:
         prometheus.io/path: /stats/prometheus
         prometheus.io/port: "15020"
         prometheus.io/scrape: "true"
+        # Expose the local_ratelimit counter from 41-envoyfilter-ratelimit.yaml.
+        # Istio's default stats filter DROPS `http_local_rate_limit.*` at the Envoy
+        # level, so the rate-limit counters are invisible on both the admin (:15000)
+        # and Prometheus (:15090) endpoints until included here. Takes effect only on
+        # the next gateway (re)start (Recreate strategy → ~15s ingress blip), so it is
+        # applied deliberately at a maintenance window, not on every reconcile.
+        proxy.istio.io/config: |
+          proxyStatsMatcher:
+            inclusionPrefixes:
+            - http_local_rate_limit
       labels:
         app: istio-ingress
         istio: ingress                    # selector for the Gateway CR + AuthorizationPolicies
