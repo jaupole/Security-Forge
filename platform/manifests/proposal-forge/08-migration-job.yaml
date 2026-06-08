@@ -68,10 +68,11 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # ecosystem-ui glow migration COMPLETE (Phase 0-4) — proposal-forge-image
-          # -build run 27157450085, commit c55dd31. No NEW migration in this release;
+          # SpiceDB checkPermission transient-retry (defense-in-depth on top of the
+          # allow-proposal-forge-to-spicedb NetworkPolicy fix) — proposal-forge-image
+          # -build run 27158378175, commit 26bfaec. No NEW migration in this release;
           # digest kept in lockstep with the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:c438c6bece44a6c184d13af4c1a6f43d28a2020a022f8eb335fb01fd9efecb47
+          image: ghcr.io/jaupole/proposal-forge@sha256:92a62de83e85b99594c7dd08b4646c2a5f93350ab8daa0013218d954c2e8cf2e
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
