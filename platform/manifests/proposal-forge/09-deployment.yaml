@@ -57,12 +57,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # Proposal-create SpiceDB-blip fix (post-commit tuple write now retried
-          # + non-fatal so a transient blip no longer phantom-fails create).
-          # proposal-forge-image-build run 27154028307, commit d1015a4. Provider-doc
+          # ecosystem-ui glow migration Phase 0+1 (glow theme + <Shell> + Dashboard).
+          # proposal-forge-image-build run 27155202912, commit 9898204. Provider-doc
           # editing still self-hides until OAUTH_TOKEN_SEAL_KEY is present.
           # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:0278802effb5e81e4fb628b788c5a855edbeafed0adfd7011a6a4028c243f682
+          image: ghcr.io/jaupole/proposal-forge@sha256:317715e6c8df5d84d5a76f0aca1b258c52e18cc9a114ef2cf11ecc4f9a05338d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
