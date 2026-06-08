@@ -74,7 +74,7 @@ spec:
           # 682fd0ac = per-(org × app) branding: GET /me?app=<slug> overlays
           # the org's per-app accent; branding GET/PATCH carry the appBranding
           # map (#49). (control-image-build, commit c31e164).
-          image: ghcr.io/jaupole/control@sha256:60538a47e35326bbaa4fc7aeb6cacf041630bbdbaba9577ea1d2d88b2e513423
+          image: ghcr.io/jaupole/control@sha256:60d84bc14eb98e80c44e22688b0207a8e4a95b8cd8c248b2675f65e705c6d137
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
@@ -93,6 +93,10 @@ spec:
             # the last hop of the QBO connect flow. Integrations is a
             # tenant-face page served at portal.${DOMAIN} (lib/shell.ts).
             - { name: PORTAL_ORIGIN, value: "https://portal.${DOMAIN}" }
+            # Cross-app theme cookie: scope `secforge_theme` to the shared
+            # parent domain so portal/admin/members/... all read one account
+            # theme before first paint (written by the login BFF + on save).
+            - { name: THEME_COOKIE_DOMAIN, value: "${DOMAIN}" }
             # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
             # which presents its INTERNAL cert (signed by secforge-internal-ca,
             # not Let's Encrypt). Point NODE_EXTRA_CA_CERTS at the

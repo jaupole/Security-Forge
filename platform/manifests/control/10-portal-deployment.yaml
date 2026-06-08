@@ -51,12 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 9720208b = regroup admin nav — Page Settings +
-          # Ecosystem Admins into Administration (PR #42, 845d7ac), on top of
-          # Page Settings → Platform View only (#41, 8f9d6278), admin Page
-          # Settings (#40, d8e82842), the Configure modal (#39), and the
-          # logo-mark header (#38).
-          image: ghcr.io/jaupole/portal@sha256:9720208b11a048da45d02c60518d27e8696997e5f530c2519e8f924ce307c8f5
+          # automate the bump. e1e8b628 = honor cross-app theme cookie (PR #43,
+          # reads secforge_theme before first paint), on top of the admin nav
+          # regroup (#42, 9720208b), Page Settings → Platform View (#41), and
+          # the admin Page Settings accent (#40).
+          image: ghcr.io/jaupole/portal@sha256:e1e8b6287586414911b10d11c4a8de8f62628a8bdee0371e44aa7f5b865de251
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
