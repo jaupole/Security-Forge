@@ -51,10 +51,10 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. d06ffef3 = header brand mark prefers the square
-          # logo mark / org_logo_mark (PR #38, e8e6658), on top of the Branding
-          # redesign (#37) + Microsoft-association nginx change (d11bb92).
-          image: ghcr.io/jaupole/portal@sha256:d06ffef3610756f82f524dafae10bd8767b1114ed75a3f78fe22d822b915d360
+          # automate the bump. c3e66c48 = Configure opens a centered popup/modal
+          # instead of a side sheet (PR #39, df910ba), on top of the logo-mark
+          # header (#38) + Branding redesign (#37) + Microsoft nginx file (d11bb92).
+          image: ghcr.io/jaupole/portal@sha256:c3e66c48df44d9d3d83ef197b4465758150bc2ef75dcaf1ff76546634f0b1054
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
