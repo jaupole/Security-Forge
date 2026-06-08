@@ -57,10 +57,12 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # BFF cutover (centralized-login): @jaupole/ecosystem-auth 0.1.1
-          # session store; tokens server-side, sealed __Host-pf_sess cookie only.
-          # proposal-forge-image-build, commit f20af3a. MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:905854e163e5d0cec54783050764de7d714e1a2d1f4339df0fa2cbac2fb967c4
+          # Per-user Word-for-web / Google Docs editing round-trip (provider-doc
+          # feature). proposal-forge-image-build run 27152679904, commit ec98ba9.
+          # New OAuth env (GOOGLE_/MICROSOFT_OAUTH_* + OAUTH_TOKEN_SEAL_KEY)
+          # arrives via envFrom proposal-forge-app-secrets; feature self-hides
+          # until the seal key is present. MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:b0be3cec1126fbfdf9bea5e56a4f1a9f31d2324ccde3b63429e5774bb99f0e71
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
