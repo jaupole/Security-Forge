@@ -87,7 +87,10 @@ spec:
           # e953b2bd = org-graphics Phase 4 (PR #76, 5a5704a): graphics-list
           # schema accepts canonical org_logo purposes + webp; email header
           # falls back to org_logo.
-          image: ghcr.io/jaupole/member-hub@sha256:e953b2bd6cbf5574594c6cc70d50d7c9c88f4146b51341fd027603106b7b1910
+          # 4cf6aec0 = cross-app theme cookie (PR #78, a64461e): BFF writes
+          # secforge_theme at login (ecosystem-auth 0.1.4), client reads it
+          # before first paint (ecosystem-ui 0.1.7). Needs THEME_COOKIE_DOMAIN.
+          image: ghcr.io/jaupole/member-hub@sha256:4cf6aec0347f212084eff24ee1e2927afcc78cbaa5b9f0cec24d8906f9f2b9e5
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
@@ -124,6 +127,10 @@ spec:
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
             - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
+            # Cross-app theme cookie: scope `secforge_theme` to the shared
+            # parent domain so a sign-in here paints the user's account theme
+            # before first render, shared with portal/admin/control.
+            - { name: THEME_COOKIE_DOMAIN, value: "${DOMAIN}" }
             # User-login OIDC client (AuthCode + PKCE). Confidential, with
             # an oidc-audience-mapper adding `member-hub` to access-token
             # `aud`. OIDC_CLIENT_SECRET comes from VSO-rendered
