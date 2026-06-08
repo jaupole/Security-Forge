@@ -48,8 +48,13 @@ T=$(sudo -n kubectl -n openbao exec openbao-0 -c openbao -- env BAO_SKIP_VERIFY=
       bao write -field=token auth/kubernetes/login role=admin-break-glass jwt="$SA")
 printf %s "$T" | sudo -n kubectl -n openbao create secret generic openbao-root-token-tmp \
   --from-file=token=/dev/stdin
-bash ~/secforge/platform/components/05j-app-vso-roles.sh   # upserts the role + applies 21/22
+bash ~/secforge/platform/components/05j-app-vso-roles.sh   # upserts the loki-audit-signer role
 sudo -n kubectl delete secret -n openbao openbao-root-token-tmp
+# Apply the Loki anchor + verifier manifests (05j does NOT — it owns the openbao
+# 12/13; 07f-loki.sh owns 21/22 on a fresh build):
+cd ~/secforge/platform && lib/apply-manifest.sh \
+  manifests/observability/21-loki-audit-anchor.yaml \
+  manifests/observability/22-loki-audit-verifier.yaml
 
 # 3. Confirm the PAT secret rendered in observability (force-sync if needed):
 sudo -n kubectl -n observability get secret audit-anchors-push-token || \

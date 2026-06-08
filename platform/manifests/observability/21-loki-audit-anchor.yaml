@@ -366,6 +366,9 @@ spec:
             runAsNonRoot: true
             runAsUser: 65532
             runAsGroup: 65532
+            # fsGroup so the kubelet grants this gid read on the mounted PAT secret
+            # (defaultMode 0400, owner root) — without it uid 65532 can't read it.
+            fsGroup: 65532
             seccompProfile: {type: RuntimeDefault}
           containers:
             - name: anchor
