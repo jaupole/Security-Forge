@@ -68,12 +68,11 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Provider-doc editing release — proposal-forge-image-build run
-          # 27152679904, commit ec98ba9. Applies migration
-          # 20260607180000_provider_doc_editing (user_oauth_connections +
-          # proposal_provider_docs, both with FORCE RLS org_isolation).
-          # The Deployment (09) MUST reference the SAME digest.
-          image: ghcr.io/jaupole/proposal-forge@sha256:b0be3cec1126fbfdf9bea5e56a4f1a9f31d2324ccde3b63429e5774bb99f0e71
+          # Proposal-create SpiceDB-blip fix — proposal-forge-image-build run
+          # 27154028307, commit d1015a4. No NEW migration in this release
+          # (20260607180000_provider_doc_editing already applied); digest kept in
+          # lockstep with the Deployment (09) per convention.
+          image: ghcr.io/jaupole/proposal-forge@sha256:0278802effb5e81e4fb628b788c5a855edbeafed0adfd7011a6a4028c243f682
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
