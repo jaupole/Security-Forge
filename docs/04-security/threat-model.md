@@ -144,8 +144,12 @@ keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *no
   deterministic `file` audit device on each Raft node — daily anchor + hourly re-read verifier in the
   `openbao` ns (`platform/manifests/openbao/12-/13-`), all three per-node chains committed to
   `secforge-audit-anchors/platform/openbao/`, `PlatformAuditVerifierFailing` (critical) on any rewrite of
-  an anchored range. End-to-end verified live. **Phase 2 (open):** a broad Loki anchor over the *other*
-  security-critical namespaces (spire/kyverno/keycloak/spicedb/wazuh).
+  an anchored range. End-to-end verified live. **Phase 2 — ✅ LIVE** (activated 2026-06-08): a broad
+  anchor over the other control-plane namespaces' Loki streams (keycloak, spicedb, kyverno, spire, wazuh,
+  cert-manager, VSO, istio-ingress/system, velero) — per-NS content-set hashing of settled 24h windows,
+  daily re-query verifier inside a 28d horizon (`manifests/observability/21-/22-`). Weaker than Phase 1
+  (Loki isn't append-only → detects tampering only within Loki's 30d retention), but closes the rest of
+  the platform audit-trail-integrity gap. X-R1 detective gap is now substantially closed.
 
 ---
 
