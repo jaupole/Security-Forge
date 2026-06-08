@@ -39,7 +39,11 @@ spec:
               - cluster.local/ns/proposal-forge/sa/proposal-forge
               # Phase 2 — add when Project Tracker deploys to the cluster:
               # - cluster.local/ns/project-tracker/sa/project-tracker
+      # L4 ONLY (principal + port). This service has no waypoint proxy, so
+      # ztunnel can enforce mTLS identity + destination port but NOT L7 fields
+      # (methods/paths). Including an L7 condition like `methods:` makes ztunnel
+      # reject everything ("allow policies exist, but none allowed"), because the
+      # rule can't be satisfied at L4. Principal + port is the right control here.
       to:
         - operation:
             ports: ["3000"]
-            methods: ["POST", "GET"]
