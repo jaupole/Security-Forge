@@ -23,8 +23,17 @@ Per-namespace independent chains; the anchor runs in the `observability` ns (nex
 Loki is **not** append-only, so this is weaker than the OpenBao Phase 1 guarantee: tampering is
 detectable only for windows **still within Loki's 30d retention**, and the design assumes no log
 arrives later than the 48h settle. A pathological late arrival (e.g. a multi-day Promtail backlog
-replay after an outage) can cause a benign verifier failure — classify it (see Operations). The
-crown-jewel stream (OpenBao) already has the stronger deterministic Phase 1 anchor.
+replay after an outage) is now **auto-classified** as benign by the verifier (see below) rather
+than failing — but if the anchor's per-entry manifest (on the `audit-loki-manifests` PVC) is lost,
+the verifier fails closed on any mismatch. The crown-jewel stream (OpenBao) still has the stronger
+deterministic Phase 1 anchor.
+
+**Add/delete diffing** (false-positive suppression): each anchor also writes a per-entry sha256
+manifest (gzipped) to a node-local PVC and commits its `manifest_sha256` off-node. On a `window_sha256`
+mismatch the verifier verifies the manifest's hash against the committed value, then diffs the re-query:
+**any anchored entry missing/modified = tamper (fail)**; **only additions = benign late-arrival drift
+(a `NOTE`, job still succeeds)**. A node-root attacker who rewrites both Loki and the manifest is still
+caught — the off-node `manifest_sha256` won't match. Missing/unreadable manifest ⇒ fail-closed.
 
 ## Activation (light — no STS recreate, no root token, PAT already provisioned)
 
@@ -104,16 +113,20 @@ sudo -n kubectl -n observability delete job loki-anchor-test loki-verify-test
 
 ## Operations
 
-**Classifying a verifier failure** (`PlatformLokiVerifierFailing`):
-`kubectl -n observability logs job/<latest platform-loki-audit-verifier job>`
-- `TAMPER: <ns> window <date> content changed` → a still-in-retention Loki window no longer
-  matches its signed anchor. Compare the committed `window_sha256`/`entry_count` against a fresh
-  query of that ns + window. If entries are **missing or modified**, treat as an active node
-  compromise (X-R1/P1) — logs were rewritten in MinIO. If the re-query is a strict **superset**
-  (only additions), it's a benign late-arrival drift: re-baseline that ns by deleting
-  `platform/loki/<ns>/_state.json` (the prior anchors stay as the immutable signed record).
-- Any other non-zero exit is operational (Loki or raw.githubusercontent unreachable) — transient,
-  next run self-heals.
+The verifier now **auto-classifies** add-drift vs tamper (see "Add/delete diffing" above), so a
+failure is real. Inspect: `kubectl -n observability logs job/<latest platform-loki-audit-verifier job>`
+- `TAMPER: <ns> window <date> — N anchored entries MISSING/modified` → a still-in-retention Loki
+  window had entries removed/changed vs its signed manifest → treat as an active node compromise
+  (X-R1/P1), logs rewritten in MinIO.
+- `TAMPER: <ns> per-entry manifest <date> hash != committed` → the local manifest PVC was tampered
+  (off-node `manifest_sha256` caught it) → same compromise signal.
+- `TAMPER: <ns> window <date> ... no per-entry manifest to classify` → fail-closed because the
+  manifest is missing (e.g. PVC lost on a rebuild, or window older than `MANIFEST_RETENTION_DAYS`).
+  Re-baseline that ns if the drift is benign: delete `platform/loki/<ns>/_state.json` (prior anchors
+  stay as the immutable signed record).
+- A `NOTE: ... drifted +N entries (benign late arrivals, 0 deletions)` is **not** a failure — the
+  job still succeeds; it just records that the window grew after settling.
+- Any other non-zero exit is operational (Loki or raw.githubusercontent unreachable) — transient.
 
 **Tuning** (CronJob env): `SETTLE_SECONDS` (default 172800/48h — raise if late arrivals recur),
 `VERIFY_WINDOWS` (default 3 — windows re-queried per run), `VERIFY_HORIZON_SECONDS` (default
@@ -122,12 +135,15 @@ sudo -n kubectl -n observability delete job loki-anchor-test loki-verify-test
 **Adding a namespace:** append it to `LOKI_NAMESPACES` on both CronJobs (21-/22-); its chain
 starts at the next anchor run (genesis = the latest settled day, no backfill).
 
-## Future hardening (follow-up, not built)
+## Future hardening
 
-- MinIO **object-lock/WORM** on the `loki-chunks` bucket (TTL-aligned to retention) would make the
-  underlying chunks immutable at the storage layer — stronger than re-query detection.
-- Committing a per-entry hash set (to MinIO) would let the verifier diff additions vs
-  deletions/modifications automatically, removing the late-arrival false-positive.
+- **Per-entry add/delete diffing — ✅ BUILT 2026-06-08** (the `audit-loki-manifests` PVC +
+  `manifest_sha256`); the verifier auto-classifies drift vs tamper.
+- **MinIO object-lock/WORM on `loki-chunks` — deliberately deferred.** Object-lock is create-time-only
+  (would require recreating the bucket + a Loki storage migration) and conflicts with Loki retention;
+  and against the X-R1 actor (node-root) it's only marginal defence-in-depth (node-root can bypass
+  MinIO enforcement at the host — SSE-S3 + the off-node anchor are the real defences). Revisit only if
+  a MinIO-credential-only threat (not host-root) becomes load-bearing. See operator-backlog #85.
 
 ## References
 

@@ -64,7 +64,7 @@ data:
     Exit 0 = all chains intact. Exit 1 = TAMPER (a within-horizon window's content
     changed). Exit 2+ = operational/chain-integrity failure. Non-zero fails the Job
     -> PlatformLokiVerifierFailing."""
-    import hashlib, json, os, sys, time, urllib.request, urllib.parse, urllib.error
+    import gzip, hashlib, json, os, sys, time, urllib.request, urllib.parse, urllib.error
     from datetime import datetime, timezone
 
     LOKI_ADDR = os.environ.get("LOKI_ADDR", "http://loki.observability.svc.cluster.local:3100")
@@ -75,6 +75,7 @@ data:
     NAMESPACES = [n.strip() for n in os.environ["LOKI_NAMESPACES"].split(",") if n.strip()]
     HORIZON = int(os.environ.get("VERIFY_HORIZON_SECONDS", str(28 * 86400)))
     K = int(os.environ.get("VERIFY_WINDOWS", "3"))
+    MANIFEST_DIR = os.environ.get("MANIFEST_DIR", "/manifests")
     RAW = "https://raw.githubusercontent.com/{}/{}".format(REPO, BRANCH)
     US = "\x1f"
 
@@ -143,6 +144,38 @@ data:
             h.update(b"\x1e")
         return h.hexdigest()
 
+    def load_manifest(ns, date, committed_sha):
+        # Returns the set of per-entry hashes, or None if the manifest is absent.
+        # Raises Tamper if the local manifest's hash != the off-node committed value.
+        path = os.path.join(MANIFEST_DIR, ns, date + ".entries.gz")
+        if not os.path.exists(path):
+            return None
+        with gzip.open(path, "rb") as f:
+            body = f.read()
+        if hashlib.sha256(body).hexdigest() != committed_sha:
+            raise Tamper("{}: per-entry manifest {} hash != committed off-node value "
+                         "(manifest tampered)".format(ns, date))
+        return set(body.decode("utf-8").split("\n")) if body else set()
+
+    def classify_mismatch(ns, a, entries):
+        # A window_sha256 mismatch fired. Use the per-entry manifest to decide:
+        # any anchored entry now MISSING/modified = tamper; only additions = benign
+        # late-arrival drift (NOTE, not a failure). No usable manifest = fail-closed.
+        date = a.get("date")
+        committed = a.get("manifest_sha256")
+        manifest = load_manifest(ns, date, committed) if committed else None
+        if manifest is None:
+            raise Tamper("{}: window {} content changed and no per-entry manifest to "
+                         "classify — failing closed (committed window {}, re-query {})".format(
+                         ns, date, a["window_sha256"][:16], window_hash(entries)[:16]))
+        requery = {hashlib.sha256(e.encode("utf-8")).hexdigest() for e in entries}
+        deletions = manifest - requery
+        if deletions:
+            raise Tamper("{}: window {} — {} anchored entries MISSING/modified since signing "
+                         "(tamper, not drift)".format(ns, date, len(deletions)))
+        print("NOTE: {}: window {} drifted +{} entries since signing (benign late arrivals, "
+              "0 deletions)".format(ns, date, len(requery - manifest)))
+
     def verify_ns(ns, now_ns):
         state = raw_get_json("{}/{}/_state.json".format(ANCHOR_DIR, ns))
         if state is None:
@@ -175,11 +208,10 @@ data:
         for a in reversed(anchors):
             if rechecked >= K or a["window_end_ns"] <= horizon_ns:
                 break
-            wh = window_hash(query_window(ns, a["window_start_ns"], a["window_end_ns"]))
-            if wh != a["window_sha256"]:
-                raise Tamper("{}: window {} content changed — committed {} re-query {} "
-                             "(committed {} entries)".format(ns, a.get("date"),
-                             a["window_sha256"][:16], wh[:16], a["entry_count"]))
+            entries = query_window(ns, a["window_start_ns"], a["window_end_ns"])
+            if window_hash(entries) != a["window_sha256"]:
+                # Mismatch — classify add-drift (benign) vs delete/modify (tamper).
+                classify_mismatch(ns, a, entries)
             rechecked += 1
         return "{}: chain intact ({} anchor(s), {} window(s) re-queried)".format(
             ns, len(anchors), rechecked)
@@ -239,6 +271,9 @@ spec:
             runAsNonRoot: true
             runAsUser: 65532
             runAsGroup: 65532
+            # fsGroup so this uid can read the manifest PVC the anchor wrote (its
+            # files are owned by the anchor's uid:fsGroup 65532).
+            fsGroup: 65532
             seccompProfile: {type: RuntimeDefault}
           containers:
             - name: verify
@@ -251,6 +286,7 @@ spec:
                 - {name: ANCHOR_DIR, value: "platform/loki"}
                 - {name: VERIFY_HORIZON_SECONDS, value: "2419200"}
                 - {name: VERIFY_WINDOWS, value: "3"}
+                - {name: MANIFEST_DIR, value: "/manifests"}
                 - {name: LOKI_NAMESPACES, value: "keycloak,spicedb,kyverno,spire,wazuh,cert-manager,vault-secrets-operator,istio-ingress,istio-system,velero"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
                 - {name: HOME, value: "/tmp"}
@@ -263,9 +299,12 @@ spec:
                 limits: {cpu: "1", memory: "512Mi"}
               volumeMounts:
                 - {name: script, mountPath: /app, readOnly: true}
+                - {name: manifests, mountPath: /manifests, readOnly: true}
                 - {name: tmp, mountPath: /tmp}
           volumes:
             - name: script
               configMap: {name: platform-loki-audit-verifier-script, defaultMode: 0444}
+            - name: manifests
+              persistentVolumeClaim: {claimName: audit-loki-manifests, readOnly: true}
             - name: tmp
               emptyDir: {}

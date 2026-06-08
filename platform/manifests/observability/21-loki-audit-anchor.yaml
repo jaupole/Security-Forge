@@ -95,6 +95,25 @@ spec:
       ports:
         - {port: 443, protocol: TCP}
 ---
+# Per-entry-hash manifests, shared anchor(RW)↔verifier(RO) on the single node. The
+# manifest is node-local but tamper-detectable (its sha256 is committed off-node in
+# each anchor as manifest_sha256). Lets the verifier classify a window mismatch:
+# deletions=tamper vs only-additions=benign late-arrival drift. ~tens of MB/day,
+# pruned to RETENTION_DAYS; 2Gi is ample.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-loki-manifests
+  namespace: observability
+  labels:
+    secforge.platform/component: platform-loki-audit
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ${STORAGE_CLASS}
+  resources:
+    requests:
+      storage: 2Gi
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -112,7 +131,7 @@ data:
     sha256 it, chain + Transit-sign the head, and commit a signed anchor under
     platform/loki/<ns>/. Catch-up loops missed days; idempotent (not-yet-settled or
     already-anchored -> skip). Exit non-zero on any operational failure."""
-    import base64, hashlib, json, os, ssl, sys, time, urllib.request, urllib.parse, urllib.error
+    import base64, gzip, hashlib, json, os, ssl, sys, time, urllib.request, urllib.parse, urllib.error
     from datetime import datetime, timezone, timedelta
 
     OPENBAO_ADDR = os.environ["OPENBAO_ADDR"]
@@ -125,6 +144,13 @@ data:
     BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
     ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/loki")
     NAMESPACES = [n.strip() for n in os.environ["LOKI_NAMESPACES"].split(",") if n.strip()]
+    # Per-entry-hash manifests on a shared PVC, so the verifier can DIFF a window
+    # mismatch (deletions=tamper vs additions=benign late-arrival drift) instead of
+    # failing on any change. The manifest is node-local but tamper-detectable: its
+    # sha256 is committed off-node in the anchor (manifest_sha256). RETENTION_DAYS
+    # is kept a few days > the verifier's horizon so in-horizon windows always have one.
+    MANIFEST_DIR = os.environ.get("MANIFEST_DIR", "/manifests")
+    MANIFEST_RETENTION_DAYS = int(os.environ.get("MANIFEST_RETENTION_DAYS", "35"))
     SA_TOKEN_FILE = "/var/run/secrets/openbao/token"
     GH_TOKEN_FILE = "/run/secrets/gh/token"
     GH_API = "https://api.github.com"
@@ -264,6 +290,38 @@ data:
             h.update(b"\x1e")
         return h.hexdigest()
 
+    def write_manifest(ns, date, entries):
+        # Sorted per-entry sha256 hexes, gzipped, written atomically to the PVC.
+        # Returns sha256 over the UNCOMPRESSED canonical body (committed off-node).
+        body = "\n".join(sorted(hashlib.sha256(e.encode("utf-8")).hexdigest()
+                                for e in entries)).encode("utf-8")
+        d = os.path.join(MANIFEST_DIR, ns)
+        os.makedirs(d, exist_ok=True)
+        tmp = os.path.join(d, "." + date + ".tmp")
+        with gzip.open(tmp, "wb") as f:   # hash is over the UNCOMPRESSED body; gzip is just storage
+            f.write(body)
+        os.replace(tmp, os.path.join(d, date + ".entries.gz"))
+        return hashlib.sha256(body).hexdigest()
+
+    def prune_manifests(now):
+        cutoff = now - timedelta(days=MANIFEST_RETENTION_DAYS)
+        for ns in NAMESPACES:
+            d = os.path.join(MANIFEST_DIR, ns)
+            if not os.path.isdir(d):
+                continue
+            for fn in os.listdir(d):
+                if not fn.endswith(".entries.gz"):
+                    continue
+                try:
+                    fd = datetime.strptime(fn[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+                if fd < cutoff:
+                    try:
+                        os.remove(os.path.join(d, fn))
+                    except OSError:
+                        pass
+
     def anchor_ns(ns, gh_token, bao_token, key_version, pubkey, now):
         state_path = "{}/{}/_state.json".format(ANCHOR_DIR, ns)
         state, state_sha = gh_get_json(gh_token, state_path)
@@ -284,6 +342,7 @@ data:
             full = hashlib.sha256((prev_full + wh).encode()).hexdigest()
             sig = bao_sign(bao_token, full)
             date = d.strftime("%Y-%m-%d")
+            manifest_sha = write_manifest(ns, date, entries)
             path = "{}/{}/{}.json".format(ANCHOR_DIR, ns, date)
             if gh_exists(gh_token, path):
                 path = "{}/{}/{}--{}.json".format(ANCHOR_DIR, ns, date, we_ns)
@@ -293,7 +352,8 @@ data:
                        "window_end": w_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                        "window_start_ns": ws_ns, "window_end_ns": we_ns,
                        "entry_count": len(entries), "total_bytes": total_bytes,
-                       "window_sha256": wh, "prev_full_hash": prev_full, "prev_file": prev_file,
+                       "window_sha256": wh, "manifest_sha256": manifest_sha,
+                       "prev_full_hash": prev_full, "prev_file": prev_file,
                        "full_hash": full, "sign_alg": "ed25519", "key_version": key_version,
                        "pubkey": pubkey, "settle_seconds": SETTLE,
                        "anchored_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "signature": sig}
@@ -325,6 +385,7 @@ data:
             except Exception as e:
                 errors.append("{}: {}".format(ns, e))
                 print("ERROR " + str(e), file=sys.stderr)
+        prune_manifests(now)   # drop per-entry manifests older than RETENTION_DAYS
         if errors:
             print("{} namespace(s) failed to anchor".format(len(errors)), file=sys.stderr)
             sys.exit(1)
@@ -383,6 +444,8 @@ spec:
                 - {name: ANCHORS_BRANCH, value: "main"}
                 - {name: ANCHOR_DIR, value: "platform/loki"}
                 - {name: SETTLE_SECONDS, value: "172800"}
+                - {name: MANIFEST_DIR, value: "/manifests"}
+                - {name: MANIFEST_RETENTION_DAYS, value: "35"}
                 - {name: LOKI_NAMESPACES, value: "keycloak,spicedb,kyverno,spire,wazuh,cert-manager,vault-secrets-operator,istio-ingress,istio-system,velero"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
                 - {name: HOME, value: "/tmp"}
@@ -398,10 +461,13 @@ spec:
                 - {name: openbao-ca, mountPath: /etc/ssl/openbao-ca, readOnly: true}
                 - {name: bao-token, mountPath: /var/run/secrets/openbao, readOnly: true}
                 - {name: gh-creds, mountPath: /run/secrets/gh, readOnly: true}
+                - {name: manifests, mountPath: /manifests}
                 - {name: tmp, mountPath: /tmp}
           volumes:
             - name: script
               configMap: {name: platform-loki-audit-anchor-script, defaultMode: 0444}
+            - name: manifests
+              persistentVolumeClaim: {claimName: audit-loki-manifests}
             - name: openbao-ca
               configMap:
                 name: openbao-internal-ca-cert
