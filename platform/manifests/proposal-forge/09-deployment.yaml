@@ -57,12 +57,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # Org-tier authz (access follows org membership + RLS, no per-proposal
-          # SpiceDB) + ecosystem org context in the shell (active org top-left +
-          # account-menu switcher). proposal-forge-image-build run 27160989149,
-          # commit 724b956. Full glow UI (Phase 0-4) + provider-doc editing
-          # (self-hides until OAUTH_TOKEN_SEAL_KEY present). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:96fc57599dcc0dd4c6fb77fc5d3666a80e150ceee0483ce303e9152e77590405
+          # Minimized Microsoft OAuth scope (Files.ReadWrite.AppFolder only, no
+          # offline_access — leaner consent, app-folder-scoped). proposal-forge-image
+          # -build run 27163540502, commit 47e3f84. Org-tier authz + ecosystem org
+          # context + full glow UI + provider-doc editing (live). MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:e626b33e682764c1c2ae68052e2580fe50bda114ddb4d0de2ece9a97adbd904a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
