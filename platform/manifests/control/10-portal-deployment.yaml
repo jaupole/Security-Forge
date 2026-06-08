@@ -51,11 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. d8e82842 = admin Page Settings (per-admin accent +
-          # steel-blue admin default, PR #40, 5c16f7c), on top of the Configure
-          # modal (#39), logo-mark header (#38), Branding redesign (#37), and the
-          # Microsoft nginx file (d11bb92).
-          image: ghcr.io/jaupole/portal@sha256:d8e828422b7e5008341e7b10e222835d7093fb0571542ac0420d7ad4461bab01
+          # automate the bump. 8f9d6278 = scope Page Settings to Platform View
+          # only (PR #41, 62c8c41), on top of admin Page Settings (per-admin
+          # accent + steel-blue default, #40, d8e82842), the Configure modal
+          # (#39), logo-mark header (#38), and the Branding redesign (#37).
+          image: ghcr.io/jaupole/portal@sha256:8f9d627846e185dba685c71e52d7afb8dd133817cfcecc8e7f301024baa1de20
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
