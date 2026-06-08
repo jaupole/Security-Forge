@@ -35,13 +35,18 @@ Consumers, by priority:
    never ships Chromium.
 3. Future apps reuse it.
 
-The image is a **signed mirror** of the public `docker.io/gotenberg/gotenberg`
-copied to `ghcr.io/jaupole/gotenberg` (crane copy by digest → Trivy gate →
-cosign keyless sign, `.github/workflows/gotenberg-mirror.yml`). This satisfies
-Kyverno `restrict-image-registries` + `verify-image-signature-secforge`
-(Enforce) without loosening either, and centralizes CVE patching to one image.
-The GHCR package is **public** (it's a mirror of a public image), so the
-namespace needs no pull secret and stays secret-free.
+The image is a **thin SecForge build** over the public
+`docker.io/gotenberg/gotenberg` (same Gotenberg; the Debian base +
+Chromium/LibreOffice deps are `apt-get upgrade`d to current security patches at
+build time, then re-scanned + cosign-keyless-signed →
+`ghcr.io/jaupole/gotenberg:<ver>-secforge`,
+`.github/workflows/gotenberg-image-build.yml`). A pure mirror was the first
+design but **cannot be CVE-patched** (it is upstream's exact bytes, and upstream
+ships an older Chromium than Debian already fixes) — so the build, not a mirror,
+is what actually delivers "one image to patch". This satisfies Kyverno
+`restrict-image-registries` + `verify-image-signature-secforge` (Enforce)
+without loosening either. The GHCR package is **public** (a thin layer over a
+public image), so the namespace needs no pull secret and stays secret-free.
 
 ## Security posture
 
@@ -74,16 +79,35 @@ no privilege escalation). The one deviation is `readOnlyRootFilesystem: false`
   rebuild and maintain it.
 - **Add `docker.io/gotenberg/*` to the registry allowlist + Audit signatures.**
   Cheaper, but loosens the allowlist and drops the renderer below the Enforce
-  signature bar. Rejected in favor of mirror+sign (we own one image to patch
-  anyway — that was the point).
+  signature bar. Rejected in favor of build+sign into `ghcr.io/jaupole/*` (we own
+  one image to patch anyway — that was the point).
+- **Pure mirror (crane copy of upstream).** First design; rejected once Trivy
+  showed upstream carries ~88 fixable Chromium CRITICALs (it ships Chromium 147;
+  Debian already packages the fixed 149). A mirror is upstream's exact bytes and
+  cannot be patched — so it could never pass the hard CVE gate. The thin
+  `apt-get upgrade` build does.
+- **Browserless engines (WeasyPrint / Browsershot / GoPdfSuit).** Evaluated
+  2026-06-08. WeasyPrint (pure Python, no Chromium) is genuinely the smallest
+  attack surface for HTML→PDF, but does **no** Office→PDF (kills the Word/Excel
+  ambition), executes no JS, has lower CSS fidelity than the Chromium-based
+  TipTap editor, and ships no maintained REST service (we'd own a wrapper).
+  Browsershot is Puppeteer/headless-Chrome (same Chromium surface) + a PHP
+  runtime. GoPdfSuit's native path is JSON-template (a full rewrite) and its
+  HTML path is headless Chrome again; single-maintainer, young. Rejected: only
+  Gotenberg also covers Office→PDF, and the Chromium CVE risk is a *maintained*
+  one (patched build) rather than a reason to abandon Chromium. Revisit
+  WeasyPrint if in-house Office→PDF is dropped and attack-surface reduction
+  outranks fidelity.
 
 ## Consequences
 
 - New namespace `document-render` with manifests under
   `platform/manifests/document-render/`. Apply via the standard kubectl flow;
   not auto-synced.
-- A new GH Actions workflow mirrors+signs the image; version bumps / CVE
-  refreshes are a manual `workflow_dispatch` (Renovate can drive it later).
+- A new GH Actions workflow builds+signs the image; version bumps / CVE
+  refreshes are a `workflow_dispatch` (or a push to the image dir; Renovate can
+  drive it later). A small Dockerfile is now maintained at
+  `platform/manifests/document-render/image/`.
 - PF and PT gain a runtime dependency on the service for PDF export. It is
   stateless and restarts fast; consumers degrade gracefully (export errors, app
   stays up) and PF keeps a feature-flag fallback during transition. PF's
@@ -101,7 +125,7 @@ warrants per-call Gotenberg flags; or the availability coupling proves too tight
 
 ## References
 
-- `platform/manifests/document-render/` — the manifests + README
-- `docs/03-runbooks/gotenberg-mirror-and-deploy.md` — operational procedure
-- `.github/workflows/gotenberg-mirror.yml` — mirror + sign + scan
+- `platform/manifests/document-render/` — the manifests + README + image/Dockerfile
+- `docs/03-runbooks/gotenberg-build-and-deploy.md` — operational procedure
+- `.github/workflows/gotenberg-image-build.yml` — build + sign + scan
 - [ADR-0032 — Istio gateway replaces ingress-nginx](./0032-istio-gateway-replaces-ingress-nginx.md) (mesh context)

@@ -1,23 +1,26 @@
-# Runbook: mirror, deploy, and verify the Gotenberg document-rendering service
+# Runbook: build, deploy, and verify the Gotenberg document-rendering service
 
 Stands up (or upgrades) the shared `document-render` service. See **ADR-0037**
 and `platform/manifests/document-render/README.md`.
 
 ## 0. Prerequisites
 
-- You can run the `gotenberg-mirror` GitHub Actions workflow (self-hosted
+- You can run the `gotenberg-image-build` GitHub Actions workflow (self-hosted
   `secforge` runner online).
 - `kubectl` on the box (`ssh secforge`, `sudo -n kubectl`).
 
-## 1. Mirror + sign the image
+## 1. Build + sign the image
 
-Run the workflow (GitHub → Actions → **gotenberg-mirror** → Run workflow), with
-`version` = the upstream Gotenberg version to ship (e.g. `8.32.0`).
+Run the workflow (GitHub → Actions → **gotenberg-image-build** → Run workflow),
+with `version` = the upstream Gotenberg base version (e.g. `8.33.0`). It also
+auto-runs on pushes that touch `platform/manifests/document-render/image/**`.
 
-It will: copy `docker.io/gotenberg/gotenberg:<version>` to
-`ghcr.io/jaupole/gotenberg:<version>` by digest, Trivy-scan it (fails on a
-fixable CRITICAL), cosign-keyless-sign it, and print the signed
-`...:<version>@sha256:<digest>` ref in the run summary.
+It will: build a thin layer over `gotenberg/gotenberg:<version>` that
+`apt-get upgrade`s the Debian base + Chromium/LibreOffice deps to current
+security patches (upstream ships an older Chromium that Debian has already
+fixed), push it to `ghcr.io/jaupole/gotenberg:<version>-secforge`, Trivy-scan it
+(fails on a fixable CRITICAL), cosign-keyless-sign it, and print the signed
+`...:<version>-secforge@sha256:<digest>` ref in the run summary.
 
 **First run only — make the package public:** GitHub → your packages →
 `gotenberg` → Package settings → Change visibility → **Public**. This is why the
@@ -113,6 +116,6 @@ Dockerfile off the distro-chromium layers. Do NOT do this before step 5 parity.
 
 ## Upgrades / CVE refresh
 
-Re-run the `gotenberg-mirror` workflow with the new version, repeat steps 2–4.
+Re-run the `gotenberg-image-build` workflow with the new version, repeat steps 2–4.
 The Trivy gate blocks shipping a fixable CRITICAL. One image patched here covers
 every consumer.

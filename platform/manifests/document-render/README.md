@@ -6,7 +6,7 @@ PDFs**, behind a REST API on `:3000`. It replaces the per-app headless-Chromium
 that Proposal Forge (and soon Project Tracker) would otherwise each ship in
 their own image.
 
-See **ADR-0037** for the decision and **docs/03-runbooks/gotenberg-mirror-and-deploy.md**
+See **ADR-0037** for the decision and **docs/03-runbooks/gotenberg-build-and-deploy.md**
 for the operational procedure.
 
 ## Why this exists
@@ -62,11 +62,14 @@ follow-up — validate it against the LibreOffice Office→PDF path before chang
 
 ## Image
 
-`ghcr.io/jaupole/gotenberg` is a **signed mirror** of the public
-`docker.io/gotenberg/gotenberg`, produced by `.github/workflows/gotenberg-mirror.yml`
-(crane copy by digest → Trivy gate → cosign keyless sign). The GHCR package is
-**public**, so no imagePullSecret is needed. Pin `09-deployment.yaml` to the
-signed digest the workflow prints.
+`ghcr.io/jaupole/gotenberg:<ver>-secforge` is a **thin signed build** over the
+public `docker.io/gotenberg/gotenberg` — same Gotenberg, with the Debian base +
+Chromium/LibreOffice deps `apt-get upgrade`d to current security patches at
+build time (a pure mirror can't be patched; upstream ships an older Chromium
+than Debian already fixes). Produced by `.github/workflows/gotenberg-image-build.yml`
+from `image/Dockerfile` (build → Trivy gate → cosign keyless sign). The GHCR
+package is **public**, so no imagePullSecret is needed. Pin `09-deployment.yaml`
+to the signed digest the workflow prints.
 
 ## Apply order
 

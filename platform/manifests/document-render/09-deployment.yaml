@@ -2,12 +2,15 @@
 # Deployment. Converts HTML→PDF (Chromium), Office→PDF (LibreOffice), and merges
 # PDFs over a REST API on :3000. See ADR-0037 and README.md.
 #
-# IMAGE: a mirror of the public upstream docker.io/gotenberg/gotenberg, copied
-# to ghcr.io/jaupole/gotenberg and cosign-keyless-signed by
-# .github/workflows/gotenberg-mirror.yml so it satisfies Kyverno
+# IMAGE: a thin SecForge build of upstream Gotenberg (same Gotenberg, Debian
+# base + Chromium/LibreOffice deps apt-upgraded to current security patches —
+# upstream ships an older Chromium that Debian has already fixed; a pure mirror
+# can't be patched). Built + cosign-keyless-signed by
+# .github/workflows/gotenberg-image-build.yml from
+# platform/manifests/document-render/image/Dockerfile, so it satisfies Kyverno
 # restrict-image-registries (ghcr.io/jaupole/*) + verify-image-signature-secforge
 # (Enforce). The GHCR package is PUBLIC, so no imagePullSecret is needed. Pin to
-# the signed digest the mirror workflow prints; the placeholder below MUST be
+# the signed digest the build workflow prints; the placeholder below MUST be
 # replaced before apply or Kyverno rejects it.
 #
 # SECURITY POSTURE:
@@ -67,9 +70,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gotenberg
-          # REPLACE with the signed digest from the gotenberg-mirror workflow.
-          # e.g. ghcr.io/jaupole/gotenberg:8.32.0@sha256:<digest>
-          image: ghcr.io/jaupole/gotenberg:8.32.0@sha256:REPLACE_WITH_SIGNED_DIGEST
+          # REPLACE with the signed digest from the gotenberg-image-build workflow.
+          # e.g. ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:<digest>
+          image: ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:REPLACE_WITH_SIGNED_DIGEST
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
