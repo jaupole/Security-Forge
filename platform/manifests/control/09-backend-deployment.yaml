@@ -74,8 +74,10 @@ spec:
           # 682fd0ac = per-(org × app) branding: GET /me?app=<slug> overlays
           # the org's per-app accent; branding GET/PATCH carry the appBranding
           # map (#49). 2026-06-08: DELETE /orgs/:id/email-config (remove all org
-          # email settings). (control-image-build, commit 90be0fd.)
-          image: ghcr.io/jaupole/control@sha256:2271f59bb98f194143825c3cf266f3a368bb34bff93e593e1640d32333ccd1d4
+          # email settings); invitation record-remove endpoint
+          # (DELETE /orgs/:id/invitations/:id/record) + accountExists on the
+          # members list (#54, commit 0655aa1).
+          image: ghcr.io/jaupole/control@sha256:76bfcb6b32143e5b738a29f6700b0eb0224ae034150443752e48c50ca6ac103d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }

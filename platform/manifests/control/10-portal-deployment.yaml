@@ -56,7 +56,9 @@ spec:
           # regroup (#42, 9720208b), Page Settings → Platform View (#41), and
           # the admin Page Settings accent (#40). 2026-06-08: QBO How-It-Works
           # hidden once connected + "Remove all email settings" button (ec56227).
-          image: ghcr.io/jaupole/portal@sha256:9f1066637b5e6d947f32496795cf31113273c3dc8d249cc93e82800d362d8748
+          # 2026-06-08: Remove action for resolved invitations + Account column
+          # (Active/Disabled/No account) on Member Roles (#44).
+          image: ghcr.io/jaupole/portal@sha256:bdd6d73c9be6d7e2253fa818803e856f4421b331e7f973b7fbdd5d98c7778c75
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
