@@ -1,0 +1,41 @@
+# Allow `proposal-forge` ns (Proposal Forge backend) → SpiceDB gRPC on 50051.
+#
+# PF's resource-tier authz (lib/authz.ts: assertProposalView/Edit/Delete via
+# checkPermission, and writeProposalCreated/syncProposalMember tuple writes)
+# calls SpiceDB directly via the `@authzed/authzed-node` gRPC client — the same
+# expedient-direct-call pattern as Control + Member Hub (see the sibling
+# 06-allow-{control,member-hub}-to-spicedb.yaml) until the AuthZEN façade in
+# `app` ns becomes the routed path for ecosystem apps.
+#
+# Added 2026-06-08: PF was a SpiceDB consumer with NO ingress allow here, so
+# SpiceDB's default-deny-ingress dropped every PF gRPC connection ("connection
+# refused" at ztunnel; "socket disconnected before TLS" client-side). That
+# surfaced as a 500 on every authz'd route (e.g. POST /proposal/sections) and
+# as the silent failure of the proposal-create owner/app tuple write. control +
+# member-hub worked only because they had their allow policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-proposal-forge-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/expedient: 'direct-grpc-instead-of-authzen-facade'
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: proposal-forge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: proposal-forge
+              app.kubernetes.io/component: app
+      ports:
+        - protocol: TCP
+          port: 50051
