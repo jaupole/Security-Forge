@@ -68,11 +68,11 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # SpiceDB checkPermission transient-retry (defense-in-depth on top of the
-          # allow-proposal-forge-to-spicedb NetworkPolicy fix) — proposal-forge-image
-          # -build run 27158378175, commit 26bfaec. No NEW migration in this release;
-          # digest kept in lockstep with the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:92a62de83e85b99594c7dd08b4646c2a5f93350ab8daa0013218d954c2e8cf2e
+          # Org-tier authz (access follows org membership + RLS, no per-proposal
+          # SpiceDB) + ecosystem org context in the shell — proposal-forge-image
+          # -build run 27160989149, commit 724b956. No NEW migration in this
+          # release; digest kept in lockstep with the Deployment (09) per convention.
+          image: ghcr.io/jaupole/proposal-forge@sha256:96fc57599dcc0dd4c6fb77fc5d3666a80e150ceee0483ce303e9152e77590405
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
