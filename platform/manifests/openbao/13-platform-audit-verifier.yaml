@@ -75,7 +75,7 @@ data:
     Exit 0 = all node chains intact. Exit 1 = TAMPER (rewrite/truncation of an
     anchored range). Exit 2-5 = operational/chain-integrity failure. All non-zero
     exits fail the Job -> PlatformAuditVerifierFailing."""
-    import hashlib, json, os, sys, urllib.request, urllib.error
+    import hashlib, json, os, sys, time, urllib.request, urllib.error
 
     REPO = os.environ["ANCHORS_REPO"]
     BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
@@ -90,15 +90,24 @@ data:
         pass
 
     def raw_get_json(path):
+        # Retry on connection-level errors (fresh-pod Cilium cold-start / transient
+        # CDN blip). HTTPError = server responded (e.g. 404) — return, don't retry.
         url = "{}/{}".format(RAW, path)
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "secforge-platform-audit-verifier/1.0",
-            "Cache-Control": "no-cache"})
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return r.status, r.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.read()
+        last = None
+        for attempt in range(6):
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "secforge-platform-audit-verifier/1.0",
+                "Cache-Control": "no-cache"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return r.status, r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read()
+            except urllib.error.URLError as e:
+                last = e
+                if attempt < 5:
+                    time.sleep(min(2 ** attempt, 10))
+        raise last
 
     def get_json(path):
         status, body = raw_get_json(path)

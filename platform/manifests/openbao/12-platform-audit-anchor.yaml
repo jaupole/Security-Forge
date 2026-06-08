@@ -167,7 +167,7 @@ data:
 
     Exit 0 = anchored (or nothing new). Non-zero = at least one node hit an
     operational error (surfaces via kube_job_status_failed -> PlatformAuditAnchorFailing)."""
-    import base64, hashlib, json, os, ssl, sys, urllib.request, urllib.error
+    import base64, hashlib, json, os, ssl, sys, time, urllib.request, urllib.error
     from datetime import datetime, timezone
 
     OPENBAO_ADDR = os.environ["OPENBAO_ADDR"]
@@ -187,15 +187,26 @@ data:
         with open(path) as f:
             return f.read().strip()
 
-    def http(method, url, headers, body=None, cafile=None):
+    def http(method, url, headers, body=None, cafile=None, retries=6):
+        # Retry on connection-level errors (URLError) — a fresh pod's first connect
+        # can be RST-rejected by Cilium until its endpoint policy map is programmed
+        # (cold-start), and OpenBao may blip during a leader election. HTTPError means
+        # the server responded (4xx/5xx) — return it, don't retry.
         data = body.encode() if isinstance(body, str) else body
-        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         ctx = ssl.create_default_context(cafile=cafile) if cafile else None
-        try:
-            with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
-                return r.status, r.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.read()
+        last = None
+        for attempt in range(retries):
+            req = urllib.request.Request(url, data=data, method=method, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                    return r.status, r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read()
+            except urllib.error.URLError as e:
+                last = e
+                if attempt < retries - 1:
+                    time.sleep(min(2 ** attempt, 10))   # 1,2,4,8,10,...
+        raise last
 
     def gh_headers(token):
         return {"Authorization": "Bearer " + token,
