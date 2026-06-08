@@ -360,8 +360,12 @@ spec:
         # when a cert for secforge.dev is logged from a NON-ALLOWED issuer (allowed =
         # Let's Encrypt + Cloudflare). Source outages exit 0 (CT is historical), so this
         # alert is accurate — a failed ct-monitor job means a real possible mis-issuance.
+        # Current-state (not max_over_time[26h]) so the alert CLEARS as soon as the
+        # failed job is deleted/rotated — a stale failure wouldn't keep paging for 26h.
+        # A real mis-issuance is persistent (the bad cert stays in CT → every run fails
+        # → a failed job always exists), so nothing is missed.
         - alert: CTMonitorMisissuance
-          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"ct-monitor.*"}[26h]) > 0
+          expr: kube_job_status_failed{namespace="observability", job_name=~"ct-monitor.*"} > 0
           for: 5m
           labels:
             severity: critical
