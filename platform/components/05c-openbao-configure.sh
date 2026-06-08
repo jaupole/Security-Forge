@@ -99,17 +99,19 @@ fi
 # CronJob (manifests/openbao/12-*) hash-chains + Transit-signs this off-node for
 # tamper-evidence (threat-model X-R1). HMAC'd by default — records who/what/when,
 # NOT secret values.
-# ⚠️ Enabling an audit device makes OpenBao REJECT requests if it can't write, so
-#    the volume is dedicated (can't be filled by Raft data) + monitored (PVC-usage
-#    alert in 09-platform-alerts.yaml). Confirm OpenBao still serves after enabling.
-echo ">>> audit device: file at /openbao/audit/audit.log"
+#
+# NOTE: the device is declared DECLARATIVELY in the server config (the second
+# `audit { path = "file/" }` stanza in values/openbao.yaml's raft.config), NOT
+# enabled here. OpenBao 2.5.4 rejects API enable: "cannot enable audit device via
+# API; use declarative, config-based audit device management instead". So this
+# script only verifies it's present (it appears once the pods run the updated
+# config); enabling/rotating is a helm-values + pod-roll operation.
+echo ">>> audit device: file (declared in values/openbao.yaml config)"
 if bao bao audit list -format=json 2>/dev/null | grep -q '"file/":'; then
-  echo "    already enabled"
+  echo "    file/ device present (config-declared)"
 else
-  # mode=0644: the anchor CronJob runs as a different uid and must read this file.
-  # Safe because audit entries are HMAC'd (no secret values), and the volume is
-  # only reachable in-cluster by the audit-anchor pod (egress/NetworkPolicy gated).
-  bao bao audit enable file file_path=/openbao/audit/audit.log mode=0644 2>&1 | tail -1
+  echo "    NOTE: file/ device not present yet — roll the openbao pods to load the"
+  echo "          updated config (audit { path = \"file/\" } in values/openbao.yaml)."
 fi
 
 # ─── 4. Kubernetes auth method ─────────────────────────────────────────────

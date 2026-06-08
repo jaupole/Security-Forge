@@ -123,6 +123,28 @@ server:
           }
         }
 
+        # Tamper-evident FILE audit device on the dedicated auditStorage PVC —
+        # the deterministic append-only source the platform-audit-anchor reads
+        # (manifests/openbao/12-, threat-model X-R1). MUST be declared here:
+        # OpenBao 2.5.4 rejects `bao audit enable` via the API ("use declarative,
+        # config-based audit device management instead"). mode=0644 so the anchor
+        # pod's non-root uid (supplemental group 1000) can read the HMAC'd log.
+        # Coexists with stdout/: a request is audited if AT LEAST ONE device
+        # records it, so a full audit PVC does NOT take OpenBao down (stdout
+        # backstops it) — the OpenBaoAuditVolumeFilling alert is the early warning.
+        audit {
+          type        = "file"
+          path        = "file/"
+          description = "tamper-evident file audit (X-R1 anchor source)"
+          options = {
+            file_path     = "/openbao/audit/audit.log"
+            log_raw       = "false"
+            hmac_accessor = "true"
+            mode          = "0644"
+            format        = "json"
+          }
+        }
+
   extraEnvironmentVars:
     BAO_ADDR: https://127.0.0.1:8200
     BAO_API_ADDR: https://$(POD_IP):8200

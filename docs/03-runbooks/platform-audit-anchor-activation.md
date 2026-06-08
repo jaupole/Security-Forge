@@ -76,8 +76,10 @@ for p in openbao-0 openbao-1 openbao-2; do
     env BAO_SKIP_VERIFY=1 bao status -format=json | grep -o '"is_self":[^,]*'
 done
 # Roll pods ONE AT A TIME, the active node LAST (order it accordingly). Each new
-# pod mounts /openbao/audit and auto-unseals via Transit; wait Ready+unsealed
-# between each (quorum preserved).
+# pod mounts /openbao/audit, loads the declarative file/ audit device from the
+# updated config, and auto-unseals via Transit; wait Ready+unsealed between each
+# (quorum preserved). (The same values change carries both the auditStorage VCT
+# AND the audit{path="file/"} stanza, so the roll enables the device too.)
 for p in <standby> <standby> <active-last>; do
   sudo -n kubectl -n openbao delete pod "$p"
   sudo -n kubectl -n openbao rollout status pod/"$p" --timeout=180s || true
@@ -101,24 +103,36 @@ On a **fresh build** none of section A applies — `05b` installs OpenBao with
 
 ---
 
-## B. Enable the audit device + role + manifests (root token)
+## B. Load policies + role + manifests (break-glass admin — no root token needed)
+
+> The `file/` audit device is **declarative** — it is declared in
+> `values/openbao.yaml` (`audit { path = "file/" }`) and enabled when the pods load
+> that config in section A. OpenBao 2.5.4 **rejects** API enable
+> (`bao audit enable` → "use declarative, config-based audit device management
+> instead"), so `05c` only *verifies* it; it does not enable it. The admin steps
+> below (policy load, role, PAT) just need an `admin`-policy token — mint one via
+> the existing `admin-break-glass` k8s-auth role instead of the 1Password root token:
 
 ```bash
-# 1. Provide the root token (paste from 1Password; never echoes).
-sudo -n kubectl create secret generic openbao-root-token-tmp -n openbao \
-  --from-literal=token=<paste-root-token>
+# 1. Mint a 1h admin token in-cluster and stage it where 05c/05j expect it
+#    (no root token / 1Password needed; printf %s avoids a trailing newline).
+SA=$(sudo -n kubectl -n openbao exec openbao-0 -c openbao -- cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+T=$(sudo -n kubectl -n openbao exec openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 \
+      bao write -field=token auth/kubernetes/login role=admin-break-glass jwt="$SA")
+printf %s "$T" | sudo -n kubectl -n openbao create secret generic openbao-root-token-tmp \
+  --from-file=token=/dev/stdin
 
-# 2. 05c enables the `file` audit device at /openbao/audit/audit.log (mode 0644,
-#    so the anchor's non-root uid can read it) + loads the platform-audit policy.
-#    Idempotent.
+# 2. 05c loads policies (incl. platform-audit) + verifies the config-declared
+#    file/ device is present. Idempotent.
 bash ~/secforge/platform/components/05c-openbao-configure.sh
 
-# 3. Confirm the device is active AND OpenBao still serves (it fails closed —
-#    verify before trusting it).
+# 3. Confirm BOTH audit devices exist AND OpenBao still serves. (file/ coexists
+#    with stdout/: a request is audited if ≥1 device records it, so a full audit
+#    PVC does NOT take OpenBao down — stdout backstops it.)
 sudo -n kubectl exec -n openbao openbao-0 -c openbao -- \
-  env BAO_SKIP_VERIFY=1 bao audit list
+  env BAO_SKIP_VERIFY=1 bao audit list          # expect stdout/ AND file/
 sudo -n kubectl exec -n openbao openbao-0 -c openbao -- \
-  env BAO_SKIP_VERIFY=1 bao kv get secret/platform   # any read = still serving
+  env BAO_SKIP_VERIFY=1 bao status              # serving check
 
 # 4. 05j upserts the platform-audit-signer role AND applies the (suspended)
 #    anchor + verifier manifests.
@@ -190,30 +204,30 @@ same commit relaxes VaultStaticSecret `refreshAfter` 60s→1h (step A.5), cuttin
 months of runway; `OpenBaoAuditVolumeFilling` (75%) / `Critical` (90%) warn well
 before the file device fails closed.
 
-The anchor tracks a byte offset and does **not** rotate the file. When the PVC
-approaches full (or annually), rotate **manually** at a maintenance window — this is
-a deliberate, root-token-gated operation because the file audit device fails closed:
+The anchor tracks a byte offset and does **not** rotate the file. When a node's PVC
+approaches full (or annually), rotate **manually** at a maintenance window. The
+device is config-declared, so rotation is `mv` + pod-roll (NOT `bao audit disable`,
+which 2.5.4 rejects). Per node with a growing file:
 
 ```bash
-# Per ACTIVE node (the one with a growing file):
 # 1. Run one final anchor so the current tail is committed off-node.
 sudo -n kubectl -n openbao create job --from=cronjob/platform-audit-anchor anchor-prerotate
-# 2. Disable + re-enable the file audit device (admin/root token) — re-enabling on
-#    the same path recreates a fresh, empty audit.log. (Disable briefly leaves the
-#    stdout device as the only audit sink, so OpenBao keeps serving.)
-sudo -n kubectl exec -n openbao <active-pod> -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN=<root> \
-  sh -c 'bao audit disable file/ ; mv /openbao/audit/audit.log /openbao/audit/audit.log.$(date +%Y%m%d) ; \
-         bao audit enable file file_path=/openbao/audit/audit.log mode=0644'
-# 3. Reset that node's anchor head so the next run baselines the new file at offset 0:
+# 2. Move the file aside, then delete the pod so it reloads config and reopens a
+#    fresh /openbao/audit/audit.log. (stdout/ keeps auditing throughout, so there
+#    is no audit gap; do the active node last as in section A.)
+sudo -n kubectl exec -n openbao <node> -c openbao -- \
+  mv /openbao/audit/audit.log /openbao/audit/audit.log.$(date +%Y%m%d)
+sudo -n kubectl -n openbao delete pod <node>   # reopens audit.log at offset 0
+# 3. Reset that node's anchor head so the next run baselines the new file at 0:
 #    delete platform/openbao/<node>/_state.json in secforge-audit-anchors (the prior
 #    anchors stay as the immutable, signed record of the rotated file).
 ```
 
 (The rotated `audit.log.<date>` can be shipped to a versioned/object-locked MinIO
 bucket if you want re-read capability for old ranges; the off-node signature already
-proves them. **Automated** rotation — a logrotate sidecar + `shareProcessNamespace` +
-SIGHUP, with a generation-aware anchor — stays a tracked follow-up; deferred because
-it's invasive to the crown-jewel pod and the volume cut + 10 Gi make it non-urgent.)
+proves them. **Automated** rotation — a logrotate sidecar + a generation-aware
+anchor — stays a tracked follow-up; deferred because it's invasive to the crown-jewel
+pod and the volume cut + 10 Gi make it non-urgent.)
 
 ## Follow-ups (operator-backlog #85)
 
