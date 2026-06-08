@@ -50,6 +50,18 @@ printf %s "$T" | sudo -n kubectl -n openbao create secret generic openbao-root-t
   --from-file=token=/dev/stdin
 bash ~/secforge/platform/components/05j-app-vso-roles.sh   # upserts the loki-audit-signer role
 sudo -n kubectl delete secret -n openbao openbao-root-token-tmp
+# ⚠️ On a cluster where Phase 1 is ALREADY live: 05j re-applies the openbao 12/13
+#    manifests, which ship suspend:true → it RE-SUSPENDS the Phase 1 openbao
+#    cronjobs. Either (a) re-unsuspend them after (kubectl -n openbao patch cronjob
+#    platform-audit-anchor/-verifier -p '{"spec":{"suspend":false}}'), or (b) skip
+#    05j and create just the new role directly via break-glass:
+#      kubectl -n openbao exec openbao-0 -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN=$T \
+#        bao write auth/kubernetes/role/platform-loki-audit-signer \
+#        bound_service_account_names=platform-loki-audit-signer \
+#        bound_service_account_namespaces=observability \
+#        audience=https://kubernetes.default.svc.cluster.local \
+#        token_policies=audit-signer,platform-audit token_ttl=900 token_max_ttl=1800 \
+#        alias_name_source=serviceaccount_uid
 # Apply the Loki anchor + verifier manifests (05j does NOT — it owns the openbao
 # 12/13; 07f-loki.sh owns 21/22 on a fresh build):
 cd ~/secforge/platform && lib/apply-manifest.sh \
