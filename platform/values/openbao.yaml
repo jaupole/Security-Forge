@@ -47,13 +47,18 @@ server:
   # Dedicated audit volume for the `file` audit device (enabled in
   # 05c-openbao-configure.sh: `bao audit enable file file_path=/openbao/audit/audit.log`).
   # Separate from dataStorage so audit-log growth can't fill the Raft data volume.
-  # The platform-audit-anchor CronJob (manifests/openbao/12-*) reads this RWO PVC
-  # (read-only, same node) to hash-chain + Transit-sign the OpenBao audit trail
+  # The platform-audit-anchor CronJob (manifests/openbao/12-*) reads each replica's
+  # RWO PVC (read-only, same node) to hash-chain + Transit-sign the OpenBao audit trail
   # off-node (threat-model X-R1). Monitor usage — a full audit volume makes the
   # file device fail, which makes OpenBao reject requests.
+  #
+  # Sizing: measured ~160 MB/day of audit (mostly VSO secret-refresh reads; cut ~60×
+  # by relaxing VaultStaticSecret refreshAfter 60s→1h, 2026-06-08). 10Gi gives a wide
+  # runway before the manual-rotation runbook is needed; the OpenBaoAuditVolumeFilling
+  # / Critical alerts (09-platform-alerts.yaml) warn at 75%/90% well before fail-closed.
   auditStorage:
     enabled: true
-    size: 2Gi
+    size: 10Gi
     mountPath: /openbao/audit
     storageClass: ${STORAGE_CLASS}
     accessMode: ReadWriteOnce

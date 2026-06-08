@@ -1,17 +1,18 @@
 # Platform audit verifier — hourly tamper-detection for the OpenBao audit log.
 # operator-backlog #85 Phase 1 / threat-model X-R1.
 #
-# Walks the off-node anchor chain (12-platform-audit-anchor.yaml output) from the
+# For EACH Raft node (openbao-{0,1,2}): walks that node's off-node anchor chain
+# (12-platform-audit-anchor.yaml output, platform/openbao/<node>/) from the
 # committed head (_state.json) back to genesis via prev_file links, re-reads each
 # anchored byte range from the LOCAL audit file, recomputes the segment + chain
 # hashes, and compares to the committed values. Any rewrite/truncation of an
 # anchored range -> hash mismatch -> the Job FAILS -> kube_job_status_failed ->
-# PlatformAuditTamper / PlatformAuditVerifierFailed alert (09-platform-alerts.yaml).
+# PlatformAuditVerifierFailing (09-platform-alerts.yaml).
 #
 # Holds ZERO credentials: reads anchors UNAUTHENTICATED from raw.githubusercontent.com
 # (the anchors repo is public) and never logs into OpenBao or the K8s API. A
 # compromised verifier can only fail to detect — it cannot mutate the chain or the
-# audit log. Runs in the openbao ns to mount openbao-0's audit PVC read-only.
+# audit logs. Runs in the openbao ns to mount the three audit PVCs read-only.
 #
 # SHIPS SUSPENDED — unsuspended alongside the anchor once anchors exist (see
 # docs/03-runbooks/platform-audit-anchor-activation.md).
@@ -68,21 +69,25 @@ metadata:
 data:
   verify.py: |
     #!/usr/bin/env python3
-    """platform-audit-verifier — re-reads anchored byte ranges of the OpenBao
-    audit log and verifies them against the off-node signed anchors (X-R1).
+    """platform-audit-verifier — re-reads anchored byte ranges of each OpenBao Raft
+    node's audit log and verifies them against the off-node signed anchors (X-R1).
 
-    Exit 0 = chain intact. Exit 1 = TAMPER (rewrite/truncation of an anchored
-    range). Exit 2-5 = operational/chain-integrity failure. All non-zero exits
-    fail the Job -> PlatformAuditTamper / PlatformAuditVerifierFailed."""
+    Exit 0 = all node chains intact. Exit 1 = TAMPER (rewrite/truncation of an
+    anchored range). Exit 2-5 = operational/chain-integrity failure. All non-zero
+    exits fail the Job -> PlatformAuditVerifierFailing."""
     import hashlib, json, os, sys, urllib.request, urllib.error
 
     REPO = os.environ["ANCHORS_REPO"]
     BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
     ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/openbao")
-    STATE_PATH = ANCHOR_DIR + "/_state.json"
-    AUDIT_FILE = os.environ.get("AUDIT_FILE", "/openbao/audit/audit.log")
+    AUDIT_BASE = os.environ.get("AUDIT_BASE", "/openbao/audit")
+    NODES = [n.strip() for n in os.environ.get(
+        "OPENBAO_NODES", "openbao-0,openbao-1,openbao-2").split(",") if n.strip()]
     MAX_BYTES = int(os.environ.get("VERIFY_MAX_BYTES", str(512 * 1024 * 1024)))
     RAW = "https://raw.githubusercontent.com/{}/{}".format(REPO, BRANCH)
+
+    class Tamper(Exception):
+        pass
 
     def raw_get_json(path):
         url = "{}/{}".format(RAW, path)
@@ -103,78 +108,90 @@ data:
             raise RuntimeError("raw GET {} -> {}".format(path, status))
         return json.loads(body)
 
-    def fail(code, msg):
-        print(msg, file=sys.stderr)
-        sys.exit(code)
-
-    def main():
-        state = get_json(STATE_PATH)
+    def verify_node(node):
+        """Returns a human summary, or raises Tamper / RuntimeError."""
+        state = get_json("{}/{}/_state.json".format(ANCHOR_DIR, node))
         if state is None:
-            print("no anchor state yet (_state.json absent) — nothing to verify.")
-            sys.exit(0)
+            return "{}: no anchors yet — skip".format(node)
+        audit_file = "{}/{}/audit.log".format(AUDIT_BASE, node)
 
         # Walk head -> genesis collecting anchors.
         anchors, seen, path = [], set(), state.get("head_file")
         while path:
             if path in seen:
-                fail(4, "ERROR: anchor chain loop at {}".format(path))
+                raise RuntimeError("{}: anchor chain loop at {}".format(node, path))
             seen.add(path)
             a = get_json(path)
             if a is None:
-                fail(4, "ERROR: anchor {} referenced but missing from repo".format(path))
+                raise RuntimeError("{}: anchor {} referenced but missing".format(node, path))
             anchors.append(a)
             path = a.get("prev_file") or ""
         anchors.reverse()   # genesis first
 
         if anchors[-1]["full_hash"] != state["full_hash"]:
-            fail(5, "ERROR: head anchor full_hash != _state.json full_hash")
+            raise RuntimeError("{}: head anchor full_hash != _state.json".format(node))
 
         # Hash-link + offset continuity over the WHOLE chain (cheap, committed values).
         prev_full, expect_offset = "", 0
         for a in anchors:
             if a["prev_full_hash"] != prev_full:
-                fail(5, "ERROR: chain break at {}: prev_full_hash mismatch".format(a.get("date")))
+                raise RuntimeError("{}: chain break at {}: prev_full_hash mismatch".format(
+                    node, a.get("date")))
             if a["offset_from"] != expect_offset:
-                fail(5, "ERROR: offset gap/overlap at {}: from={} expected={}".format(
-                    a.get("date"), a["offset_from"], expect_offset))
+                raise RuntimeError("{}: offset gap/overlap at {}: from={} expected={}".format(
+                    node, a.get("date"), a["offset_from"], expect_offset))
             prev_full, expect_offset = a["full_hash"], a["offset_to"]
 
         # Re-read LOCAL file ranges (newest-first, within byte budget) and compare.
         try:
-            size = os.path.getsize(AUDIT_FILE)
+            size = os.path.getsize(audit_file)
         except FileNotFoundError:
-            fail(2, "ERROR: local audit file {} missing".format(AUDIT_FILE))
+            raise Tamper("{}: anchored {} bytes but local audit file is MISSING".format(
+                node, expect_offset))
         if size < expect_offset:
-            fail(1, "TAMPER: local audit file ({} bytes) shorter than anchored offset {} "
-                    "— audit log was truncated.".format(size, expect_offset))
+            raise Tamper("{}: local audit file ({} bytes) shorter than anchored offset {} "
+                         "— audit log truncated".format(node, size, expect_offset))
 
         budget, checked = MAX_BYTES, 0
-        with open(AUDIT_FILE, "rb") as f:
+        with open(audit_file, "rb") as f:
             for a in reversed(anchors):
                 length = a["offset_to"] - a["offset_from"]
                 if checked > 0 and budget - length < 0:
-                    print("note: byte budget reached; re-read newest {} range(s), older "
-                          "ranges verified by hash-link only.".format(checked))
                     break
                 f.seek(a["offset_from"])
                 seg = f.read(length)
                 if len(seg) != length:
-                    fail(1, "TAMPER: range [{}..{}] unreadable/short in local file".format(
-                        a["offset_from"], a["offset_to"]))
+                    raise Tamper("{}: range [{}..{}] unreadable/short".format(
+                        node, a["offset_from"], a["offset_to"]))
                 seg_sha = hashlib.sha256(seg).hexdigest()
                 if seg_sha != a["segment_sha256"]:
-                    fail(1, "TAMPER: segment hash mismatch in [{}..{}] (date {}). committed={} "
-                            "local={}".format(a["offset_from"], a["offset_to"], a.get("date"),
-                                              a["segment_sha256"], seg_sha))
+                    raise Tamper("{}: segment hash mismatch in [{}..{}] (date {}). "
+                                 "committed={} local={}".format(node, a["offset_from"],
+                                 a["offset_to"], a.get("date"), a["segment_sha256"], seg_sha))
                 if hashlib.sha256((a["prev_full_hash"] + seg_sha).encode()).hexdigest() != a["full_hash"]:
-                    fail(1, "TAMPER: full_hash mismatch at [{}..{}]".format(
-                        a["offset_from"], a["offset_to"]))
+                    raise Tamper("{}: full_hash mismatch at [{}..{}]".format(
+                        node, a["offset_from"], a["offset_to"]))
                 budget -= length
                 checked += 1
+        return "{}: chain intact ({} anchor(s), {} range(s) re-read, {} bytes)".format(
+            node, len(anchors), checked, expect_offset)
 
-        print("platform-audit chain intact: {} anchor(s), {} range(s) re-read, {} audit "
-              "bytes anchored, head full_hash={}.".format(
-                  len(anchors), checked, expect_offset, state["full_hash"]))
+    def main():
+        tampers, errors, summaries = [], [], []
+        for node in NODES:
+            try:
+                summaries.append(verify_node(node))
+            except Tamper as t:
+                tampers.append(str(t)); print("TAMPER: " + str(t), file=sys.stderr)
+            except Exception as e:
+                errors.append(str(e)); print("ERROR: " + str(e), file=sys.stderr)
+        for s in summaries:
+            print(s)
+        if tampers:
+            sys.exit(1)
+        if errors:
+            sys.exit(2)
+        print("platform-audit: all node chains intact.")
 
     if __name__ == "__main__":
         main()
@@ -213,7 +230,7 @@ spec:
             runAsNonRoot: true
             runAsUser: 65532
             runAsGroup: 65532
-            # Supplemental group 1000 = openbao pod fsGroup → read the audit PVC.
+            # Supplemental group 1000 = openbao pod fsGroup → read the audit PVCs.
             fsGroup: 1000
             seccompProfile: {type: RuntimeDefault}
           containers:
@@ -224,7 +241,8 @@ spec:
                 - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
                 - {name: ANCHORS_BRANCH, value: "main"}
                 - {name: ANCHOR_DIR, value: "platform/openbao"}
-                - {name: AUDIT_FILE, value: "/openbao/audit/audit.log"}
+                - {name: AUDIT_BASE, value: "/openbao/audit"}
+                - {name: OPENBAO_NODES, value: "openbao-0,openbao-1,openbao-2"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
                 - {name: HOME, value: "/tmp"}
               securityContext:
@@ -236,14 +254,18 @@ spec:
                 limits: {cpu: "300m", memory: "256Mi"}
               volumeMounts:
                 - {name: script, mountPath: /app, readOnly: true}
-                - {name: audit, mountPath: /openbao/audit, readOnly: true}
+                - {name: audit-0, mountPath: /openbao/audit/openbao-0, readOnly: true}
+                - {name: audit-1, mountPath: /openbao/audit/openbao-1, readOnly: true}
+                - {name: audit-2, mountPath: /openbao/audit/openbao-2, readOnly: true}
                 - {name: tmp, mountPath: /tmp}
           volumes:
             - name: script
               configMap: {name: platform-audit-verifier-script, defaultMode: 0444}
-            - name: audit
-              persistentVolumeClaim:
-                claimName: audit-openbao-0
-                readOnly: true
+            - name: audit-0
+              persistentVolumeClaim: {claimName: audit-openbao-0, readOnly: true}
+            - name: audit-1
+              persistentVolumeClaim: {claimName: audit-openbao-1, readOnly: true}
+            - name: audit-2
+              persistentVolumeClaim: {claimName: audit-openbao-2, readOnly: true}
             - name: tmp
               emptyDir: {}

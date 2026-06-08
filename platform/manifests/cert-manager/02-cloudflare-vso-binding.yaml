@@ -53,7 +53,7 @@ spec:
   mount: secret
   type: kv-v2
   path: platform/cert-manager/cloudflare
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: cloudflare-api-token-vso
     create: true

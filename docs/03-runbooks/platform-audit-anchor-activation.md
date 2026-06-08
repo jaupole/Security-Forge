@@ -7,16 +7,24 @@ already committed.
 
 ## What it does
 
-OpenBao writes a `file` audit device to `/openbao/audit/audit.log` (a dedicated
-PVC, HMAC'd — who/what/when, **not** secret values). A daily CronJob
-(`platform/manifests/openbao/12-platform-audit-anchor.yaml`) reads the new byte
-segment since the last anchored offset, sha256-chains it, signs the chain head
-via `transit/sign/audit-signing` (Ed25519, `deletion_allowed=false`), and commits
-a signed anchor to the off-node public repo `jaupole/secforge-audit-anchors` under
-`platform/openbao/`. An hourly verifier (`13-...`) re-reads the anchored ranges
-from the local file and **fails the Job** on any mismatch → `PlatformAuditVerifierFailing`
-(critical). Even if node-root later rewrites the local file, the Transit signature
-already committed off-node won't match → tamper is provable (threat-model X-R1/P1).
+Each OpenBao replica writes a `file` audit device to `/openbao/audit/audit.log` on
+its own dedicated PVC (HMAC'd — who/what/when, **not** secret values). A daily
+CronJob (`platform/manifests/openbao/12-platform-audit-anchor.yaml`) mounts **all
+three** audit PVCs read-only and, per node, reads the new byte segment since that
+node's last anchored offset, sha256-chains it, signs the chain head via
+`transit/sign/audit-signing` (Ed25519, `deletion_allowed=false`), and commits a
+signed anchor to the off-node public repo `jaupole/secforge-audit-anchors` under
+`platform/openbao/<node>/`. An hourly verifier (`13-...`) re-reads each node's
+anchored ranges from its local file and **fails the Job** on any mismatch →
+`PlatformAuditVerifierFailing` (critical). Even if node-root later rewrites a local
+file, the Transit signature already committed off-node won't match → tamper is
+provable (threat-model X-R1/P1).
+
+**Why all three nodes:** in OpenBao Raft HA only the **active** node processes (and
+therefore audits) requests; leadership moves between `openbao-{0,1,2}` (it was on
+`openbao-2`, not `-0`, when this was built). Anchoring all three independent per-node
+chains captures the trail wherever leadership currently sits — no leader-detection
+needed. Standby files that never grew simply have no anchors yet.
 
 Reuses the existing `transit/keys/audit-signing` key + `audit-signer` policy +
 `platform-audit-signer` k8s-auth role (05c/05j) and the member-hub VSO-PAT pattern.
@@ -55,25 +63,37 @@ cd ~/secforge && git pull --ff-only
 sudo -n kubectl -n openbao delete statefulset openbao --cascade=orphan
 
 # 2. Recreate the STS with the audit volumeClaimTemplate (adopts the orphaned
-#    pods by label; creates audit-openbao-{0,1,2} PVCs). Idempotent re-run of 05b
-#    does exactly this helm upgrade (it skips the irreversible init — already
-#    initialized) — OR run helm directly:
+#    pods by label; creates audit-openbao-{0,1,2} PVCs, 10Gi each). Idempotent
+#    re-run of 05b does exactly this helm upgrade (it skips the irreversible init
+#    — already initialized) — OR run helm directly:
 helm upgrade openbao openbao/openbao -n openbao \
   --version 0.27.2 -f ~/secforge/platform/values/openbao.yaml
 
-# 3. Roll pods ONE AT A TIME, standbys first, leader (openbao-0) LAST. Each new
-#    pod mounts /openbao/audit and auto-unseals via Transit. Wait Ready+unsealed
-#    between each (quorum preserved).
-for p in openbao-2 openbao-1 openbao-0; do
+# 3. Find the ACTIVE node (only it audits; roll it LAST so leadership is the last
+#    thing disturbed). Standbys first.
+for p in openbao-0 openbao-1 openbao-2; do
+  printf "%s " "$p"; sudo -n kubectl -n openbao exec "$p" -c openbao -- \
+    env BAO_SKIP_VERIFY=1 bao status -format=json | grep -o '"is_self":[^,]*'
+done
+# Roll pods ONE AT A TIME, the active node LAST (order it accordingly). Each new
+# pod mounts /openbao/audit and auto-unseals via Transit; wait Ready+unsealed
+# between each (quorum preserved).
+for p in <standby> <standby> <active-last>; do
   sudo -n kubectl -n openbao delete pod "$p"
-  # wait until Ready and sealed=false before the next:
   sudo -n kubectl -n openbao rollout status pod/"$p" --timeout=180s || true
   sudo -n kubectl exec -n openbao "$p" -c openbao -- \
     env BAO_SKIP_VERIFY=1 bao status -format=json | grep '"sealed"'
 done
 
-# 4. Confirm the audit PVC is bound and mounted.
-sudo -n kubectl -n openbao get pvc | grep audit-openbao-0
+# 4. Confirm all three audit PVCs are bound (10Gi each).
+sudo -n kubectl -n openbao get pvc | grep audit-openbao
+
+# 5. The same commit relaxes VaultStaticSecret spec.refreshAfter 60s→1h (cuts audit
+#    volume ~60×). VSO honours the new interval once the changed VaultStaticSecret
+#    objects are re-applied — re-run their owning components (07b/07e/07f/09a/09b/…)
+#    or `kubectl apply` the changed manifests/<ns>/*vso-binding*.yaml. (A
+#    vso.hashicorp.com/force-sync annotation triggers a one-off sync but does NOT
+#    change the interval — re-applying the spec is what matters.)
 ```
 
 On a **fresh build** none of section A applies — `05b` installs OpenBao with
@@ -138,11 +158,12 @@ sudo -n kubectl -n openbao patch cronjob platform-audit-verifier -p '{"spec":{"s
 ## E. Verify end-to-end
 
 ```bash
-# 1. Anchor test run — should read the file, sign via Transit, and commit
-#    platform/openbao/<date>.json + _state.json to secforge-audit-anchors.
+# 1. Anchor test run — anchors each node; the ACTIVE node's file has bytes (commits
+#    platform/openbao/<node>/<date>.json + _state.json), standbys log "skip".
 sudo -n kubectl -n openbao create job --from=cronjob/platform-audit-anchor anchor-test
 sudo -n kubectl -n openbao logs job/anchor-test -f
-#   expect: "anchored <N> bytes [0..<M>], <L> lines, full_hash=... -> platform/openbao/<date>.json"
+#   expect e.g.: "openbao-2: anchored <N> bytes [0..<M>], <L> lines -> platform/openbao/openbao-2/<date>.json"
+#                "openbao-0: no audit file yet (standby, never active) — skip"
 
 # 2. Confirm the commit landed (public repo).
 #    https://github.com/jaupole/secforge-audit-anchors/tree/main/platform/openbao
@@ -161,19 +182,48 @@ audit file, hand-edit a byte inside an anchored range, point a local run of
 `verify.py` at the copy → it exits 1 with `TAMPER: segment hash mismatch`. Do
 **not** edit the live audit file — that would (correctly) trip the real alert.
 
-## Operational notes / follow-ups (operator-backlog #85)
+## Volume + rotation
 
-- **Log rotation.** The anchor tracks a byte offset and does not rotate the file;
-  it grows on the 2Gi `auditStorage` PVC. `OpenBaoAuditVolumeFilling` (75%) /
-  `Critical` (90%) alert before the fail-closed wall. Automated rotation
-  (`mv` + OpenBao audit reload to reopen the path, re-baseline the offset) is the
-  fast follow-up.
-- **Leader failover.** OpenBao audits on the **active** node (normally
-  `openbao-0`). The MVP anchors `audit-openbao-0`. If leadership moves, that
-  file stops growing and a standby's grows — multi-node coverage (anchor all
-  three, or detect the leader) is a tracked follow-up.
-- **Phase 2.** A broad Loki anchor over the security-critical namespaces is the
-  deferred Phase 2 (content-based, retention/compaction-tolerant).
+Measured **~160 MB/day** of OpenBao audit (mostly VSO secret-refresh reads). The
+same commit relaxes VaultStaticSecret `refreshAfter` 60s→1h (step A.5), cutting that
+~60× to roughly tens of MB/day. With the **10 Gi** `auditStorage` PVC that's many
+months of runway; `OpenBaoAuditVolumeFilling` (75%) / `Critical` (90%) warn well
+before the file device fails closed.
+
+The anchor tracks a byte offset and does **not** rotate the file. When the PVC
+approaches full (or annually), rotate **manually** at a maintenance window — this is
+a deliberate, root-token-gated operation because the file audit device fails closed:
+
+```bash
+# Per ACTIVE node (the one with a growing file):
+# 1. Run one final anchor so the current tail is committed off-node.
+sudo -n kubectl -n openbao create job --from=cronjob/platform-audit-anchor anchor-prerotate
+# 2. Disable + re-enable the file audit device (admin/root token) — re-enabling on
+#    the same path recreates a fresh, empty audit.log. (Disable briefly leaves the
+#    stdout device as the only audit sink, so OpenBao keeps serving.)
+sudo -n kubectl exec -n openbao <active-pod> -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN=<root> \
+  sh -c 'bao audit disable file/ ; mv /openbao/audit/audit.log /openbao/audit/audit.log.$(date +%Y%m%d) ; \
+         bao audit enable file file_path=/openbao/audit/audit.log mode=0644'
+# 3. Reset that node's anchor head so the next run baselines the new file at offset 0:
+#    delete platform/openbao/<node>/_state.json in secforge-audit-anchors (the prior
+#    anchors stay as the immutable, signed record of the rotated file).
+```
+
+(The rotated `audit.log.<date>` can be shipped to a versioned/object-locked MinIO
+bucket if you want re-read capability for old ranges; the off-node signature already
+proves them. **Automated** rotation — a logrotate sidecar + `shareProcessNamespace` +
+SIGHUP, with a generation-aware anchor — stays a tracked follow-up; deferred because
+it's invasive to the crown-jewel pod and the volume cut + 10 Gi make it non-urgent.)
+
+## Follow-ups (operator-backlog #85)
+
+- **Leader failover — DONE.** All three per-node files are anchored, so coverage
+  survives any leadership move (no leader detection needed).
+- **Automated rotation** (above) — tracked, non-urgent.
+- **Phase 2.** A broad Loki anchor over the *other* security-critical namespaces
+  (spire, kyverno, keycloak, spicedb, wazuh…) is the deferred Phase 2 — content-set
+  hashing over a settled time window (Loki is not append-only). OpenBao audit, the
+  crown jewel, is already covered by this Phase 1.
 
 ## References
 

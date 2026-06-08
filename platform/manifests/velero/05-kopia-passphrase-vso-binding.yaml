@@ -40,7 +40,7 @@ spec:
   mount: secret
   type: kv-v2
   path: platform/velero/kopia-passphrase
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: velero-repo-credentials
     create: true

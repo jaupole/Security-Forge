@@ -57,7 +57,7 @@ spec:
   mount: secret
   type: kv-v2
   path: minio/velero/credentials
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: velero-minio-credentials
     create: true

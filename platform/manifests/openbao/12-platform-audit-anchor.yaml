@@ -12,18 +12,22 @@
 # secret values; deterministic append-only). The anchor reads the new byte
 # segment since the last anchored offset, sha256-chains it, signs the chain head
 # via transit/sign/audit-signing (Ed25519, deletion_allowed=false), and commits a
-# signed anchor to jaupole/secforge-audit-anchors under platform/openbao/. The
-# hourly verifier (13-...) re-reads the ranges and proves they still match.
+# signed anchor to jaupole/secforge-audit-anchors under platform/openbao/<node>/.
+# The hourly verifier (13-...) re-reads the ranges and proves they still match.
+#
+# ALL THREE Raft nodes are anchored. In OpenBao HA only the ACTIVE node processes
+# (and therefore audits) requests; leadership moves between openbao-{0,1,2} (it was
+# on openbao-2, not -0, when this was built). Each replica has its own audit PVC, so
+# the active node's file holds the trail. We mount all three (RWO, same single node)
+# read-only and anchor each as an independent per-node chain — robust to any
+# leadership change without needing to detect the leader. Standby files that never
+# grew simply have no anchors yet.
 #
 # Reuses: transit/keys/audit-signing + the audit-signer policy (05c), the
 # platform-audit-signer k8s-auth role (05j), and the member-hub VSO-PAT +
-# hardened-nonroot-pod patterns.
-#
-# Runs in the openbao ns to mount openbao-0's audit PVC (RWO, same node — single
-# node) read-only. MVP anchors openbao-0; multi-node leader-failover coverage is a
-# documented follow-up (operator-backlog #85). The CronJob ships SUSPENDED — the
-# operator unsuspends it after provisioning the OpenBao-admin one-time steps (see
-# docs/03-runbooks/platform-audit-anchor-activation.md).
+# hardened-nonroot-pod patterns. Runs in the openbao ns. The CronJob ships
+# SUSPENDED — the operator unsuspends it after the one-time OpenBao-admin steps
+# (see docs/03-runbooks/platform-audit-anchor-activation.md).
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -155,13 +159,14 @@ data:
     #!/usr/bin/env python3
     """platform-audit-anchor — tamper-evident anchor of the OpenBao file audit log.
 
-    Reads the OpenBao `file` audit log from the last anchored byte offset,
-    sha256-chains the new segment, signs the chain head via OpenBao Transit
-    (Ed25519, key `audit-signing`), and commits a signed anchor to the off-node
-    public repo under platform/openbao/. Idempotent: no new bytes -> exit 0.
+    Anchors EACH Raft node's audit file independently (only the active node audits;
+    leadership moves). For every node: read the `file` audit log from the last
+    anchored byte offset, sha256-chain the new segment, sign the chain head via
+    OpenBao Transit (Ed25519, key `audit-signing`), and commit a signed anchor under
+    platform/openbao/<node>/. Idempotent: no new bytes / no file (standby) -> skip.
 
-    Exit 0 = anchored (or nothing new). Non-zero = operational failure (surfaces
-    via kube_job_status_failed -> PlatformAuditAnchorFailed)."""
+    Exit 0 = anchored (or nothing new). Non-zero = at least one node hit an
+    operational error (surfaces via kube_job_status_failed -> PlatformAuditAnchorFailing)."""
     import base64, hashlib, json, os, ssl, sys, urllib.request, urllib.error
     from datetime import datetime, timezone
 
@@ -171,9 +176,9 @@ data:
     REPO = os.environ["ANCHORS_REPO"]                 # owner/repo
     BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
     ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/openbao")
-    STATE_PATH = ANCHOR_DIR + "/_state.json"
-    AUDIT_FILE = os.environ.get("AUDIT_FILE", "/openbao/audit/audit.log")
-    NODE = os.environ.get("NODE_NAME", "openbao-0")
+    AUDIT_BASE = os.environ.get("AUDIT_BASE", "/openbao/audit")
+    NODES = [n.strip() for n in os.environ.get(
+        "OPENBAO_NODES", "openbao-0,openbao-1,openbao-2").split(",") if n.strip()]
     SA_TOKEN_FILE = "/var/run/secrets/openbao/token"
     GH_TOKEN_FILE = "/run/secrets/gh/token"
     GH_API = "https://api.github.com"
@@ -255,11 +260,12 @@ data:
         pub = (data.get("keys", {}).get(latest, {}) or {}).get("public_key", "")
         return latest, pub
 
-    def main():
-        gh_token = read_file(GH_TOKEN_FILE)
-        sa_jwt = read_file(SA_TOKEN_FILE)
+    def anchor_node(node, gh_token, bao_token, key_version, pubkey):
+        audit_file = "{}/{}/audit.log".format(AUDIT_BASE, node)
+        node_dir = "{}/{}".format(ANCHOR_DIR, node)
+        state_path = node_dir + "/_state.json"
 
-        state, state_sha = gh_get_json(gh_token, STATE_PATH)
+        state, state_sha = gh_get_json(gh_token, state_path)
         if state is None:
             offset_from, prev_full, prev_file = 0, "", ""
         else:
@@ -268,40 +274,33 @@ data:
             prev_file = state.get("head_file", "")
 
         try:
-            size = os.path.getsize(AUDIT_FILE)
+            size = os.path.getsize(audit_file)
         except FileNotFoundError:
-            print("ERROR: audit file {} not found — is the file audit device "
-                  "enabled?".format(AUDIT_FILE), file=sys.stderr)
-            sys.exit(2)
+            return "{}: no audit file yet (standby, never active) — skip".format(node)
         if size < offset_from:
-            print("ERROR: audit file shrank (size {} < anchored offset {}) — possible "
-                  "truncation/rotation. Refusing to anchor; investigate."
-                  .format(size, offset_from), file=sys.stderr)
-            sys.exit(3)
+            raise RuntimeError("{}: audit file shrank (size {} < anchored offset {}) — "
+                               "possible truncation/rotation; investigate".format(
+                                   node, size, offset_from))
         if size == offset_from:
-            print("no new audit bytes since offset {} — nothing to anchor.".format(offset_from))
-            sys.exit(0)
-        with open(AUDIT_FILE, "rb") as f:
+            return "{}: no new bytes since offset {} — skip".format(node, offset_from)
+        with open(audit_file, "rb") as f:
             f.seek(offset_from)
             segment = f.read(size - offset_from)
         offset_to = offset_from + len(segment)
         line_count = segment.count(b"\n")
         segment_sha = hashlib.sha256(segment).hexdigest()
         full_hash = hashlib.sha256((prev_full + segment_sha).encode()).hexdigest()
-
-        bao_token = bao_login(sa_jwt)
         signature = bao_sign(bao_token, full_hash)
-        key_version, pubkey = bao_pubkey(bao_token)
 
         now = datetime.now(timezone.utc)
         date = now.strftime("%Y-%m-%d")
         anchored_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        anchor_path = "{}/{}.json".format(ANCHOR_DIR, date)
+        anchor_path = "{}/{}.json".format(node_dir, date)
         if gh_exists(gh_token, anchor_path):
-            anchor_path = "{}/{}--{}.json".format(ANCHOR_DIR, date, offset_to)
+            anchor_path = "{}/{}--{}.json".format(node_dir, date, offset_to)
 
         payload = {"schema": "secforge.platform-audit-anchor/v1",
-                   "source": "openbao-file-audit", "node": NODE,
+                   "source": "openbao-file-audit", "node": node,
                    "date": date, "anchored_at": anchored_at,
                    "offset_from": offset_from, "offset_to": offset_to,
                    "line_count": line_count, "segment_sha256": segment_sha,
@@ -310,13 +309,30 @@ data:
                    "key_version": key_version, "pubkey": pubkey, "signature": signature}
 
         gh_put_json(gh_token, anchor_path, payload, None,
-                    "platform-audit anchor {} [{}..{}]".format(date, offset_from, offset_to))
+                    "platform-audit anchor {} {} [{}..{}]".format(node, date, offset_from, offset_to))
         new_state = {"offset": offset_to, "full_hash": full_hash,
-                     "head_file": anchor_path, "node": NODE, "updated_at": anchored_at}
-        gh_put_json(gh_token, STATE_PATH, new_state, state_sha,
-                    "platform-audit state -> offset {}".format(offset_to))
-        print("anchored {} bytes [{}..{}], {} lines, full_hash={} -> {}".format(
-            len(segment), offset_from, offset_to, line_count, full_hash, anchor_path))
+                     "head_file": anchor_path, "node": node, "updated_at": anchored_at}
+        gh_put_json(gh_token, state_path, new_state, state_sha,
+                    "platform-audit state {} -> offset {}".format(node, offset_to))
+        return "{}: anchored {} bytes [{}..{}], {} lines -> {}".format(
+            node, len(segment), offset_from, offset_to, line_count, anchor_path)
+
+    def main():
+        gh_token = read_file(GH_TOKEN_FILE)
+        sa_jwt = read_file(SA_TOKEN_FILE)
+        bao_token = bao_login(sa_jwt)
+        key_version, pubkey = bao_pubkey(bao_token)
+
+        errors = []
+        for node in NODES:
+            try:
+                print(anchor_node(node, gh_token, bao_token, key_version, pubkey))
+            except Exception as e:
+                errors.append(str(e))
+                print("ERROR " + str(e), file=sys.stderr)
+        if errors:
+            print("{} node(s) failed to anchor".format(len(errors)), file=sys.stderr)
+            sys.exit(1)
 
     if __name__ == "__main__":
         main()
@@ -358,7 +374,7 @@ spec:
             runAsUser: 65532
             runAsGroup: 65532
             # Supplemental group 1000 = the openbao pod's fsGroup, so this uid can
-            # read the audit dir/file (uid100:gid1000, mode 0644) on the shared PVC.
+            # read each audit dir/file (uid100:gid1000, mode 0644) on the shared PVCs.
             fsGroup: 1000
             seccompProfile: {type: RuntimeDefault}
           containers:
@@ -374,8 +390,8 @@ spec:
                 - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
                 - {name: ANCHORS_BRANCH, value: "main"}
                 - {name: ANCHOR_DIR, value: "platform/openbao"}
-                - {name: AUDIT_FILE, value: "/openbao/audit/audit.log"}
-                - {name: NODE_NAME, value: "openbao-0"}
+                - {name: AUDIT_BASE, value: "/openbao/audit"}
+                - {name: OPENBAO_NODES, value: "openbao-0,openbao-1,openbao-2"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
                 - {name: HOME, value: "/tmp"}
               securityContext:
@@ -387,7 +403,10 @@ spec:
                 limits: {cpu: "300m", memory: "192Mi"}
               volumeMounts:
                 - {name: script, mountPath: /app, readOnly: true}
-                - {name: audit, mountPath: /openbao/audit, readOnly: true}
+                # Each Raft node's audit PVC, read-only (RWO, same single node).
+                - {name: audit-0, mountPath: /openbao/audit/openbao-0, readOnly: true}
+                - {name: audit-1, mountPath: /openbao/audit/openbao-1, readOnly: true}
+                - {name: audit-2, mountPath: /openbao/audit/openbao-2, readOnly: true}
                 - {name: openbao-ca, mountPath: /etc/ssl/openbao-ca, readOnly: true}
                 - {name: bao-token, mountPath: /var/run/secrets/openbao, readOnly: true}
                 - {name: gh-creds, mountPath: /run/secrets/gh, readOnly: true}
@@ -395,12 +414,13 @@ spec:
           volumes:
             - name: script
               configMap: {name: platform-audit-anchor-script, defaultMode: 0444}
-            # openbao-0's audit PVC (chart auditStorage volumeClaimTemplate).
-            # RWO, mounted read-only alongside openbao-0 on the single node.
-            - name: audit
-              persistentVolumeClaim:
-                claimName: audit-openbao-0
-                readOnly: true
+            # openbao-{0,1,2}'s audit PVCs (chart auditStorage volumeClaimTemplate).
+            - name: audit-0
+              persistentVolumeClaim: {claimName: audit-openbao-0, readOnly: true}
+            - name: audit-1
+              persistentVolumeClaim: {claimName: audit-openbao-1, readOnly: true}
+            - name: audit-2
+              persistentVolumeClaim: {claimName: audit-openbao-2, readOnly: true}
             # OpenBao internal CA only (NOT the server key) for in-cluster TLS.
             - name: openbao-ca
               secret:

@@ -47,7 +47,7 @@ spec:
   mount: secret
   type: kv-v2
   path: apps/member-hub/runtime
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: member-hub-app-secrets
     create: true
@@ -183,7 +183,7 @@ spec:
   mount: secret
   type: kv-v2
   path: minio/member-hub-documents
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: member-hub-documents-minio
     create: true
@@ -214,7 +214,7 @@ spec:
   mount: secret
   type: kv-v2
   path: minio/cnpg/credentials
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: cnpg-minio-credentials
     create: true

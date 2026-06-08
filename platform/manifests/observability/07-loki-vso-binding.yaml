@@ -55,7 +55,7 @@ spec:
   mount: secret
   type: kv-v2
   path: minio/loki/credentials
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: loki-minio-credentials
     create: true

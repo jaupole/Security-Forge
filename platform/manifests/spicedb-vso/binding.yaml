@@ -60,7 +60,7 @@ spec:
   mount: secret
   type: kv-v2
   path: spicedb/config
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: spicedb-config-vso
     create: true

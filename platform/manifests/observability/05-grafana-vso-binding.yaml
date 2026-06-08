@@ -52,7 +52,7 @@ spec:
   mount: secret
   type: kv-v2
   path: grafana/oidc
-  refreshAfter: 60s
+  refreshAfter: 1h
   destination:
     name: grafana-oidc-client-secret
     create: true
