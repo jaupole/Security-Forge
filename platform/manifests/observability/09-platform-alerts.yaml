@@ -446,3 +446,44 @@ spec:
               The OpenBao audit volume is critically full. The file audit device fails CLOSED;
               at 100% OpenBao stops serving (secret access + platform identity break). Act now:
               rotate/truncate the anchored audit log or expand the PVC.
+
+    # ─── Loki log-sink anchoring (operator-backlog #85 Phase 2 / X-R1) ────────
+    # Tamper-evidence for the platform's OTHER security-critical audit streams
+    # (keycloak/spicedb/kyverno/spire/... → Loki). The anchor (daily) content-set-
+    # hashes + Transit-signs each settled window off-node; the verifier (daily)
+    # re-queries the last few in-retention windows and fails on any mismatch. Both
+    # in the observability ns (manifests/observability/21/22).
+    - name: platform-loki-audit-anchoring
+      interval: 1m
+      rules:
+        # Verifier non-zero exit = a within-retention Loki window's content no longer
+        # matches its signed off-node anchor (rewrite in MinIO), OR an operational
+        # failure. High-signal — classify via the job log (TAMPER: vs other).
+        - alert: PlatformLokiVerifierFailing
+          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-verifier.*"}[26h]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Loki log-sink tamper check FAILED (platform-loki-audit-verifier)"
+            description: |
+              The platform-loki-audit-verifier CronJob exited non-zero. A "TAMPER:" log line means a
+              still-in-retention Loki window no longer matches the signed anchor in
+              jaupole/secforge-audit-anchors (platform/loki/<ns>/) — security-critical logs were rewritten.
+              A non-TAMPER non-zero is operational (Loki/raw.githubusercontent unreachable) OR a benign
+              late-arrival drift (rare; a >48h-late log replay). CLASSIFY via:
+                kubectl -n observability logs job/<latest platform-loki-audit-verifier job>
+              On confirmed tamper, treat as an active node compromise (threat-model X-R1/P1).
+        - alert: PlatformLokiAnchorFailing
+          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-anchor.*"}[26h]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Loki log-sink anchor failed to run (platform-loki-audit-anchor)"
+            description: |
+              The daily platform-loki-audit-anchor CronJob exited non-zero — one or more namespaces'
+              settled Loki windows were not signed + committed off-node this cycle. Tamper-evidence is
+              degrading until it succeeds. Inspect: kubectl -n observability logs job/<latest job>.
+              Common causes: Loki query failure, OpenBao login/sign failure, or GitHub PAT expired
+              (secret/platform/audit-anchors-push-token).

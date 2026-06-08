@@ -39,8 +39,11 @@ spec:
   target:
     configMap: { key: ca.crt }
     namespaceSelector:
+      # observability added 2026-06-08: the platform-loki-audit-anchor
+      # (manifests/observability/21-) calls OpenBao transit/sign over in-cluster
+      # TLS and needs the OpenBao internal CA to verify openbao.openbao.svc.
       matchExpressions:
-        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge] }
+        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge, observability] }
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle

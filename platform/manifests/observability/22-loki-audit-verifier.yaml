@@ -1,0 +1,271 @@
+# Loki audit verifier — daily tamper-detection for the Loki log sink.
+# operator-backlog #85 Phase 2 / threat-model X-R1.
+#
+# Per namespace: walk the off-node anchor chain (21-loki-audit-anchor.yaml output,
+# platform/loki/<ns>/) from the committed head back to genesis, verify the committed
+# chain math is self-consistent, then RE-QUERY Loki for the last K windows that are
+# still within the re-verify horizon (28d < Loki's 30d retention) and re-hash them.
+# A mismatch = the window's content changed since it was signed off-node (rewrite in
+# MinIO) -> fail the Job -> PlatformLokiVerifierFailing (critical). Windows older than
+# the horizon stand on their signed record (re-checkable by anyone within retention).
+#
+# Holds ZERO credentials: reads anchors unauthenticated from raw.githubusercontent.com
+# and queries Loki (auth_enabled:false) in-cluster. No OpenBao, no K8s API. Runs in the
+# observability ns. SHIPS SUSPENDED.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-loki-audit-verifier
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-verifier
+    secforge.platform/component: platform-loki-audit
+automountServiceAccountToken: false
+---
+# Only new network rule: verifier pod → public :443 (raw.githubusercontent.com).
+# Loki:3100 is cluster-internal (covered by allow-egress-cluster-internal).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-loki-audit-verifier-egress-internet-443
+  namespace: observability
+  labels:
+    secforge.platform/component: platform-loki-audit
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: platform-loki-audit-verifier
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - {port: 443, protocol: TCP}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-loki-audit-verifier-script
+  namespace: observability
+  labels:
+    secforge.platform/component: platform-loki-audit
+data:
+  verify.py: |
+    #!/usr/bin/env python3
+    """platform-loki-audit-verifier — re-query + re-hash anchored Loki windows and
+    verify them against the off-node signed anchors (X-R1).
+
+    Exit 0 = all chains intact. Exit 1 = TAMPER (a within-horizon window's content
+    changed). Exit 2+ = operational/chain-integrity failure. Non-zero fails the Job
+    -> PlatformLokiVerifierFailing."""
+    import hashlib, json, os, sys, time, urllib.request, urllib.parse, urllib.error
+    from datetime import datetime, timezone
+
+    LOKI_ADDR = os.environ.get("LOKI_ADDR", "http://loki.observability.svc.cluster.local:3100")
+    LOKI_LIMIT = int(os.environ.get("LOKI_LIMIT", "5000"))
+    REPO = os.environ["ANCHORS_REPO"]
+    BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
+    ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/loki")
+    NAMESPACES = [n.strip() for n in os.environ["LOKI_NAMESPACES"].split(",") if n.strip()]
+    HORIZON = int(os.environ.get("VERIFY_HORIZON_SECONDS", str(28 * 86400)))
+    K = int(os.environ.get("VERIFY_WINDOWS", "3"))
+    RAW = "https://raw.githubusercontent.com/{}/{}".format(REPO, BRANCH)
+    US = "\x1f"
+
+    class Tamper(Exception):
+        pass
+
+    def http_get(url, headers=None, retries=6):
+        last = None
+        for attempt in range(retries):
+            req = urllib.request.Request(url, headers=headers or {})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return r.status, r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read()
+            except urllib.error.URLError as e:
+                last = e
+                if attempt < retries - 1:
+                    time.sleep(min(2 ** attempt, 10))
+        raise last
+
+    def raw_get_json(path):
+        status, body = http_get("{}/{}".format(RAW, path),
+                                {"User-Agent": "secforge-loki-audit-verifier/1.0",
+                                 "Cache-Control": "no-cache"})
+        if status == 404:
+            return None
+        if status != 200:
+            raise RuntimeError("raw GET {} -> {}".format(path, status))
+        return json.loads(body)
+
+    def query_window(ns, w_start_ns, w_end_ns):
+        # Identical to the anchor's extraction — order-independent content set.
+        entries, cursor, guard = set(), w_start_ns, 0
+        while True:
+            guard += 1
+            if guard > 20000:
+                raise RuntimeError("pagination runaway for {}".format(ns))
+            params = urllib.parse.urlencode({
+                "query": '{namespace="%s"}' % ns, "start": str(cursor),
+                "end": str(w_end_ns), "limit": str(LOKI_LIMIT), "direction": "forward"})
+            status, body = http_get(LOKI_ADDR + "/loki/api/v1/query_range?" + params)
+            if status != 200:
+                raise RuntimeError("Loki query {} -> {}: {}".format(ns, status, body[:200]))
+            result = json.loads(body)["data"]["result"]
+            n, max_ts, before = 0, cursor, len(entries)
+            for stream in result:
+                labels = ",".join("%s=%s" % (k, stream["stream"][k]) for k in sorted(stream["stream"]))
+                for ts, line in stream["values"]:
+                    n += 1
+                    t = int(ts)
+                    if t >= w_end_ns:
+                        continue
+                    entries.add(ts + US + labels + US + line)
+                    if t > max_ts:
+                        max_ts = t
+            if n < LOKI_LIMIT:
+                break
+            cursor = max_ts + 1 if (max_ts <= cursor and len(entries) == before) else max_ts
+        return entries
+
+    def window_hash(entries):
+        h = hashlib.sha256()
+        for e in sorted(entries):
+            h.update(e.encode("utf-8"))
+            h.update(b"\x1e")
+        return h.hexdigest()
+
+    def verify_ns(ns, now_ns):
+        state = raw_get_json("{}/{}/_state.json".format(ANCHOR_DIR, ns))
+        if state is None:
+            return "{}: no anchors yet — skip".format(ns)
+        # Walk head -> genesis.
+        anchors, seen, path = [], set(), state.get("head_file")
+        while path:
+            if path in seen:
+                raise RuntimeError("{}: anchor chain loop at {}".format(ns, path))
+            seen.add(path)
+            a = raw_get_json(path)
+            if a is None:
+                raise RuntimeError("{}: anchor {} referenced but missing".format(ns, path))
+            anchors.append(a)
+            path = a.get("prev_file") or ""
+        anchors.reverse()
+        if anchors[-1]["full_hash"] != state["full_hash"]:
+            raise RuntimeError("{}: head full_hash != _state.json".format(ns))
+        # Committed-chain math continuity (cheap).
+        prev = ""
+        for a in anchors:
+            if a["prev_full_hash"] != prev:
+                raise RuntimeError("{}: chain break at {}".format(ns, a.get("date")))
+            if hashlib.sha256((prev + a["window_sha256"]).encode()).hexdigest() != a["full_hash"]:
+                raise RuntimeError("{}: chain math broken at {}".format(ns, a.get("date")))
+            prev = a["full_hash"]
+        # Re-query + re-hash the last K windows still within the retention horizon.
+        horizon_ns = now_ns - HORIZON * 1_000_000_000
+        rechecked = 0
+        for a in reversed(anchors):
+            if rechecked >= K or a["window_end_ns"] <= horizon_ns:
+                break
+            wh = window_hash(query_window(ns, a["window_start_ns"], a["window_end_ns"]))
+            if wh != a["window_sha256"]:
+                raise Tamper("{}: window {} content changed — committed {} re-query {} "
+                             "(committed {} entries)".format(ns, a.get("date"),
+                             a["window_sha256"][:16], wh[:16], a["entry_count"]))
+            rechecked += 1
+        return "{}: chain intact ({} anchor(s), {} window(s) re-queried)".format(
+            ns, len(anchors), rechecked)
+
+    def main():
+        now_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
+        tampers, errors, summaries = [], [], []
+        for ns in NAMESPACES:
+            try:
+                summaries.append(verify_ns(ns, now_ns))
+            except Tamper as t:
+                tampers.append(str(t)); print("TAMPER: " + str(t), file=sys.stderr)
+            except Exception as e:
+                errors.append(str(e)); print("ERROR: " + str(e), file=sys.stderr)
+        for s in summaries:
+            print(s)
+        if tampers:
+            sys.exit(1)
+        if errors:
+            sys.exit(2)
+        print("platform-loki-audit: all namespace chains intact.")
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-loki-audit-verifier
+  namespace: observability
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-verifier
+    secforge.platform/component: platform-loki-audit
+spec:
+  suspend: true
+  schedule: "41 2 * * *"            # daily 02:41 UTC (after the anchor at 01:41)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: platform-loki-audit-verifier
+            secforge.platform/component: platform-loki-audit
+        spec:
+          serviceAccountName: platform-loki-audit-verifier
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: verify
+              image: mirror.gcr.io/library/python:3.13-slim
+              command: ["python3", "/app/verify.py"]
+              env:
+                - {name: LOKI_ADDR, value: "http://loki.observability.svc.cluster.local:3100"}
+                - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
+                - {name: ANCHORS_BRANCH, value: "main"}
+                - {name: ANCHOR_DIR, value: "platform/loki"}
+                - {name: VERIFY_HORIZON_SECONDS, value: "2419200"}
+                - {name: VERIFY_WINDOWS, value: "3"}
+                - {name: LOKI_NAMESPACES, value: "keycloak,spicedb,kyverno,spire,wazuh,cert-manager,vault-secrets-operator,istio-ingress,istio-system,velero"}
+                - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                - {name: HOME, value: "/tmp"}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: "50m", memory: "128Mi"}
+                limits: {cpu: "1", memory: "512Mi"}
+              volumeMounts:
+                - {name: script, mountPath: /app, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: script
+              configMap: {name: platform-loki-audit-verifier-script, defaultMode: 0444}
+            - name: tmp
+              emptyDir: {}

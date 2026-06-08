@@ -144,6 +144,16 @@ done
   --chart grafana/loki --version "$CHART_VER" \
   --values "$PLATFORM_DIR/values/loki.yaml"
 
+# 8. Loki audit anchor + verifier (operator-backlog #85 Phase 2 / threat-model
+#    X-R1) — tamper-evident anchoring of the Loki log sink. Ships SUSPENDED; the
+#    platform-loki-audit-signer OpenBao role is created in 05j and the OpenBao CA
+#    reaches this ns via the trust-manager openbao-internal-ca-cert Bundle (which
+#    now selects observability — 06-trust-manager.sh). Activate per
+#    docs/03-runbooks/platform-loki-audit-anchor.md.
+"$LIB/apply-manifest.sh" \
+  "$PLATFORM_DIR/manifests/observability/21-loki-audit-anchor.yaml" \
+  "$PLATFORM_DIR/manifests/observability/22-loki-audit-verifier.yaml"
+
 echo
 green "✓ Loki deployed."
 echo "Sanity:"

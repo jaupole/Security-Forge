@@ -1,0 +1,422 @@
+# Loki audit anchor — tamper-evident anchoring of the platform's Loki log sink.
+# operator-backlog #85 Phase 2 / threat-model X-R1.
+#
+# Phase 1 (manifests/openbao/12-) anchors the OpenBao audit log deterministically.
+# Phase 2 extends tamper-evidence to the OTHER security-critical audit streams that
+# flow to Loki — Keycloak auth events, SpiceDB authz, Kyverno admission, SPIRE SVID
+# issuance, cert-manager, etc. A node-root attacker (P1) who rewrites Loki's MinIO
+# chunks to cover tracks is provable after the fact: the off-node Ed25519 signature
+# committed here won't match a re-query of the (still-in-retention) window.
+#
+# Loki is NOT append-only, so determinism is engineered: each NS's anchor covers a
+# CLOSED 24h window that ended >= SETTLE (48h) ago (>> Promtail's seconds of lag, so
+# no late arrivals land in an anchored window), hashed as an ORDER-INDEPENDENT
+# content SET (sort+dedup), with the verifier only re-checking windows inside the
+# 28d horizon (< Loki's 30d retention, so retention deletion can't false-positive).
+#
+# Per-NS independent chains under platform/loki/<ns>/ in jaupole/secforge-audit-anchors.
+# Reuses Phase 1's transit/keys/audit-signing + audit-signer + platform-audit policies
+# + the SAME PAT at secret/platform/audit-anchors-push-token. Runs in the observability
+# ns (next to Loki); the existing egress baselines already grant Loki:3100 + openbao:8200,
+# so only a public-:443 egress (GitHub) is added. Ships SUSPENDED.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-loki-audit-signer
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-anchor
+    secforge.platform/component: platform-loki-audit
+automountServiceAccountToken: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: platform-loki-audit-signer
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-anchor
+    secforge.platform/component: platform-loki-audit
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: platform-loki-audit-signer
+    serviceAccount: platform-loki-audit-signer
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+---
+# Reuses the Phase 1 PAT (contents:write on jaupole/secforge-audit-anchors) at
+# secret/platform/audit-anchors-push-token. Rendered into the observability ns.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: audit-anchors-push-token
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-anchor
+    secforge.platform/component: platform-loki-audit
+spec:
+  type: kv-v2
+  mount: secret
+  path: platform/audit-anchors-push-token
+  refreshAfter: 1h
+  vaultAuthRef: platform-loki-audit-signer
+  destination:
+    create: true
+    name: audit-anchors-push-token
+    type: Opaque
+---
+# Only new network rule: the anchor pod → public :443 (api.github.com). The
+# observability baselines (allow-egress-cluster-internal) already cover Loki:3100 +
+# openbao:8200; this adds the GitHub push path. Excludes cluster CIDRs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-loki-audit-anchor-egress-internet-443
+  namespace: observability
+  labels:
+    secforge.platform/component: platform-loki-audit
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: platform-loki-audit-anchor
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - {port: 443, protocol: TCP}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-loki-audit-anchor-script
+  namespace: observability
+  labels:
+    secforge.platform/component: platform-loki-audit
+data:
+  anchor.py: |
+    #!/usr/bin/env python3
+    """platform-loki-audit-anchor — tamper-evident anchor of the Loki log sink.
+
+    For each target namespace, anchor every CLOSED 24h day-window that ended >= SETTLE
+    ago: query Loki for {namespace="<ns>"}, build an order-independent content SET,
+    sha256 it, chain + Transit-sign the head, and commit a signed anchor under
+    platform/loki/<ns>/. Catch-up loops missed days; idempotent (not-yet-settled or
+    already-anchored -> skip). Exit non-zero on any operational failure."""
+    import base64, hashlib, json, os, ssl, sys, time, urllib.request, urllib.parse, urllib.error
+    from datetime import datetime, timezone, timedelta
+
+    OPENBAO_ADDR = os.environ["OPENBAO_ADDR"]
+    OPENBAO_ROLE = os.environ.get("OPENBAO_ROLE", "platform-loki-audit-signer")
+    OPENBAO_CACERT = os.environ.get("OPENBAO_CACERT", "/etc/ssl/openbao-ca/ca.crt")
+    LOKI_ADDR = os.environ.get("LOKI_ADDR", "http://loki.observability.svc.cluster.local:3100")
+    LOKI_LIMIT = int(os.environ.get("LOKI_LIMIT", "5000"))
+    SETTLE = int(os.environ.get("SETTLE_SECONDS", str(48 * 3600)))
+    REPO = os.environ["ANCHORS_REPO"]
+    BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
+    ANCHOR_DIR = os.environ.get("ANCHOR_DIR", "platform/loki")
+    NAMESPACES = [n.strip() for n in os.environ["LOKI_NAMESPACES"].split(",") if n.strip()]
+    SA_TOKEN_FILE = "/var/run/secrets/openbao/token"
+    GH_TOKEN_FILE = "/run/secrets/gh/token"
+    GH_API = "https://api.github.com"
+    DAY = 86400
+    US = "\x1f"   # unit separator between entry fields
+
+    def read_file(p):
+        with open(p) as f:
+            return f.read().strip()
+
+    def http(method, url, headers, body=None, cafile=None, retries=6):
+        # Retry connection-level errors (fresh-pod Cilium cold-start RST, OpenBao
+        # leader blip, Loki cold query). HTTPError = server responded -> return.
+        data = body.encode() if isinstance(body, str) else body
+        ctx = ssl.create_default_context(cafile=cafile) if cafile else None
+        last = None
+        for attempt in range(retries):
+            req = urllib.request.Request(url, data=data, method=method, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
+                    return r.status, r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read()
+            except urllib.error.URLError as e:
+                last = e
+                if attempt < retries - 1:
+                    time.sleep(min(2 ** attempt, 10))
+        raise last
+
+    def gh_headers(token):
+        return {"Authorization": "Bearer " + token,
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "secforge-loki-audit-anchor/1.0"}
+
+    def gh_get_json(token, path):
+        url = "{}/repos/{}/contents/{}?ref={}".format(GH_API, REPO, path, BRANCH)
+        status, body = http("GET", url, gh_headers(token))
+        if status == 404:
+            return None, None
+        if status != 200:
+            raise RuntimeError("GitHub GET {} -> {}: {}".format(path, status, body[:200]))
+        obj = json.loads(body)
+        return json.loads(base64.b64decode(obj["content"]).decode()), obj["sha"]
+
+    def gh_put_json(token, path, payload, sha, message):
+        url = "{}/repos/{}/contents/{}".format(GH_API, REPO, path)
+        body = {"message": message,
+                "content": base64.b64encode(
+                    json.dumps(payload, indent=2, sort_keys=True).encode()).decode(),
+                "branch": BRANCH}
+        if sha:
+            body["sha"] = sha
+        h = gh_headers(token); h["Content-Type"] = "application/json"
+        status, resp = http("PUT", url, h, json.dumps(body))
+        if status not in (200, 201):
+            raise RuntimeError("GitHub PUT {} -> {}: {}".format(path, status, resp[:200]))
+        return json.loads(resp)["content"]["sha"]
+
+    def gh_exists(token, path):
+        url = "{}/repos/{}/contents/{}?ref={}".format(GH_API, REPO, path, BRANCH)
+        status, _ = http("GET", url, gh_headers(token))
+        return status == 200
+
+    def bao_login(sa_jwt):
+        status, body = http("POST", OPENBAO_ADDR + "/v1/auth/kubernetes/login",
+                            {"Content-Type": "application/json"},
+                            json.dumps({"role": OPENBAO_ROLE, "jwt": sa_jwt}), cafile=OPENBAO_CACERT)
+        if status != 200:
+            raise RuntimeError("OpenBao login -> {}: {}".format(status, body[:200]))
+        return json.loads(body)["auth"]["client_token"]
+
+    def bao_sign(token, message_hex):
+        inp = base64.b64encode(message_hex.encode()).decode()
+        status, body = http("POST", OPENBAO_ADDR + "/v1/transit/sign/audit-signing",
+                            {"X-Vault-Token": token, "Content-Type": "application/json"},
+                            json.dumps({"input": inp}), cafile=OPENBAO_CACERT)
+        if status != 200:
+            raise RuntimeError("Transit sign -> {}: {}".format(status, body[:200]))
+        return json.loads(body)["data"]["signature"]
+
+    def bao_pubkey(token):
+        status, body = http("GET", OPENBAO_ADDR + "/v1/transit/keys/audit-signing",
+                            {"X-Vault-Token": token}, cafile=OPENBAO_CACERT)
+        if status != 200:
+            return "", ""
+        d = json.loads(body)["data"]
+        latest = str(d.get("latest_version", ""))
+        return latest, (d.get("keys", {}).get(latest, {}) or {}).get("public_key", "")
+
+    def floor_day(dt):
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def latest_settled_day(now):
+        # Day D's window [D, D+1) closes at midnight(D+1); settled when
+        # now - midnight(D+1) >= SETTLE. Latest such D:
+        return floor_day(now - timedelta(seconds=SETTLE)) - timedelta(days=1)
+
+    def query_window(ns, w_start_ns, w_end_ns):
+        # Order-independent content set for {namespace=ns} over [w_start, w_end).
+        # Paginate forward with an inclusive cursor; the set dedups boundary overlap.
+        entries, total_bytes, cursor, guard = set(), 0, w_start_ns, 0
+        while True:
+            guard += 1
+            if guard > 20000:
+                raise RuntimeError("pagination runaway for {}".format(ns))
+            params = urllib.parse.urlencode({
+                "query": '{namespace="%s"}' % ns, "start": str(cursor),
+                "end": str(w_end_ns), "limit": str(LOKI_LIMIT), "direction": "forward"})
+            status, body = http("GET", LOKI_ADDR + "/loki/api/v1/query_range?" + params, {})
+            if status != 200:
+                raise RuntimeError("Loki query {} -> {}: {}".format(ns, status, body[:200]))
+            result = json.loads(body)["data"]["result"]
+            n, max_ts, before = 0, cursor, len(entries)
+            for stream in result:
+                labels = ",".join("%s=%s" % (k, stream["stream"][k]) for k in sorted(stream["stream"]))
+                for ts, line in stream["values"]:
+                    n += 1
+                    t = int(ts)
+                    if t >= w_end_ns:
+                        continue
+                    key = ts + US + labels + US + line
+                    if key not in entries:
+                        entries.add(key)
+                        total_bytes += len(line.encode("utf-8"))
+                    if t > max_ts:
+                        max_ts = t
+            if n < LOKI_LIMIT:
+                break
+            cursor = max_ts + 1 if (max_ts <= cursor and len(entries) == before) else max_ts
+        return entries, total_bytes
+
+    def window_hash(entries):
+        h = hashlib.sha256()
+        for e in sorted(entries):
+            h.update(e.encode("utf-8"))
+            h.update(b"\x1e")
+        return h.hexdigest()
+
+    def anchor_ns(ns, gh_token, bao_token, key_version, pubkey, now):
+        state_path = "{}/{}/_state.json".format(ANCHOR_DIR, ns)
+        state, state_sha = gh_get_json(gh_token, state_path)
+        target = latest_settled_day(now)
+        if state is None:
+            last = target - timedelta(days=1)   # genesis: anchor just the latest settled day
+            prev_full, prev_file = "", ""
+        else:
+            last = datetime.strptime(state["last_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            prev_full, prev_file = state["full_hash"], state.get("head_file", "")
+        d = last + timedelta(days=1)
+        made = 0
+        while d <= target:
+            w_start, w_end = floor_day(d), floor_day(d) + timedelta(days=1)
+            ws_ns, we_ns = int(w_start.timestamp() * 1e9), int(w_end.timestamp() * 1e9)
+            entries, total_bytes = query_window(ns, ws_ns, we_ns)
+            wh = window_hash(entries)
+            full = hashlib.sha256((prev_full + wh).encode()).hexdigest()
+            sig = bao_sign(bao_token, full)
+            date = d.strftime("%Y-%m-%d")
+            path = "{}/{}/{}.json".format(ANCHOR_DIR, ns, date)
+            if gh_exists(gh_token, path):
+                path = "{}/{}/{}--{}.json".format(ANCHOR_DIR, ns, date, we_ns)
+            payload = {"schema": "secforge.loki-audit-anchor/v1", "source": "loki-query",
+                       "namespace": ns, "date": date,
+                       "window_start": w_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       "window_end": w_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       "window_start_ns": ws_ns, "window_end_ns": we_ns,
+                       "entry_count": len(entries), "total_bytes": total_bytes,
+                       "window_sha256": wh, "prev_full_hash": prev_full, "prev_file": prev_file,
+                       "full_hash": full, "sign_alg": "ed25519", "key_version": key_version,
+                       "pubkey": pubkey, "settle_seconds": SETTLE,
+                       "anchored_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "signature": sig}
+            gh_put_json(gh_token, path, payload, None,
+                        "loki-audit anchor {} {} ({} entries)".format(ns, date, len(entries)))
+            new_state = {"last_date": date, "full_hash": full, "head_file": path,
+                         "namespace": ns, "updated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+            state_sha = gh_put_json(gh_token, state_path, new_state, state_sha,
+                                    "loki-audit state {} -> {}".format(ns, date))
+            prev_full, prev_file, made = full, path, made + 1
+            print("{}: anchored window {} [{} entries, {} bytes] -> {}".format(
+                ns, date, len(entries), total_bytes, path))
+            d += timedelta(days=1)
+        if made == 0:
+            print("{}: up to date (latest settled day {} already anchored) — skip".format(
+                ns, target.strftime("%Y-%m-%d")))
+        return made
+
+    def main():
+        gh_token = read_file(GH_TOKEN_FILE)
+        sa_jwt = read_file(SA_TOKEN_FILE)
+        bao_token = bao_login(sa_jwt)
+        key_version, pubkey = bao_pubkey(bao_token)
+        now = datetime.now(timezone.utc)
+        errors = []
+        for ns in NAMESPACES:
+            try:
+                anchor_ns(ns, gh_token, bao_token, key_version, pubkey, now)
+            except Exception as e:
+                errors.append("{}: {}".format(ns, e))
+                print("ERROR " + str(e), file=sys.stderr)
+        if errors:
+            print("{} namespace(s) failed to anchor".format(len(errors)), file=sys.stderr)
+            sys.exit(1)
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-loki-audit-anchor
+  namespace: observability
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+  labels:
+    app.kubernetes.io/name: platform-loki-audit-anchor
+    secforge.platform/component: platform-loki-audit
+spec:
+  suspend: true
+  schedule: "41 1 * * *"            # daily 01:41 UTC (after the openbao anchor 00:23)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: platform-loki-audit-anchor
+            secforge.platform/component: platform-loki-audit
+        spec:
+          serviceAccountName: platform-loki-audit-signer
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: anchor
+              image: mirror.gcr.io/library/python:3.13-slim
+              command: ["python3", "/app/anchor.py"]
+              env:
+                - {name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200"}
+                - {name: OPENBAO_ROLE, value: "platform-loki-audit-signer"}
+                - {name: OPENBAO_CACERT, value: "/etc/ssl/openbao-ca/ca.crt"}
+                - {name: LOKI_ADDR, value: "http://loki.observability.svc.cluster.local:3100"}
+                - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
+                - {name: ANCHORS_BRANCH, value: "main"}
+                - {name: ANCHOR_DIR, value: "platform/loki"}
+                - {name: SETTLE_SECONDS, value: "172800"}
+                - {name: LOKI_NAMESPACES, value: "keycloak,spicedb,kyverno,spire,wazuh,cert-manager,vault-secrets-operator,istio-ingress,istio-system,velero"}
+                - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+                - {name: HOME, value: "/tmp"}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: "50m", memory: "128Mi"}
+                limits: {cpu: "1", memory: "512Mi"}
+              volumeMounts:
+                - {name: script, mountPath: /app, readOnly: true}
+                - {name: openbao-ca, mountPath: /etc/ssl/openbao-ca, readOnly: true}
+                - {name: bao-token, mountPath: /var/run/secrets/openbao, readOnly: true}
+                - {name: gh-creds, mountPath: /run/secrets/gh, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: script
+              configMap: {name: platform-loki-audit-anchor-script, defaultMode: 0444}
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - {key: ca.crt, path: ca.crt}
+                defaultMode: 0444
+            - name: bao-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: https://kubernetes.default.svc.cluster.local
+                      expirationSeconds: 600
+            - name: gh-creds
+              secret:
+                secretName: audit-anchors-push-token
+                items:
+                  - {key: token, path: token}
+                defaultMode: 0400
+            - name: tmp
+              emptyDir: {}

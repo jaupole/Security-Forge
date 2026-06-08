@@ -60,6 +60,11 @@ APP_ROLES=(
   # AND reads its GitHub PAT (secret/platform/audit-anchors-push-token). Two policies:
   # audit-signer (transit/sign) + platform-audit (PAT read). SA in the openbao ns.
   "platform-audit-signer|openbao|platform-audit-signer|audit-signer,platform-audit|900|1800"
+  # platform loki audit anchor (threat-model X-R1 Phase 2) — signs the per-namespace
+  # Loki window-hash chains AND reads the (shared) GitHub PAT. Same two policies as the
+  # openbao anchor; SA lives in the observability ns next to Loki. Manifests:
+  # manifests/observability/21-loki-audit-anchor.yaml (applied by 07f-loki.sh).
+  "platform-loki-audit-signer|observability|platform-loki-audit-signer|audit-signer,platform-audit|900|1800"
   # proposal-forge (proposalapp) — VSO renders OIDC/SpiceDB/session/Gemini/GSA
   # runtime bundle + ghcr-pull + the proposal-forge-files MinIO key. No
   # audit-signer (PF has no OpenBao Transit usage). Policy paths: vso.hcl
