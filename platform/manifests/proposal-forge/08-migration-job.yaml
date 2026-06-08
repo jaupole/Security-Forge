@@ -68,11 +68,11 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Minimized Microsoft OAuth scope (Files.ReadWrite.AppFolder, no
-          # offline_access) — proposal-forge-image-build run 27163540502, commit
-          # 47e3f84. No NEW migration in this release; digest kept in lockstep with
-          # the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:e626b33e682764c1c2ae68052e2580fe50bda114ddb4d0de2ece9a97adbd904a
+          # Paged US-Letter narrative editor + page breaks (+ docx Letter/page
+          # breaks); also bundles document-render code (dormant, PDF_RENDERER=local).
+          # proposal-forge-image-build run 27166117068, commit 2ee1af2. No NEW
+          # migration; digest kept in lockstep with the Deployment (09) per convention.
+          image: ghcr.io/jaupole/proposal-forge@sha256:774551318cda0f1219a0dd72de4d728f7f6f87f2146df4eacddfa67d03d6bc9f
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
