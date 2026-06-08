@@ -51,10 +51,11 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. d139cc7d = Branding & Graphics merge (PR #36,
-          # c72d19c): Branding + Brand & Graphics combined into one tabbed page
-          # + top-left-logo configurator. (Single-page was d4003eb7.)
-          image: ghcr.io/jaupole/portal@sha256:d139cc7da56b7c58c6235e0e25eee259bc0b2fbc06579e83a30ecf0bbac1edfc
+          # automate the bump. e19d41a5 = serve the Microsoft publisher-domain
+          # association file at /.well-known/microsoft-identity-association.json
+          # (PF is tailnet-only; verify portal.secforge.dev). On top of the
+          # Branding & Graphics merge (c72d19c). (portal-image-build, d11bb92.)
+          image: ghcr.io/jaupole/portal@sha256:e19d41a502cb68783ee3731c8a15eac1fad7add531649bbbc347796077d38f56
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
