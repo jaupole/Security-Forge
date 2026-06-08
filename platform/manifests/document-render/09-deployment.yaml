@@ -72,7 +72,7 @@ spec:
         - name: gotenberg
           # REPLACE with the signed digest from the gotenberg-image-build workflow.
           # e.g. ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:<digest>
-          image: ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:REPLACE_WITH_SIGNED_DIGEST
+          image: ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:dfd606264175a6cad168ad7897fd8eeff93f6fd5f68c1a44e1d64d9583b63e74
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
