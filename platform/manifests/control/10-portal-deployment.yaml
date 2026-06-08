@@ -51,11 +51,12 @@ spec:
         - name: nginx
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
-          # automate the bump. 8f9d6278 = scope Page Settings to Platform View
-          # only (PR #41, 62c8c41), on top of admin Page Settings (per-admin
-          # accent + steel-blue default, #40, d8e82842), the Configure modal
-          # (#39), logo-mark header (#38), and the Branding redesign (#37).
-          image: ghcr.io/jaupole/portal@sha256:8f9d627846e185dba685c71e52d7afb8dd133817cfcecc8e7f301024baa1de20
+          # automate the bump. 9720208b = regroup admin nav — Page Settings +
+          # Ecosystem Admins into Administration (PR #42, 845d7ac), on top of
+          # Page Settings → Platform View only (#41, 8f9d6278), admin Page
+          # Settings (#40, d8e82842), the Configure modal (#39), and the
+          # logo-mark header (#38).
+          image: ghcr.io/jaupole/portal@sha256:9720208b11a048da45d02c60518d27e8696997e5f530c2519e8f924ce307c8f5
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
