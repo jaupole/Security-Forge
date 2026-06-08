@@ -401,6 +401,11 @@ spec:
     # Transit-signs the audit-log byte stream off-node; the verifier (hourly)
     # re-reads the anchored ranges from the local file and fails the Job on any
     # mismatch. Both are in the openbao ns (12/13-platform-audit-*.yaml).
+    # NB: exprs are current-state (kube_job_status_failed > 0), NOT
+    # max_over_time[..h] — the latter keeps firing for the whole window even after a
+    # failed (e.g. test) job is deleted/resolved. Current-state clears the moment no
+    # failed job exists; a real failure persists (failedJobsHistoryLimit) until the
+    # operator deletes the resolved job to acknowledge.
     - name: platform-audit-anchoring
       interval: 1m
       rules:
@@ -408,7 +413,7 @@ spec:
         # local audit log (rewrite/truncation), OR an operational failure. Either
         # is high-signal — treat as critical and inspect the job log to classify.
         - alert: PlatformAuditVerifierFailing
-          expr: max_over_time(kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-verifier.*"}[2h]) > 0
+          expr: kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-verifier.*"} > 0
           for: 5m
           labels:
             severity: critical
@@ -426,7 +431,7 @@ spec:
         # off-node — tamper-evidence is degrading. Warning (next run self-heals;
         # the chain is gapless via byte offset), escalate if it persists.
         - alert: PlatformAuditAnchorFailing
-          expr: max_over_time(kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-anchor.*"}[26h]) > 0
+          expr: kube_job_status_failed{namespace="openbao", job_name=~"platform-audit-anchor.*"} > 0
           for: 10m
           labels:
             severity: warning
@@ -484,7 +489,7 @@ spec:
         # matches its signed off-node anchor (rewrite in MinIO), OR an operational
         # failure. High-signal — classify via the job log (TAMPER: vs other).
         - alert: PlatformLokiVerifierFailing
-          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-verifier.*"}[26h]) > 0
+          expr: kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-verifier.*"} > 0
           for: 5m
           labels:
             severity: critical
@@ -499,7 +504,7 @@ spec:
                 kubectl -n observability logs job/<latest platform-loki-audit-verifier job>
               On confirmed tamper, treat as an active node compromise (threat-model X-R1/P1).
         - alert: PlatformLokiAnchorFailing
-          expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-anchor.*"}[26h]) > 0
+          expr: kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-anchor.*"} > 0
           for: 10m
           labels:
             severity: warning
