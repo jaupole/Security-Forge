@@ -132,8 +132,11 @@ keys, no HSM** (§5.5/§5.6/§5.7 carry forward unchanged — production did *no
 (X-R3)** — no separation-of-duties.
 
 **Detective gaps** (actionable, not residuals) — status 2026-06-07:
-- **CT-log monitoring (P2/P3)** — ✅ **implemented** (operator-backlog #83): daily CronJob asserts every
-  logged cert for `secforge.dev` is Let's Encrypt-issued → alerts on any other issuer.
+- **CT-log monitoring (P2/P3)** — ✅ **implemented** (operator-backlog #83): twice-daily CronJob asserts
+  every logged cert for `secforge.dev` (+subdomains) was issued by an allowed CA (**Let's Encrypt** +
+  **Cloudflare** — Cloudflare auto-issues Universal SSL for the Cloudflare-managed zone) → `CTMonitorMisissuance`
+  (critical) on any other issuer. Source = Cert Spotter primary + crt.sh fallback; a source outage exits 0
+  (CT is historical), so it doesn't false-alert (rebuilt 2026-06-08 after crt.sh-502 noise).
 - **Gateway rate-limiter (P4)** — ✅ **enforcing** (#84): Envoy `local_ratelimit` on the gateway
   (~2000 req/s global ceiling). Deployed monitor-first, observed `rate_limited=0` under real traffic,
   then flipped `filter_enforced` 0→100 (2026-06-07). Floods over the ceiling now get 429; real traffic

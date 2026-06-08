@@ -356,21 +356,41 @@ spec:
     - name: security-detective-controls
       interval: 1h
       rules:
-        # CT-log monitor (manifests/observability/20-ct-monitor.yaml) exits non-zero
-        # when a cert for secforge.dev is logged from a non-Let's-Encrypt issuer, or
-        # when crt.sh is unreachable — either way the Job fails and this fires (P2/P3).
-        - alert: CTMonitorAnomalyOrFailure
+        # CT-log monitor (manifests/observability/20-ct-monitor.yaml). It exits 1 ONLY
+        # when a cert for secforge.dev is logged from a NON-ALLOWED issuer (allowed =
+        # Let's Encrypt + Cloudflare). Source outages exit 0 (CT is historical), so this
+        # alert is accurate — a failed ct-monitor job means a real possible mis-issuance.
+        - alert: CTMonitorMisissuance
           expr: max_over_time(kube_job_status_failed{namespace="observability", job_name=~"ct-monitor.*"}[26h]) > 0
           for: 5m
           labels:
+            severity: critical
+          annotations:
+            summary: "CT monitor found a cert for secforge.dev from a NON-ALLOWED issuer"
+            description: |
+              The ct-monitor CronJob FAILED — it found a certificate for secforge.dev (or a
+              subdomain) issued by a CA outside the allowed set (Let's Encrypt + Cloudflare).
+              Possible mis-issuance / DNS-account or ACME compromise (threat-model P2/P3).
+              Investigate NOW (the log lists the issuer + dns_names):
+                kubectl -n observability logs job/<latest ct-monitor job>
+                https://api.certspotter.com/v1/issuances?domain=secforge.dev&include_subdomains=true&expand=issuer
+              NOTE: a transient CT-source outage is NOT this alert — the monitor exits 0 on
+              unreachable (CT logs are historical; the next run catches up).
+        # Liveness: the monitor going dark (broken/stuck/unscheduled) — NOT a source
+        # outage (those exit 0, so last_successful_time keeps advancing). Fires only if
+        # no ct-monitor job has completed in >2 days (schedule is twice daily).
+        - alert: CTMonitorNotRunning
+          expr: (time() - max(kube_cronjob_status_last_successful_time{namespace="observability", cronjob="ct-monitor"})) > 172800
+          for: 1h
+          labels:
             severity: warning
           annotations:
-            summary: "CT monitor flagged a cert anomaly for secforge.dev (or failed to run)"
+            summary: "CT monitor has not completed successfully in >2 days"
             description: |
-              The ct-monitor CronJob exited non-zero — either a certificate from an
-              unexpected (non-Let's-Encrypt) issuer was logged for secforge.dev
-              (possible mis-issuance — investigate https://crt.sh/?q=secforge.dev), or
-              crt.sh was unreachable. Inspect: kubectl -n observability logs job/<latest ct-monitor job>.
+              No ct-monitor job has completed in >2 days — the monitor may be broken, stuck, or
+              unscheduled (this is NOT a transient CT-source outage; those exit 0). Cert
+              mis-issuance monitoring is degraded. Check:
+                kubectl -n observability get cronjob,jobs -l secforge.platform/component=ct-monitor
 
     # ─── Platform audit anchoring (operator-backlog #85 / threat-model X-R1) ──
     # Tamper-evidence for the OpenBao audit log. The anchor (daily) hash-chains +
