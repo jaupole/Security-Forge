@@ -54,8 +54,9 @@ spec:
           # automate the bump. e1e8b628 = honor cross-app theme cookie (PR #43,
           # reads secforge_theme before first paint), on top of the admin nav
           # regroup (#42, 9720208b), Page Settings → Platform View (#41), and
-          # the admin Page Settings accent (#40).
-          image: ghcr.io/jaupole/portal@sha256:e1e8b6287586414911b10d11c4a8de8f62628a8bdee0371e44aa7f5b865de251
+          # the admin Page Settings accent (#40). 2026-06-08: QBO How-It-Works
+          # hidden once connected + "Remove all email settings" button (ec56227).
+          image: ghcr.io/jaupole/portal@sha256:9f1066637b5e6d947f32496795cf31113273c3dc8d249cc93e82800d362d8748
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
