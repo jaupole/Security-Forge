@@ -76,8 +76,10 @@ spec:
           # map (#49). 2026-06-08: DELETE /orgs/:id/email-config (remove all org
           # email settings); invitation record-remove endpoint
           # (DELETE /orgs/:id/invitations/:id/record) + accountExists on the
-          # members list (#54, commit 0655aa1).
-          image: ghcr.io/jaupole/control@sha256:76bfcb6b32143e5b738a29f6700b0eb0224ae034150443752e48c50ca6ac103d
+          # members list (#54, commit 0655aa1). 2026-06-08: ticket archive
+          # system — archived_at + archived filter + archive/unarchive
+          # endpoints + tickets:archive-closed CLI (#55, commit 668742f).
+          image: ghcr.io/jaupole/control@sha256:2b737eedeed6745be81104bf21bd6148962917f81028456a596b0575ff168ef3
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }

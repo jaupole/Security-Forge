@@ -1,0 +1,127 @@
+# Daily CronJob that archives support / feature-request tickets which
+# have been 'closed' for more than 30 days, moving them out of the
+# operator's active inbox (sets tickets.archived_at). Admins can still
+# find them under the Admin Console's Archived filter and restore any of
+# them. See ecosystem-control src/cli/tickets-archive.ts.
+#
+# RLS note: `tickets` is FORCE ROW LEVEL SECURITY (control migration 060)
+# and the runtime `control` role is NOBYPASSRLS, so the CLI archives
+# per-org (enumerating orgs from the non-RLS organizations directory and
+# running the UPDATE under each org's app.org_id via withTx). It needs
+# only the control-db-app DB creds — same env shape as the signup-cleanup
+# cron (config.ts validates the full env at import, so the Keycloak/SpiceDB
+# vars are present even though the archive command doesn't use them).
+#
+# Same image + DB env as the API Deployment — only the CLI entrypoint
+# differs ("tickets:archive-closed"). Bump the digest in lockstep with
+# 09-backend-deployment.yaml.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-tickets-archive
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: tickets-archive
+spec:
+  # Daily at 03:41 UTC. Off the round-hour and clear of the hourly
+  # signup-cleanup (:17) so the two never overlap on the single node.
+  schedule: "41 3 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: tickets-archive
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: archive
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:2b737eedeed6745be81104bf21bd6148962917f81028456a596b0575ff168ef3
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "tickets:archive-closed"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                # config.ts validates the full env at import; auth.${DOMAIN}'s
+                # in-cluster TLS chain is signed by the internal CA bundled in
+                # openbao-internal-ca-cert (mirrors the backend + signup cron).
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                # Runtime `control` role (control-db-app) — the archive runs as
+                # the normal DML role, per-org under RLS. No migrator/superuser.
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
