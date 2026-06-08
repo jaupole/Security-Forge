@@ -68,10 +68,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # ecosystem-ui glow Phase 0+1 — proposal-forge-image-build run
-          # 27155202912, commit 9898204. No NEW migration in this release;
+          # ecosystem-ui glow migration COMPLETE (Phase 0-4) — proposal-forge-image
+          # -build run 27157450085, commit c55dd31. No NEW migration in this release;
           # digest kept in lockstep with the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:317715e6c8df5d84d5a76f0aca1b258c52e18cc9a114ef2cf11ecc4f9a05338d
+          image: ghcr.io/jaupole/proposal-forge@sha256:c438c6bece44a6c184d13af4c1a6f43d28a2020a022f8eb335fb01fd9efecb47
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
