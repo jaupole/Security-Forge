@@ -1,0 +1,45 @@
+# Istio AuthorizationPolicy (L7) for the Gotenberg renderer.
+#
+# An ALLOW policy makes the workload default-deny: once this exists, every
+# inbound request to the gotenberg pods must match a rule or it is rejected by
+# the ztunnel/waypoint enforcing it. We allow only the SPIFFE principals of the
+# apps permitted to render — i.e. mTLS workload identity, not just "same
+# namespace". A plaintext or wrong-identity request (no/other principal) fails
+# to match and is denied, even though the NetworkPolicy (05) already gates the
+# source namespace. Defense in depth: NetworkPolicy = which namespace, this =
+# which workload identity.
+#
+# Mesh trust domain is cluster.local (the app-layer SPIRE domain
+# secforge.platform is a SEPARATE identity used for OpenBao/SpiceDB, not for
+# mesh authz). So principals are cluster.local/ns/<ns>/sa/<sa>.
+#
+# NOTE: kubelet health probes are not subject to this policy (ztunnel exempts
+# node-originated probes), so readiness/liveness on :3000/health keep working.
+#
+# A namespace-wide PeerAuthentication STRICT is intentionally omitted: requiring
+# a principal here already requires mTLS for any ALLOWED request. Add STRICT
+# later if you want to also reject plaintext at the transport layer outright.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-consumers-to-gotenberg
+  namespace: document-render
+  labels:
+    secforge.platform/component: document-render
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: document-render
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/proposal-forge/sa/proposal-forge
+              # Phase 2 — add when Project Tracker deploys to the cluster:
+              # - cluster.local/ns/project-tracker/sa/project-tracker
+      to:
+        - operation:
+            ports: ["3000"]
+            methods: ["POST", "GET"]

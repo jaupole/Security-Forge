@@ -1,0 +1,23 @@
+# In-cluster Service for Gotenberg. ClusterIP only — there is NO ingress for
+# this service; it is reachable solely by the consuming app namespaces over the
+# mesh (gated by 05-network-policies.yaml + 06-authorization-policy.yaml).
+#
+# Consumers address it as: http://gotenberg.document-render.svc.cluster.local:3000
+# (plaintext to the Service; ambient ztunnel wraps it in mTLS transparently).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gotenberg
+  namespace: document-render
+  labels:
+    app.kubernetes.io/name: document-render
+    app.kubernetes.io/component: app
+    secforge.platform/component: document-render
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: document-render
+    app.kubernetes.io/component: app
+  ports:
+    - { name: http, port: 3000, targetPort: http, protocol: TCP }

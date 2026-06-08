@@ -154,6 +154,31 @@ spec:
         - { protocol: TCP, port: 15008 }
 
 ---
+# Egress to the document-render service (Gotenberg) for HTML→PDF / Office→PDF
+# export. document-render is ambient, so the call rides ztunnel HBONE (:15008)
+# alongside the app port :3000. Replaces the in-image Puppeteer/Chromium path
+# (ADR-0037); gated server-side by PDF_RENDERER=gotenberg.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-document-render
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: document-render
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
 # Egress to OTel collector (traces + metrics).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

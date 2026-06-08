@@ -1,0 +1,89 @@
+# NetworkPolicies for the document-render namespace — the SSRF cage.
+#
+# This is the PRIMARY containment for the renderer. Even if every Gotenberg
+# in-app guard failed, Chromium has nowhere to go: egress is default-denied with
+# ONLY DNS allowed (no kube-apiserver, no in-cluster services, no internet). The
+# service makes no outbound calls by design — consumers POST it self-contained
+# HTML (+ assets as files) and it returns a PDF on the same connection.
+#
+# Ingress is restricted to the consuming app namespaces. Today: proposal-forge.
+# Project Tracker is added here when it deploys (Phase 2 is local-dev only).
+#
+# Ports: 3000 = Gotenberg API; 15008 = ztunnel HBONE (both this ns and
+# proposal-forge are ambient, so the call rides HBONE — allow it alongside 3000,
+# same pattern as the other ambient consumers in the platform).
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: document-render
+  labels: { secforge.platform/component: document-render, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: document-render
+  labels: { secforge.platform/component: document-render, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# DNS only. NO kube-apiserver allow (the renderer never talks to the API),
+# NO internet, NO in-cluster services. This is deliberately tighter than the
+# shared egress baseline — the renderer's whole job needs zero outbound network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: document-render
+  labels: { secforge.platform/component: document-render, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+
+---
+# Ingress: only the consuming app namespaces reach the Gotenberg API. The
+# AuthorizationPolicy (06) further narrows this to the exact SPIFFE principal;
+# this L3/L4 rule is the belt to that L7 suspenders.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-consumers
+  namespace: document-render
+  labels: { secforge.platform/component: document-render, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: document-render
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: proposal-forge
+        # Phase 2 — add when Project Tracker deploys to the cluster:
+        # - namespaceSelector:
+        #     matchLabels:
+        #       kubernetes.io/metadata.name: project-tracker
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)

@@ -1,0 +1,121 @@
+# Gotenberg — the shared document rendering service. Stateless, single
+# Deployment. Converts HTML→PDF (Chromium), Office→PDF (LibreOffice), and merges
+# PDFs over a REST API on :3000. See ADR-0037 and README.md.
+#
+# IMAGE: a mirror of the public upstream docker.io/gotenberg/gotenberg, copied
+# to ghcr.io/jaupole/gotenberg and cosign-keyless-signed by
+# .github/workflows/gotenberg-mirror.yml so it satisfies Kyverno
+# restrict-image-registries (ghcr.io/jaupole/*) + verify-image-signature-secforge
+# (Enforce). The GHCR package is PUBLIC, so no imagePullSecret is needed. Pin to
+# the signed digest the mirror workflow prints; the placeholder below MUST be
+# replaced before apply or Kyverno rejects it.
+#
+# SECURITY POSTURE:
+#   - Non-root: Gotenberg's own user is UID/GID 1001 (supports arbitrary UIDs
+#     since 8.21). runAsNonRoot + drop ALL caps + seccomp RuntimeDefault →
+#     passes Kyverno require-runasnonroot (Enforce) + PSS restricted.
+#   - Chromium runs --no-sandbox inside the container (Gotenberg's default);
+#     the pod + the zero-egress NetworkPolicy ARE the sandbox. This is exactly
+#     why 05-network-policies.yaml denies all egress but DNS.
+#   - In-app SSRF guards (defense in depth behind the NetworkPolicy):
+#       CHROMIUM_DENY_PRIVATE_IPS=true  → can't reach in-cluster services
+#       CHROMIUM_DENY_PUBLIC_IPS=true   → can't exfiltrate to the internet
+#       WEBHOOK_DISABLE=true            → no async callback/SSRF vector
+#     (Gotenberg also defaults its file: deny-list to non-/tmp, so it can only
+#      read the request's own uploaded files.)
+#   - readOnlyRootFilesystem is FALSE here — the ONE deviation from the platform
+#     house rule. Chromium + LibreOffice write to temp/home/caches and the
+#     upstream image is not built for a read-only root. Compensated with sized
+#     emptyDir at /tmp (HOME+TMPDIR) and /dev/shm (Chromium shared memory).
+#     Tightening to read-only-root is tracked as a hardening follow-up
+#     (operator-backlog) — validate against the Office→PDF path before flipping.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gotenberg
+  namespace: document-render
+  labels:
+    app.kubernetes.io/name: document-render
+    app.kubernetes.io/component: app
+    secforge.platform/component: document-render
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: document-render
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: document-render
+        app.kubernetes.io/component: app
+        secforge.platform/component: document-render
+    spec:
+      serviceAccountName: gotenberg
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gotenberg
+          # REPLACE with the signed digest from the gotenberg-mirror workflow.
+          # e.g. ghcr.io/jaupole/gotenberg:8.32.0@sha256:<digest>
+          image: ghcr.io/jaupole/gotenberg:8.32.0@sha256:REPLACE_WITH_SIGNED_DIGEST
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 3000, name: http, protocol: TCP }
+          env:
+            # SSRF guards (see header). Primary containment is the NetworkPolicy;
+            # these are belt-and-suspenders at the app layer.
+            - { name: CHROMIUM_DENY_PRIVATE_IPS, value: "true" }
+            - { name: CHROMIUM_DENY_PUBLIC_IPS, value: "true" }
+            - { name: WEBHOOK_DISABLE, value: "true" }
+            # Give large/slow proposals room (default 30s).
+            - { name: API_TIMEOUT, value: "60s" }
+            # Keep all runtime writes inside the sized emptyDir volumes.
+            - { name: HOME, value: "/tmp" }
+            - { name: TMPDIR, value: "/tmp" }
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits:   { cpu: "1.5", memory: 1500Mi }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            # See header: upstream image is not read-only-root compatible.
+            readOnlyRootFilesystem: false
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: dshm, mountPath: /dev/shm }
+      volumes:
+        # Chromium/LibreOffice temp, caches, and HOME. Sized generously: a big
+        # proposal render plus LibreOffice's profile can be hundreds of MB.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        # Chromium uses /dev/shm; the container default (64Mi) crashes it on
+        # large pages. Back it with memory-medium emptyDir.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi

@@ -1,0 +1,36 @@
+# document-render namespace — a single, shared, stateless rendering service
+# (Gotenberg) that converts HTML→PDF (Chromium), Office→PDF (LibreOffice), and
+# merges PDFs, behind a REST API. It exists so the ecosystem apps that produce
+# documents (Proposal Forge today, Project Tracker next) do NOT each have to
+# ship headless Chromium in their own image — one image to CVE-patch instead of
+# N, and the consuming apps go lean/distroless. See ADR-0037.
+#
+# THREAT MODEL: an HTML→PDF service is an SSRF cannon if Chromium can fetch
+# attacker-influenced URLs to reach in-cluster services (OpenBao, Keycloak,
+# the kube-apiserver, cloud metadata). This namespace is caged in layers:
+#   1. NetworkPolicy: default-deny egress, DNS only — it cannot reach ANY
+#      in-cluster service NOR the internet (05-network-policies.yaml).
+#   2. Gotenberg flags: CHROMIUM_DENY_PRIVATE_IPS + CHROMIUM_DENY_PUBLIC_IPS +
+#      WEBHOOK_DISABLE (09-deployment.yaml).
+#   3. Consumers send HTML + assets as multipart files, never URLs.
+#   4. Ambient mTLS + AuthorizationPolicy: only the proposal-forge SPIFFE
+#      principal may call it (06-authorization-policy.yaml).
+#
+# Enrolled in the Istio Ambient mesh (proposal-forge is already ambient), so the
+# PF→Gotenberg call rides ztunnel HBONE/mTLS and Gotenberg sees PF's workload
+# identity. PSS-restricted; the pod is non-root (Gotenberg's UID 1001), drops
+# ALL caps, seccomp RuntimeDefault. readOnlyRootFilesystem is the one house-rule
+# deviation (Chromium/LibreOffice need writable temp+home) — see README.md and
+# operator-backlog; compensated with sized emptyDir /tmp + /dev/shm.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: document-render
+  labels:
+    app.kubernetes.io/name: document-render
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: document-render
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
