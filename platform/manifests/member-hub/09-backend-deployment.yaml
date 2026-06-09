@@ -108,7 +108,7 @@ spec:
           # nullable blocks JSONB column (migration 099), compile-at-save,
           # visual Puck block editor for email templates — commits a858b5e,
           # a61dc63. Requires migration 099_email_template_blocks.
-          image: ghcr.io/jaupole/member-hub@sha256:33e75d9caafbd8fd923a2c37aa3ebd974a1e8175f7c3010a3cb708cea84b1cb4
+          image: ghcr.io/jaupole/member-hub@sha256:9e3831637f2c0933aad0f06685d85d3564c98ce3b8fd2d40d62ee7ae8e59132e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
