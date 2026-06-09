@@ -108,7 +108,11 @@ spec:
           # nullable blocks JSONB column (migration 099), compile-at-save,
           # visual Puck block editor for email templates — commits a858b5e,
           # a61dc63. Requires migration 099_email_template_blocks.
-          image: ghcr.io/jaupole/member-hub@sha256:9e3831637f2c0933aad0f06685d85d3564c98ce3b8fd2d40d62ee7ae8e59132e
+          # 2026-06-09: email preview images render — sandbox="allow-same-origin"
+          # on the preview iframes (a srcdoc frame inherits the app CSP; an opaque
+          # sandbox origin breaks `img-src 'self'` for same-host image URLs) +
+          # drop Puck's no-op default Publish button — commit 33c0cc6.
+          image: ghcr.io/jaupole/member-hub@sha256:1500a0c45d823772be7747a9de73e7bd7b7a888dfd626c476ff6739d32204c27
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
