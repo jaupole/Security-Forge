@@ -24,6 +24,7 @@ for the operational procedure.
 | App | Status | Calls |
 |---|---|---|
 | Proposal Forge | Phase 1 (this change) | `http://gotenberg.document-render.svc.cluster.local:3000` |
+| Ecosystem Control | Consumer (added 2026-06-09) | same |
 | Project Tracker | Phase 2 (local-dev first; add netpol + authz principal on cluster deploy) | same |
 
 When a new consumer comes online you must, in this namespace:

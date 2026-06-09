@@ -6,8 +6,9 @@
 # service makes no outbound calls by design — consumers POST it self-contained
 # HTML (+ assets as files) and it returns a PDF on the same connection.
 #
-# Ingress is restricted to the consuming app namespaces. Today: proposal-forge.
-# Project Tracker is added here when it deploys (Phase 2 is local-dev only).
+# Ingress is restricted to the consuming app namespaces. Today: proposal-forge
+# + control. Project Tracker is added here when it deploys (Phase 2 is
+# local-dev only).
 #
 # Ports: 3000 = Gotenberg API; 15008 = ztunnel HBONE (both this ns and
 # proposal-forge are ambient, so the call rides HBONE — allow it alongside 3000,
@@ -80,6 +81,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: proposal-forge
+        # ecosystem-control consumer (added 2026-06-09): new Control endpoint
+        # renders HTML→PDF via gotenberg.document-render.svc.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
         # Phase 2 — add when Project Tracker deploys to the cluster:
         # - namespaceSelector:
         #     matchLabels:
