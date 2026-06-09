@@ -63,7 +63,10 @@ spec:
           # + "Archive now" label (#46).
           # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish — centered Ring
           # text, larger KpiStat icons, centered KPI values, hover popout.
-          image: ghcr.io/jaupole/portal@sha256:861c22c9716862a7e39d6b0863ce1acfa9ac52f3d7355cb022e7737d3ab567cd
+          # 2026-06-09: call per-org admin endpoints under /api/v1/orgs/:id
+          # (route move; built on top of 861c22c so it includes the polish)
+          # — commit 2b3f044.
+          image: ghcr.io/jaupole/portal@sha256:8b1b59e74ba692419156a78c660705fb921412b5130ed8f9f0e7e8d3f9f80840
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }

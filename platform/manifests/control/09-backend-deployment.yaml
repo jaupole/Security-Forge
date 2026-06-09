@@ -79,7 +79,12 @@ spec:
           # members list (#54, commit 0655aa1). 2026-06-08: ticket archive
           # system — archived_at + archived filter + archive/unarchive
           # endpoints + tickets:archive-closed CLI (#55, commit 668742f).
-          image: ghcr.io/jaupole/control@sha256:2b737eedeed6745be81104bf21bd6148962917f81028456a596b0575ff168ef3
+          # 2026-06-09: move per-org admin endpoints (administrators roster +
+          # create-user) from /api/v1/admin/orgs/:id to /api/v1/orgs/:id so
+          # the istio edge can fail-closed deny /api/v1/admin/* on the public
+          # portal host. canAdministerOrg unchanged; no new migrations
+          # (commit fce0bb3).
+          image: ghcr.io/jaupole/control@sha256:6e021f302012816cee07ccb9c91c948453c59739db4a529f3cdbfa2e885c6019
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
