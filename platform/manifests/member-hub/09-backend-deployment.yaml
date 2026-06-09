@@ -149,6 +149,13 @@ spec:
             # parent domain so a sign-in here paints the user's account theme
             # before first render, shared with portal/admin/control.
             - { name: THEME_COOKIE_DOMAIN, value: "${DOMAIN}" }
+            # Public base URL for outbound links + email image proxies
+            # (unsubscribe, invite-accept, block-email <img> src). MUST be the
+            # public host the SPA + /api/public are served on, so the email
+            # preview-iframe CSP (img-src = window.location.origin) matches the
+            # rendered absolute image URL. Was unset → publicBaseUrl()='' →
+            # relative <img src> that can't resolve in the sandboxed preview.
+            - { name: MEMBER_HUB_PUBLIC_URL, value: "https://members.${DOMAIN}" }
             # User-login OIDC client (AuthCode + PKCE). Confidential, with
             # an oidc-audience-mapper adding `member-hub` to access-token
             # `aud`. OIDC_CLIENT_SECRET comes from VSO-rendered
