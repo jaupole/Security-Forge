@@ -66,7 +66,9 @@ spec:
           # 2026-06-09: call per-org admin endpoints under /api/v1/orgs/:id
           # (route move; built on top of 861c22c so it includes the polish)
           # — commit 2b3f044.
-          image: ghcr.io/jaupole/portal@sha256:8b1b59e74ba692419156a78c660705fb921412b5130ed8f9f0e7e8d3f9f80840
+          # 2026-06-09: dashboard hero title + decluttered header + curated
+          # "What's happening" feed (meaningful-only) — commit 07daf30.
+          image: ghcr.io/jaupole/portal@sha256:b39873ceba4b022d80c8ebe4aeb61d5e9300e1a1c0182d3bbc16c87f54c239f1
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
