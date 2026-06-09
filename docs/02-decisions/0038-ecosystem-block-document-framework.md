@@ -113,8 +113,15 @@ SpiceDB (generalizing today's `eventGrid`/`sponsorWall` data-bound blocks).
 
 1. **Widen the website catalog** *(in Member Hub, now)* — `table`, `button`,
    `contactForm` (intake + Postmark + Turnstile), `donation` (Checkout).
-2. **Extract shared core + server renderer** — move the framework to the shared
-   package; build `renderBlocksToHtml` (web parity first).
+2. **Server renderer + (later) shared core** — build `renderBlocksToHtml`
+   (web parity first). **Refined sequencing (2026-06-09):** the renderer was
+   built in Member Hub (`src/modules/site-pages/render-html.ts`, React-free,
+   web-parity, tested) because Phases 3+4 are MH-only and need only the
+   renderer. The *physical* extraction into a shared **React-free
+   `@jaupole/blocks`** package (resolving the open question below toward a new
+   package, since `ecosystem-ui` is React-only and must not be dragged into
+   backends) is **deferred to when a second app needs blocks (Phase 5 /
+   Portal)** — avoids carrying a new vendored-tarball package with no consumer.
 3. **Email-from-blocks** — compose campaign + transactional templates with the
    block editor → server-rendered inlined email HTML.
 4. **PDF/invoices-from-blocks** — branded document templates → Gotenberg.
@@ -126,7 +133,12 @@ its blocks are written cleanly so Phase 2 lifts them with minimal change.
 
 ## Open questions (resolve before Phase 2)
 
-- Final package boundary (extend `ecosystem-ui` vs a new `@jaupole/blocks`).
+- ~~Final package boundary (extend `ecosystem-ui` vs a new `@jaupole/blocks`).~~
+  **Decided (2026-06-09):** a new **React-free `@jaupole/blocks`** package
+  (schema + server renderer), because `ecosystem-ui` is React-only and backends
+  must not import React. The Puck editor + web render components stay in
+  `ecosystem-ui`, depending on `@jaupole/blocks` for types/schema. Extraction
+  itself deferred to Phase 5 (see Phasing #2).
 - Email render approach (hand-rolled inliner vs MJML vs react-email).
 - The dashboard data-binding contract (how a widget declares a data source the
   server can satisfy safely under RLS/SpiceDB).
