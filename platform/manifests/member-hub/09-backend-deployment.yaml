@@ -90,7 +90,10 @@ spec:
           # f2e9b857 = sponsor + prospect auto-numbering (f10538a, migration
           # 098): per-org sponsor_number_config / prospect_number_config +
           # sponsor_number / prospect_number columns. Settings -> General.
-          image: ghcr.io/jaupole/member-hub@sha256:f2e9b8570fa8319bdd7e386907c4d3ee64729b9e1b2b274274e7f4705f4fbda2
+          # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish (centered Ring
+          # text, larger KpiStat icons, centered KPI values, hover popout)
+          # — commit d0078ce. No new DB migration.
+          image: ghcr.io/jaupole/member-hub@sha256:a040cb0f4bdf7937f537ed3d891b9bafa283756c6e1008e9874e817096fdd288
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
