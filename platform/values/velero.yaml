@@ -34,14 +34,19 @@
 # but NOT against full disk loss or data-center incident. Off-site
 # replication (e.g., to B2 via `mc mirror`) can be added later.
 
-# Velero image — chart 12.0.1's default is velero/velero:v1.18.0. Don't
-# override unless we need a specific patch.
+# Velero server + node-agent image. Chart default is v1.18.0; pinning the
+# digest here closes H-4.8 (require-image-digest policy). On next upgrade
+# bump both tag and digest together.
+image:
+  repository: velero/velero
+  tag: "v1.18.0@sha256:e4d1e79be2ee1d51056734ada5e51c78a29b924e4d055cd28e0b4103ae2268ad"
+  pullPolicy: IfNotPresent
 
 initContainers:
   - name: velero-plugin-for-aws
-    # Bumped 2026-05-16: 1.10.0 → 1.13.1 to match chart-maintainer's
-    # tested pairing for Velero 1.18.x. 2026-06-04: → 1.14.1 (Renovate base-image patch).
-    image: velero/velero-plugin-for-aws:v1.14.1
+    # Bumped 2026-05-16: 1.10.0 → 1.13.1. 2026-06-04: → 1.14.1 (Renovate).
+    # 2026-06-09: digest-pinned to close H-4.8.
+    image: velero/velero-plugin-for-aws:v1.14.1@sha256:dc4f8f1cd642a72891edaf270492a7ac19bc629fb31748a21ad0cd576ccd5582
     imagePullPolicy: IfNotPresent
     volumeMounts:
       - mountPath: /target
