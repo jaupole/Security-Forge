@@ -65,7 +65,7 @@ spec:
           # 2026-06-09: commit 22e103e — P1 org branding from Control; P0 MinIO
           # NP + bucket/user fix. No new migration (uses existing export_config).
           # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:3c5cbfa0633ad9702377dd7be643562285dd22d024017b733ac4349770126eff
+          image: ghcr.io/jaupole/proposal-forge@sha256:e6058fa470a08661119a7e0162fe017f19400522c4046a5bd15a78cacf232472
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
