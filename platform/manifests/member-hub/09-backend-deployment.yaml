@@ -93,7 +93,11 @@ spec:
           # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish (centered Ring
           # text, larger KpiStat icons, centered KPI values, hover popout)
           # — commit d0078ce. No new DB migration.
-          image: ghcr.io/jaupole/member-hub@sha256:a040cb0f4bdf7937f537ed3d891b9bafa283756c6e1008e9874e817096fdd288
+          # 2026-06-09: Website Designer block-system Phase 1 (ADR-0038) —
+          # Table, Button, Contact form (emails org contact addr), and
+          # Donation (hosted Stripe Checkout) blocks — commit c1cb267. No
+          # new DB migration (blocks are JSON in site_pages.doc).
+          image: ghcr.io/jaupole/member-hub@sha256:522fd19fd1828f7914a16a7863099eb89374be8471419b9a55690272fa480dcd
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
