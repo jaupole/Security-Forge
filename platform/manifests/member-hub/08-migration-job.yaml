@@ -71,9 +71,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Lockstep with the Deployment (09). 2026-06-09: commit d0078ce
-          # (ecosystem-ui 0.1.8 frontend bump); no new migration past 098.
-          image: ghcr.io/jaupole/member-hub@sha256:a040cb0f4bdf7937f537ed3d891b9bafa283756c6e1008e9874e817096fdd288
+          # Lockstep with the Deployment (09). 2026-06-09: commit ca50d0e
+          # (dashboard hero title + curated feed); re-synced to 09 after a
+          # website-designer deploy bumped only 09. No new migration past 098.
+          image: ghcr.io/jaupole/member-hub@sha256:a9b16ccfbfe3bbf3fad96e74c1300d3d382e95072842f947a6064e3bd56180a4
           imagePullPolicy: IfNotPresent
           command: ["/nodejs/bin/node", "dist/db/migrate.js"]
           env:
