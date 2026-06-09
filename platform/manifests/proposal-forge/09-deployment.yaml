@@ -62,7 +62,7 @@ spec:
           # breaks + docx Letter export. proposal-forge-image-build run 27167402215,
           # commit 48c3c1b. document-render/Gotenberg code still DORMANT
           # (PDF_RENDERER unset → 'local' Puppeteer). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:d727c0182951954a72e3fa3ad52cec559eb0a776a65f5edd597786c17b3ea79a
+          image: ghcr.io/jaupole/proposal-forge@sha256:2525a3e37e18a950562d14bbb7f766d6c2602ca155a8fa9ff56da38c689834b4
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
