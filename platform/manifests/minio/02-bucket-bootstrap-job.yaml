@@ -11,6 +11,7 @@
 #   - member-hub-documents     (versioned + SSE-S3; member file attachments)
 #   - ecosystem-graphics       (versioned + SSE-S3; ADR-0001 graphics library)
 #   - ecosystem-brand-kit      (versioned + SSE-S3; ADR-0002 brand-kit fonts)
+#   - proposal-forge-files     (versioned + SSE-S3; PF cover + RFP + asset uploads)
 #
 # Re-run safe: `mb --ignore-existing` and repeated `version enable` are no-ops.
 ---
@@ -131,6 +132,14 @@ spec:
               mc mb --ignore-existing local/ecosystem-brand-kit
               mc version enable local/ecosystem-brand-kit
               mc encrypt set sse-s3 local/ecosystem-brand-kit
+
+              # proposal-forge-files: versioned + SSE-S3 (cover-page + RFP +
+              # asset uploads via PF's export wizard). Service account is
+              # provisioned out-of-band by
+              # 03-proposal-forge-files-credentials-job.yaml.
+              mc mb --ignore-existing local/proposal-forge-files
+              mc version enable local/proposal-forge-files
+              mc encrypt set sse-s3 local/proposal-forge-files
 
               echo "--- buckets ---"
               mc ls local/
