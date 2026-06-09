@@ -1,0 +1,17 @@
+# Cron fragment for the secforge-prod host (install as root).
+#
+# Install:
+#   sudo cp platform/host/runner-cleanup.cron /etc/cron.d/runner-cleanup
+#   sudo chmod 644 /etc/cron.d/runner-cleanup
+#
+# Alternatively, append to root crontab:
+#   sudo crontab -l | cat - platform/host/runner-cleanup.cron | sudo crontab -
+#
+# Schedule: 03:30 UTC daily (after Velero daily backup at 02:00 completes,
+# before the weekly backup at 03:00 on Sundays — chosen to avoid I/O
+# contention and to ensure backup objects are captured before _work wipe).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+30 3 * * * root bash /root/secforge/platform/scripts/runner-cleanup.sh >> /var/log/runner-cleanup.log 2>&1
