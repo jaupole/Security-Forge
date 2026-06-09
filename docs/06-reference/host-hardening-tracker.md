@@ -46,6 +46,16 @@ The Tailnet boundary is only as strong as the device authenticated to it. After 
 | 12 | Disable + remove `secforge-temp-admin-cleanup.timer` (self-disabled 2026-05-21 already) | [x] | Unit files removed; daemon-reload done. |
 | 13 | BIOS update via `fwupdmgr` (ASUS Pro WS 665-ACE, firmware 2023-10-06) | [ ] | **Downtime required** (~10–20 min single-node outage). Velero backup + low-traffic window. |
 
+## Disk hygiene
+
+| Date | Action | Result | Next |
+|------|--------|--------|------|
+| 2026-06-09 | Manual `docker volume prune -f` (149 dangling CI volumes) + `crictl rmi --prune` (stale app image digests) | root `/`: **73% → 60%** (+7 GB); rancher `/var/lib/rancher`: **68% → 40%** (+28 GB) | Automated by runner-cleanup cron (see below) |
+| 2026-06-09 | Added `platform/host/runner-cleanup.cron` (daily 03:30 UTC) — prunes `_work` dirs >1d + `.cache`/`.npm`/`.local` dirs >7d + `docker volume prune -f` + `docker builder prune --keep-storage 500mb`. **Not yet installed.** | Staged on `fleet/w4` | Install: `sudo cp platform/host/runner-cleanup.cron /etc/cron.d/runner-cleanup` |
+| 2026-06-07 | k3s kubelet `image-gc-high-threshold=70` / `low=55` set in `/etc/rancher/k3s/config.yaml` | Containerd images GC'd automatically when rancher hits 70%, down to 55% | Self-managing — no manual prune needed going forward |
+
+Root causes: (a) `/opt/github-runner` (18 GB) — CI runner `_work` dirs + `.cache`/`.npm` grow without bound; automated by runner-cleanup cron (`_work` >1d, caches >7d). (b) `/var/lib/docker/volumes` (8.9 GB) — Docker anonymous CI volumes + BuildKit layer cache never pruned; same cron covers both (`volume prune` + `builder prune`). (c) `/var/lib/rancher/k3s/agent/containerd` (53 GB) — stale digest-pinned app images accumulate per deploy; covered by kubelet GC thresholds.
+
 ## Out-of-band defensive observations (already working)
 
 - PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3, ClientAliveInterval 300
