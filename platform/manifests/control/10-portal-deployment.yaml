@@ -61,7 +61,9 @@ spec:
           # ticket Archived filter + Archive/Restore actions (#45).
           # 2026-06-08: tickets inbox defaults to Open + status filter reorder
           # + "Archive now" label (#46).
-          image: ghcr.io/jaupole/portal@sha256:1ca761337616d7cc2e498e8ee3b1f327350cca7fbdbebc03ccc08d2708d5ab77
+          # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish — centered Ring
+          # text, larger KpiStat icons, centered KPI values, hover popout.
+          image: ghcr.io/jaupole/portal@sha256:861c22c9716862a7e39d6b0863ce1acfa9ac52f3d7355cb022e7737d3ab567cd
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
