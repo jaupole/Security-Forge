@@ -57,12 +57,13 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # Auto-pagination: content reflows across discrete US-Letter pages
-          # (decoration-only Pagination plugin) on top of the paged editor + page
-          # breaks + docx Letter export. proposal-forge-image-build run 27167402215,
-          # commit 48c3c1b. document-render/Gotenberg code still DORMANT
-          # (PDF_RENDERER unset → 'local' Puppeteer). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:2525a3e37e18a950562d14bbb7f766d6c2602ca155a8fa9ff56da38c689834b4
+          # PDF export now goes ONLY through the document-render service (Gotenberg,
+          # ADR-0037) — Puppeteer/Chromium removed, image is lean. Adds the
+          # per-proposal Formatting wizard step + export_config + cover-template
+          # override. proposal-forge-image-build commit efa2be3. GOTENBERG_URL
+          # defaults to the mesh DNS; the PDF_RENDERER flag was removed (no env
+          # needed). MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:f96feff711dba5d25cf6a0895d9426b54ccdd3358cb62d5b3608bad09c3fcc8d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }

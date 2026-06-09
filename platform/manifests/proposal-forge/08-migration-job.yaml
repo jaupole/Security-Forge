@@ -68,11 +68,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # Auto-pagination (content reflows across US-Letter pages) on the paged
-          # narrative editor. proposal-forge-image-build run 27167402215, commit
-          # 48c3c1b. document-render still dormant (PDF_RENDERER=local). No NEW
-          # migration; digest kept in lockstep with the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:2525a3e37e18a950562d14bbb7f766d6c2602ca155a8fa9ff56da38c689834b4
+          # commit efa2be3 — applies migration 20260608120000_add_proposal_export_config
+          # (Project.export_config for the Formatting wizard step). Digest kept in
+          # lockstep with the Deployment (09) per convention.
+          image: ghcr.io/jaupole/proposal-forge@sha256:f96feff711dba5d25cf6a0895d9426b54ccdd3358cb62d5b3608bad09c3fcc8d
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
