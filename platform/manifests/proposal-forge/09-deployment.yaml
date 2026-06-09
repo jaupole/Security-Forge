@@ -60,10 +60,11 @@ spec:
           # PDF export now goes ONLY through the document-render service (Gotenberg,
           # ADR-0037) — Puppeteer/Chromium removed, image is lean. Adds the
           # per-proposal Formatting wizard step + export_config + cover-template
-          # override. proposal-forge-image-build commit efa2be3. GOTENBERG_URL
-          # defaults to the mesh DNS; the PDF_RENDERER flag was removed (no env
-          # needed). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:f96feff711dba5d25cf6a0895d9426b54ccdd3358cb62d5b3608bad09c3fcc8d
+          # override. GOTENBERG_URL defaults to the mesh DNS; the PDF_RENDERER
+          # flag was removed (no env needed). MUST match 08-migration-job.yaml.
+          # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish + PDF text-align
+          # sanitizer fix — proposal-forge-image-build commit db932b1.
+          image: ghcr.io/jaupole/proposal-forge@sha256:df96a28338aad2ea30f9215a24bfba69e7ea789b2184aa3b4ffc2ea15e026875
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }

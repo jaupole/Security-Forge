@@ -68,10 +68,10 @@ spec:
             limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: migrate
-          # commit efa2be3 — applies migration 20260608120000_add_proposal_export_config
-          # (Project.export_config for the Formatting wizard step). Digest kept in
-          # lockstep with the Deployment (09) per convention.
-          image: ghcr.io/jaupole/proposal-forge@sha256:f96feff711dba5d25cf6a0895d9426b54ccdd3358cb62d5b3608bad09c3fcc8d
+          # Digest kept in lockstep with the Deployment (09) per convention.
+          # 2026-06-09: commit db932b1 (ecosystem-ui 0.1.8 + PDF sanitizer fix);
+          # no new migration beyond 20260608120000_add_proposal_export_config.
+          image: ghcr.io/jaupole/proposal-forge@sha256:df96a28338aad2ea30f9215a24bfba69e7ea789b2184aa3b4ffc2ea15e026875
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
