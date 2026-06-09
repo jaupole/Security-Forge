@@ -74,7 +74,7 @@ spec:
           # Lockstep with the Deployment (09). 2026-06-09: bump to a61dc63
           # (ADR-0038 Phase 3b email-from-blocks). Applies migration 099
           # (blocks JSONB column on email_templates).
-          image: ghcr.io/jaupole/member-hub@sha256:923f78445c2a5f08f199c6bb5da108823ac4ffb1d6a4e9fdce0b1b7257d04a79
+          image: ghcr.io/jaupole/member-hub@sha256:33e75d9caafbd8fd923a2c37aa3ebd974a1e8175f7c3010a3cb708cea84b1cb4
           imagePullPolicy: IfNotPresent
           command: ["/nodejs/bin/node", "dist/db/migrate.js"]
           env:
