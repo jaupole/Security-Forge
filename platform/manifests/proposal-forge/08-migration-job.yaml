@@ -71,7 +71,9 @@ spec:
           # Digest kept in lockstep with the Deployment (09) per convention.
           # 2026-06-09: commit 22e103e (P1 org branding from Control; P0 MinIO NP fix);
           # no new migration (P1 uses existing export_config JSONB column).
-          image: ghcr.io/jaupole/proposal-forge@sha256:e6058fa470a08661119a7e0162fe017f19400522c4046a5bd15a78cacf232472
+          # 2026-06-09: commit ab32a82 (per-proposal cover logo picker); no new
+          # migration (reuses export_config JSONB + PF Assets). Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:21e5ababe21a8157eacdc845130c21d69cff0865a0ea87f82ea741af2e33ec25
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).

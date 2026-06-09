@@ -64,8 +64,11 @@ spec:
           # flag was removed (no env needed). MUST match 08-migration-job.yaml.
           # 2026-06-09: commit 22e103e — P1 org branding from Control; P0 MinIO
           # NP + bucket/user fix. No new migration (uses existing export_config).
-          # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:e6058fa470a08661119a7e0162fe017f19400522c4046a5bd15a78cacf232472
+          # 2026-06-09: commit ab32a82 — per-proposal cover logo PICKER (choose an
+          # org graphic from Control or a PF-uploaded image; PNG/JPEG embed in PDF
+          # + Word, WebP/SVG are PDF-only). Reuses Control's public graphics API +
+          # PF Assets; no new migration, no Control change. MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:21e5ababe21a8157eacdc845130c21d69cff0865a0ea87f82ea741af2e33ec25
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
