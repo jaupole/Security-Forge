@@ -87,10 +87,10 @@ spec:
           # e953b2bd = org-graphics Phase 4 (PR #76, 5a5704a): graphics-list
           # schema accepts canonical org_logo purposes + webp; email header
           # falls back to org_logo.
-          # 4cf6aec0 = cross-app theme cookie (PR #78, a64461e): BFF writes
-          # secforge_theme at login (ecosystem-auth 0.1.4), client reads it
-          # before first paint (ecosystem-ui 0.1.7). Needs THEME_COOKIE_DOMAIN.
-          image: ghcr.io/jaupole/member-hub@sha256:4cf6aec0347f212084eff24ee1e2927afcc78cbaa5b9f0cec24d8906f9f2b9e5
+          # f2e9b857 = sponsor + prospect auto-numbering (f10538a, migration
+          # 098): per-org sponsor_number_config / prospect_number_config +
+          # sponsor_number / prospect_number columns. Settings -> General.
+          image: ghcr.io/jaupole/member-hub@sha256:f2e9b8570fa8319bdd7e386907c4d3ee64729b9e1b2b274274e7f4705f4fbda2
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
