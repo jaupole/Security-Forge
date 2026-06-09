@@ -84,7 +84,7 @@ spec:
           # the istio edge can fail-closed deny /api/v1/admin/* on the public
           # portal host. canAdministerOrg unchanged; no new migrations
           # (commit fce0bb3).
-          image: ghcr.io/jaupole/control@sha256:6e021f302012816cee07ccb9c91c948453c59739db4a529f3cdbfa2e885c6019
+          image: ghcr.io/jaupole/control@sha256:8f6366712677356d56576cb4d7a5cc71d6d239cbbcfb569b7e2a39043a186a0d
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
