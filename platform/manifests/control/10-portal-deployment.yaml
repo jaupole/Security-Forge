@@ -59,7 +59,9 @@ spec:
           # 2026-06-08: Remove action for resolved invitations + Account column
           # (Active/Disabled/No account) on Member Roles (#44). 2026-06-08:
           # ticket Archived filter + Archive/Restore actions (#45).
-          image: ghcr.io/jaupole/portal@sha256:1018278b7ba10d26467055ad56328c93cca1b7d20571b27cd53c50c7554f0581
+          # 2026-06-08: tickets inbox defaults to Open + status filter reorder
+          # + "Archive now" label (#46).
+          image: ghcr.io/jaupole/portal@sha256:1ca761337616d7cc2e498e8ee3b1f327350cca7fbdbebc03ccc08d2708d5ab77
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
