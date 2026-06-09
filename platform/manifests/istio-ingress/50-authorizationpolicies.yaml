@@ -93,6 +93,19 @@ spec:
         - /api/v1/admin/*
         - /api/v1/system
         - /api/v1/system/*
+        # Per-org administrator self-service is gated IN-APP by
+        # canAdministerOrg (per-org admin OR platform admin) and is
+        # deliberately surfaced on the public portal shell (Org Settings →
+        # Administrators). These four routes must reach the app; the deny
+        # otherwise returns Envoy's "RBAC: access denied" before in-app
+        # authz runs. Operator-only surfaces (/api/v1/admin/audit,
+        # .../orgs/*/hard, /api/v1/system/*) stay denied here and are
+        # reached via the tailnet admin host. Source of truth for who can
+        # call these: Ecosystem Control src/api/routes/admin-orgs.ts.
+        notPaths:
+        - /api/v1/admin/orgs/*/administrators
+        - /api/v1/admin/orgs/*/administrators/*
+        - /api/v1/admin/orgs/*/users
   selector:
     matchLabels:
       istio: ingress
