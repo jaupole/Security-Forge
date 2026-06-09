@@ -164,14 +164,41 @@ spec:
           annotations:
             summary: "Node memory >85% used"
 
-        - alert: NodeDiskSpaceLow
+        # Two-tier disk-space alerting (added 2026-06-09; backlog #87).
+        # Covers /, /var/lib/rancher, MinIO/Wazuh dedicated partitions.
+        # Warn at 25% free (75% full) → time to investigate before the cron fires.
+        # Critical at 15% free (85% full) → act now; root/rancher at this level
+        # degrades k3s scheduling and Velero backups within minutes.
+        - alert: NodeDiskSpaceWarn
           expr: |
-            (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+            (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+             / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.25
           for: 10m
           labels:
             severity: warning
           annotations:
-            summary: "Filesystem <15% free ({{ $labels.mountpoint }})"
+            summary: "Filesystem <25% free ({{ $labels.mountpoint }})"
+            description: |
+              {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} free
+              (>75% used). Root cause candidates: CI runner _work/caches (runner-cleanup cron),
+              containerd stale images (crictl rmi --prune), Docker volumes (docker volume prune -f).
+              Check: df -h / /var/lib/rancher /var/lib/docker
+
+        - alert: NodeDiskSpaceCritical
+          expr: |
+            (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+             / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Filesystem <15% free — act now ({{ $labels.mountpoint }})"
+            description: |
+              {{ $labels.mountpoint }} on {{ $labels.instance }} has <15% free space. At this level,
+              k3s pod scheduling and Velero backups degrade rapidly. Immediate action:
+                docker volume prune -f && crictl rmi --prune
+                bash ~/secforge/platform/scripts/runner-cleanup.sh
+              Then investigate root cause (see NodeDiskSpaceWarn description).
 
     - name: platform-services
       interval: 60s
