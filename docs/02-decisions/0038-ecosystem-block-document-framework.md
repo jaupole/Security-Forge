@@ -123,7 +123,19 @@ SpiceDB (generalizing today's `eventGrid`/`sponsorWall` data-bound blocks).
    backends) is **deferred to when a second app needs blocks (Phase 5 /
    Portal)** — avoids carrying a new vendored-tarball package with no consumer.
 3. **Email-from-blocks** — compose campaign + transactional templates with the
-   block editor → server-rendered inlined email HTML.
+   block editor → server-rendered inlined email HTML. **Transactional/custom
+   templates DONE+DEPLOYED-READY 2026-06-09** (Member Hub, pushed `a858b5e` +
+   `a61dc63`): `render-email.ts` (`renderBlockEmail` → complete inline-styled
+   nested-table HTML + `renderBlockEmailText` plain-text alternative),
+   `validateEmailDocument` (static-subset guard), and the custom
+   email-templates store gained a block-authored format — a nullable `blocks`
+   JSONB column (migration 099) is the discriminator; when present,
+   body_html/body_text are **server-derived at save time** (compile-to-columns)
+   so the send path, campaigns, and automations are untouched and
+   `{{variable}}` tokens survive into the HTML for send-time substitution. UI
+   = an email-restricted Puck config + a full-screen block editor with a
+   server-rendered preview. **Campaign-from-blocks deferred** (campaigns keep
+   their own compose screen for now; it can reuse the same renderer later).
 4. **PDF/invoices-from-blocks** — branded document templates → Gotenberg.
 5. **Dashboard editing** — authenticated data-bound widget catalog with
    per-user/org saved layouts.
@@ -139,7 +151,13 @@ its blocks are written cleanly so Phase 2 lifts them with minimal change.
   must not import React. The Puck editor + web render components stay in
   `ecosystem-ui`, depending on `@jaupole/blocks` for types/schema. Extraction
   itself deferred to Phase 5 (see Phasing #2).
-- Email render approach (hand-rolled inliner vs MJML vs react-email).
+- ~~Email render approach (hand-rolled inliner vs MJML vs react-email).~~
+  **Decided (2026-06-09):** a **hand-rolled inliner** (`render-email.ts`) — it
+  emits a complete light-theme, nested-`<table>`, every-element-inline-styled
+  email document directly, sharing the web renderer's trust primitives (typed
+  props, HTML-escape, href allowlist, injected media resolver). No new
+  dependency (MJML/react-email both add a build/runtime dep for a small,
+  closed block catalog we already render server-side).
 - The dashboard data-binding contract (how a widget declares a data source the
   server can satisfy safely under RLS/SpiceDB).
 
