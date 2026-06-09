@@ -71,7 +71,7 @@ spec:
           # Digest kept in lockstep with the Deployment (09) per convention.
           # 2026-06-09: commit db932b1 (ecosystem-ui 0.1.8 + PDF sanitizer fix);
           # no new migration beyond 20260608120000_add_proposal_export_config.
-          image: ghcr.io/jaupole/proposal-forge@sha256:df96a28338aad2ea30f9215a24bfba69e7ea789b2184aa3b4ffc2ea15e026875
+          image: ghcr.io/jaupole/proposal-forge@sha256:d9022abee130880eeef3936d8374e15bfc9ab73db7fd2b2b7ac87f3998ec3090
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).

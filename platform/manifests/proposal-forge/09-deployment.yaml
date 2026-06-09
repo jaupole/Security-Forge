@@ -64,7 +64,7 @@ spec:
           # flag was removed (no env needed). MUST match 08-migration-job.yaml.
           # 2026-06-09: ecosystem-ui 0.1.8 dashboard polish + PDF text-align
           # sanitizer fix — proposal-forge-image-build commit db932b1.
-          image: ghcr.io/jaupole/proposal-forge@sha256:df96a28338aad2ea30f9215a24bfba69e7ea789b2184aa3b4ffc2ea15e026875
+          image: ghcr.io/jaupole/proposal-forge@sha256:d9022abee130880eeef3936d8374e15bfc9ab73db7fd2b2b7ac87f3998ec3090
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
