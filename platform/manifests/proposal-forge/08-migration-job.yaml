@@ -69,9 +69,9 @@ spec:
       containers:
         - name: migrate
           # Digest kept in lockstep with the Deployment (09) per convention.
-          # 2026-06-09: commit db932b1 (ecosystem-ui 0.1.8 + PDF sanitizer fix);
+          # 2026-06-09: commit 40d153c (Paged.js polyfill resolution fix);
           # no new migration beyond 20260608120000_add_proposal_export_config.
-          image: ghcr.io/jaupole/proposal-forge@sha256:d9022abee130880eeef3936d8374e15bfc9ab73db7fd2b2b7ac87f3998ec3090
+          image: ghcr.io/jaupole/proposal-forge@sha256:ff46add6bbc170d5e620d74bc9fc79686b3dd8803645bbe815687fed7f1471b8
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
