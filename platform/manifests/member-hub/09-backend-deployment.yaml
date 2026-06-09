@@ -99,7 +99,16 @@ spec:
           # new DB migration (blocks are JSON in site_pages.doc).
           # 2026-06-09: dashboard hero title (org hero/cover image), decluttered
           # header, and curated "What's happening" feed — commit ca50d0e.
-          image: ghcr.io/jaupole/member-hub@sha256:a9b16ccfbfe3bbf3fad96e74c1300d3d382e95072842f947a6064e3bd56180a4
+          # 2026-06-09: ADR-0038 Phase 2 — server-side block renderer
+          # (renderBlocksToHtml, React-free, web-parity) — commit 4cc9760.
+          # 2026-06-09: ADR-0038 Phase 3a — email render profile
+          # (renderBlockEmail + renderBlockEmailText + validateEmailDocument
+          # + EMAIL_BLOCK_TYPES) — commits 155661d, 3d0ab03.
+          # 2026-06-09: ADR-0038 Phase 3b — block-authored email templates:
+          # nullable blocks JSONB column (migration 099), compile-at-save,
+          # visual Puck block editor for email templates — commits a858b5e,
+          # a61dc63. Requires migration 099_email_template_blocks.
+          image: ghcr.io/jaupole/member-hub@sha256:4e9cd62e919b42e99a1a45910dbcf837df3cb29757c88c146951c6211cea99b4
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
