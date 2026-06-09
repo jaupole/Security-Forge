@@ -62,10 +62,10 @@ spec:
           # per-proposal Formatting wizard step + export_config + cover-template
           # override. GOTENBERG_URL defaults to the mesh DNS; the PDF_RENDERER
           # flag was removed (no env needed). MUST match 08-migration-job.yaml.
-          # 2026-06-09: commit 40d153c — fix Paged.js polyfill resolution so the
-          # page-numbered TOC (toc='paged') actually renders (was silently
-          # degrading to a linked list). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/proposal-forge@sha256:ff46add6bbc170d5e620d74bc9fc79686b3dd8803645bbe815687fed7f1471b8
+          # 2026-06-09: commit 22e103e — P1 org branding from Control; P0 MinIO
+          # NP + bucket/user fix. No new migration (uses existing export_config).
+          # MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/proposal-forge@sha256:3c5cbfa0633ad9702377dd7be643562285dd22d024017b733ac4349770126eff
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
