@@ -84,6 +84,17 @@ metadata:
 spec:
   action: DENY
   rules:
+  # Rule 1 — deny the operator-only admin/system surfaces on the public
+  # portal host, EXCEPT the per-org subtree (/api/v1/admin/orgs/*). Those
+  # per-org routes (administrators list/add/remove/transfer + create-user)
+  # are gated IN-APP by canAdministerOrg (per-org admin OR platform admin)
+  # and are deliberately surfaced on the public portal shell (Org Settings
+  # → Administrators); they must reach the app, or Envoy returns
+  # "RBAC: access denied" before in-app authz runs. NOTE: Istio path
+  # wildcards only work as a leading (*foo) or trailing (foo*) match — a
+  # middle '*' is matched literally — so the carve-out is a trailing
+  # prefix match on the whole subtree, not per-route. Source of truth for
+  # who can call these: Ecosystem Control src/api/routes/admin-orgs.ts.
   - to:
     - operation:
         hosts:
@@ -93,19 +104,18 @@ spec:
         - /api/v1/admin/*
         - /api/v1/system
         - /api/v1/system/*
-        # Per-org administrator self-service is gated IN-APP by
-        # canAdministerOrg (per-org admin OR platform admin) and is
-        # deliberately surfaced on the public portal shell (Org Settings →
-        # Administrators). These four routes must reach the app; the deny
-        # otherwise returns Envoy's "RBAC: access denied" before in-app
-        # authz runs. Operator-only surfaces (/api/v1/admin/audit,
-        # .../orgs/*/hard, /api/v1/system/*) stay denied here and are
-        # reached via the tailnet admin host. Source of truth for who can
-        # call these: Ecosystem Control src/api/routes/admin-orgs.ts.
         notPaths:
-        - /api/v1/admin/orgs/*/administrators
-        - /api/v1/admin/orgs/*/administrators/*
-        - /api/v1/admin/orgs/*/users
+        - /api/v1/admin/orgs/*
+  # Rule 2 — re-deny the destructive operator-only org hard-delete that
+  # rule 1's subtree carve-out would otherwise expose. Suffix match keeps
+  # it edge-blocked (it is isPlatformAdmin-only in-app; operators reach it
+  # via the tailnet admin host). DELETE /api/v1/admin/orgs/:id/hard.
+  - to:
+    - operation:
+        hosts:
+        - portal.${DOMAIN}
+        paths:
+        - '*/hard'
   selector:
     matchLabels:
       istio: ingress
