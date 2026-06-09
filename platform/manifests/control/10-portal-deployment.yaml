@@ -68,7 +68,9 @@ spec:
           # — commit 2b3f044.
           # 2026-06-09: dashboard hero title + decluttered header + curated
           # "What's happening" feed (meaningful-only) — commit 07daf30.
-          image: ghcr.io/jaupole/portal@sha256:b39873ceba4b022d80c8ebe4aeb61d5e9300e1a1c0182d3bbc16c87f54c239f1
+          # 2026-06-09: hero rendered centered + larger; redundant top-left
+          # nav mark hidden while the hero is on screen — commit 007163d.
+          image: ghcr.io/jaupole/portal@sha256:e18d5fc43220c9c511528767bed884f11e55cc7b76a6ba7f13402bf6f96efdbf
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
