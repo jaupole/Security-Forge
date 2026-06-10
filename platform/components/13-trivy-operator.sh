@@ -21,9 +21,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-# Pinned to the version actually deployed on prod (was 0.30.0, which would have
-# DOWNGRADED the live 0.32.1 operator on the next installer run). 2026-06-02.
-CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.32.1}"
+# Pinned to the version deployed on prod. Bumped 0.32.1 -> 0.33.1 on 2026-06-10
+# (pentest base-image CVE refresh: 0.33.1 ships newer trivy-operator + trivy
+# images that clear the fixable criticals in trivy-system). Never DOWNGRADE the
+# live operator on a re-run.
+CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.33.1}"
 NS=trivy-system
 
 # 1. Namespace
