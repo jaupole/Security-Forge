@@ -73,7 +73,9 @@ spec:
           # no new migration (P1 uses existing export_config JSONB column).
           # 2026-06-09: commit ab32a82 (per-proposal cover logo picker); no new
           # migration (reuses export_config JSONB + PF Assets). Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:21e5ababe21a8157eacdc845130c21d69cff0865a0ea87f82ea741af2e33ec25
+          # 2026-06-10: commit 222d64a — shell-quote >=1.8.4 (CVE-2026-9277 RCE) + pnpm
+          # 9.15->11 bump. Dependency-only; no new migration. Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:160812a50d308b782211d90d22876fe0ff9f068134e37cf99ba02439d8870f9b
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
