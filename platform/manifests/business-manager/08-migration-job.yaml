@@ -1,0 +1,101 @@
+# One-shot Job that applies Prisma migrations to business-manager-db.
+#
+# Run BEFORE the API Deployment so the schema (the business_manager schema +
+# FORCE-RLS policies) is in place when the first server starts. Re-runs are
+# safe — `prisma migrate deploy` only applies pending migrations (tracked in
+# _prisma_migrations) and is a no-op when the DB is already current.
+#
+# CNPG auto-renders `business-manager-db-app` with host/port/user/password/
+# dbname/uri/jdbc-uri/pgpass. Prisma wants a single connection string, so
+# DATABASE_URL is fed from the `uri` key.
+#
+# IMAGE: the digest below is a PLACEHOLDER. Pin it to the cosign-signed digest
+# emitted by the first business-manager-image-build run (then the Kyverno
+# verify-image-signature policy admits it). The Deployment (09) + this Job must
+# reference the SAME digest.
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: business-manager-db-migrate
+  namespace: business-manager
+  labels:
+    app.kubernetes.io/name: business-manager
+    secforge.platform/component: business-manager
+    secforge.platform/role: db-migration
+spec:
+  # Don't auto-retry on app errors — a migration failure needs operator eyes.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400     # GC after 24h; keep the artefact for inspection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: business-manager
+        secforge.platform/component: business-manager
+        secforge.platform/role: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: business-manager
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h business-manager-db-rw.business-manager.svc.cluster.local -p 5432 -U business_manager -d business_manager -t 3; do
+                echo "waiting for business-manager-db..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 128Mi }
+      containers:
+        - name: migrate
+          # Digest kept in lockstep with the Deployment (09). PLACEHOLDER — pin
+          # to the first signed business-manager build digest before apply.
+          image: ghcr.io/jaupole/business-manager@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          # `prisma` is a runtime dependency; the CLI entry is build/index.js.
+          # Overrides the image's tini ENTRYPOINT.
+          command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema=./prisma/schema.prisma"]
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: business-manager-db-app
+                  key: uri
+            # Prisma's migration engine writes to a temp dir.
+            - name: TMPDIR
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

@@ -99,6 +99,8 @@ CLIENT_DESTINATIONS=(
   "member-hub-system|openbao://secret/apps/member-hub/runtime#system_client_secret"
   # proposal-forge (proposalapp): single user-login client, no admin/system SA.
   "proposal-forge|openbao://secret/apps/proposal-forge/runtime#oidc_client_secret"
+  # business-manager (managerapp): single user-login client, no admin/system SA.
+  "business-manager|openbao://secret/apps/business-manager/runtime#oidc_client_secret"
 )
 
 # ─── Helpers ───────────────────────────────────────────────────────────────

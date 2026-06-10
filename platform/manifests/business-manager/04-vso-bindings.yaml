@@ -1,0 +1,144 @@
+# VSO bindings for the business-manager namespace.
+#
+# Rendered K8s Secrets (consumed via envFrom / imagePullSecrets on the backend
+# Deployment + migration Job):
+#   - business-manager-app-secrets → OIDC client_secret (+ optional tenants
+#                                    secret), session signing key, SAM.gov key
+#   - ghcr-pull-secret             → GHCR dockerconfigjson (image pull)
+#   - cnpg-minio-credentials       → barman-cloud → MinIO (CNPG backups)
+#
+# NO app-level MinIO secret + NO SpiceDB PSK (unlike proposal-forge): Business
+# Manager has no object storage day-1 (reports stream via Gotenberg) and uses
+# org-tier + RLS authz, not per-resource SpiceDB.
+#
+# DEPLOY-TIME PREREQS (Phase 6 — not applied by this manifest):
+#   1. OpenBao policy `business-manager` + k8s-auth role `business-manager-vso`
+#      (bind SA business-manager-vso → policy). Add a row to APP_ROLES in
+#      platform/components/05j-app-vso-roles.sh + a vso.hcl read rule.
+#   2. Populate the OpenBao KV paths below (runtime/ghcr-pull).
+#   3. Publish the business-manager Keycloak client_secret to
+#      apps/business-manager/runtime via 05l-keycloak-secret-publish.sh.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: business-manager-vso
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: business-manager-vso
+    serviceAccount: business-manager-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# App-level secrets → single Secret consumed via envFrom on the backend.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: business-manager-app-secrets
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: business-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/business-manager/runtime
+  refreshAfter: 1h
+  destination:
+    name: business-manager-app-secrets
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # Keycloak OIDC client_secret (user-login `business-manager` client).
+        # Published by 05l-keycloak-secret-publish.sh.
+        OIDC_CLIENT_SECRET:
+          text: '{{ .Secrets.oidc_client_secret }}'
+        # Same `business-manager` client in the TENANTS realm — a separate
+        # confidential client with its own secret, enabling the members→tenants
+        # sign-in flow. Optional: an absent key renders empty (the app keeps
+        # platform-only sign-in).
+        OIDC_CLIENT_SECRET_TENANTS:
+          text: '{{ if .Secrets.oidc_client_secret_tenants }}{{ .Secrets.oidc_client_secret_tenants }}{{ end }}'
+        # OIDC session-cookie signing key (raw 32-byte base64). Generated once
+        # via `openssl rand -base64 32`; rotate via OpenBao + Pod restart.
+        SESSION_KEY:
+          text: '{{ .Secrets.session_signing_key }}'
+        # SAM.gov opportunities API key (api.sam.gov) for the opp-watch poller.
+        # Optional: absent → the poller refuses to run (clean error) rather than
+        # breaking app startup.
+        SAM_GOV_API_KEY:
+          text: '{{ if .Secrets.sam_gov_api_key }}{{ .Secrets.sam_gov_api_key }}{{ end }}'
+
+---
+# GHCR image-pull credential (read:packages PAT on jaupole/business-manager).
+# OpenBao path apps/business-manager/ghcr-pull: { username, password }.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: business-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/business-manager/ghcr-pull
+  refreshAfter: 5m
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ".dockerconfigjson":
+          text: |-
+            {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
+
+---
+# barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
+# Same shared OpenBao path as the other apps' CNPG clusters.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: business-manager-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 1h
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

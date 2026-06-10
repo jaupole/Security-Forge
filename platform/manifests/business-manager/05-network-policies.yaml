@@ -1,0 +1,278 @@
+# NetworkPolicies for the business-manager namespace. Default-deny both
+# directions + minimal allows. Uses app.kubernetes.io/name selectors so Jobs
+# (migration) that lack the bare `app` label still match where intended.
+#
+# Business Manager does NOT egress to OpenBao (secrets arrive via VSO-rendered
+# K8s Secrets), does NOT egress to SpiceDB (org-tier + RLS authz, no per-resource
+# tuples), and has NO app→MinIO path (no object storage day-1). Outbound
+# third-party: SAM.gov opportunities API (api.sam.gov) over
+# allow-egress-internet-https.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# DNS + kube-apiserver. CNPG fetches TLS certs from the API server at startup;
+# every pod needs DNS. The host:6443/:443 path covers k3s pods bypassing
+# kube-proxy + *.secforge.dev hostnames that loop through the public IP back
+# to in-cluster services (JWKS/OIDC discovery from auth.${DOMAIN}).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock:
+            cidr: ${PUBLIC_IP}/32
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# Egress to Keycloak (OIDC discovery + JWKS + token exchange).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-keycloak
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - { protocol: TCP, port: 8443 }
+
+---
+# Egress to Ecosystem Control (/api/v1/me active-org context + app-activation).
+# Service port 80 → pod 4000; Cilium NPs are POST-NAT so the allow is on pod
+# port 4000. ztunnel HBONE (:15008) — Control is ambient.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-control
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+      ports:
+        - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 15008 }
+
+---
+# Egress to the document-render service (Gotenberg) for HTML→PDF report export.
+# document-render is ambient, so the call rides ztunnel HBONE (:15008) alongside
+# the app port :3000. Gated server-side by PDF_RENDERER=gotenberg.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-document-render
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: document-render
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }
+
+---
+# Egress to OTel collector (traces + metrics).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-otel
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+        - { protocol: TCP, port: 15008 }
+
+---
+# CNPG postgres pods → MinIO for barman base + WAL backups + retention.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: business-manager-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 15008 }
+
+---
+# Egress to the public internet on HTTPS — SAM.gov opportunities API
+# (api.sam.gov) for the opp-watch poller. By CIDR (k8s NPs have no FQDN
+# egress): 0.0.0.0/0 minus private/link-local. Scoped to the app container.
+# Future hardening: FQDN egress via Istio Ambient.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+
+---
+# CNPG operator (postgres-operator + cnpg-system) → the db pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-db
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: business-manager-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [postgres-operator, cnpg-system]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 9187 }
+        - { protocol: TCP, port: 9090 }
+
+---
+# Ingress: Istio ingress gateways (istio-ingress ns — BM is tailnet-only so in
+# practice the tailnet gateway) → business-manager backend. 3001 = app port,
+# 15008 = Ambient HBONE.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-business-manager
+  namespace: business-manager
+  labels: { secforge.platform/component: istio-gateway }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 3001 }
+        - { protocol: TCP, port: 15008 }

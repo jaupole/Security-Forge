@@ -236,3 +236,18 @@ path "secret/data/minio/proposal-forge-files" {
 path "secret/metadata/minio/proposal-forge-files" {
   capabilities = ["read"]
 }
+
+# Business Manager (business-manager ns / ecosystem app managerapp) —
+# apps/business-manager/runtime bundle (OIDC_CLIENT_SECRET,
+# OIDC_CLIENT_SECRET_TENANTS, SESSION_KEY, SAM_GOV_API_KEY) +
+# apps/business-manager/ghcr-pull (.dockerconfigjson). Rendered by the
+# VaultStaticSecrets in
+# platform/manifests/business-manager/04-vso-bindings.yaml. No app-level MinIO
+# (no object storage day-1) and no SpiceDB PSK (org-tier + RLS authz). CNPG
+# physical backups reuse the shared minio/cnpg/credentials path (granted above).
+path "secret/data/apps/business-manager/+" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/business-manager/+" {
+  capabilities = ["read", "list"]
+}

@@ -1,0 +1,21 @@
+# business-manager namespace — single Express Deployment (serves
+# /api/business-manager/* + the built React SPA from client/dist) plus a CNPG
+# cluster (business-manager-db). Ecosystem app `managerapp` (product name
+# "Business Manager"; infra short-name business-manager). Tailnet-only access:
+# no public DNS A record; the operator's hosts file maps bm.${DOMAIN} -> the
+# host's tailnet IP, routed only through secforge-gateway-tailnet.
+#
+# Lean Node runtime (no Chromium — PDF export goes through the Gotenberg
+# document-render service, ADR-0037). PSS-restricted: non-root 65532, drop ALL
+# caps, seccomp RuntimeDefault, readOnlyRootFilesystem. No PSS exemption.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: business-manager
+  labels:
+    app.kubernetes.io/name: business-manager
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: business-manager
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

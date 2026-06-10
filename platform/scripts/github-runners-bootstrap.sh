@@ -54,6 +54,7 @@ declare -A REPOS=(
   [ecosystem-portal]=ecosystem-portal
   [member-hub]=member-hub
   [proposal-forge]=proposal-forge
+  [business-manager]=business-manager
 )
 
 # Pinned runner version. Bump deliberately — GitHub auto-updates runners

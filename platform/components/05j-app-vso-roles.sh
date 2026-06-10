@@ -70,6 +70,11 @@ APP_ROLES=(
   # audit-signer (PF has no OpenBao Transit usage). Policy paths: vso.hcl
   # apps/proposal-forge/+ , minio/proposal-forge-files , minio/cnpg/credentials.
   "proposal-forge-vso|proposal-forge|proposal-forge-vso|vso|3600|86400"
+  # business-manager (managerapp) — VSO renders the OIDC/session/SAM.gov runtime
+  # bundle + ghcr-pull. No app MinIO key (no object storage day-1), no SpiceDB
+  # PSK (org-tier + RLS authz), no audit-signer (no OpenBao Transit usage).
+  # Policy paths: vso.hcl apps/business-manager/+ , minio/cnpg/credentials.
+  "business-manager-vso|business-manager|business-manager-vso|vso|3600|86400"
   # keycloak-ghcr-vso: lets the keycloak ns VSO binding render ghcr-pull-secret
   # (private image pull cred) via the scoped keycloak-ghcr policy. See
   # manifests/openbao/policies/keycloak-ghcr.hcl + manifests/keycloak/03b-ghcr-vso-binding.yaml.

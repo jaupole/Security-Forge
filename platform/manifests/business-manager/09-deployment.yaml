@@ -1,0 +1,139 @@
+# Business Manager app (Express + Prisma + React SPA). Ecosystem app `managerapp`.
+#
+# Single Deployment: the Express server serves /api/business-manager/* and the
+# built React SPA (client/dist). Lean Node runtime — NO Chromium (PDF export is
+# rendered by the Gotenberg document-render service, ADR-0037;
+# PDF_RENDERER=gotenberg). The pod is the security boundary: runAsNonRoot 65532,
+# drop ALL caps, seccomp RuntimeDefault, readOnlyRootFilesystem (writable /tmp).
+#
+# No spiffe-helper sidecar and no SpiceDB/MinIO egress: BM consumes VSO-rendered
+# K8s Secrets via envFrom, authorizes via org-membership + Postgres RLS, and has
+# no object storage day-1. The only in-cluster TLS to an internal-CA endpoint is
+# Keycloak (auth.${DOMAIN} → ClusterIP, internal cert), so NODE_EXTRA_CA_CERTS
+# points at the openbao-ca configmap.
+#
+# IMAGE: pin to the cosign-signed digest from the FIRST business-manager build.
+# The placeholder below must be replaced before apply or Kyverno
+# verify-image-signature rejects it; the migration Job (08) must use the SAME
+# digest.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: business-manager
+  namespace: business-manager
+  labels:
+    app.kubernetes.io/name: business-manager
+    app.kubernetes.io/component: app
+    secforge.platform/component: business-manager
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: business-manager
+        app.kubernetes.io/component: app
+        secforge.platform/component: business-manager
+    spec:
+      serviceAccountName: business-manager
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          # PLACEHOLDER — pin to the first signed business-manager build digest.
+          # MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/business-manager@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 3001, name: http, protocol: TCP }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: PORT, value: "3001" }
+            # Bind off loopback (the API now has auth — see BM_AUTH_MODE).
+            - { name: HOST, value: "0.0.0.0" }
+            # Lifts the PTRK-001 loopback tripwire: auth is enabled.
+            - { name: BM_AUTH_MODE, value: oidc }
+            # Writable HOME under readOnlyRootFilesystem (lib caches).
+            - { name: HOME, value: "/tmp" }
+            # Keycloak presents its internal cert in-cluster (auth.${DOMAIN} →
+            # ClusterIP); jose's createRemoteJWKSet must trust the internal CA.
+            - { name: NODE_EXTRA_CA_CERTS, value: "/etc/secforge/openbao-ca.crt" }
+            - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
+            - { name: KEYCLOAK_REALM, value: platform }
+            # Tenants realm — members sign in here; a bare /auth/login defaults to
+            # tenants when OIDC_CLIENT_SECRET_TENANTS is present. Token
+            # verification trusts both realms.
+            - { name: KEYCLOAK_TENANTS_REALM, value: "${KEYCLOAK_TENANTS_REALM}" }
+            - { name: OIDC_CLIENT_ID, value: business-manager }
+            # Ecosystem Control — Service port 80 → pod 4000. BM calls /api/v1/me
+            # for the active-org context (drives RLS) + app-activation flag.
+            - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
+            # Report PDF export via the shared Gotenberg document-render service.
+            - { name: PDF_RENDERER, value: gotenberg }
+            - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
+            # Same-origin SPA; the only cross-origin caller is the tailnet host.
+            - { name: CORS_ALLOWED_ORIGINS, value: "https://bm.${DOMAIN}" }
+            # CNPG-rendered DB connection string.
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: business-manager-db-app, key: uri } } }
+          envFrom:
+            # OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS, SESSION_KEY,
+            # SAM_GOV_API_KEY (VSO → 04-vso-bindings.yaml).
+            - secretRef:
+                name: business-manager-app-secrets
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits:   { cpu: 1,    memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: openbao-ca, mountPath: /etc/secforge, readOnly: true }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: openbao-ca
+          configMap:
+            name: openbao-internal-ca-cert
+            items:
+              - key: ca.crt
+                path: openbao-ca.crt
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: business-manager
+              app.kubernetes.io/component: app

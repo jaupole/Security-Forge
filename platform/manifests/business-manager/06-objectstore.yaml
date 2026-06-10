@@ -1,0 +1,28 @@
+# Barman Cloud Plugin ObjectStore for business-manager-db.
+# Credentials rendered into cnpg-minio-credentials by the VSO binding in
+# 04-vso-bindings.yaml. Distinct destination path from the other apps so
+# backups don't collide in the shared `backups` bucket.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: minio-backup
+  namespace: business-manager
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: business-manager-db
+spec:
+  configuration:
+    destinationPath: s3://backups/cnpg/business-manager
+    endpointURL: http://minio.minio.svc.cluster.local:9000
+    s3Credentials:
+      accessKeyId:
+        name: cnpg-minio-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: cnpg-minio-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: "30d"

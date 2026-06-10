@@ -1,0 +1,22 @@
+# In-cluster Service for the business-manager namespace. ClusterIP-only —
+# external access is via the Istio tailnet gateway (VirtualService in
+# istio-ingress/20-virtualservices.yaml), tailnet-restricted.
+# Single Service: the Express app serves both /api/business-manager/* and the
+# React SPA. Port 80 forwards to the container's :3001 listening port.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: business-manager
+  namespace: business-manager
+  labels:
+    app.kubernetes.io/name: business-manager
+    app.kubernetes.io/component: app
+    secforge.platform/component: business-manager
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: business-manager
+    app.kubernetes.io/component: app
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }

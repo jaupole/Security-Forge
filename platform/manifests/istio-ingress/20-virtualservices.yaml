@@ -279,3 +279,26 @@ spec:
         host: wazuh-dashboard.wazuh.svc.cluster.local
         port:
           number: 5601
+---
+# Business Manager (ecosystem app managerapp) — tailnet-only, mirrors PF. No
+# public DNS A record; the operator's hosts file maps bm.${DOMAIN} → the host's
+# tailnet IP. Single Express service serves /api/business-manager/* + the SPA.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: business-manager
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - bm.${DOMAIN}
+  http:
+  - name: bm
+    route:
+    - destination:
+        host: business-manager.business-manager.svc.cluster.local
+        port:
+          number: 80

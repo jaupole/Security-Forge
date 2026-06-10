@@ -1,0 +1,67 @@
+# Postgres cluster for Business Manager (managerapp).
+#
+# Schema is managed by Prisma — `prisma migrate deploy` runs from the
+# business-manager image via the migration Job (08-migration-job.yaml). It
+# creates the `business_manager` schema inside this database and applies the
+# FORCE-RLS org-isolation policies. CNPG owns the rest of the lifecycle:
+# failover, WAL archiving, base backups via barman-cloud plugin -> MinIO
+# (06-objectstore.yaml).
+#
+# RLS approach (mirrors proposal-forge): the app connects via Prisma as the DB
+# owner `business_manager`, and the ecosystem_org_rls migration sets
+# `ALTER TABLE business_manager.<t> FORCE ROW LEVEL SECURITY` on every tenant
+# table so the owner is ALSO subject to RLS (Postgres exempts table owners
+# unless FORCE is set). The app sets `app.org_id` via `SET LOCAL` per request.
+# We therefore do NOT grant the owner BYPASSRLS. A dedicated non-owner runtime
+# role is a documented fleet-wide hardening follow-up.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: business-manager-db
+  namespace: business-manager
+  labels:
+    secforge.platform/component: business-manager
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      database: business_manager
+      owner: business_manager
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+      # RLS uses a session-local GUC (app.org_id) set via `SET LOCAL` in a
+      # Prisma transaction wrapper per request — no postgresql.conf entries
+      # needed.
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin.
+  # ObjectStore CR in 06-objectstore.yaml; ScheduledBackup in 07.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-backup

@@ -1,0 +1,20 @@
+# Daily ScheduledBackup for business-manager-db.
+# 03:15 UTC — staggered after proposal-forge (03:00), member-hub (02:45) and
+# keycloak (02:30) to spread MinIO PUT load.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: business-manager-db-daily
+  namespace: business-manager
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: business-manager-db
+spec:
+  schedule: "0 15 3 * * *"          # 6-field CNPG cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: business-manager-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false

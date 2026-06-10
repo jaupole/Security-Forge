@@ -956,3 +956,68 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "true"
               lightweight.claim: "false"
+
+      # ─── business-manager (browser auth-code + PKCE, user-facing) ──
+      # secforge-prod migration: Project Tracker becomes ecosystem app
+      # `managerapp`, renamed "Business Manager". Operator/staff login on the
+      # platform realm; the app is tailnet-only (no public DNS A record). Same
+      # in-app-OIDC shape as proposal-forge — no separate BFF, no admin
+      # service-account client (user/role management is owned by Ecosystem
+      # Control + SpiceDB). When BM goes tenant-facing, register the same
+      # clientId in secforge-tenants and trust both issuers.
+      - clientId: business-manager
+        name: Business Manager
+        description: Business Manager user-facing OIDC (browser auth-code + PKCE). App managerapp.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://bm.${DOMAIN}/*
+        webOrigins:
+          - https://bm.${DOMAIN}
+        attributes:
+          # Enforce PKCE S256 server-side (the BFF always sends it).
+          pkce.code.challenge.method: S256
+          # Back-channel logout receiver — the @jaupole/ecosystem-auth BFF
+          # endpoint that revokes BM's server-side session on Keycloak SSO
+          # logout (single-logout). Day-2 replay: 03d.
+          backchannel.logout.url: https://bm.${DOMAIN}/api/business-manager/auth/backchannel-logout
+          post.logout.redirect.uris: https://bm.${DOMAIN}/*
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          # Self-audience: every access token carries `aud=business-manager`
+          # so the BM backend can strict-audience-check.
+          - name: business-manager-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: business-manager
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          # Cross-audience: tokens also carry `aud=control` so BM can call
+          # Ecosystem Control's /api/v1/me for the active-org context on sign-in.
+          - name: control-audience-for-getme
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
