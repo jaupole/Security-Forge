@@ -37,7 +37,17 @@ jobs:
           # If the push event is a force-push, GitHub marks it. Otherwise we
           # compare the digest of the current tree against the most recent
           # attestation, if one exists.
-          forced="${{ github.event.forced || 'false' }}"
+          # A force-push only invalidates an attestation if the ref was actually
+          # stamped. Stamps are produced on merge-to-main (merge-slow-gates-and-stamp);
+          # PR branches — e.g. Renovate's digest-bump rebases — are never stamped, so a
+          # force-push there invalidates nothing. Posting stamp/invalid=red on those was
+          # a false positive that silently blocked the entire CVE digest-patch
+          # auto-merge stream (pentest 2026-06-10). Only the default branch is stamped.
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            forced="${{ github.event.forced || 'false' }}"
+          else
+            forced="false"
+          fi
           echo "forced=$forced" >> "$GITHUB_OUTPUT"
 
           # Always re-check the tree digest vs any present .attestation.json
