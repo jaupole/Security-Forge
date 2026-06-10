@@ -32,6 +32,7 @@ declare -A REPOS=(
   [ecosystem-control]=ecosystem-control
   [ecosystem-portal]=ecosystem-portal
   [member-hub]=member-hub
+  [proposal-forge]=proposal-forge
 )
 
 echo ">>> stopping + disabling systemd services"
@@ -62,13 +63,23 @@ for slug in "${!REPOS[@]}"; do
   sudo -u github-runner bash -c "cd ${RUNNER_DIR} && ./config.sh remove --token ${REMOVE_TOKEN}" 2>&1 | tail -3 || true
 done
 
+echo ">>> tearing down rootless Docker for github-runner (ADR-0039)"
+GR_UID=$(id -u github-runner 2>/dev/null || true)
+if [ -n "${GR_UID}" ]; then
+  sudo -u github-runner env XDG_RUNTIME_DIR="/run/user/${GR_UID}" \
+    dockerd-rootless-setuptool.sh uninstall 2>&1 | tail -3 || true
+  sudo loginctl disable-linger github-runner 2>/dev/null || true
+fi
+
 echo ">>> removing github-runner user + workspace"
 sudo userdel -r github-runner 2>/dev/null || true
 sudo rm -rf /opt/github-runner
+# clean up the subordinate id ranges added for rootless Docker
+sudo sed -i '/^github-runner:/d' /etc/subuid /etc/subgid 2>/dev/null || true
 
 echo ">>> uninstalling Docker"
 sudo systemctl disable --now docker.service docker.socket 2>/dev/null || true
-sudo apt-get purge -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>&1 | tail -3
+sudo apt-get purge -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras 2>&1 | tail -3
 sudo apt-get autoremove -y -qq 2>&1 | tail -3
 sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.asc
 
