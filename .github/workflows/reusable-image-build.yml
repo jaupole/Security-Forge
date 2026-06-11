@@ -209,10 +209,16 @@ jobs:
           REGISTRY_USERNAME: ${{ github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Keyless identity inside a REUSABLE workflow is the reusable
+          # workflow's own ref (Fulcio SAN = job_workflow_ref), not the
+          # caller repo — every fleet image now signs as exactly this
+          # file. Kyverno's subjectRegExp (^…/(secforge|jaupole)/) still
+          # matches; tightening the cluster policy to this single
+          # identity is a follow-up hardening option.
           cosign verify \
             --registry-username "${REGISTRY_USERNAME}" \
             --registry-password "${REGISTRY_PASSWORD}" \
-            --certificate-identity-regexp "^https://github\\.com/${{ github.repository }}/" \
+            --certificate-identity-regexp "^https://github\\.com/jaupole/Security-Forge/\\.github/workflows/reusable-image-build\\.yml@" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
 
