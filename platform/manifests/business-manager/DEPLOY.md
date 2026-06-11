@@ -65,15 +65,28 @@ bash components/05l-keycloak-secret-publish.sh   # writes apps/business-manager/
 
 ## 3. Apply manifests (order matters)
 
+> Prereq: the `09` Deployment mounts the `openbao-internal-ca-cert` configmap,
+> distributed by trust-manager only to namespaces named in
+> `manifests/trust-manager/01-bundles.yaml`. `business-manager` is now in that
+> Bundle's selector — apply it if not already live:
+> `bash lib/apply-manifest.sh manifests/trust-manager/01-bundles.yaml`
+> (the configmap appears in the ns within seconds, else the pod hangs FailedMount).
+
 ```sh
 cd ~/secforge/platform && git pull
 M=manifests/business-manager
 bash lib/apply-manifest.sh $M/01-namespace.yaml
 bash lib/apply-manifest.sh $M/03-serviceaccount.yaml
 bash lib/apply-manifest.sh $M/04-vso-bindings.yaml      # wait: kubectl -n business-manager get secret business-manager-app-secrets ghcr-pull-secret cnpg-minio-credentials
-bash lib/apply-manifest.sh $M/02-cnpg-cluster.yaml      # wait: cnpg cluster business-manager-db Ready (1/1)
+# CRITICAL: the ObjectStore (06) MUST exist BEFORE the cluster (02). The
+# barman-cloud plugin's pre-reconcile hook STOPS the cluster reconcile loop
+# ("barman object configuration not found, requeuing") until minio-backup
+# exists, and it does NOT auto-recover if 02 is applied first — you'd have to
+# `kubectl -n business-manager annotate cluster business-manager-db
+# force-reconcile=$(date +%s) --overwrite` to unstick it.
 bash lib/apply-manifest.sh $M/06-objectstore.yaml
-bash lib/apply-manifest.sh $M/07-cnpg-scheduled-backup.yaml
+bash lib/apply-manifest.sh $M/02-cnpg-cluster.yaml      # wait: cnpg cluster business-manager-db Ready (1/1)
+bash lib/apply-manifest.sh $M/07-cnpg-scheduled-backup.yaml  # after the cluster exists
 bash lib/apply-manifest.sh $M/08-migration-job.yaml     # wait: job business-manager-db-migrate Complete
 bash lib/apply-manifest.sh $M/05-network-policies.yaml
 bash lib/apply-manifest.sh $M/09-deployment.yaml        # wait: deploy Ready 1/1 (/readyz green)
