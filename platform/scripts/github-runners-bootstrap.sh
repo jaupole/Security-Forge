@@ -161,7 +161,17 @@ for slug in "${!REPOS[@]}"; do
     echo "    runner already extracted, skipping unpack"
   fi
 
-  # Skip registration if .runner exists — runner already configured.
+  # An interrupted config.sh leaves .credentials WITHOUT .runner — config.sh
+  # then refuses ("already configured") even though the runner never came
+  # online. The `! -f .runner` check below would re-enter config.sh and abort.
+  # Treat that as partial state and reset the local config so we register clean
+  # (the GitHub-side runner, if any, is replaced by --replace below).
+  if [ -f "${RUNNER_DIR}/.credentials" ] && [ ! -f "${RUNNER_DIR}/.runner" ]; then
+    echo "    ${REPO}: clearing partial runner config (.credentials without .runner)"
+    sudo -u github-runner bash -c "cd '${RUNNER_DIR}' && rm -f .credentials .credentials_rsaparams .runner .service"
+  fi
+
+  # Skip registration if .runner exists — runner already configured + online.
   if [ ! -f "${RUNNER_DIR}/.runner" ]; then
     REG_TOKEN=$(curl -sS -X POST \
       -H "Authorization: token ${GITHUB_PAT}" \
@@ -172,14 +182,19 @@ for slug in "${!REPOS[@]}"; do
       echo "    ${REPO}: failed to fetch registration token, skipping"
       continue
     fi
-    sudo -u github-runner bash -c "cd ${RUNNER_DIR} && ./config.sh \
+    # One repo's config failure must NOT abort the whole loop (set -e + the
+    # tail pipeline would otherwise kill every later repo). Warn and continue.
+    if ! sudo -u github-runner bash -c "cd '${RUNNER_DIR}' && ./config.sh \
       --unattended \
       --url https://github.com/${OWNER}/${REPO} \
       --token ${REG_TOKEN} \
       --name secforge-${slug} \
       --labels self-hosted,secforge,linux,x64 \
       --work _work \
-      --replace" 2>&1 | tail -5
+      --replace" 2>&1 | tail -5; then
+      echo "    WARN: ${REPO} runner config failed — skipping (re-run to retry)"
+      continue
+    fi
   else
     echo "    runner already registered, skipping config.sh"
   fi
