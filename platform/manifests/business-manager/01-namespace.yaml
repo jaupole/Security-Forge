@@ -16,6 +16,11 @@ metadata:
     app.kubernetes.io/name: business-manager
     app.kubernetes.io/part-of: secforge-platform
     secforge.platform/component: business-manager
+    # Enroll in the Istio ambient mesh — REQUIRED. Control/Keycloak/Gotenberg/
+    # OTel are ambient (mTLS via ztunnel); without this the app's plaintext
+    # egress to Control (the OIDC-callback /api/v1/me) is refused → login 500.
+    # The NetworkPolicies' :15008 (ztunnel HBONE) allows only matter in-mesh.
+    istio.io/dataplane-mode: ambient
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
