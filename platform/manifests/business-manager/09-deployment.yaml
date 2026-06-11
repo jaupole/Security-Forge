@@ -57,9 +57,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # PLACEHOLDER — pin to the first signed business-manager build digest.
+          # 2026-06-11: first signed build — business-manager commit 19df17e.
           # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/business-manager@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/jaupole/business-manager@sha256:3954cf956bae08f85c6011a262dc5e0b829f18a5063a5d4a796b6a134bf2b0e5
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
