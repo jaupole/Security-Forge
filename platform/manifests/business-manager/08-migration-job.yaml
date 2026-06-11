@@ -69,9 +69,9 @@ spec:
       containers:
         - name: migrate
           # Digest kept in lockstep with the Deployment (09).
-          # 2026-06-11: first signed build — business-manager commit 3ea976f (server/node_modules runtime fix)
+          # 2026-06-11: first signed build — business-manager commit 19179af (workspace runtime fix)
           # (migration + auth/RLS; lockfile prisma-in-runtime-deps fix).
-          image: ghcr.io/jaupole/business-manager@sha256:e3f76b7b02b57323f6013b38d3f9ed2936ee16059d734048c1bd8737181f0ca3
+          image: ghcr.io/jaupole/business-manager@sha256:44e2b898539e3d88c1e36f8b42fb2104847f3f4f2cef380db319e712163fb3f2
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT.
