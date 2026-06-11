@@ -57,9 +57,12 @@ declare -A REPOS=(
   [business-manager]=business-manager
 )
 
-# Pinned runner version. Bump deliberately — GitHub auto-updates runners
-# at job start anyway, but pinning gives a known-good starting tarball.
-RUNNER_VERSION="2.321.0"
+# Pinned runner version. Bump deliberately. NOTE: GitHub does NOT force an
+# auto-update while the installed version is above its (lagging) hard minimum,
+# so an old pin can sit there unable to run newer actions. Runner <2.327 cannot
+# execute `using: node24` actions (actions/checkout v4.3+, setup-node v4.4+,
+# etc. now ship as node24) — the job dies at "Set up job". Keep this current.
+RUNNER_VERSION="2.335.1"
 RUNNER_TARBALL="actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 RUNNER_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_TARBALL}"
 
