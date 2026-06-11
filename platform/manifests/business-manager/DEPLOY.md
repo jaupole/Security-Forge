@@ -5,6 +5,16 @@ Project Tracker, renamed **Business Manager**, deployed at **`bm.secforge.dev`**
 `Project Tracker` working copy). This is the operator-time sequence; the code +
 manifests + Keycloak/OpenBao plumbing are already committed.
 
+## Status (2026-06-11)
+
+- ✅ **Step 0 DONE** — repo `jaupole/business-manager` created + pushed; rootless
+  self-hosted runner registered; first image **built + cosign-signed + pinned**:
+  `ghcr.io/jaupole/business-manager@sha256:3954cf956bae08f85c6011a262dc5e0b829f18a5063a5d4a796b6a134bf2b0e5`
+  (commit 19df17e) — already pinned in `08`/`09`.
+- ⏳ **Remaining (operator):** §1 OpenBao policy/role/KV → §2 Keycloak client +
+  secret publish → §3 apply manifests → §4 Control migration 070 (pushed) +
+  redeploy + activate `managerapp` → §5 hosts file + verify.
+
 All `kubectl`/apply on the box runs as `ops` (`export KUBECONFIG=$HOME/.kube/config`).
 **Never** `kubectl apply -f` a manifest with `${...}` — always go through
 `platform/lib/apply-manifest.sh` (envsubst).
