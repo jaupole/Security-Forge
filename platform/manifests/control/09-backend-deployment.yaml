@@ -84,7 +84,11 @@ spec:
           # the istio edge can fail-closed deny /api/v1/admin/* on the public
           # portal host. canAdministerOrg unchanged; no new migrations
           # (commit fce0bb3).
-          image: ghcr.io/jaupole/control@sha256:8f6366712677356d56576cb4d7a5cc71d6d239cbbcfb569b7e2a39043a186a0d
+          # 2026-06-11: org users always provision into the tenants realm
+          # (founder-derived realm removed) + KC Organization existence
+          # check/self-heal in the provisioning core; migration 073 adds
+          # organizations.kc_org_id (commit b447727).
+          image: ghcr.io/jaupole/control@sha256:36272f7d1a13fe20b7538ca0ce9612f9b15bed6e96f18ffe9860971bdccb9b63
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }

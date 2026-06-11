@@ -74,8 +74,8 @@ spec:
           # Digest-pinned (cosign signs digests, not tags). Bump via the
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
-          # 2026-06-08: bumped to apply migration 069 (tickets.archived_at).
-          image: ghcr.io/jaupole/control@sha256:2b737eedeed6745be81104bf21bd6148962917f81028456a596b0575ff168ef3
+          # 2026-06-11: bumped to apply migration 073 (organizations.kc_org_id).
+          image: ghcr.io/jaupole/control@sha256:36272f7d1a13fe20b7538ca0ce9612f9b15bed6e96f18ffe9860971bdccb9b63
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint
