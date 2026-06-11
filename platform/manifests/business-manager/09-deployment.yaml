@@ -59,7 +59,7 @@ spec:
         - name: app
           # 2026-06-11: first signed build — business-manager commit 19179af (workspace runtime fix).
           # MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/business-manager@sha256:44e2b898539e3d88c1e36f8b42fb2104847f3f4f2cef380db319e712163fb3f2
+          image: ghcr.io/jaupole/business-manager@sha256:7937935d0f1fbe29decc1fc8c12f995af2d86ca3aac8c8ffe6637895644ee69a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
