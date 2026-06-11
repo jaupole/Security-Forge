@@ -1,0 +1,151 @@
+# One-command app deploy: bump the digest in the committed manifests, push,
+# then deploy FROM GIT on the box.
+#
+#   gh workflow run deploy-app.yml -R jaupole/Security-Forge \
+#     -f app=control -f digest=sha256:<64hex>
+#
+# (or the Run-workflow button in the Actions UI — every image-build run's
+# summary prints the exact command with its digest filled in).
+#
+# Trust model: this runner executes on secforge-prod as the unprivileged
+# `github-runner` account. It holds NO kubeconfig and NO cluster
+# credential. The only privileged thing it may do is
+# `sudo secforge-app-deploy <allowlisted-app>` (enumerated in
+# /etc/sudoers.d/github-runner-deploy), which git-pulls the ops clone and
+# runs platform/lib/deploy-app.sh — i.e. the runner can only trigger
+# "deploy what main says for app X". Arbitrary manifests, digests, or
+# kubectl are not reachable from here. No long-lived cluster credential
+# is minted anywhere (bright-line rule).
+#
+# Failure handling: if the box-side deploy fails (migration error, rollout
+# timeout, Kyverno denial), deploy-app.sh rolls the Deployment back and
+# this workflow reverts the digest-bump commit, so git == cluster again.
+
+name: deploy-app
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to deploy
+        required: true
+        type: choice
+        options:
+          - control
+          - portal
+          - member-hub
+          - proposal-forge
+          - business-manager
+          - project-manager
+          - document-render
+      digest:
+        description: "Image digest from the app's image-build run (sha256:<64 hex>)"
+        required: true
+        type: string
+
+# One deploy at a time, fleet-wide — mirrors the manual deconfliction
+# discipline and keeps the ops-clone pull + apply sequence atomic.
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # push the digest-bump commit
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, secforge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Validate digest + map image name
+        id: prep
+        env:
+          DIGEST: ${{ inputs.digest }}
+          APP: ${{ inputs.app }}
+        run: |
+          if ! [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::digest must be sha256:<64 lowercase hex>, got: $DIGEST"
+            exit 1
+          fi
+          # app → GHCR image short name + manifest dir (keep in sync with
+          # platform/lib/deploy-app.sh).
+          case "$APP" in
+            portal)          IMAGE=portal;   DIR=control ;;
+            document-render) IMAGE=gotenberg; DIR=document-render ;;
+            *)               IMAGE="$APP";    DIR="$APP" ;;
+          esac
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "dir=$DIR"     >> "$GITHUB_OUTPUT"
+
+      - name: Bump digest in manifests
+        id: bump
+        env:
+          DIGEST: ${{ inputs.digest }}
+          IMAGE: ${{ steps.prep.outputs.image }}
+          DIR: ${{ steps.prep.outputs.dir }}
+        run: |
+          cd "platform/manifests/$DIR"
+          mapfile -t FILES < <(grep -lE "image: ghcr\.io/jaupole/$IMAGE@sha256:[a-f0-9]{64}" ./*.yaml)
+          if (( ${#FILES[@]} == 0 )); then
+            echo "::error::no manifests pin ghcr.io/jaupole/$IMAGE under platform/manifests/$DIR"
+            exit 1
+          fi
+          sed -i -E "s|(image: ghcr\.io/jaupole/$IMAGE@)sha256:[a-f0-9]{64}|\1$DIGEST|" "${FILES[@]}"
+          echo "bumped: ${FILES[*]}"
+          if git diff --quiet; then
+            echo "already-current=true" >> "$GITHUB_OUTPUT"
+            echo "manifests already pin $DIGEST — redeploying current state"
+          else
+            echo "already-current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit + push bump
+        id: push
+        if: steps.bump.outputs.already-current == 'false'
+        env:
+          APP: ${{ inputs.app }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          git config user.name "secforge-deploy"
+          git config user.email "deploy@secforge.dev"
+          git add platform/manifests
+          git commit \
+            -m "deploy($APP): bump to ${DIGEST:7:8} via deploy-app [skip ci]" \
+            -m "Triggered by ${{ github.actor }} (run ${{ github.run_id }})." \
+            -m "Image: ghcr.io/jaupole/${{ steps.prep.outputs.image }}@$DIGEST"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy from git on the box
+        env:
+          APP: ${{ inputs.app }}
+        run: sudo -n /usr/local/sbin/secforge-app-deploy "$APP"
+
+      - name: Revert bump on failed deploy
+        if: failure() && steps.push.outputs.committed == 'true'
+        run: |
+          git revert --no-edit HEAD
+          # keep [skip ci] semantics on the revert too
+          git commit --amend -m "$(git log -1 --format=%B) [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "::warning::deploy failed — digest bump reverted so git matches the rolled-back cluster"
+
+      - name: Summary
+        if: success()
+        env:
+          APP: ${{ inputs.app }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          {
+            echo "## Deployed ✅"
+            echo ""
+            echo "**$APP** → \`ghcr.io/jaupole/${{ steps.prep.outputs.image }}@$DIGEST\`"
+            echo ""
+            echo "Manifests bumped + applied from git; rollout healthy (readiness probes passed)."
+          } >> "$GITHUB_STEP_SUMMARY"
