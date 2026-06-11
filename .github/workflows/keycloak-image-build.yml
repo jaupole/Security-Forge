@@ -69,10 +69,12 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           # Pin the cosign binary to the v2 line (the installer action stays
-          # current). v2.6.0 is the final v2 release; it signs to the legacy
-          # sha256-<digest>.sig tag the cluster's Kyverno verifies. Revisit
-          # when the cluster can verify OCI 1.1 referrer signatures.
-          cosign-release: 'v2.6.0'
+          # current). v2 signs to the legacy sha256-<digest>.sig tag the
+          # cluster's Kyverno verifies; v3's bundle format is unverifiable on
+          # GHCR (artifactType lost in the tag-fallback referrers index).
+          # v2.6.3 carries the GHSA-whqx-f9j3-ch6m verify-path fix. See
+          # operator-backlog #90.
+          cosign-release: 'v2.6.3'
 
       - name: Resolve image metadata (tags, labels)
         id: meta
