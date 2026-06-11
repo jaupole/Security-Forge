@@ -57,9 +57,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          # 2026-06-11: org brand mark from Control — business-manager commit 22859cf
-          # (client + server /me branding; no schema delta). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/business-manager@sha256:f07ad60fe13005995921b74776776609fa60d8c8c475a2ecc058cf17698ae6f6
+          # 2026-06-11: org brand-kit logo (logos.mark) — business-manager commit d281fb0
+          # (frontend brand fix; no schema delta). MUST match 08-migration-job.yaml.
+          image: ghcr.io/jaupole/business-manager@sha256:eb6552ec97995985d3dde3d229692c6bf3b8622d042ffe1b1c5947b4a7acb3b9
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
