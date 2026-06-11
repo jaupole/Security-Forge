@@ -1,50 +1,65 @@
-# Runbook: deploy a first-party app image (control / portal / member-hub)
+# Runbook: deploy a first-party app image
 
 > **Always deploy by `@sha256:` digest, never by tag.** A tag ref is denied at
 > admission by the `verify-image-signature-secforge` Kyverno policy (Enforce)
 > with a confusing message — see [Why](#why-by-digest) below.
 
-There is no GitOps controller (no Argo/Flux). App image bumps are a **manual
-`kubectl set image` by digest, plus a matching digest bump in the
-Security-Forge manifest** so a future `kubectl apply` doesn't revert prod.
+There is no GitOps controller (no Argo/Flux). Since 2026-06-11 deploys are
+**one command** through the `deploy-app` workflow — git is the source of
+truth and the digest bump + apply happen atomically, so declared state ==
+live by construction.
 
-## Procedure
+## Procedure (standard)
 
-1. **Merge** the app PR (`ecosystem-control`, `ecosystem-portal`, or `member-hub`).
-   The push-to-default-branch image-build workflow builds, **cosign-signs the
-   digest**, and pushes to `ghcr.io/jaupole/<app>`.
+1. **Merge/push** to the app repo's default branch. Every app repo's
+   image-build workflow is a thin caller of the fleet-shared
+   `Security-Forge/.github/workflows/reusable-image-build.yml`
+   (build → push → optional Trivy gate → cosign v2 sign → verify).
 
-2. **Get the digest** from the build's job summary (the "Built + signed" step
-   prints `…/<app>@sha256:<digest>`), or from the run log:
+2. **Run the deploy command printed in the build's job summary** — copy/paste,
+   digest already filled in:
    ```sh
-   gh run view <run-id> -R jaupole/<repo> --log | grep -oE '<app>@sha256:[a-f0-9]{64}' | head -1
+   gh workflow run deploy-app.yml -R jaupole/Security-Forge \
+     -f app=<app> -f digest=sha256:<64hex>
    ```
+   (`app` ∈ control, portal, member-hub, proposal-forge, business-manager,
+   project-manager, document-render — or use the Run-workflow button in the
+   Security-Forge Actions UI.)
 
-3. **Deploy by digest** (NOT by tag):
-   ```sh
-   # control api
-   kubectl set image deploy/control -n control api=ghcr.io/jaupole/control@sha256:<digest>
-   # portal (static nginx; runs in the `control` namespace)
-   kubectl set image deploy/portal  -n control nginx=ghcr.io/jaupole/portal@sha256:<digest>
-   # member-hub api
-   kubectl set image deploy/member-hub -n member-hub api=ghcr.io/jaupole/member-hub@sha256:<digest>
-   kubectl rollout status deploy/<name> -n <ns> --timeout=150s
-   ```
-   Any CronJobs that share the app image (e.g. `control` namespace's
-   `billing-usage-sync`, `signup-cleanup`, audit cronjobs in `member-hub`)
-   are bumped the same way — `kubectl set image cronjob/<name> <container>=…@sha256:<digest>`.
+   The workflow: validates the digest → bumps EVERY manifest pinning that
+   app's image (deployment + migration job + cronjobs, so cron digests can't
+   drift) → commits + pushes `deploy(<app>): bump to … [skip ci]` → runs
+   `sudo secforge-app-deploy <app>` on the box, which git-pulls the ops clone
+   and executes `platform/lib/deploy-app.sh`: delete stale one-shot migration
+   Job (#36 handled automatically) → apply + wait for migration → apply the
+   rest → `kubectl rollout status` per Deployment (readiness probes are the
+   smoke test).
 
-4. **Bump the Security-Forge manifest digest in the same change** so declared
-   state == live (otherwise `kubectl apply` reverts the deploy):
-   - control: `platform/manifests/control/09-backend-deployment.yaml` **and**
-     `08-migration-job.yaml` (paired); `10-portal-deployment.yaml` for portal;
-     the cron manifests (`12`, `15`) if their image moved.
-   - member-hub: `platform/manifests/member-hub/09-backend-deployment.yaml`,
-     `08-migration-job.yaml`, and the audit cronjobs (`12`, `13`).
-   Open a `chore(deploy): …` PR.
+   **On failure** the pipeline self-heals: `deploy-app.sh` does
+   `kubectl rollout undo`, and the workflow reverts the digest-bump commit —
+   git and cluster stay in agreement.
 
-   > The migration Job is a fixed-name one-shot; re-`apply`ing a bumped
-   > `08-migration-job.yaml` needs the prior Job deleted first (Security-Forge#36).
+   **Trust model:** the runner account holds no kubeconfig and no cluster
+   credential. Its single privilege is the sudoers-ENUMERATED
+   `/usr/local/sbin/secforge-app-deploy <app>` wrapper, so a compromised
+   workflow can only deploy what main says for an allowlisted app — it cannot
+   apply arbitrary manifests or reach kubectl. No long-lived cluster
+   credential exists anywhere in the path (bright-line rule).
+
+## Procedure (manual fallback)
+
+The pre-2026-06-11 flow still works when Actions is unavailable: bump the
+digests in `platform/manifests/<app>/`, commit + push, then on the box
+`sudo bash platform/lib/deploy-app.sh <app>` (it contains the full per-app
+mapping) — or the raw `apply-manifest.sh` + `kubectl rollout status` steps it
+wraps. Never `kubectl set image` without the matching manifest bump.
+
+> Keyless identity note: because signing now happens inside the reusable
+> workflow, every fleet image's certificate identity is
+> `https://github.com/jaupole/Security-Forge/.github/workflows/reusable-image-build.yml@…`
+> (Fulcio SAN = job_workflow_ref), not the app repo. Kyverno's
+> `(secforge|jaupole)` subject regex still matches; tightening the policy to
+> exactly this identity is a tracked hardening option.
 
 ## Why by digest
 
