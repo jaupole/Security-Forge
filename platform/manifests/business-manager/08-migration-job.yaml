@@ -72,7 +72,7 @@ spec:
           # 2026-06-11: ecosystem-ui "glow" UI migration — business-manager commit d1685b5.
           # Frontend-only change, no new migrations; this Job is NOT re-run for this
           # deploy (already-completed at the prior digest; identical migration set).
-          image: ghcr.io/jaupole/business-manager@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+          image: ghcr.io/jaupole/business-manager@sha256:138c414b7d32618efe1be73092715793dd6bd687bb1c9b1ed2dd7029e62758d4
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT.

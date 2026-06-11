@@ -59,7 +59,7 @@ spec:
         - name: app
           # 2026-06-11: ecosystem-ui "glow" UI migration — business-manager commit d1685b5
           # (frontend-only image swap; no schema delta). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/business-manager@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+          image: ghcr.io/jaupole/business-manager@sha256:138c414b7d32618efe1be73092715793dd6bd687bb1c9b1ed2dd7029e62758d4
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
