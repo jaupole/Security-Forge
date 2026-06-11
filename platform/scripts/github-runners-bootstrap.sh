@@ -136,7 +136,12 @@ for slug in "${!REPOS[@]}"; do
   echo "  ${REPO} -> ${RUNNER_DIR}"
 
   sudo -u github-runner mkdir -p "${RUNNER_DIR}"
-  if [ ! -f "${RUNNER_DIR}/config.sh" ]; then
+  # NOTE: every runner-dir existence test below MUST go through sudo. The runner
+  # lives under github-runner's HOME (/opt/github-runner, mode 0750), which the
+  # ops account running this script cannot traverse — a bare `[ -f … ]` always
+  # reports "missing", so the script would re-extract over and re-config working
+  # runners and then abort (set -e) on the first "already configured".
+  if ! sudo test -f "${RUNNER_DIR}/config.sh"; then
     sudo tar -xzf "${WORK}/${RUNNER_TARBALL}" -C "${RUNNER_DIR}"
     sudo chown -R github-runner:github-runner "${RUNNER_DIR}"
     # bin/ and externals/ unpack as version-suffixed dirs in newer tarballs;
@@ -166,13 +171,13 @@ for slug in "${!REPOS[@]}"; do
   # online. The `! -f .runner` check below would re-enter config.sh and abort.
   # Treat that as partial state and reset the local config so we register clean
   # (the GitHub-side runner, if any, is replaced by --replace below).
-  if [ -f "${RUNNER_DIR}/.credentials" ] && [ ! -f "${RUNNER_DIR}/.runner" ]; then
+  if sudo test -f "${RUNNER_DIR}/.credentials" && ! sudo test -f "${RUNNER_DIR}/.runner"; then
     echo "    ${REPO}: clearing partial runner config (.credentials without .runner)"
     sudo -u github-runner bash -c "cd '${RUNNER_DIR}' && rm -f .credentials .credentials_rsaparams .runner .service"
   fi
 
   # Skip registration if .runner exists — runner already configured + online.
-  if [ ! -f "${RUNNER_DIR}/.runner" ]; then
+  if ! sudo test -f "${RUNNER_DIR}/.runner"; then
     REG_TOKEN=$(curl -sS -X POST \
       -H "Authorization: token ${GITHUB_PAT}" \
       -H "Accept: application/vnd.github+json" \
