@@ -71,7 +71,7 @@ spec:
           # Digest kept in lockstep with the Deployment (09).
           # 2026-06-11: first signed build — business-manager commit 19179af (workspace runtime fix)
           # (migration + auth/RLS; lockfile prisma-in-runtime-deps fix).
-          image: ghcr.io/jaupole/business-manager@sha256:7937935d0f1fbe29decc1fc8c12f995af2d86ca3aac8c8ffe6637895644ee69a
+          image: ghcr.io/jaupole/business-manager@sha256:c7515533b74f893a47e0d3d5662e143326eb13cfd2b8c3b985268286926b766b
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT.
