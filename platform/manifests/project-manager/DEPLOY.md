@@ -48,16 +48,13 @@ bao write auth/kubernetes/role/project-manager-vso \
   bound_service_account_namespaces=project-manager \
   policies=project-manager \
   ttl=1h
-
-# JWT auth role for Transit (spiffe-helper sidecar → OpenBao Transit)
-bao write auth/jwt/role/project-manager \
-  role_type=jwt \
-  bound_audiences=openbao \
-  user_claim=sub \
-  bound_subject="spiffe://${SPIFFE_TRUST_DOMAIN}/ns/project-manager/sa/project-manager" \
-  policies=project-manager \
-  ttl=15m
 ```
+
+> NOTE (2026-06-11): the JWT/SPIFFE Transit auth role is intentionally NOT
+> created — PROJECT_MANAGER Phase 1 does no field-level PII encryption and the
+> deployment no longer runs the spiffe-helper sidecar (see 09-backend-deployment).
+> Re-add `bao write auth/jwt/role/project-manager …` together with the sidecar
+> when a PII-encryption phase lands.
 
 Apply the OpenBao policy:
 ```bash
