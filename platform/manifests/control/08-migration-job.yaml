@@ -75,7 +75,9 @@ spec:
           # GHA image-build run output; Renovate or a CI bot can later
           # automate the bump.
           # 2026-06-11: bumped to apply migration 073 (organizations.kc_org_id).
-          image: ghcr.io/jaupole/control@sha256:36272f7d1a13fe20b7538ca0ce9612f9b15bed6e96f18ffe9860971bdccb9b63
+          # (4410024c supersedes 36272f7d/0448ea93 — those were signed with
+          # cosign v3's bundle format, which Kyverno can't verify.)
+          image: ghcr.io/jaupole/control@sha256:4410024c0e7a7f7eead22c9dd9d9aa2b2f0747e593d317cb8c5b261effc3b119
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint

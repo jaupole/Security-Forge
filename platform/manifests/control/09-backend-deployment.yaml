@@ -87,8 +87,10 @@ spec:
           # 2026-06-11: org users always provision into the tenants realm
           # (founder-derived realm removed) + KC Organization existence
           # check/self-heal in the provisioning core; migration 073 adds
-          # organizations.kc_org_id (commit b447727).
-          image: ghcr.io/jaupole/control@sha256:36272f7d1a13fe20b7538ca0ce9612f9b15bed6e96f18ffe9860971bdccb9b63
+          # organizations.kc_org_id (commit b447727; image rebuilt as
+          # 0875911 after pinning CI back to cosign v2 — v3 bundle-format
+          # signatures are invisible to Kyverno).
+          image: ghcr.io/jaupole/control@sha256:4410024c0e7a7f7eead22c9dd9d9aa2b2f0747e593d317cb8c5b261effc3b119
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
