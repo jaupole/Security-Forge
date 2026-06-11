@@ -67,6 +67,40 @@ digest:
 This is the intended supply-chain contract — the in-repo manifests are already
 100% `@sha256`-pinned.
 
+## Signature format contract (cosign v2 pin)
+
+A **digest** ref can ALSO be denied with `no signatures found` — that means the
+image was signed in the wrong **format**, not that signing was skipped
+(discovered 2026-06-11; operator-backlog #90):
+
+- Kyverno (1.18, incl. current main) only finds cosign **v2 legacy
+  signatures** — the `sha256-<digest>.sig` tag. cosign **v3** signs in the
+  sigstore bundle format via OCI referrers; on GHCR (no native referrers API)
+  the bundle lands under a tag-fallback index whose entry **loses the bundle
+  artifactType**, so Kyverno's `SigstoreBundle` discovery skips it too. A
+  v3-signed image is unverifiable on this cluster in *any* policy mode, even
+  though CI's own `cosign verify` passes.
+- Therefore every image-build workflow (all 6 app repos + gotenberg +
+  keycloak) pins the cosign **binary** via the installer input
+  `cosign-release: 'v2.6.3'` while leaving the `cosign-installer` **action**
+  current. Bots (dependabot/Renovate) bump the action SHA but never
+  `with:`-inputs, so the pin survives routine bumps — the 2026-06-11 breakage
+  was dependabot bumping the action to v4 (cosign v3 default) in
+  ecosystem-control. **Keep the input pin when copying the workflow to a new
+  app repo.**
+- Quick diagnostic for a denied digest — does the legacy signature exist?
+  ```sh
+  cosign tree ghcr.io/jaupole/<app>@sha256:<digest>   # or:
+  # 200 = signed correctly; 404 = wrong format / unsigned → rebuild after
+  # checking the workflow still passes cosign-release v2.x
+  curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" \
+    "https://ghcr.io/v2/jaupole/<app>/manifests/sha256-<digest>.sig"
+  ```
+- Exit criteria for dropping the pin (re-test ~quarterly) live in
+  operator-backlog **#90**. Do not migrate the policy to
+  `type: SigstoreBundle` before a dual-sign transition — running images carry
+  only legacy signatures and would fail re-admission on restart.
+
 ### Note on `require-image-digest`
 
 A second policy, `require-image-digest`, would reject **any** tag ref by format
