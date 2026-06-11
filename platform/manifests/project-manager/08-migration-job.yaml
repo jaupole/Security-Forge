@@ -1,0 +1,91 @@
+# One-shot Job that applies migrations to project-manager-db.
+#
+# Run BEFORE the API Deployment so the schema is in place when the first
+# server.js starts answering requests.
+#
+# Re-runs are safe — migrate.ts is idempotent (records applied versions in
+# a schema_migrations table; re-applying a migration is a no-op).
+#
+# CNPG auto-renders the `project-manager-db-app` Secret with:
+#   - username, password, dbname, host, port, jdbc-uri, uri, pgpass
+# We feed DATABASE_URL from the `uri` key directly.
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: project-manager-db-migrate
+  namespace: project-manager
+  labels:
+    app.kubernetes.io/name: project-manager
+    secforge.platform/component: project-manager
+    secforge.platform/role: db-migration
+spec:
+  # Don't auto-retry on app errors — a migration failure needs operator
+  # eyes, not blind re-runs.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400     # GC after 24h so the Job artefact persists for inspection
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: project-manager
+        secforge.platform/component: project-manager
+        secforge.platform/role: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: project-manager
+      automountServiceAccountToken: false
+      # GHCR pull credential — VSO-rendered dockerconfigjson Secret
+      # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Wait for project-manager-db to be Ready before starting the migration
+      # container. The CNPG operator marks Ready once the primary is
+      # accepting connections.
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h project-manager-db-rw.project-manager.svc.cluster.local -p 5432 -U project_manager -d project_manager -t 3; do
+                echo "waiting for project-manager-db..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 128Mi }
+      containers:
+        - name: migrate
+          # Bump to the current signed digest after first image build.
+          image: ghcr.io/jaupole/project-manager@DIGEST_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          command: ["/nodejs/bin/node", "dist/db/migrate.js"]
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: project-manager-db-app
+                  key: uri
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 256Mi }

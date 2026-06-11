@@ -341,3 +341,35 @@ definition member_hub/email_campaign {
     permission publish = publisher + app->administer
     permission delete  = app->administer
 }
+
+// ─── PROJECT_MANAGER (app id `project_manager`) ──────────────────────────
+// Phase 0 seed. The project is the root resource; per-project people
+// (manager / contributor / stakeholder) get scoped visibility — exactly the
+// granularity that justifies SpiceDB here over org-tier-only authz.
+// Knowledge-area artifacts (schedule, cost, risk, …) inherit access from
+// their parent project rather than declaring their own object types;
+// Phase 1+ adds finer types only when an artifact needs different sharing
+// than its project.
+
+definition project_manager/project {
+    relation app: app
+    relation manager: user                      // project manager — full control
+    relation contributor: user                  // team member — edits working artifacts
+    relation stakeholder: user                  // read-only visibility (sponsor, client)
+
+    permission view       = manager + contributor + stakeholder + app->view
+    permission edit       = manager + contributor + app->administer
+    permission administer = manager + app->administer    // baseline, approve CRs, close
+    permission delete     = app->administer
+}
+
+definition project_manager/change_request {
+    relation project: project_manager/project
+    relation approver: user                     // explicitly delegated approver (optional)
+
+    // Approval authority: a delegated approver, the project's manager
+    // (via project->administer), or an org/app admin through the same
+    // cascade. Never a role-string comparison in app code.
+    permission view    = project->view
+    permission approve = approver + project->administer
+}

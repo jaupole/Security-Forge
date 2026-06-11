@@ -1,0 +1,56 @@
+# Postgres cluster for the project-manager API.
+#
+# Migrations run from the `project-manager` repo via the migration Job
+# in 08-migration-job.yaml. CNPG operator manages the rest of the lifecycle:
+# failover, WAL archiving, base backups via barman-cloud plugin → MinIO.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: project-manager-db
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm
+  primaryUpdateStrategy: unsupervised
+
+  enableSuperuserAccess: false
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      database: project_manager
+      owner: project_manager
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+      postInitSQL:
+        - ALTER ROLE project_manager BYPASSRLS
+
+  postgresql:
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin.
+  # ObjectStore CR lives in 06-objectstore.yaml; ScheduledBackup CR
+  # in 07-cnpg-scheduled-backup.yaml.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-backup

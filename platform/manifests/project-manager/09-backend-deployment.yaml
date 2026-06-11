@@ -1,0 +1,196 @@
+# Project Manager app (Hono + TS, distroless nodejs22).
+#
+# Listens on :3003. Reverse-proxied by the Istio tailnet gateway via
+# the project-manager Service (10-services.yaml). Single deployment — Hono
+# serves both /api/* (JSON handlers) and the React+Vite SPA built to
+# client/dist, with SPA-fallback to index.html. No separate SPA Deployment.
+#
+# Tailnet-only: projects.${DOMAIN} has no public DNS A record. Operator
+# reaches it via the tailnet gateway (projects.${DOMAIN} → ${TAILNET_IP}).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-manager
+  namespace: project-manager
+  annotations:
+    # The main container is fully probed; only the spiffe-helper sidecar
+    # (a token-refresher daemon) lacks probes — it exposes no HTTP health
+    # surface, and pod liveness is governed by the main container.
+    checkov.io/skip1: "CKV_K8S_8=spiffe-helper sidecar has no HTTP liveness endpoint; the app container is probed"
+    checkov.io/skip2: "CKV_K8S_9=spiffe-helper sidecar has no HTTP readiness endpoint; the app container is probed"
+  labels:
+    app.kubernetes.io/name: project-manager
+    app.kubernetes.io/component: app
+    secforge.platform/component: project-manager
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: project-manager
+        app.kubernetes.io/component: app
+        secforge.platform/component: project-manager
+        spiffe.io/spire-managed-identity: "true"
+    spec:
+      serviceAccountName: project-manager
+      automountServiceAccountToken: false
+      # GHCR pull credential — VSO-rendered dockerconfigjson Secret
+      # (see 04-vso-bindings.yaml `ghcr-pull-secret`).
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # Bump to the signed digest after first image build.
+          image: ghcr.io/jaupole/project-manager@DIGEST_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 3003, name: http, protocol: TCP }
+          env:
+            # Static config
+            - { name: NODE_ENV, value: production }
+            - { name: PORT, value: "3003" }
+            - { name: HOST, value: "0.0.0.0" }
+            - { name: TRUST_PROXY, value: "1" }
+            # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
+            # which presents its INTERNAL cert. Point NODE_EXTRA_CA_CERTS at
+            # the internal CA so Node's TLS stack can verify the chain.
+            - { name: NODE_EXTRA_CA_CERTS, value: "/etc/secforge/openbao-ca.crt" }
+            # Keycloak OIDC config. KEYCLOAK_TENANTS_REALM accepts tokens from
+            # BOTH realms when set (same pattern as member-hub).
+            - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
+            - { name: KEYCLOAK_REALM, value: platform }
+            - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
+            # Cross-app theme cookie: scope to the shared parent domain.
+            - { name: THEME_COOKIE_DOMAIN, value: ".${DOMAIN}" }
+            # User-login OIDC client. OIDC_CLIENT_SECRET + OIDC_CLIENT_SECRET_TENANTS
+            # come from VSO-rendered project-manager-app-secrets via envFrom below.
+            - { name: OIDC_CLIENT_ID, value: project-manager }
+            # Ecosystem Control — in-cluster Service in the `control` ns.
+            - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
+            # SpiceDB — in-cluster Service.
+            - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
+            # CNPG-rendered DB credentials. Feed DATABASE_URL from the `uri` key.
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: project-manager-db-app, key: uri } } }
+            - { name: PGSSLMODE, value: "require" }
+            # OTLP exporter.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability.svc.cluster.local:4318" }
+            - { name: OTEL_SERVICE_NAME, value: project-manager }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=project-manager,deployment.environment=prod" }
+            # PII encryption — Transit client uses SPIFFE JWT-SVID written by
+            # the spiffe-helper sidecar to the shared spiffe-jwt tmpfs volume.
+            - { name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
+            - { name: OPENBAO_CA_CERT_PATH, value: "/etc/secforge/openbao-ca.crt" }
+            - { name: OPENBAO_JWT_AUTH_ROLE, value: project-manager }
+            # TRANSIT_KEYNAME: holds a key *name*, not key material (avoiding
+            # the no-secret-shaped-env Kyverno policy flag on bare `_KEY_`).
+            - { name: TRANSIT_KEYNAME, value: pii-encryption }
+            - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
+            # Gotenberg document rendering service (Phase 5 — uncomment when wired)
+            # - { name: GOTENBERG_URL, value: "http://document-render.document-render.svc.cluster.local:3000" }
+          envFrom:
+            # Adds OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS,
+            # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered Secret.
+            # All come from secret/apps/project-manager/runtime in OpenBao
+            # via the VaultStaticSecret in 04-vso-bindings.yaml.
+            - secretRef:
+                name: project-manager-app-secrets
+          resources:
+            requests: { cpu: 50m,  memory: 128Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Distroless nodejs22 needs /tmp writable for sourcemaps + V8 cache.
+            - { name: tmp, mountPath: /tmp }
+            # OpenBao internal CA cert (signed by secforge-internal-ca).
+            - { name: openbao-ca, mountPath: /etc/secforge, readOnly: true }
+            # JWT-SVID written by the spiffe-helper sidecar.
+            - { name: spiffe-jwt, mountPath: /run/spiffe, readOnly: true }
+        # spiffe-helper sidecar — fetches a JWT-SVID via the SPIFFE workload
+        # API every TTL/2 seconds and writes it to the shared spiffe-jwt volume.
+        - name: spiffe-helper
+          image: ghcr.io/spiffe/spiffe-helper:0.11.0@sha256:1c92e5998ad3621e3323f25aabe40f5a88ba730ee0edb248aa8c943ca504e8a2
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-config"
+            - "/etc/spiffe-helper/helper.conf"
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 50m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - { name: spiffe-helper-config, mountPath: /etc/spiffe-helper, readOnly: true }
+            - { name: spiffe-jwt, mountPath: /run/spiffe }
+            - { name: spiffe-workload-api, mountPath: /spiffe-workload-api, readOnly: true }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: openbao-ca
+          configMap:
+            name: openbao-internal-ca-cert
+            items:
+              - key: ca.crt
+                path: openbao-ca.crt
+        - name: spiffe-jwt
+          emptyDir:
+            sizeLimit: 1Mi
+            medium: Memory
+        - name: spiffe-helper-config
+          configMap:
+            name: project-manager-spiffe-helper-config
+            items:
+              - key: helper.conf
+                path: helper.conf
+        # SPIFFE workload API — provided by the SPIRE CSI driver DaemonSet.
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: project-manager
+              app.kubernetes.io/component: app

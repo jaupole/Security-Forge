@@ -1,0 +1,144 @@
+# VSO bindings for the project-manager namespace.
+#
+# Two rendered K8s Secrets:
+#   - project-manager-app-secrets  → app-level keys (session-signing,
+#                                    SpiceDB PSK, Keycloak client_secrets)
+#   - ghcr-pull-secret             → GHCR image-pull dockerconfigjson
+#   - cnpg-minio-credentials       → barman-cloud → MinIO bucket credentials
+#
+# The OpenBao policy that grants reads on these paths lives at
+# `platform/manifests/openbao/policies/project-manager.hcl`. The K8s auth
+# role binding (k8s SA `project-manager-vso` → policy `project-manager`) is
+# created by the openbao bootstrap.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: project-manager-vso
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: project-manager-vso
+    serviceAccount: project-manager-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# Aggregates app-level secrets (Keycloak client, SpiceDB, session key)
+# into a single K8s Secret consumed via envFrom in the backend Deployment.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: project-manager-app-secrets
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: project-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/project-manager/runtime
+  refreshAfter: 1h
+  destination:
+    name: project-manager-app-secrets
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        # Keycloak OIDC client_secret (user-login `project-manager` client,
+        # platform realm). App reads as OIDC_CLIENT_SECRET.
+        OIDC_CLIENT_SECRET:
+          text: '{{ .Secrets.oidc_client_secret }}'
+        # Same `project-manager` client in the TENANTS realm — a separate
+        # confidential client with its own secret. App reads as
+        # OIDC_CLIENT_SECRET_TENANTS. Optional: when absent the template
+        # renders empty and the app keeps platform-only sign-in.
+        OIDC_CLIENT_SECRET_TENANTS:
+          text: '{{ if .Secrets.oidc_client_secret_tenants }}{{ .Secrets.oidc_client_secret_tenants }}{{ end }}'
+        # SpiceDB pre-shared key for gRPC auth (same value also rendered
+        # into the spicedb pod from its own VSO binding — we just
+        # consume it here, not own it).
+        SPICEDB_PRESHARED_KEY:
+          text: '{{ .Secrets.spicedb_psk }}'
+        # Session signing key (raw 32-byte base64). Generate once via
+        # `openssl rand -base64 32` and store in OpenBao; rotate via
+        # OpenBao + Pod restart.
+        SESSION_KEY:
+          text: '{{ .Secrets.session_signing_key }}'
+
+---
+# GHCR image-pull credential. Renders into a kubernetes.io/dockerconfigjson
+# Secret consumed via `imagePullSecrets:` on 08-migration-job.yaml and
+# 09-backend-deployment.yaml. Token is a classic PAT scoped to read:packages
+# on jaupole/project-manager.
+#
+# OpenBao path: secret/data/apps/project-manager/ghcr-pull
+#   - username: GitHub user (jaupole)
+#   - password: PAT (rotate via OpenBao + 90-day expiry on the GH token)
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: ghcr-pull-secret
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: project-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/project-manager/ghcr-pull
+  refreshAfter: 5m
+  destination:
+    name: ghcr-pull-secret
+    create: true
+    type: kubernetes.io/dockerconfigjson
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ".dockerconfigjson":
+          text: |-
+            {"auths":{"ghcr.io":{"username":"{{ .Secrets.username }}","password":"{{ .Secrets.password }}","auth":"{{ printf "%s:%s" .Secrets.username .Secrets.password | b64enc }}"}}}
+
+---
+# barman-cloud → MinIO credentials for CNPG WAL archiving + base backups.
+# Same shared path as every other CNPG cluster's barman creds.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: project-manager-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 1h
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: '{{ .Secrets.access_key }}'
+        ACCESS_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

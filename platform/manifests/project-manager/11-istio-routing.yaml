@@ -1,0 +1,30 @@
+# Istio routing for projects.${DOMAIN}.
+#
+# Tailnet-only: attached to secforge-gateway-tailnet ONLY (no public DNS
+# A record for projects.${DOMAIN}; operator's hosts file maps it to
+# ${TAILNET_IP}). Mirrors the proposal-forge and business-manager
+# VirtualServices in platform/manifests/istio-ingress/20-virtualservices.yaml.
+#
+# IMPORTANT: This VirtualService lives here in the project-manager dir for
+# review convenience. When applying, it must be applied alongside (or after)
+# the istio-ingress manifests. The `bash lib/apply-manifest.sh` step in
+# DEPLOY.md handles this in the right order.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: project-manager
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  gateways:
+    - istio-ingress/secforge-gateway-tailnet
+  hosts:
+    - projects.${DOMAIN}
+  http:
+    - name: project-manager
+      route:
+        - destination:
+            host: project-manager.project-manager.svc.cluster.local
+            port:
+              number: 80

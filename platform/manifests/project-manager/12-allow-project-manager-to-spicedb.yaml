@@ -1,0 +1,41 @@
+# Allow `project-manager` ns → SpiceDB gRPC on 50051.
+#
+# APPLY TO THE spicedb NAMESPACE — this NetworkPolicy lives in the
+# spicedb namespace (not project-manager) because spicedb runs with
+# default-deny-ingress; ingress rules must be written FROM the spicedb
+# namespace's perspective.
+#
+# Mirrors platform/manifests/spicedb/06-allow-member-hub-to-spicedb.yaml.
+# Added here in the project-manager dir so a single `apply-manifest.sh`
+# sweep of this directory also sets up the cross-ns ingress side.
+# Without this, every /api/v1/* request fails with spicedb_unavailable
+# (membership-guard or authz middleware).
+#
+# See project_spicedb_consumer_netpol memory entry for the failure mode
+# and root cause.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-project-manager-to-spicedb
+  namespace: spicedb
+  labels:
+    secforge.platform/component: spicedb
+    secforge.platform/expedient: 'direct-grpc-instead-of-authzen-facade'
+spec:
+  podSelector:
+    matchLabels:
+      authzed.com/cluster: spicedb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: project-manager
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: project-manager
+              app.kubernetes.io/component: app
+      ports:
+        - protocol: TCP
+          port: 50051

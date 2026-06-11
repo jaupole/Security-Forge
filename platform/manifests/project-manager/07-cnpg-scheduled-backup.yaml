@@ -1,0 +1,20 @@
+# Daily ScheduledBackup for project-manager-db.
+# 03:00 UTC — staggered 15 min after member-hub (02:45) to avoid
+# MinIO PUT contention.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: project-manager-db-daily
+  namespace: project-manager
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: project-manager-db
+spec:
+  schedule: "0 0 3 * * *"           # 6-field CNPG cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: project-manager-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false

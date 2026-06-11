@@ -1,0 +1,332 @@
+# NetworkPolicies for the project-manager namespace.
+#
+# Pattern matches the rest of the platform: default-deny on both
+# directions + minimal allow rules for what the workloads actually need.
+# Use `app.kubernetes.io/name` rather than `app=` so Jobs (migration)
+# that don't carry the bare `app` label still match.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# Essentials: DNS + kube-apiserver. The CNPG manager process inside the
+# postgres pod fetches its TLS certs from the API server at startup.
+# Every app pod also needs DNS for in-cluster service-name resolution.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # CoreDNS in kube-system
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # kube-apiserver via the in-cluster ClusterIP (10.43.0.1).
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    # kube-apiserver via the host:6443 path (k3s embedded API server).
+    # Also TCP/443 for *.secforge.dev hostnames — JWKS fetch from
+    # auth.secforge.dev, OIDC discovery, etc.
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+
+---
+# Intra-namespace traffic: project-manager pods ↔ CNPG cluster pods (5432),
+# migration Job → CNPG cluster pods (5432), VSO consumer → in-ns rendered
+# Secret bookkeeping.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# Egress to Keycloak for OIDC discovery + JWKS fetch.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-keycloak
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - { protocol: TCP, port: 8443 }
+
+---
+# Egress to SpiceDB for permission checks (gRPC 50051).
+# CRITICAL: also requires 06-allow-project-manager-to-spicedb.yaml in
+# the spicedb namespace (in-ns policy only opens the egress side here;
+# the ingress side on the spicedb pods needs its own policy).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-spicedb
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: spicedb
+      ports:
+        - { protocol: TCP, port: 50051 }
+
+---
+# Egress to Ecosystem Control's API.
+# lib/ecosystem-control.ts calls getMe() to fetch the active-org context.
+# The Service in `control` ns exposes port 80 → targetPort 4000.
+# NetworkPolicies in this cluster (Cilium) are evaluated POST-NAT, so the
+# allow must be on port 4000 (the pod port), not 80 (the service port).
+#
+# 15008 (HBONE) — REQUIRED since both `project-manager` and `control` are
+# in the Istio Ambient mesh. Cross-namespace mesh traffic is tunnelled
+# ztunnel→ztunnel over HBONE on 15008, NOT the app port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-control
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+      ports:
+        - { protocol: TCP, port: 4000 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
+
+---
+# Egress to OpenBao for Transit encrypt/decrypt + KV reads via VSO SA token.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-openbao
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - { protocol: TCP, port: 8200 }
+
+---
+# Egress to OTel collector for traces + metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-otel
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - { protocol: TCP, port: 4317 }   # gRPC OTLP
+        - { protocol: TCP, port: 4318 }   # HTTP OTLP
+        - { protocol: TCP, port: 15008 }  # HBONE — observability is Ambient too
+
+---
+# Egress to MinIO for CNPG barman-cloud base + WAL backups.
+# Scoped to the CNPG-managed postgres pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: project-manager-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
+# Egress to the public internet on HTTPS for outbound third-party API calls
+# (document rendering callbacks, external integrations, etc.).
+# Scoped to the API container only. CIDR: 0.0.0.0/0 minus private ranges.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+
+---
+# CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
+# the project-manager-db pod for reconciliation, probes, and barman metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-db
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: project-manager-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [postgres-operator, cnpg-system]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 9187 }
+        - { protocol: TCP, port: 9090 }
+
+---
+# Ingress: Istio tailnet ingress gateway (istio-ingress ns) →
+# project-manager backend. projects.secforge.dev terminates at the tailnet
+# gateway and routes here. 3003 = project-manager backend, 15008 = Ambient HBONE.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-ingress-to-project-manager
+  namespace: project-manager
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 3003 }
+        - { protocol: TCP, port: 15008 }

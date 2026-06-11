@@ -1,0 +1,22 @@
+# Kyverno image signature verification — NO PATCH NEEDED for project-manager.
+#
+# The existing ClusterPolicy `verify-image-signature-secforge` at
+#   platform/manifests/kyverno/policies/05-image-signature-verification.yaml
+# already covers ALL `ghcr.io/jaupole/*` images via a wildcard imageReference:
+#
+#   verifyImages:
+#     - imageReferences:
+#         - "ghcr.io/secforge/*"
+#         - "ghcr.io/jaupole/*"
+#
+# Because `ghcr.io/jaupole/project-manager` matches `ghcr.io/jaupole/*`,
+# the Kyverno Enforce policy will require a valid cosign keyless signature
+# (Fulcio + Rekor, subject matching ^https://github.com/(secforge|jaupole)/)
+# automatically once the first signed image is pushed.
+#
+# No per-image entry or patch to the policy file is needed.
+# This file exists only to document that the check was performed and to
+# serve as a review anchor.
+#
+# DO NOT apply this file to the cluster — it is documentation only.
+# The apply-manifest.sh step in DEPLOY.md skips it.

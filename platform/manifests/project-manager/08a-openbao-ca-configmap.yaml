@@ -1,0 +1,29 @@
+# OpenBao internal CA certificate ConfigMap for the project-manager namespace.
+#
+# The distroless runtime container's NODE_EXTRA_CA_CERTS points here so
+# that Node's TLS stack (jose JWKS fetch, OpenBao Transit HTTPS client)
+# can verify the secforge-internal-ca chain presented by Keycloak's
+# in-cluster hostname and by the OpenBao service itself.
+#
+# The actual PEM is rendered by platform/components/08a-openbao-ca-configmap.sh
+# (or equivalent bootstrap step) which reads the CA cert from the openbao
+# namespace and applies a copy to every app namespace that needs it.
+# Do NOT embed the literal PEM here — run the bootstrap step instead.
+#
+# This manifest is a placeholder so `kubectl apply` of the full
+# manifests/project-manager/ tree doesn't fail on the volume reference
+# in 09-backend-deployment.yaml. The bootstrap step overwrites the
+# `ca.crt` key with the real cert.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-internal-ca-cert
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/role: tls-trust-anchor
+data:
+  # Populated by bootstrap: platform/components/08a-openbao-ca-configmap.sh
+  # or equivalent step that reads the cert from the openbao namespace CA Secret.
+  ca.crt: |
+    # PLACEHOLDER — run bootstrap step 08a to populate this field.

@@ -1,0 +1,21 @@
+# project-manager namespace — single Hono Deployment plus a CNPG cluster
+# (project-manager-db). The Hono process serves both the JSON API (/api/*)
+# and the React+Vite SPA built to client/dist — no separate SPA Deployment.
+# Tailnet-only access: no public DNS record; operator's hosts file →
+# tailnet IP (same posture as pf, bm, control, admin). PSS restricted
+# across all three modes — no exemption.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: project-manager
+  labels:
+    app.kubernetes.io/name: project-manager
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: project-manager
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # Istio Ambient mesh capture — ztunnel picks up pods in this namespace
+    # automatically once the label is present. Required for HBONE cross-ns
+    # traffic (project-manager ↔ control, project-manager ↔ spicedb).
+    istio.io/dataplane-mode: ambient
