@@ -13,12 +13,6 @@ kind: Deployment
 metadata:
   name: project-manager
   namespace: project-manager
-  annotations:
-    # The main container is fully probed; only the spiffe-helper sidecar
-    # (a token-refresher daemon) lacks probes — it exposes no HTTP health
-    # surface, and pod liveness is governed by the main container.
-    checkov.io/skip1: "CKV_K8S_8=spiffe-helper sidecar has no HTTP liveness endpoint; the app container is probed"
-    checkov.io/skip2: "CKV_K8S_9=spiffe-helper sidecar has no HTTP readiness endpoint; the app container is probed"
   labels:
     app.kubernetes.io/name: project-manager
     app.kubernetes.io/component: app
@@ -40,7 +34,6 @@ spec:
         app.kubernetes.io/name: project-manager
         app.kubernetes.io/component: app
         secforge.platform/component: project-manager
-        spiffe.io/spire-managed-identity: "true"
     spec:
       serviceAccountName: project-manager
       automountServiceAccountToken: false
@@ -93,15 +86,11 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: project-manager }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=project-manager,deployment.environment=prod" }
-            # PII encryption — Transit client uses SPIFFE JWT-SVID written by
-            # the spiffe-helper sidecar to the shared spiffe-jwt tmpfs volume.
-            - { name: OPENBAO_ADDR, value: "https://openbao.openbao.svc.cluster.local:8200" }
-            - { name: OPENBAO_CA_CERT_PATH, value: "/etc/secforge/openbao-ca.crt" }
-            - { name: OPENBAO_JWT_AUTH_ROLE, value: project-manager }
-            # TRANSIT_KEYNAME: holds a key *name*, not key material (avoiding
-            # the no-secret-shaped-env Kyverno policy flag on bare `_KEY_`).
-            - { name: TRANSIT_KEYNAME, value: pii-encryption }
-            - { name: SPIFFE_JWT_SVID_PATH, value: "/run/spiffe/jwt-svid.token" }
+            # NOTE: no OpenBao Transit / SPIFFE wiring — PROJECT_MANAGER Phase 1
+            # does no field-level PII encryption (env.ts reads no OPENBAO_*/
+            # TRANSIT_* vars). The spiffe-helper sidecar + JWT auth role were
+            # removed to drop an unused dependency and a crashloop surface;
+            # re-add them with the role when a PII-encryption phase lands.
             # Gotenberg document rendering service (Phase 5 — uncomment when wired)
             # - { name: GOTENBERG_URL, value: "http://document-render.document-render.svc.cluster.local:3000" }
           envFrom:
@@ -133,34 +122,10 @@ spec:
           volumeMounts:
             # Distroless nodejs22 needs /tmp writable for sourcemaps + V8 cache.
             - { name: tmp, mountPath: /tmp }
-            # OpenBao internal CA cert (signed by secforge-internal-ca).
+            # OpenBao internal CA cert (signed by secforge-internal-ca) —
+            # NODE_EXTRA_CA_CERTS uses it to verify Keycloak's + SpiceDB's
+            # internal TLS chains. Not Transit-related.
             - { name: openbao-ca, mountPath: /etc/secforge, readOnly: true }
-            # JWT-SVID written by the spiffe-helper sidecar.
-            - { name: spiffe-jwt, mountPath: /run/spiffe, readOnly: true }
-        # spiffe-helper sidecar — fetches a JWT-SVID via the SPIFFE workload
-        # API every TTL/2 seconds and writes it to the shared spiffe-jwt volume.
-        - name: spiffe-helper
-          image: ghcr.io/spiffe/spiffe-helper:0.11.0@sha256:1c92e5998ad3621e3323f25aabe40f5a88ba730ee0edb248aa8c943ca504e8a2
-          imagePullPolicy: IfNotPresent
-          args:
-            - "-config"
-            - "/etc/spiffe-helper/helper.conf"
-          resources:
-            requests: { cpu: 10m, memory: 16Mi }
-            limits:   { cpu: 50m, memory: 64Mi }
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities: { drop: [ALL] }
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 65532
-            runAsGroup: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - { name: spiffe-helper-config, mountPath: /etc/spiffe-helper, readOnly: true }
-            - { name: spiffe-jwt, mountPath: /run/spiffe }
-            - { name: spiffe-workload-api, mountPath: /spiffe-workload-api, readOnly: true }
       volumes:
         - name: tmp
           emptyDir:
@@ -171,21 +136,6 @@ spec:
             items:
               - key: ca.crt
                 path: openbao-ca.crt
-        - name: spiffe-jwt
-          emptyDir:
-            sizeLimit: 1Mi
-            medium: Memory
-        - name: spiffe-helper-config
-          configMap:
-            name: project-manager-spiffe-helper-config
-            items:
-              - key: helper.conf
-                path: helper.conf
-        # SPIFFE workload API — provided by the SPIRE CSI driver DaemonSet.
-        - name: spiffe-workload-api
-          csi:
-            driver: csi.spiffe.io
-            readOnly: true
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
