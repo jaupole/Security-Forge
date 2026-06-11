@@ -70,7 +70,7 @@ spec:
           # PF Assets; no new migration, no Control change. MUST match 08-migration-job.yaml.
           # 2026-06-10: commit 222d64a — shell-quote >=1.8.4 (CVE-2026-9277 RCE) + pnpm
           # 9.15->11 toolchain bump. Dependency-only; no new migration. (pentest)
-          image: ghcr.io/jaupole/proposal-forge@sha256:336218ecf9f410c5480ef29eb6edeabdd58e3193e7b5802f932646c5ccb40a10
+          image: ghcr.io/jaupole/proposal-forge@sha256:66a460d14c6f617c016290f12a2e2833d226d41e3b87578e61ad51790049004e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
