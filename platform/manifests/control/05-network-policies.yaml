@@ -143,7 +143,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [member-hub, proposal-forge, business-manager]
+                values: [member-hub, proposal-forge, business-manager, project-manager]
       ports:
         - { protocol: TCP, port: 4000 }
         - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
