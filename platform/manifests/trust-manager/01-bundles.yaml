@@ -43,7 +43,7 @@ spec:
       # (manifests/observability/21-) calls OpenBao transit/sign over in-cluster
       # TLS and needs the OpenBao internal CA to verify openbao.openbao.svc.
       matchExpressions:
-        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge, observability] }
+        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge, business-manager, observability] }
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
