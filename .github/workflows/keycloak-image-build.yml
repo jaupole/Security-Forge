@@ -48,6 +48,15 @@ jobs:
       contents: read
       packages: write   # push to ghcr.io
       id-token: write   # cosign keyless OIDC
+    env:
+      # The box runs every repo's runner under ONE OS account. docker/login-action
+      # writes GHCR creds to $HOME/.docker/config.json, and any OTHER repo's
+      # job finishing runs `docker logout` in its post step — wiping this job's
+      # auth mid-run. GHCR then answers anonymous requests on the private
+      # package with MANIFEST_UNKNOWN (the "propagation race" that wasn't).
+      # An isolated per-job DOCKER_CONFIG ends the cross-runner clobbering;
+      # login, buildx, manifest inspect, Trivy, and cosign all honor it.
+      DOCKER_CONFIG: ${{ github.workspace }}/.docker-isolated
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -103,6 +112,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
+
+      # GHCR propagates a pushed manifest asynchronously; fetching by digest
+      # immediately after push intermittently 404s (MANIFEST_UNKNOWN) and a
+      # rerun rebuilds with a new created-timestamp → new digest → same race.
+      # Poll until the manifest is fetchable before scanning/signing.
+      - name: Wait for GHCR manifest propagation
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          for i in $(seq 1 30); do
+            if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+              echo "manifest available after ${i} attempt(s)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::manifest still unavailable after 150s"
+          exit 1
 
       # CVE-scan the built image. The cluster's trivy-operator cannot scan this
       # private image: the Keycloak operator strips podTemplate imagePullSecrets,
