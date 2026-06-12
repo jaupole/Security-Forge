@@ -80,7 +80,7 @@ spec:
             # Tenants realm — members sign in here; a bare /auth/login defaults to
             # tenants when OIDC_CLIENT_SECRET_TENANTS is present. Token
             # verification trusts both realms.
-            - { name: KEYCLOAK_TENANTS_REALM, value: "${KEYCLOAK_TENANTS_REALM}" }
+            - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
             - { name: OIDC_CLIENT_ID, value: business-manager }
             # Ecosystem Control — Service port 80 → pod 4000. BM calls /api/v1/me
             # for the active-org context (drives RLS) + app-activation flag.

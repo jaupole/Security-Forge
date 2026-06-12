@@ -1000,3 +1000,56 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "true"
               lightweight.claim: "false"
+      # business-manager (managerapp) user-login client — members sign in here.
+      # Created live via the admin console 2026-06-12 (realm-import is one-shot);
+      # this block is the DR/greenfield source of truth. Mirrors the platform
+      # realm's business-manager client. Secret published to OpenBao
+      # apps/business-manager/runtime#oidc_client_secret_tenants.
+      - clientId: business-manager
+        name: Business Manager
+        description: Business Manager user-facing OIDC (browser auth-code + PKCE). App managerapp.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://bm.${DOMAIN}/*
+        webOrigins:
+          - https://bm.${DOMAIN}
+        attributes:
+          pkce.code.challenge.method: S256
+          backchannel.logout.url: https://bm.${DOMAIN}/api/business-manager/auth/backchannel-logout
+          post.logout.redirect.uris: https://bm.${DOMAIN}/*
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: business-manager-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: business-manager
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          - name: control-audience-for-getme
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.custom.audience: control
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
