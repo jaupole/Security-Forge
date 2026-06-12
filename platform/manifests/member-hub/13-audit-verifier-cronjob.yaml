@@ -132,7 +132,7 @@ spec:
               # The verifier is part of the member-hub backend image —
               # ships workers/audit-verifier/verify.ts as a tsx entrypoint.
               # Same image, smaller resource shape.
-              image: ghcr.io/jaupole/member-hub@sha256:09276ba4885319c18573acceb3837566025129bede1aefc824283435cb86c6ed
+              image: ghcr.io/jaupole/member-hub@sha256:f27257728b7e7cee7ac59ad6a4ae5540fd17cba68776eb18a09fbc0706e6ef62
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
