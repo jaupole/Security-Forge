@@ -92,7 +92,9 @@ spec:
           # 2026-06-12: commit 7722937 — built-in cover rendered as its own page
           # so the legend is a TRUE page footer (in the bottom margin) + Contract
           # Number centered block. No migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:8fc1c9a08281d1eb531c2cf63dee369b563d6da3b5917a26efc1b8f4517f5fae
+          # 2026-06-12: commit 87aa587 — equal contract columns so Contract Number
+          # is centered between its neighbors. No migration. Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:f0801c1b49a368c430d3d04caff277a000effdeb8555409e9efbb0874ae05890
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
