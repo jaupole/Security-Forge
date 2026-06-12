@@ -1,5 +1,11 @@
 # Project Manager — Production Deploy Runbook
 
+> **Routine image deploys no longer use this runbook.** Since 2026-06-11
+> (ADR-0040) they are one command:
+> `gh workflow run deploy-app.yml -R jaupole/Security-Forge -f app=project-manager -f digest=sha256:…`
+> — see [deploy-app-image.md](../../../docs/03-runbooks/deploy-app-image.md).
+> This document remains the FIRST-INSTALL / infrastructure guide.
+
 Tailnet-only app: `projects.${DOMAIN}` → `${TAILNET_IP}`. No public DNS A record.
 
 ---

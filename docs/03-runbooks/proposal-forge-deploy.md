@@ -1,5 +1,12 @@
 # Proposal Forge — secforge-prod deploy runbook
 
+> **Routine image deploys no longer use this runbook.** Since 2026-06-11
+> (ADR-0040) they are one command:
+> `gh workflow run deploy-app.yml -R jaupole/Security-Forge -f app=proposal-forge -f digest=sha256:…`
+> — see [deploy-app-image.md](./deploy-app-image.md). This document remains
+> the FIRST-INSTALL / infrastructure cutover guide (namespaces, secrets,
+> Keycloak client, MinIO, network policies).
+
 > App: `proposalapp` · Namespace: `proposal-forge` · Access: **tailnet-only**
 > (no public DNS A record; CGNAT-whitelisted ingress + hosts-file entry).
 > Architecture: [docs/01-architecture/apps/proposal-forge.md](../01-architecture/apps/proposal-forge.md)

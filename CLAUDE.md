@@ -98,6 +98,19 @@ These are easy to forget but cause real bugs:
 3. **DPoP `htu` claim must match exactly.** If the URL is `https://app.secforge.dev:8443` but the BFF resolves it as `https://app.secforge.dev`, validation fails. Pick one and stick with it everywhere.
 4. **Operator/admin surfaces are tailnet-only; SSH is Tailscale-only.** Admin hosts (`control`, `admin`, `kc`, `bao`, `grafana`, `wazuh`, `pf`) route only through the `secforge-gateway-tailnet` Istio gateway. When a request or admin action is refused, check the Tailscale path and the tailnet gateway before assuming an app bug.
 5. **Resource quotas matter on a single node.** Without them, one component can starve the cluster.
+6. **App deploys are ONE COMMAND — do not hand-roll the old ritual.** Since
+   2026-06-11 (ADR-0040): every app repo's image build is a thin caller of
+   this repo's `reusable-image-build.yml` (fleet CI fixes are ONE edit
+   here, never per-repo), and deploys go through
+   `gh workflow run deploy-app.yml -R jaupole/Security-Forge -f app=<app> -f digest=sha256:…`
+   (each build's job summary prints the exact command). It bumps every
+   manifest pinning the image, commits, and deploys from git on the box —
+   self-healing on failure (rollout undo + git revert). Never
+   `kubectl set image` without the manifest bump; prefer the workflow over
+   manual `apply-manifest.sh` for app images. Full procedure + trust model:
+   [deploy-app-image.md](./docs/03-runbooks/deploy-app-image.md).
+   Platform components (Keycloak CR, gotenberg, charts) still deploy via
+   `apply-manifest.sh` / component scripts.
 
 ## Verification habits
 
@@ -131,6 +144,7 @@ ADRs are the project's append-only decision log. The numbering matters as much a
 | You need... | Look in... |
 |---|---|
 | The plan | [PLAN.md](./PLAN.md) |
+| How to build + deploy an app image | [docs/03-runbooks/deploy-app-image.md](./docs/03-runbooks/deploy-app-image.md) (one-command `deploy-app` workflow; ADR-0040) |
 | The build history (archived phase prompts) | [docs/99-archive/05-claude-code-prompts/](./docs/99-archive/05-claude-code-prompts/) |
 | Why we made a particular tech choice | [docs/02-decisions/](./docs/02-decisions/) |
 | How a component works | [docs/01-architecture/](./docs/01-architecture/) |

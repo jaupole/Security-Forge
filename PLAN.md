@@ -53,7 +53,8 @@ Apps not yet deployed: **Project Tracker** (PM app — schema/identity provision
 | Object storage | MinIO (dedicated partition, SSE-S3) | RELEASE.2025-09-07 |
 | KMS | OpenBao Transit | — |
 | Admission | Kyverno (17 ClusterPolicies) | v1.18.0 |
-| Image signing | Cosign keyless (GitHub OIDC) + `verify-image-signature-*` policies | — |
+| Image signing | Cosign keyless (GitHub OIDC, cosign v2 pin — see backlog #90) + `verify-image-signature-*` policies. Identity = the fleet reusable workflow ref (ADR-0040) | — |
+| App CI/CD | Fleet `reusable-image-build.yml` (all 6 app repos are thin callers) + one-command `deploy-app.yml` (digest bump + deploy-from-git via sudoers-gated box wrapper; ADR-0040, runbook `deploy-app-image.md`) | live 2026-06-11 |
 | Backup/DR | Velero + kopia | v1.18.0 |
 | SIEM | Wazuh (manager + indexer, dedicated partition) | — |
 | Vuln scanning | Trivy Operator (ClientServer) | operator 0.30.1 / trivy 0.69.3 |

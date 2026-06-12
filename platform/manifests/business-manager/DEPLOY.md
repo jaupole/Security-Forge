@@ -1,5 +1,11 @@
 # Business Manager — deploy runbook (ecosystem app `managerapp`)
 
+> **Routine image deploys no longer use this runbook.** Since 2026-06-11
+> (ADR-0040) they are one command:
+> `gh workflow run deploy-app.yml -R jaupole/Security-Forge -f app=business-manager -f digest=sha256:…`
+> — see [deploy-app-image.md](../../../docs/03-runbooks/deploy-app-image.md).
+> This document remains the FIRST-INSTALL / infrastructure guide.
+
 Project Tracker, renamed **Business Manager**, deployed at **`bm.secforge.dev`**
 (tailnet-only). App code lives in the `jaupole/business-manager` repo (was the
 `Project Tracker` working copy). This is the operator-time sequence; the code +
