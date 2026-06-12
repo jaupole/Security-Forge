@@ -122,7 +122,7 @@ spec:
               # Digest-pinned. Same image as the backend Deployment.
               # When the operator bumps `09-backend-deployment.yaml`
               # they should bump this manifest too (same SHA).
-              image: ghcr.io/jaupole/control@sha256:3dadceaa91149c25618323a373f3a9a26e7dc5e785fa97a9d198ca403d99525a
+              image: ghcr.io/jaupole/control@sha256:7c0ecb70ffee59bdb2d624cb1a0e3504222b1e406118d4857c50a87dff73b4ba
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "billing:sync-usage"]
               env:
