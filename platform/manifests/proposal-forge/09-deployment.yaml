@@ -70,7 +70,9 @@ spec:
           # PF Assets; no new migration, no Control change. MUST match 08-migration-job.yaml.
           # 2026-06-10: commit 222d64a — shell-quote >=1.8.4 (CVE-2026-9277 RCE) + pnpm
           # 9.15->11 toolchain bump. Dependency-only; no new migration. (pentest)
-          image: ghcr.io/jaupole/proposal-forge@sha256:0844ab834e871458c66819f43a11ad2168482f3493f6f3cf1dc8608a7767cb18
+          # 2026-06-12: commit 639a6cf — shared PeriodChip (ecosystem-ui 0.1.9) +
+          # period-aware /stats. Query-logic only; no new migration. MUST match 08.
+          image: ghcr.io/jaupole/proposal-forge@sha256:175238cf571df7eacdc8cd1b918452557bd46e6ab5ffd99890d8fe6d512c8f47
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
