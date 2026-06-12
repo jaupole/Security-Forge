@@ -82,7 +82,9 @@ spec:
           # the Word cover too. No migration. MUST match 08.
           # 2026-06-12: commit 291946a — cover footer pinned to page bottom +
           # Contract Number cell centered. No migration. MUST match 08.
-          image: ghcr.io/jaupole/proposal-forge@sha256:f4fcbca5b6d9f84b160126c6efb44d7b8306e1553a2a85a430bc25118a807b95
+          # 2026-06-12: commit 89af8fd — pin footer to TRUE page bottom (measured
+          # via pdfjs) + trim spacing to widen the date gap. No migration. MUST match 08.
+          image: ghcr.io/jaupole/proposal-forge@sha256:3d275bc80bd283dbf118aae0c75786c5e72eae859bc555019f0bb16c2edc8e6a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
