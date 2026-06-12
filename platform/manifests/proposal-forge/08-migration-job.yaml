@@ -82,7 +82,10 @@ spec:
           # (column-aware wrap + single-page flex clip). No migration. Lockstep with 09.
           # 2026-06-12: commit c065ce9 — cover polish (logo to top margin, un-clip
           # panel bottom, center UEI/CAGE/NAICS). No migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:db6ea31ef3e60f7ef96a4d65615525ea0625069b84bdb749f1b9d661c3a0bd88
+          # 2026-06-12: commit 3718f85 — widen cover box to margins (POC fits),
+          # panel out of clip so bottom border always shows, real bordered box in
+          # the Word cover too. No migration. Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:b8a5644413cea74123a3553de5f03629c689235cf979d23618109054f530907e
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
