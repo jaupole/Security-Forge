@@ -89,7 +89,9 @@ spec:
           # Number centered block. No migration. MUST match 08.
           # 2026-06-12: commit 87aa587 — equal contract columns so Contract Number
           # is centered between its neighbors. No migration. MUST match 08.
-          image: ghcr.io/jaupole/proposal-forge@sha256:f0801c1b49a368c430d3d04caff277a000effdeb8555409e9efbb0874ae05890
+          # 2026-06-12: commit 1fa372e — Solicitation on its own full-width cover
+          # row (long titles wrap wide). No migration. MUST match 08.
+          image: ghcr.io/jaupole/proposal-forge@sha256:9b38d1f3a90622f62c1207862328fe1056e0916821340c0359a11191ed0288c3
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
