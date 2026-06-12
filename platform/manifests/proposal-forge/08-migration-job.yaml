@@ -80,7 +80,9 @@ spec:
           # 2026-06-12: commit a8480e6 — bfcache logout hardening (auth; digest
           # 6e0f2dab, deployed separately). 06c717e — framed data-grid cover
           # (column-aware wrap + single-page flex clip). No migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:68d03ff5482cf7de87941f09688f7275694ba06c38da3121b0c95787b62d7cf8
+          # 2026-06-12: commit c065ce9 — cover polish (logo to top margin, un-clip
+          # panel bottom, center UEI/CAGE/NAICS). No migration. Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:db6ea31ef3e60f7ef96a4d65615525ea0625069b84bdb749f1b9d661c3a0bd88
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
