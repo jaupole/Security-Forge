@@ -72,7 +72,10 @@ spec:
           # 9.15->11 toolchain bump. Dependency-only; no new migration. (pentest)
           # 2026-06-12: commit 639a6cf — shared PeriodChip (ecosystem-ui 0.1.9) +
           # period-aware /stats. Query-logic only; no new migration. MUST match 08.
-          image: ghcr.io/jaupole/proposal-forge@sha256:6e0f2dab17c4300454d7948504d93135d2063c128863d0d347eecae2916e991b
+          # 2026-06-12: commit a8480e6 — bfcache logout hardening (auth; digest
+          # 6e0f2dab, deployed separately). 06c717e — framed data-grid cover
+          # (column-aware wrap + single-page flex clip). No migration. MUST match 08.
+          image: ghcr.io/jaupole/proposal-forge@sha256:68d03ff5482cf7de87941f09688f7275694ba06c38da3121b0c95787b62d7cf8
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
