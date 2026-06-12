@@ -85,7 +85,9 @@ spec:
           # 2026-06-12: commit 3718f85 — widen cover box to margins (POC fits),
           # panel out of clip so bottom border always shows, real bordered box in
           # the Word cover too. No migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:b8a5644413cea74123a3553de5f03629c689235cf979d23618109054f530907e
+          # 2026-06-12: commit 291946a — cover footer pinned to page bottom +
+          # Contract Number cell centered. No migration. Lockstep with 09.
+          image: ghcr.io/jaupole/proposal-forge@sha256:f4fcbca5b6d9f84b160126c6efb44d7b8306e1553a2a85a430bc25118a807b95
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
