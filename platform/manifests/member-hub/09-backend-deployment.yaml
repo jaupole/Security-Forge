@@ -112,7 +112,10 @@ spec:
           # on the preview iframes (a srcdoc frame inherits the app CSP; an opaque
           # sandbox origin breaks `img-src 'self'` for same-host image URLs) +
           # drop Puck's no-op default Publish button — commit 33c0cc6.
-          image: ghcr.io/jaupole/member-hub@sha256:1500a0c45d823772be7747a9de73e7bd7b7a888dfd626c476ff6739d32204c27
+          # 2026-06-12: commit d583bde — shared PeriodChip (ecosystem-ui 0.1.9) on
+          # the dashboard + period-aware (?period=7d|30d|90d|12m) windowing of the
+          # members/revenue figures. No new migration. MUST match 08.
+          image: ghcr.io/jaupole/member-hub@sha256:9ee02e47e22aee8851c1517c7b8e6796756ac791ac0678b971545506a69fed9f
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
