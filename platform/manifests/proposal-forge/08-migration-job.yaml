@@ -77,7 +77,7 @@ spec:
           # 9.15->11 bump. Dependency-only; no new migration. Lockstep with 09.
           # 2026-06-12: commit 639a6cf — shared PeriodChip (ecosystem-ui 0.1.9) +
           # period-aware /stats. Query-logic only; no new migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:175238cf571df7eacdc8cd1b918452557bd46e6ab5ffd99890d8fe6d512c8f47
+          image: ghcr.io/jaupole/proposal-forge@sha256:6e0f2dab17c4300454d7948504d93135d2063c128863d0d347eecae2916e991b
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
