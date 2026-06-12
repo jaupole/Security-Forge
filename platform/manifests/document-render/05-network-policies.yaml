@@ -86,6 +86,10 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: control
+        # project-manager consumer (added 2026-06-12): Phase 5 status-report PDF.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: project-manager
         # Phase 2 — add when Project Tracker deploys to the cluster:
         # - namespaceSelector:
         #     matchLabels:

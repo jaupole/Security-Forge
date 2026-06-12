@@ -146,6 +146,34 @@ spec:
         - { protocol: TCP, port: 50051 }
 
 ---
+# Egress to the shared document-render (Gotenberg) service for status-report
+# PDF export (ADR-0037, Phase 5). Both namespaces are Istio Ambient, so the
+# call also rides ztunnel HBONE (:15008) alongside the app port :3000. The
+# ingress side on document-render needs its own allow (05) + AuthorizationPolicy
+# (06) — added there too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-document-render
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: document-render
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
 # Egress to Ecosystem Control's API.
 # lib/ecosystem-control.ts calls getMe() to fetch the active-org context.
 # The Service in `control` ns exposes port 80 → targetPort 4000.

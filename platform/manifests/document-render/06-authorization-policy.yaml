@@ -39,6 +39,8 @@ spec:
               - cluster.local/ns/proposal-forge/sa/proposal-forge
               # ecosystem-control consumer (added 2026-06-09).
               - cluster.local/ns/control/sa/control
+              # project-manager consumer (added 2026-06-12): Phase 5 status-report PDF.
+              - cluster.local/ns/project-manager/sa/project-manager
               # Phase 2 — add when Project Tracker deploys to the cluster:
               # - cluster.local/ns/project-tracker/sa/project-tracker
       # L4 ONLY (principal + port). This service has no waypoint proxy, so
