@@ -92,7 +92,8 @@ spec:
             # removed to drop an unused dependency and a crashloop surface;
             # re-add them with the role when a PII-encryption phase lands.
             # Gotenberg document rendering service (Phase 5 — status-report PDF).
-            - { name: GOTENBERG_URL, value: "http://document-render.document-render.svc.cluster.local:3000" }
+            # Service is named `gotenberg` in the document-render ns (10-services.yaml).
+            - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered Secret.
