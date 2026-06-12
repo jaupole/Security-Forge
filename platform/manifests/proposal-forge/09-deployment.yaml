@@ -84,7 +84,10 @@ spec:
           # Contract Number cell centered. No migration. MUST match 08.
           # 2026-06-12: commit 89af8fd — pin footer to TRUE page bottom (measured
           # via pdfjs) + trim spacing to widen the date gap. No migration. MUST match 08.
-          image: ghcr.io/jaupole/proposal-forge@sha256:3d275bc80bd283dbf118aae0c75786c5e72eae859bc555019f0bb16c2edc8e6a
+          # 2026-06-12: commit 7722937 — built-in cover rendered as its own page
+          # so the legend is a TRUE page footer (in the bottom margin) + Contract
+          # Number centered block. No migration. MUST match 08.
+          image: ghcr.io/jaupole/proposal-forge@sha256:8fc1c9a08281d1eb531c2cf63dee369b563d6da3b5917a26efc1b8f4517f5fae
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
