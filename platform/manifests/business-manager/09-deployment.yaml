@@ -59,7 +59,7 @@ spec:
         - name: app
           # 2026-06-11: org brand-kit logo (logos.mark) — business-manager commit d281fb0
           # (frontend brand fix; no schema delta). MUST match 08-migration-job.yaml.
-          image: ghcr.io/jaupole/business-manager@sha256:d9c747bd365072d1dbacd9d6b145713fa6e4bce3b3bf7c62e27b9a3a586e0372
+          image: ghcr.io/jaupole/business-manager@sha256:717eea319546cbc9b6398cc28f2a447b0febc33b3e551e6e9d1b471cbf416414
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
