@@ -71,7 +71,7 @@ spec:
       containers:
         - name: migrate
           # Bump to the current signed digest after first image build.
-          image: ghcr.io/jaupole/project-manager@sha256:cd72dcc8256e614b8d9eede2b541936efa5fc3779f8d8c97e7e255c19e66686e
+          image: ghcr.io/jaupole/project-manager@sha256:5a6d1b00a953eaf01cbc2ef6ce87e261053f1c7b891374952b1b9ccab7488922
           imagePullPolicy: IfNotPresent
           command: ["/nodejs/bin/node", "dist/db/migrate.js"]
           env:
