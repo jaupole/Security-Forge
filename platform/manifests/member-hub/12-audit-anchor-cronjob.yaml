@@ -169,7 +169,7 @@ spec:
               # workers/audit-anchor/anchor.ts as a tsx entrypoint.
               # Renovate / digest-bump cadence: in lockstep with the backend
               # image bumps.
-              image: ghcr.io/jaupole/member-hub@sha256:3bb9451edddbbc94a247ee0d985ed535d92260823f06e920a2b2e4c9497199c7
+              image: ghcr.io/jaupole/member-hub@sha256:6ea26ea69c954b9c36d1f7ef4da8f7863c9cd83469cc998221085bf64ee633c1
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
