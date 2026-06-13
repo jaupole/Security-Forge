@@ -145,17 +145,19 @@ should match:
   "waitIncrementSeconds": 120,
   "bruteForceProtected": true,
   "registrationAllowed": false,
-  "ssoSessionIdleTimeout": 900,
+  "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 28800,
   "ssoSessionIdleTimeoutRememberMe": 28800,
   "ssoSessionMaxLifespanRememberMe": 86400
 }
 ```
 
-Session lifetimes: a regular session idles out after 15 min and is hard-capped
+Session lifetimes: a regular session idles out after 30 min and is hard-capped
 at 8 h. A "Remember Me" session (the login-page checkbox) idles out after 8 h
 and is hard-capped at 24 h — tightened 2026-05-19 from the prior 7 d / 30 d
-for production session hygiene.
+for production session hygiene. Idle raised 15 → 30 min on 2026-06-13 to match
+the tenants realm: the BFF refreshes the IdP token lazily, so a 15-min SSO
+idle could lapse during an active-but-quiet stretch and sign a staff user out.
 
 Default required actions list should be:
 ```json

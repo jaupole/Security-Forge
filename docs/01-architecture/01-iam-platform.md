@@ -120,12 +120,12 @@ Identical for both realms unless noted.
 
 | Property | `platform` | `secforge-tenants` |
 |---|---|---|
-| SSO Session Idle Timeout | 15 min | 30 min |
+| SSO Session Idle Timeout | 30 min | 30 min |
 | SSO Session Max | 8 hours | 12 hours |
 | Remember-Me | 30 days (idle 7 days) | disabled |
 | Offline session idle | disabled (no offline tokens) | disabled |
 
-Idle timeouts deliberately tighter on `platform` because admin sessions hold authority over realm configuration; tenant users tolerate slightly more lenient idle.
+`platform` keeps a tighter absolute max (8 h vs 12 h) because admin sessions hold authority over realm configuration. The SSO idle was tightened to 15 min historically but raised to 30 min on 2026-06-13 to match the tenant realm: the BFF (`@jaupole/ecosystem-auth`) refreshes the IdP token lazily — only on access-token expiry, and Keycloak's SSO idle clock resets only on a refresh — so a 15-min idle could lapse during an active-but-quiet stretch while the BFF's own 30-min idle was still sliding, signing an active staff user out. The BFF idle remains the effective idle policy.
 
 ### OAuth / OIDC posture
 

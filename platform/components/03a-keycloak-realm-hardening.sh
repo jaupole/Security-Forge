@@ -22,8 +22,8 @@
 #                                    only 2FA)             alternative)
 #   webauthn-register defaultAction  true (forced)         false (opt-in)
 #   recovery-codes defaultAction     true (forced)         false (opt-in)
-#   session idle / max               900 / 28800           1800 / 43200
-#                                    (15 min / 8 h)        (30 min / 12 h)
+#   session idle / max               1800 / 28800          1800 / 43200
+#                                    (30 min / 8 h)        (30 min / 12 h)
 #   WebAuthn RpEntityName            SecForge Platform     SecForge
 #
 # Stages [02], [03], [06], [07], [08] are also declared in the realm-
@@ -305,7 +305,7 @@ TARGET="${1:-all}"
 # Args order matches harden_realm():
 #   realm  flow_alias                rp_name             idle  max    rmOtp    wReg    rec
 harden_platform() {
-  harden_realm "platform"         "browser-webauthn-required" "SecForge Platform" 900  28800 "true"  "true"  "true"
+  harden_realm "platform"         "browser-webauthn-required" "SecForge Platform" 1800 28800 "true"  "true"  "true"
 }
 
 harden_tenants() {

@@ -28,13 +28,21 @@ spec:
     enabled: true
 
     # ─── Session and token lifetimes ───────────────────────────────
-    # Idle 15 min, absolute 8h. Remember-me capped to 24h absolute /
+    # Idle 30 min, absolute 8h. Remember-me capped to 24h absolute /
     # 8h idle (2026-05-19 — production session hygiene; was 30d / 7d
     # idle). A ticked "Remember Me" now survives an overnight gap but
     # not a multi-day one. With mandatory passkeys, re-login is a
     # biometric tap. Replayed live by 03a-keycloak-realm-hardening.sh
     # since KeycloakRealmImport is one-shot.
-    ssoSessionIdleTimeout: 900
+    #
+    # Idle raised 15 → 30 min (2026-06-13) to match the tenants realm.
+    # The BFF (@jaupole/ecosystem-auth) refreshes the IdP token lazily —
+    # only when the access token has expired — so Keycloak's SSO idle
+    # clock (reset only on a refresh) could lapse during a quiet-but-
+    # active stretch while the BFF's own 30-min idle was still sliding,
+    # signing an active staff user out. 30 min gives the lazy refresh
+    # comfortable headroom; the BFF idle remains the real idle policy.
+    ssoSessionIdleTimeout: 1800
     ssoSessionMaxLifespan: 28800
     ssoSessionIdleTimeoutRememberMe: 28800
     ssoSessionMaxLifespanRememberMe: 86400

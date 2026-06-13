@@ -21,7 +21,7 @@ This ADR establishes a single canonical table of every long-lived-enough-to-care
 | Credential | Issuer | TTL | Renewal mechanism | Source of truth |
 |---|---|---|---|---|
 | Keycloak access token (all realms) | Keycloak | 5 min | `refresh_token` grant | `01-iam-platform.md` realm config |
-| Keycloak refresh token — `platform` realm | Keycloak | session-idle 15 min · remember-me 30 d | re-authentication | `01-iam-platform.md` |
+| Keycloak refresh token — `platform` realm | Keycloak | session-idle 30 min (was 15 min until 2026-06-13) · remember-me 30 d | re-authentication | `01-iam-platform.md` |
 | Keycloak refresh token — `secforge-tenants` realm | Keycloak | session-idle 30 min · no remember-me | re-authentication | `01-iam-platform.md` |
 | Keycloak realm signing key (RS256) | Keycloak | 90 d | rotation runbook | [`docs/03-runbooks/realm-signing-key-rotation.md`](../03-runbooks/realm-signing-key-rotation.md) |
 | SPIRE X.509-SVID | SPIRE Server | 1 h | auto-refresh by `spiffe-helper` / CSI driver | `06-workload-identity.md` |
