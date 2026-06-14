@@ -46,8 +46,18 @@ persistence:
   accessMode: ReadWriteOnce
 
 resources:
-  requests: { cpu: 200m, memory: 256Mi }
-  limits:   { cpu: 1,    memory: 1Gi }
+  requests: { cpu: 200m, memory: 512Mi }
+  limits:   { cpu: 1,    memory: 2Gi }
+# Recreate (not RollingUpdate): single replica on a RWO volume — a surge pod
+# cannot mount the PVC and would hang the rollout. Recreate stops the old pod
+# first. A brief (~seconds) MinIO blip on each upgrade is unavoidable here.
+deploymentUpdate:
+  type: Recreate
+# Go runtime soft memory limit so MinIO GC is cgroup-aware and reclaims before
+# pressing the hard limit. Added 2026-06-14 after recurring
+# ContainerMemoryNearLimit alerts (working set parked >90% of the old 1Gi cap).
+environment:
+  GOMEMLIMIT: "1800MiB"
 
 securityContext:
   enabled: true
