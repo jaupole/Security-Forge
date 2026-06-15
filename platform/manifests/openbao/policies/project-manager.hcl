@@ -44,6 +44,19 @@ path "secret/metadata/minio/cnpg/credentials" {
   capabilities = ["read"]
 }
 
+# App-level MinIO credentials for the project-manager-documents bucket
+# (per-project file attachments). Bucket-scoped service account with rw on
+# the documents bucket only — no access to backups/loki/etc. Provisioned
+# imperatively via manifests/minio/03-project-manager-documents-credentials-job.yaml;
+# rotate by issuing a new svc account, writing it here, and bouncing the
+# project-manager pod.
+path "secret/data/minio/project-manager-documents" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/project-manager-documents" {
+  capabilities = ["read"]
+}
+
 # Field-level PII encryption — Transit key shared with other apps.
 path "transit/encrypt/pii-encryption" {
   capabilities = ["update"]
