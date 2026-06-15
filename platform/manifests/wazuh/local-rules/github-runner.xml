@@ -1,0 +1,46 @@
+<!--
+  GitHub Actions self-hosted runner crash-loop / session-conflict detection.
+
+  Context (2026-06-15): ecosystem-control + project-manager runners spent ~3 days in
+  a SessionConflict restart loop. KillMode=process left an orphaned Runner.Listener
+  holding the GitHub runner session, so every systemd-restarted listener died on
+  "A session for this runner already exists" and was restarted again (NRestarts > 1100).
+  Nothing alerted: the unit exited cleanly (status 0), stayed systemd-"active" (never
+  "failed"), and the ~4 min/cycle cadence never tripped StartLimitBurst. The only
+  evidence lived in the journald stream the host wazuh-agent already forwards.
+  Self-heal added via ExecStartPre orphan-sweep on each actions.runner unit.
+
+  Rule IDs: 100210-100212 (free custom range; 100200-100203 belong to trivy_rules).
+-->
+<group name="github_runner,systemd,">
+
+  <!-- Base 1: systemd auto-restarted a runner unit (Restart=always fired). ANDs two
+       contiguous substrings (avoids OS_Regex .+ ambiguity): the unit name and the
+       "Scheduled restart job" text, which only appears on auto-restart after an
+       unexpected exit - not on a manual start/stop or a clean boot. -->
+  <rule id="100210" level="3">
+    <if_sid>40700</if_sid>
+    <match>Scheduled restart job, restart counter</match>
+    <regex>actions.runner</regex>
+    <description>GitHub Actions runner unit auto-restarted by systemd</description>
+    <group>github_runner,github_runner_event,</group>
+  </rule>
+
+  <!-- Base 2: runner cannot claim its session because an orphan listener holds it. -->
+  <rule id="100211" level="3">
+    <program_name negate="yes">^k3s</program_name>
+    <match>A session for this runner already exists</match>
+    <description>GitHub Actions runner session conflict (orphaned listener holds the session)</description>
+    <group>github_runner,github_runner_event,</group>
+  </rule>
+
+  <!-- Escalation: 3+ runner restart/conflict events within 15 min = crash loop.
+       level 12 + system_admin_attention surfaces it on the Maintenance Required
+       dashboard (same channel as OpenBao-sealed / Velero-failed alerts). -->
+  <rule id="100212" level="12" frequency="3" timeframe="900">
+    <if_matched_group>github_runner_event</if_matched_group>
+    <description>GitHub Actions self-hosted runner is CRASH-LOOPING (repeated restarts / session conflicts) - likely an orphaned Runner.Listener holding the session; CI for the affected repo is down</description>
+    <group>github_runner,github_runner_crashloop,system_admin_attention,</group>
+  </rule>
+
+</group>

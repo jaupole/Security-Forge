@@ -235,6 +235,12 @@ User=github-runner
 Group=github-runner
 WorkingDirectory=${RUNNER_DIR}
 ExecStart=${RUNNER_DIR}/run.sh
+# Self-heal the SessionConflict crash-loop (2026-06-15): KillMode=process leaves
+# the old Runner.Listener alive on restart; it keeps the GitHub session and every
+# new listener crash-loops on SessionConflictException. Sweep any leftover listener
+# for THIS runner before (re)starting. Leading - ignores pkill exit 1 (no match =
+# the healthy case). Scoped to Runner.Listener so an in-flight Worker is untouched.
+ExecStartPre=-/usr/bin/pkill -9 -u github-runner -f ${RUNNER_DIR}/bin/Runner.Listener
 Restart=always
 RestartSec=15s
 KillMode=process
