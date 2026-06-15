@@ -93,7 +93,8 @@ if id github-runner &>/dev/null; then
     log "Pruning dangling Docker images (rootless)..."
     rootless_docker image prune -f
     log "Pruning Docker build cache (rootless, keeping ${BUILDER_KEEP_STORAGE})..."
-    rootless_docker builder prune -f --keep-storage "${BUILDER_KEEP_STORAGE}"
+    # --keep-storage was renamed --reserved-space in newer Docker; try the new name first.
+    rootless_docker builder prune -f --reserved-space "${BUILDER_KEEP_STORAGE}" 2>/dev/null || rootless_docker builder prune -f --keep-storage "${BUILDER_KEEP_STORAGE}"
   else
     log "Rootless Docker (github-runner) not reachable - skipping volume + builder prune"
   fi
