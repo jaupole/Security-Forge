@@ -25,7 +25,7 @@
 #
 # Usage: sudo bash platform/scripts/runner-cleanup.sh
 #
-# Scheduled: /etc/cron.d/github-runner-cleanup (Mon/Wed/Fri 04:00, as root).
+# Scheduled: platform/host/runner-cleanup.cron -> /etc/cron.d/runner-cleanup (Mon/Wed/Fri 04:00 Europe/Berlin, as root).
 
 set -euo pipefail
 

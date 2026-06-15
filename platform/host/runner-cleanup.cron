@@ -4,14 +4,17 @@
 #   sudo cp platform/host/runner-cleanup.cron /etc/cron.d/runner-cleanup
 #   sudo chmod 644 /etc/cron.d/runner-cleanup
 #
-# Alternatively, append to root crontab:
-#   sudo crontab -l | cat - platform/host/runner-cleanup.cron | sudo crontab -
+# Schedule: 04:00 Europe/Berlin, Mon/Wed/Fri ("3x/week while in active dev",
+# 2026-06-15). Runs after the Velero daily backup (02:00) and clear of the
+# weekly backup window, to avoid I/O contention and capture backup objects
+# before the _work wipe. NOTE: /etc/cron.d entries run in the host TZ
+# (Europe/Berlin) — NOT UTC.
 #
-# Schedule: 03:30 UTC daily (after Velero daily backup at 02:00 completes,
-# before the weekly backup at 03:00 on Sundays — chosen to avoid I/O
-# contention and to ensure backup objects are captured before _work wipe).
+# Runs as root: runner-cleanup.sh drops to github-runner (uid 1001) for the
+# ROOTLESS docker prune and needs root to read the repo + delete runner files.
+# Path is the canonical deploy clone on this host (/home/ops/secforge).
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-30 3 * * * root bash /root/secforge/platform/scripts/runner-cleanup.sh >> /var/log/runner-cleanup.log 2>&1
+0 4 * * 1,3,5 root bash /home/ops/secforge/platform/scripts/runner-cleanup.sh >> /var/log/runner-cleanup.log 2>&1
