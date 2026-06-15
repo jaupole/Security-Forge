@@ -1,0 +1,18 @@
+# Cron fragment for the secforge-prod host (install as root).
+#
+# Install:
+#   sudo cp platform/host/k3s-datastore-backup.cron /etc/cron.d/k3s-datastore-backup
+#   sudo chmod 644 /etc/cron.d/k3s-datastore-backup
+#
+# Online SQLite (kine) snapshot of the k3s datastore -> MinIO (bucket
+# k3s-datastore-backups, SSE-S3, 7-day ILM retention). Lowers datastore RPO from
+# ~24h (Velero daily) to ~6h for SAME-HOST rollback. Full-host-loss DR remains
+# rebuild + Velero restore. Runbook: docs/03-runbooks/k3s-datastore-restore.md
+#
+# Runs as root: reads state.db + the scoped MinIO creds (k3s kubectl).
+# NOTE: /etc/cron.d entries run in the host TZ (Europe/Berlin), not UTC.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+0 */6 * * * root bash /home/ops/secforge/platform/scripts/k3s-datastore-backup.sh >> /var/log/k3s-datastore-backup.log 2>&1
