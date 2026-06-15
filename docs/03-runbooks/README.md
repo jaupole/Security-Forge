@@ -40,6 +40,7 @@ Each runbook should have:
 - [`istio-peer-auth-tighten.md`](./istio-peer-auth-tighten.md) — PeerAuthentication STRICT staging
 - [`ingress-nginx-to-istio-cutover.md`](./ingress-nginx-to-istio-cutover.md) — the ingress-nginx → Istio gateway cutover (ADR-0032)
 - [`system-ns-netpol-apply.md`](./system-ns-netpol-apply.md) — system-namespace NetworkPolicies
+- [`tailnet-split-dns.md`](./tailnet-split-dns.md) — Tailnet split-DNS for operator hosts (admin.* on the tailnet)
 
 **BFF & API**
 - [`bff-operations.md`](./bff-operations.md) — BFF debugging
@@ -54,18 +55,22 @@ Each runbook should have:
 - [`minio-sse-rotation.md`](./minio-sse-rotation.md) — SSE-S3 key rotation
 - [`minio-version-upgrade.md`](./minio-version-upgrade.md) — MinIO version upgrades
 - [`member-hub-documents-bucket.md`](./member-hub-documents-bucket.md) — Member Hub documents bucket + svcacct
+- [`ecosystem-graphics-bucket.md`](./ecosystem-graphics-bucket.md) — provision the ecosystem-graphics MinIO bucket + credentials
 
 **Apps & deploys**
 - [`deploy-app-image.md`](./deploy-app-image.md) — manual digest-pinned image bump (control/portal/member-hub)
 - [`proposal-forge-deploy.md`](./proposal-forge-deploy.md) — Proposal Forge deploy
 - [`new-app-bootstrap.md`](./new-app-bootstrap.md) — onboarding a new app
 - [`quickbooks-online-setup.md`](./quickbooks-online-setup.md) — QBO integration setup
+- [`gotenberg-build-and-deploy.md`](./gotenberg-build-and-deploy.md) — build/deploy/verify the Gotenberg document-rendering service
+- [`github-runner-crashloop.md`](./github-runner-crashloop.md) — self-hosted CI runner SessionConflict crash-loop self-heal + cleanup + Wazuh alert
 
 **Observability & SIEM**
 - [`grafana-dashboards.md`](./grafana-dashboards.md) · [`alerts.md`](./alerts.md) — dashboards + alert tuning
 - [`wazuh-operations.md`](./wazuh-operations.md) — Wazuh manager/indexer ops
 - [`audit-anchors.md`](./audit-anchors.md) — app audit-log anchoring/signing
 - [`platform-audit-anchor-activation.md`](./platform-audit-anchor-activation.md) — activate the OpenBao audit-log anchor (X-R1)
+- [`platform-loki-audit-anchor.md`](./platform-loki-audit-anchor.md) — Loki log-sink audit anchor (X-R1 #85 Phase 2)
 
 **Security, DR & maintenance**
 - [`k3s-encryption-reenable.md`](./k3s-encryption-reenable.md) — secrets-at-rest re-enable
