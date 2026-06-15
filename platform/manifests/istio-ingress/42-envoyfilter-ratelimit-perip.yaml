@@ -1,0 +1,93 @@
+# Gateway PER-CLIENT-IP local rate-limit (H-2, internet-live hardening).
+#
+# Complements 41-envoyfilter-ratelimit.yaml (the GLOBAL 2000 req/s volumetric
+# cap). That one can't stop a single noisy IP from consuming the whole global
+# budget (noisy-neighbor DoS) or a distributed-but-per-IP-cheap scrape. This
+# adds a SEPARATE local_ratelimit HTTP filter whose token buckets are keyed per
+# masked remote address, so each client IP gets its own bucket.
+#
+# WHY A SEPARATE FILTER (not extend 41): `filter_enforced` is per-filter, so to
+# run this per-IP control monitor-first WITHOUT also disabling the already-
+# enforcing global bucket in 41, it must be its own filter with its own
+# stat_prefix + runtime keys. Both filters run in the chain independently.
+#
+# CLIENT IP: the public gateway pods bind hostPort 80/443 directly on the node
+# (see 11-public-gateway.yaml) — there is NO L4 LB in front — so Envoy's
+# downstream remote address IS the real client IP. `masked_remote_address`
+# therefore keys on the true client /32 (v4) or /64 (v6); no XFF trust needed.
+#
+# STATE: MONITOR-FIRST (filter_enforced numerator = 0). Deployed observe-only so
+# a mis-sized bucket cannot 429 legitimate traffic. The filter-level token_bucket
+# is set effectively unlimited (global enforcement stays in 41); only the
+# per-IP DESCRIPTOR bucket matters here.
+#
+# OBSERVE (the proxyStatsMatcher inclusion in 11-public-gateway.yaml must already
+# expose http_local_rate_limit.* — same prerequisite as 41):
+#   POD=$(kubectl -n istio-ingress get pod -l istio=ingress -o name | head -1)
+#   kubectl -n istio-ingress exec "$POD" -c istio-proxy -- \
+#     pilot-agent request GET stats | grep 'http_local_rate_limit.secforge_gateway_rl_perip'
+#   # Watch .rate_limited under real traffic. It should stay ~0 for normal users.
+#   # NOTE: shared NAT / CGNAT / corporate egress can legitimately exceed a low
+#   # per-IP rate — tune max_tokens UP if real clients get limited, then flip
+#   # filter_enforced numerator 0 -> 100 and re-apply (xDS push, NO restart).
+#
+# ENFORCE: after the monitor window shows rate_limited ~0 for legit traffic,
+# set filter_enforced.default_value.numerator: 100 and re-apply.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-ratelimit-perip
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-gateway
+spec:
+  workloadSelector:
+    labels:
+      istio: ingress
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit.perip
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            stat_prefix: secforge_gateway_rl_perip
+            # Filter-level bucket: effectively unbounded — global volumetric
+            # enforcement lives in 41. Per-IP control is the descriptor below.
+            token_bucket:
+              max_tokens: 1000000
+              tokens_per_fill: 1000000
+              fill_interval: 1s
+            filter_enabled:
+              default_value: {numerator: 100, denominator: HUNDRED}
+              runtime_key: secforge_gateway_rl_perip_enabled
+            filter_enforced:
+              # MONITOR-FIRST: 0 = count only, never block. Flip to 100 to enforce.
+              default_value: {numerator: 0, denominator: HUNDRED}
+              runtime_key: secforge_gateway_rl_perip_enforced
+            # Per-IP bucket: 100 tokens, refilled 100/s => ~100 req/s per client
+            # /32. Generous vs a browser's burst, but caps a single abusive IP at
+            # ~5% of the 2000/s global ceiling (=> >=20 distinct IPs needed to
+            # saturate the node). Tune from observed counters before enforcing.
+            descriptors:
+              - entries:
+                  - key: masked_remote_address
+                token_bucket:
+                  max_tokens: 100
+                  tokens_per_fill: 100
+                  fill_interval: 1s
+            rate_limits:
+              - actions:
+                  - masked_remote_address:
+                      v4_prefix_mask_len: 32
+                      v6_prefix_mask_len: 64
+            response_headers_to_add:
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                header: {key: x-secforge-ratelimit-perip, value: "gateway"}
