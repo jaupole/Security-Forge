@@ -72,6 +72,7 @@ Each runbook should have:
 - [`base-image-cve-cadence.md`](./base-image-cve-cadence.md) — base-image CVE cadence
 - [`velero-restore-drill-leastpriv.md`](./velero-restore-drill-leastpriv.md) — Velero restore drill
 - [`dr-drill-tier1-findings.md`](./dr-drill-tier1-findings.md) — Tier-1 DR drill findings
+- [`k3s-datastore-restore.md`](./k3s-datastore-restore.md) — k3s SQLite (kine) datastore backup + same-host restore (#95)
 
 > Operator access is the **Tailscale tailnet** (no Teleport) — see
 > [01-architecture/09-privileged-access.md](../01-architecture/09-privileged-access.md) and

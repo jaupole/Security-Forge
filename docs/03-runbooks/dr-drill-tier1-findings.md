@@ -159,3 +159,13 @@ After the two fixes:
 ```bash
 kind delete cluster --name sf-dr
 ```
+
+
+## See also — faster same-host datastore rollback (#95)
+
+For datastore corruption or a bad bulk change that does NOT need a full greenfield rebuild,
+there is now a 6-hourly online SQLite snapshot of `state.db` in MinIO (bucket
+`k3s-datastore-backups`, SSE-S3, ~6h RPO) — restore it in place per
+[`k3s-datastore-restore.md`](./k3s-datastore-restore.md). The full rebuild + Velero restore
+documented above remains the path for full host loss (it also restores the secrets-encryption
+key, which the datastore snapshot deliberately omits).

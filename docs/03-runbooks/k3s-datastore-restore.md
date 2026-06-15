@@ -57,7 +57,7 @@ If the cluster does not come up, restore the pre-restore copy back over `state.d
 stop / replace / rm-wal-shm / start dance) and investigate.
 
 After a successful restore, expect the single-node reboot-recovery items (openbao unseal,
-ambient ztunnel/cni) per `docs/03-runbooks/single-node-reboot-recovery.md` if k3s was down long.
+ambient ztunnel/cni) per `docs/03-runbooks/openbao-seal-unseal.md` if k3s was down long.
 
 ## Re-provision the MinIO user/bucket (DR / key rotation)
 The bucket + scoped user are created by `platform/manifests/minio/03-k3s-datastore-backup-credentials-job.yaml`.
