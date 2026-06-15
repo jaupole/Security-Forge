@@ -109,6 +109,18 @@ spec:
               mc version enable local/member-hub-documents
               mc encrypt set sse-s3 local/member-hub-documents
 
+              # project-manager-documents: versioned + SSE-S3 server-side
+              # encryption. Holds per-project file attachments (subcontracts,
+              # vendor quotes, drawings) uploaded via Project Manager's
+              # documents API. The MinIO service account the app uses is
+              # provisioned out-of-band by
+              # 03-project-manager-documents-credentials-job.yaml (see
+              # docs/03-runbooks/project-manager-documents-bucket.md) — this
+              # Job only owns bucket creation, never credentials.
+              mc mb --ignore-existing local/project-manager-documents
+              mc version enable local/project-manager-documents
+              mc encrypt set sse-s3 local/project-manager-documents
+
               # ecosystem-graphics: per-org branded graphics library
               # (ADR-0001 Phase A in Member Hub/docs/02-decisions/).
               # Owned by Ecosystem Control; consumed cross-app by Member
