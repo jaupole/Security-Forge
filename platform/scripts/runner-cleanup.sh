@@ -24,6 +24,8 @@
 #     can be added below if GC proves too slow.
 #
 # Usage: sudo bash platform/scripts/runner-cleanup.sh
+#
+# Scheduled: /etc/cron.d/github-runner-cleanup (Mon/Wed/Fri 04:00, as root).
 
 set -euo pipefail
 
@@ -76,13 +78,27 @@ reclaimed_cache=$(( (after_cache - before_cache) / 1024 ))
 log "Cache cleanup done — approx ${reclaimed_cache} MiB reclaimed from /"
 
 # ── 3. Docker dangling volumes ────────────────────────────────────────────────
-if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-  log "Pruning dangling Docker volumes..."
-  docker volume prune -f
-  log "Pruning Docker build cache (keeping ${BUILDER_KEEP_STORAGE})..."
-  docker builder prune -f --keep-storage "${BUILDER_KEEP_STORAGE}"
+if id github-runner &>/dev/null; then
+  ruid="$(id -u github-runner)"
+  rootless_docker() {
+    sudo -u github-runner env XDG_RUNTIME_DIR="/run/user/${ruid}" DOCKER_HOST="unix:///run/user/${ruid}/docker.sock" docker "$@"
+  }
+  # CI uses the ROOTLESS docker daemon (github-runner, uid 1001); the rootful
+  # docker.service is disabled (ADR-0039). Prune the rootless socket as that
+  # user - NOT plain 'docker' as root, which reaches the empty/disabled root
+  # daemon and silently skips everything (the bug that let the store hit 13G).
+  if rootless_docker info &>/dev/null; then
+    log "Pruning dangling Docker volumes (rootless)..."
+    rootless_docker volume prune -f
+    log "Pruning dangling Docker images (rootless)..."
+    rootless_docker image prune -f
+    log "Pruning Docker build cache (rootless, keeping ${BUILDER_KEEP_STORAGE})..."
+    rootless_docker builder prune -f --keep-storage "${BUILDER_KEEP_STORAGE}"
+  else
+    log "Rootless Docker (github-runner) not reachable - skipping volume + builder prune"
+  fi
 else
-  log "Docker not available or not running — skipping volume + builder prune"
+  log "github-runner user not present - skipping Docker prune"
 fi
 
 log "Done."
