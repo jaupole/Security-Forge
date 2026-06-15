@@ -227,6 +227,26 @@ spec:
         host: control.control.svc.cluster.local
         port:
           number: 80
+  # Intuit/QuickBooks webhook — POST /webhook on the same dedicated public
+  # QBO host as the OAuth /callback above. Routes to Member Hub (which owns
+  # the invoices + the settlement tick that acts on the notification);
+  # authority is rewritten to members.${DOMAIN} so the request reaches
+  # member-hub identically to a direct hit (no Host-allowlist surprise).
+  # The receiver verifies the intuit-signature HMAC and stays 503 until
+  # QBO_WEBHOOK_VERIFIER_TOKEN is set. Register https://qbo.${DOMAIN}/webhook
+  # in the Intuit app.
+  - match:
+    - uri:
+        prefix: /webhook
+    name: qbo-webhook
+    rewrite:
+      uri: /api/webhooks/qbo
+      authority: members.${DOMAIN}
+    route:
+    - destination:
+        host: member-hub.member-hub.svc.cluster.local
+        port:
+          number: 80
 ---
 # Stripe Connect OAuth callback — dedicated PUBLIC host. The admin Portal
 # origin (control/admin.${DOMAIN}) is tailnet-only and Stripe can't reach
