@@ -34,6 +34,8 @@ spec:
         app.kubernetes.io/name: project-manager
         app.kubernetes.io/component: app
         secforge.platform/component: project-manager
+        # MinIO chart's cross-ns NetworkPolicy gates ingress on this label.
+        minio-client: "true"
     spec:
       serviceAccountName: project-manager
       automountServiceAccountToken: false
@@ -94,6 +96,16 @@ spec:
             # Gotenberg document rendering service (Phase 5 — status-report PDF).
             # Service is named `gotenberg` in the document-render ns (10-services.yaml).
             - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
+            # ─── Object storage (project document attachments) ─────────
+            # MinIO is in-cluster; HTTP (no TLS) — the mesh + namespace
+            # NetworkPolicy keep traffic on the cluster network. SSE-S3
+            # encryption-at-rest is set on the bucket itself. MINIO_ACCESS_KEY
+            # + MINIO_SECRET_KEY come from the project-manager-documents-minio
+            # Secret via envFrom below.
+            - { name: MINIO_ENDPOINT, value: "minio.minio.svc.cluster.local" }
+            - { name: MINIO_PORT,     value: "9000" }
+            - { name: MINIO_USE_SSL,  value: "false" }
+            - { name: MINIO_BUCKET,   value: project-manager-documents }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered Secret.
@@ -101,6 +113,14 @@ spec:
             # via the VaultStaticSecret in 04-vso-bindings.yaml.
             - secretRef:
                 name: project-manager-app-secrets
+            # Adds MINIO_ACCESS_KEY + MINIO_SECRET_KEY rendered from
+            # secret/minio/project-manager-documents (bucket-scoped svc
+            # account; rw on project-manager-documents only). OPTIONAL so the
+            # pod starts before the bucket/creds are provisioned — until then
+            # the app has no MinIO env and document uploads return a clean 503.
+            - secretRef:
+                name: project-manager-documents-minio
+                optional: true
           resources:
             requests: { cpu: 50m,  memory: 128Mi }
             limits:   { cpu: 500m, memory: 256Mi }

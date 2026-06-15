@@ -142,3 +142,44 @@ spec:
           text: '{{ .Secrets.access_key }}'
         ACCESS_SECRET_KEY:
           text: '{{ .Secrets.secret_key }}'
+
+---
+# App-level MinIO credentials for the project-manager-documents bucket.
+# Distinct from the CNPG barman creds above (shared `backups` bucket); this
+# set grants rw on the per-app `project-manager-documents` bucket only, used
+# by the documents API (modules/documents) for project file attachments.
+#
+# Rendered as MINIO_ACCESS_KEY + MINIO_SECRET_KEY, consumed via envFrom on
+# the backend Deployment (09-backend-deployment.yaml).
+#
+# OPERATOR PREREQUISITE: the OpenBao secret at secret/minio/project-manager-
+# documents (keys: access_key, secret_key) must exist, created alongside the
+# MinIO bucket + a bucket-scoped service account. Until then VSO leaves the
+# Secret unrendered and uploads return a clean 503.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: project-manager-documents-minio-vso
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: project-manager-vso
+  mount: secret
+  type: kv-v2
+  path: minio/project-manager-documents
+  refreshAfter: 1h
+  destination:
+    name: project-manager-documents-minio
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        MINIO_ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        MINIO_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'

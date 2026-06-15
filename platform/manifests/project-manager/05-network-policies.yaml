@@ -279,6 +279,33 @@ spec:
         - { protocol: TCP, port: 9000 }
 
 ---
+# App-pod egress to MinIO — required by the documents API (modules/documents)
+# to upload/download project file attachments to the project-manager-documents
+# bucket. Distinct from the CNPG egress above (different pod selector); same
+# destination ns + port. Without this, uploads fail with ECONNREFUSED because
+# the default-deny-egress baseline blocks the connection at L3.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-app-to-minio
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
 # Egress to the public internet on HTTPS for outbound third-party API calls
 # (document rendering callbacks, external integrations, etc.).
 # Scoped to the API container only. CIDR: 0.0.0.0/0 minus private ranges.
