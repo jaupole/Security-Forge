@@ -54,7 +54,7 @@ spec:
         message: |
           Admin Ingresses (hostnames starting with wazuh., grafana.,
           openbao-admin., auth-admin., prometheus., alertmanager.,
-          argocd., kibana., discover., or pf.) MUST set the annotation
+          argocd., kibana., or discover.) MUST set the annotation
           nginx.ingress.kubernetes.io/whitelist-source-range to a value
           that includes 100.64.0.0/10 (Tailscale CGNAT range).
 
@@ -80,7 +80,6 @@ spec:
                   - "argocd.*"
                   - "kibana.*"
                   - "discover.*"
-                  - "pf.*"
               # AND annotation is missing or doesn't include the CGNAT range.
               - key: "{{ request.object.metadata.annotations.\"nginx.ingress.kubernetes.io/whitelist-source-range\" || '' }}"
                 operator: NotIn

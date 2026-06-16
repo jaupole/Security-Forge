@@ -1,9 +1,12 @@
 # Istio routing for projects.${DOMAIN}.
 #
-# Tailnet-only: attached to secforge-gateway-tailnet ONLY (no public DNS
-# A record for projects.${DOMAIN}; operator's hosts file maps it to
-# ${TAILNET_IP}). Mirrors the proposal-forge and business-manager
-# VirtualServices in platform/manifests/istio-ingress/20-virtualservices.yaml.
+# Public + tailnet since 2026-06-16 (operator decision): attached to both
+# secforge-gateway (public) and secforge-gateway-tailnet. Reaching it over the
+# internet requires a public DNS A record for projects.${DOMAIN} → ${PUBLIC_IP};
+# the *.${DOMAIN} wildcard TLS cert already covers the host. The app enforces
+# Keycloak OIDC + org-scoped authz + RLS + the app-activation gate. Mirrors the
+# proposal-forge and business-manager VirtualServices in
+# platform/manifests/istio-ingress/20-virtualservices.yaml.
 #
 # IMPORTANT: This VirtualService lives here in the project-manager dir for
 # review convenience. When applying, it must be applied alongside (or after)
@@ -18,6 +21,7 @@ metadata:
     secforge.platform/component: istio-gateway
 spec:
   gateways:
+    - istio-ingress/secforge-gateway
     - istio-ingress/secforge-gateway-tailnet
   hosts:
     - projects.${DOMAIN}

@@ -1,7 +1,9 @@
 # Public-host routing. One VirtualService per backend, attached to
 # secforge-gateway (public) and — for hosts an operator also reaches over the
-# tailnet — secforge-gateway-tailnet too. Tailnet-only hosts (grafana, bao, pf,
-# wazuh) attach to the tailnet gateway ONLY (no public DNS). See ADR-0032.
+# tailnet — secforge-gateway-tailnet too. Tailnet-only hosts (grafana, bao,
+# wazuh, kc) attach to the tailnet gateway ONLY (no public DNS). See ADR-0032.
+# NOTE: pf, bm and projects were moved tailnet-only → public on 2026-06-16
+# (operator decision); they enforce Keycloak OIDC + org-scoped authz + RLS.
 #
 # Captured from the live cluster 2026-06-03 (kubectl-diff-clean). The
 # control/admin tailnet VirtualService lives in 10-tailnet-gateway.yaml.
@@ -191,6 +193,7 @@ metadata:
   namespace: istio-ingress
 spec:
   gateways:
+  - istio-ingress/secforge-gateway
   - istio-ingress/secforge-gateway-tailnet
   hosts:
   - pf.${DOMAIN}
@@ -300,9 +303,10 @@ spec:
         port:
           number: 5601
 ---
-# Business Manager (ecosystem app managerapp) — tailnet-only, mirrors PF. No
-# public DNS A record; the operator's hosts file maps bm.${DOMAIN} → the host's
-# tailnet IP. Single Express service serves /api/business-manager/* + the SPA.
+# Business Manager (ecosystem app managerapp) — mirrors PF. Public + tailnet
+# since 2026-06-16; reached at bm.${DOMAIN} over the public gateway (a public
+# DNS A record for bm.${DOMAIN} → ${PUBLIC_IP} is required) and still over the
+# tailnet. Single Express service serves /api/business-manager/* + the SPA.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
@@ -312,6 +316,7 @@ metadata:
   namespace: istio-ingress
 spec:
   gateways:
+  - istio-ingress/secforge-gateway
   - istio-ingress/secforge-gateway-tailnet
   hosts:
   - bm.${DOMAIN}
