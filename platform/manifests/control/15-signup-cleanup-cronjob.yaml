@@ -77,7 +77,7 @@ spec:
             - name: cleanup
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:1994f83f9d1fbdb6eabb1ca4722664bfb544d0121b7a98b6f72a56af0070c3d1
+              image: ghcr.io/jaupole/control@sha256:50807b630c74926161a65655024235ceecce6ff0651da46c02498fb20fcbbeaf
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "signup:cleanup-stale"]
               env:
