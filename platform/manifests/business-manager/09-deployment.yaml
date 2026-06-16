@@ -70,6 +70,9 @@ spec:
             - { name: HOST, value: "0.0.0.0" }
             # Lifts the PTRK-001 loopback tripwire: auth is enabled.
             - { name: BM_AUTH_MODE, value: oidc }
+            # Feature flag: B&L weekly burn-tracking module (authoritative API
+            # gate; the UI is baked into the image via VITE_FEATURE_BL_TRACKING).
+            - { name: BM_FEATURE_BL_TRACKING, value: "true" }
             # Writable HOME under readOnlyRootFilesystem (lib caches).
             - { name: HOME, value: "/tmp" }
             # Keycloak presents its internal cert in-cluster (auth.${DOMAIN} →
