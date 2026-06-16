@@ -16,10 +16,13 @@
 # downstream remote address IS the real client IP. `masked_remote_address`
 # therefore keys on the true client /32 (v4) or /64 (v6); no XFF trust needed.
 #
-# STATE: MONITOR-FIRST (filter_enforced numerator = 0). Deployed observe-only so
-# a mis-sized bucket cannot 429 legitimate traffic. The filter-level token_bucket
-# is set effectively unlimited (global enforcement stays in 41); only the
-# per-IP DESCRIPTOR bucket matters here.
+# STATE: ENFORCING since 2026-06-16 (filter_enforced numerator = 100), turned on
+# alongside making pf/bm/projects public. Each client /32 (v4) or /64 (v6) is
+# capped at ~100 req/s; over-budget requests get a 429. The filter-level
+# token_bucket is set effectively unlimited (global enforcement stays in 41);
+# only the per-IP DESCRIPTOR bucket matters here. Revert to count-only by setting
+# filter_enforced numerator back to 0 and re-applying (xDS push, no restart) if a
+# mis-sized bucket 429s legitimate shared-NAT/CGNAT clients — watch the counter.
 #
 # OBSERVE (the proxyStatsMatcher inclusion in 11-public-gateway.yaml must already
 # expose http_local_rate_limit.* — same prerequisite as 41):
@@ -69,8 +72,10 @@ spec:
               default_value: {numerator: 100, denominator: HUNDRED}
               runtime_key: secforge_gateway_rl_perip_enabled
             filter_enforced:
-              # MONITOR-FIRST: 0 = count only, never block. Flip to 100 to enforce.
-              default_value: {numerator: 0, denominator: HUNDRED}
+              # ENFORCING (2026-06-16): 100 = block over-budget requests. Set to 0
+              # to revert to count-only (xDS push, no restart) if a mis-sized
+              # bucket 429s legitimate shared-NAT/CGNAT clients.
+              default_value: {numerator: 100, denominator: HUNDRED}
               runtime_key: secforge_gateway_rl_perip_enforced
             # Per-IP bucket: 100 tokens, refilled 100/s => ~100 req/s per client
             # /32. Generous vs a browser's burst, but caps a single abusive IP at
