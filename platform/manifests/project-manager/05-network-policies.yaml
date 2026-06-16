@@ -385,3 +385,27 @@ spec:
       ports:
         - { protocol: TCP, port: 3003 }
         - { protocol: TCP, port: 15008 }
+
+---
+# P3 cross-app sync: accept the BM feed poller (cross-namespace, machine-to-
+# machine) on the app + HBONE ports. The feed routes enforce their own bearer +
+# azp gate; this just lets BM's pods reach PM's at L4.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-business-manager
+  namespace: project-manager
+  labels: { secforge.platform/component: project-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: business-manager
+      ports:
+        - { protocol: TCP, port: 3003 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel

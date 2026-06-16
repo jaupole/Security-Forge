@@ -276,3 +276,27 @@ spec:
       ports:
         - { protocol: TCP, port: 3001 }
         - { protocol: TCP, port: 15008 }
+
+---
+# P3 cross-app sync: BM pulls per-org projects from Project Manager's in-cluster
+# feed (project-manager.project-manager.svc:80 → pod :3003). Egress to the app
+# port + HBONE (Istio Ambient ztunnel) so the call leaves the default-deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-project-manager
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: project-manager
+      ports:
+        - { protocol: TCP, port: 3003 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
