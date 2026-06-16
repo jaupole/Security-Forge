@@ -85,3 +85,14 @@ kubectl get virtualservice -A -o jsonpath='{range .items[*]}{.spec.gateways}{" |
 ```
 Edit `platform/host/dnsmasq/secforge-tailnet.conf`, re-copy to `/etc/dnsmasq.d/`, and
 `sudo systemctl restart dnsmasq`.
+
+> **Do not leave a backup copy inside `/etc/dnsmasq.d/`.** dnsmasq parses *every*
+> file in that directory, so a `secforge-tailnet.conf.bak` there duplicates the
+> `listen-address`/`address=` keywords and the service fails to start with
+> `illegal repeated keyword …` — `dnsmasq --test` passes but the systemd
+> `ExecStartPre` check (and the restart) fails. Keep backups outside the dir
+> (e.g. `/root/`). When removing a now-public host, also drop any matching
+> `address=/host.secforge.dev/100.77.117.112` override so tailnet devices resolve
+> it to the public gateway. (2026-06-16: the live node had a `projects` override
+> that was never committed — re-installing the repo file removed it; watch for
+> such hand-edits drifting from the source of truth.)
