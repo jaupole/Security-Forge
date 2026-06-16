@@ -72,6 +72,10 @@ spec:
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
             - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
+            # Cross-app SYNC (P3): the BM→PM feed also accepts a Keycloak token
+            # whose azp is this client, serving the org named in ?org=. JWKS is
+            # fetched from KEYCLOAK_URL (internal CA already trusted above).
+            - { name: SYNC_SYSTEM_CLIENT_ID, value: ecosystem-sync-system }
             # Cross-app theme cookie: scope to the shared parent domain.
             - { name: THEME_COOKIE_DOMAIN, value: ".${DOMAIN}" }
             # User-login OIDC client. OIDC_CLIENT_SECRET + OIDC_CLIENT_SECRET_TENANTS

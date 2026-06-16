@@ -88,6 +88,13 @@ spec:
         # at secret/apps/business-manager/runtime (OpenBao UI).
         BM_SYSTEM_CLIENT_SECRET:
           text: '{{ if .Secrets.system_client_secret }}{{ .Secrets.system_client_secret }}{{ end }}'
+        # ecosystem-sync-system client-credentials secret — lets BM pull per-org
+        # projects from Project Manager's read-only feed (P3 cross-app sync).
+        # Optional: absent → the "Sync from PM" action returns a clean
+        # "not configured" error. Operator sets `sync_client_secret` at
+        # secret/apps/business-manager/runtime (OpenBao UI).
+        SYNC_SYSTEM_CLIENT_SECRET:
+          text: '{{ if .Secrets.sync_client_secret }}{{ .Secrets.sync_client_secret }}{{ end }}'
 
 ---
 # GHCR image-pull credential (read:packages PAT on jaupole/business-manager).
