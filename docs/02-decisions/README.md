@@ -33,7 +33,7 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0025](./0025-jwt-auth-role-token-ttl-rule.md) | JWT auth role `token_ttl` MUST exceed dynamic-credential `default_ttl` | Accepted |
 | [0026](./0026-org-defined-custom-roles-rbac-layer.md) | Org-defined custom roles as an RBAC layer on SpiceDB ReBAC | Accepted |
 | [0027](./0027-multi-org-membership-and-hierarchy.md) | Multi-organization membership and no-cascade hierarchy | In progress (stub) |
-| [0028](./0028-approval-gated-cross-app-workflows.md) | Approval-gated cross-app workflows (pursuit→proposal, proposal→project) | In progress (stub) |
+| [0028](./0028-approval-gated-cross-app-workflows.md) | Approval-gated cross-app workflows (pursuit→proposal, proposal→project) | Accepted — proposal→project (award handoff) contract specified; phased build |
 | [0029](./0029-per-app-database-strategy.md) | Per-app database strategy — separate DBs with shared UUIDs from control plane | In progress (stub) |
 | [0030](./0030-custom-portal-as-sole-admin-ux.md) | Custom portal as sole admin UX; Keycloak default UI never shown to end users | In progress (stub) |
 | [0031](./0031-minio-kes-for-sse-rotation.md) | MinIO KES for SSE-S3 key rotation | Superseded (drain-and-rotate; KES kept as fallback) |
