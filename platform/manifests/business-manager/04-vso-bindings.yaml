@@ -81,6 +81,13 @@ spec:
         # breaking app startup.
         SAM_GOV_API_KEY:
           text: '{{ if .Secrets.sam_gov_api_key }}{{ .Secrets.sam_gov_api_key }}{{ end }}'
+        # business-manager-system Keycloak client-credentials secret — lets the
+        # burn-tracking poller read per-org IMAP config from Control's /system/*
+        # endpoint. Optional: absent → mailbox polling disabled (enable/config +
+        # manual hours entry still work). Operator sets `system_client_secret`
+        # at secret/apps/business-manager/runtime (OpenBao UI).
+        BM_SYSTEM_CLIENT_SECRET:
+          text: '{{ if .Secrets.system_client_secret }}{{ .Secrets.system_client_secret }}{{ end }}'
 
 ---
 # GHCR image-pull credential (read:packages PAT on jaupole/business-manager).

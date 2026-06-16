@@ -1029,3 +1029,38 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "true"
               lightweight.claim: "false"
+
+      # ─── business-manager-system (Ecosystem Control service-account) ───
+      # Backend-to-backend: BM's burn-tracking poller reads per-org IMAP config
+      # from Control's /api/v1/system/bl-tracking/* (Control gates by `azp`).
+      # client-credentials only; never a user login. Mirrors member-hub-system.
+      - clientId: business-manager-system
+        name: Business Manager → Control System Client
+        description: Business Manager → Control service-account for the burn-tracking mailbox poller.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          # Self-audience for audience-discipline consistency (Control trusts azp,
+          # not aud — same as member-hub-system).
+          - name: aud-self
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: business-manager-system
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "false"
+              lightweight.claim: "false"
