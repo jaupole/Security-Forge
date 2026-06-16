@@ -72,7 +72,7 @@ spec:
           # 2026-06-11: org brand-kit logo (logos.mark) — business-manager commit d281fb0.
           # No new migrations; this Job is NOT re-run for this deploy (already-completed
           # at the prior digest; identical migration set).
-          image: ghcr.io/jaupole/business-manager@sha256:d4e148292d550bc3853e296ee16d9b63e166580a3fd3a78cbe84298335243b5d
+          image: ghcr.io/jaupole/business-manager@sha256:512a67bd772733a7ab7e48ea954fceb636fe58f7cb0f73b1e1196ebc613d7de8
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT.
