@@ -70,7 +70,7 @@ spec:
           # "What's happening" feed (meaningful-only) — commit 07daf30.
           # 2026-06-09: hero rendered centered + larger; redundant top-left
           # nav mark hidden while the hero is on screen — commit 007163d.
-          image: ghcr.io/jaupole/portal@sha256:0211cfdee4baf3c02122c303eaa78d69c1478ea0a6d828b27c5af7a5d0cbcca6
+          image: ghcr.io/jaupole/portal@sha256:0a53400d5f47d5ea0db880217a2d78ae0937659dbf5b0906790d9429f2927c7a
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 8080, name: http, protocol: TCP }
