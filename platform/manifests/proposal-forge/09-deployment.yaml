@@ -106,6 +106,10 @@ spec:
             - { name: NODE_EXTRA_CA_CERTS, value: "/etc/secforge/openbao-ca.crt" }
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
+            # Cross-app SYNC (P4): the BM→PF feed accepts a Keycloak token whose
+            # azp is this client, serving the org named in ?org=. JWKS from
+            # KEYCLOAK_URL (internal CA trusted via NODE_EXTRA_CA_CERTS above).
+            - { name: SYNC_SYSTEM_CLIENT_ID, value: ecosystem-sync-system }
             # Tenants realm (Shape B). With its client secret in OpenBao
             # (OIDC_CLIENT_SECRET_TENANTS via 04-vso-bindings), a bare
             # /auth/login defaults to this realm (members); the "SecForge

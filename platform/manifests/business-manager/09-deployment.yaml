@@ -93,6 +93,7 @@ spec:
             # the Sync button no-ops cleanly until the secret is present.
             - { name: SYNC_SYSTEM_CLIENT_ID, value: ecosystem-sync-system }
             - { name: PROJECT_MANAGER_FEED_URL, value: "http://project-manager.project-manager.svc.cluster.local/api/v1/feed/business-manager" }
+            - { name: PROPOSAL_FORGE_FEED_URL, value: "http://proposal-forge.proposal-forge.svc.cluster.local/api/v1/feed/business-manager" }
             - { name: OIDC_CLIENT_ID, value: business-manager }
             # Ecosystem Control — Service port 80 → pod 4000. BM calls /api/v1/me
             # for the active-org context (drives RLS) + app-activation flag.

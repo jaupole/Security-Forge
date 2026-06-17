@@ -325,3 +325,26 @@ spec:
       ports:
         - { protocol: TCP, port: 3001 }
         - { protocol: TCP, port: 15008 }
+
+---
+# P4 cross-app sync: accept the BM feed poller (cross-namespace) on the app +
+# HBONE ports. The feed enforces its own bearer + azp gate.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-business-manager
+  namespace: proposal-forge
+  labels: { secforge.platform/component: proposal-forge, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: proposal-forge
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: business-manager
+      ports:
+        - { protocol: TCP, port: 3001 }
+        - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
