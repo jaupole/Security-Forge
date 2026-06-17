@@ -68,6 +68,22 @@
 
 definition user {}
 
+// ─── Team / group ───────────────────────────────────────────────────────
+// A grantable group. Need-to-know is usually granted to a ROLE/team, not a
+// person ("the proposal-alpha team are reviewers on proposal:118"), so
+// membership is managed once and per-user tuple sprawl is avoided. Teams
+// nest: a team's `member` may itself be another team's member-set, so a
+// parent team transitively contains its sub-teams' people.
+//
+// Teams are org-scoped in Postgres (Control owns the membership table); the
+// SpiceDB object id encodes the org, e.g. `team:<orgId>_<slug>`. Control is
+// the writer of team membership tuples.
+definition team {
+    relation member: user | team#member
+
+    permission membership = member
+}
+
 // ─── Platform ───────────────────────────────────────────────────────────
 // Singleton platform-level scope. The `administrator` relation grants
 // ecosystem-wide super-admin rights: see/manage every organization,
@@ -243,15 +259,19 @@ definition workflow_promote_proposal_to_project {
 definition proposalapp/proposal {
     relation app: app
     relation owner: user
-    relation editor: user
-    relation reviewer: user                     // PF "REVIEWER" project-role
-    relation viewer: user
+    relation editor: user | team#member
+    relation reviewer: user | team#member       // PF "REVIEWER" project-role
+    relation viewer: user | team#member
+    relation finance_viewer: user | team#member // may see pricing/rates (field-tier)
 
-    permission view   = owner + editor + reviewer + viewer + app->view
+    permission view   = owner + editor + reviewer + viewer + finance_viewer + app->view
     permission edit   = owner + editor + app->administer
     permission review = owner + editor + reviewer + app->administer  // can comment + approve
     permission approve = reviewer + app->administer
     permission delete = owner + app->administer
+    // Field-tier: a plain view grant does NOT reveal pricing/finance. Only the
+    // proposal owner, an explicit finance_viewer grant, or app-level finance.
+    permission view_finance = owner + finance_viewer + app->view_finance
 }
 
 // ─── Per-app domain types — managerapp (Project Tracker) ────────────────
@@ -310,19 +330,23 @@ definition managerapp/task {
 
 definition member_hub/member_record {
     relation app: app
-    relation subject: user                      // the member the record describes
-    relation editor: user                       // staff who can update the record
-    relation viewer: user                       // staff who can view but not edit
+    relation subject: user                       // the member the record describes
+    relation editor: user | team#member          // staff who can update the record
+    relation viewer: user | team#member          // staff who can view (non-PII) but not edit
+    relation contact_viewer: user | team#member  // staff who may see PII/contact fields (field-tier)
 
-    permission view   = subject + editor + viewer + app->view
-    permission edit   = editor + app->administer
-    permission delete = app->administer
+    permission view         = subject + editor + viewer + contact_viewer + app->view
+    permission edit         = editor + app->administer
+    permission delete       = app->administer
+    // Field-tier: email/phone/PII require an explicit contact grant (or edit/admin),
+    // not a plain viewer grant. Wired to PII redaction in Member Hub (Phase 4).
+    permission view_contact = subject + editor + contact_viewer + app->administer
 }
 
 definition member_hub/enrollment {
     relation app: app
     relation applicant: user                    // the user applying for membership
-    relation reviewer: user                     // staff who can review/decide
+    relation reviewer: user | team#member       // staff who can review/decide
 
     permission view   = applicant + reviewer + app->view
     permission edit   = applicant + reviewer + app->administer  // applicant edits draft; reviewer revises during review
@@ -333,8 +357,8 @@ definition member_hub/enrollment {
 
 definition member_hub/email_campaign {
     relation app: app
-    relation author: user                       // staff who composed the campaign
-    relation publisher: user                    // staff who can actually send
+    relation author: user | team#member         // staff who composed the campaign
+    relation publisher: user | team#member      // staff who can actually send
 
     permission view    = author + publisher + app->view
     permission edit    = author + publisher + app->administer
@@ -353,14 +377,17 @@ definition member_hub/email_campaign {
 
 definition project_manager/project {
     relation app: app
-    relation manager: user                      // project manager — full control
-    relation contributor: user                  // team member — edits working artifacts
-    relation stakeholder: user                  // read-only visibility (sponsor, client)
+    relation manager: user                       // project manager — full control
+    relation contributor: user | team#member     // team member — edits working artifacts
+    relation stakeholder: user | team#member     // read-only visibility (sponsor, client)
+    relation finance_viewer: user | team#member  // may see cost/budget detail (field-tier)
 
-    permission view       = manager + contributor + stakeholder + app->view
+    permission view       = manager + contributor + stakeholder + finance_viewer + app->view
     permission edit       = manager + contributor + app->administer
     permission administer = manager + app->administer    // baseline, approve CRs, close
     permission delete     = app->administer
+    // Field-tier: budget/cost detail needs an explicit finance grant, not plain view.
+    permission view_finance = manager + finance_viewer + app->view_finance
 }
 
 definition project_manager/change_request {
@@ -372,4 +399,24 @@ definition project_manager/change_request {
     // cascade. Never a role-string comparison in app code.
     permission view    = project->view
     permission approve = approver + project->administer
+}
+
+// ─── Confidential records (need-to-know, NO admin cascade) ──────────────
+// The strongest tier: HR, board, legal, M&A bids. Unlike every other
+// resource here, `view`/`edit` deliberately do NOT union `app->administer`
+// or `organization->administer` — so an org admin or app admin CANNOT see a
+// confidential record without an explicit grant. The only blanket path is
+// `break_glass`, which Control grants time-boxed, justified, alerted, and
+// fully audited. Org isolation is still enforced independently by Postgres
+// FORCE-RLS (Control owns `confidential_records.org_id`); SpiceDB models
+// only the need-to-know grant, never the org link, so no cascade can leak in.
+definition confidential/record {
+    relation owner: user
+    relation editor: user | team#member
+    relation viewer: user | team#member
+    relation break_glass: user                  // emergency, time-boxed + audited (Control-granted)
+
+    permission view   = owner + editor + viewer + break_glass
+    permission edit   = owner + editor + break_glass
+    permission delete = owner
 }

@@ -1,0 +1,98 @@
+# Validator: field-tier on proposalapp/proposal. A record VIEW grant does not
+# reveal financial fields (pricing / rates / margins). `view_finance` requires
+# the proposal owner, an explicit finance_viewer grant, or app-level finance.
+#
+#   owen  = owner          -> view + view_finance
+#   fred  = finance_viewer -> view + view_finance
+#   vic   = viewer         -> view ONLY   (NO pricing)  <-- the need-to-know point
+
+schema: |
+  definition user {}
+  definition team {
+      relation member: user | team#member
+      permission membership = member
+  }
+  definition platform {
+      relation administrator: user
+      permission administer = administrator
+  }
+  definition organization {
+      relation parent: organization
+      relation platform: platform
+      relation administrator: user
+      relation local_administrator: user
+      relation executive: user
+      relation member_manager: user
+      relation position_manager: user
+      relation auditor: user
+      relation member: user
+      relation app: app
+      permission cascading_administer = administrator + parent->cascading_administer + platform->administer
+      permission administer = local_administrator + cascading_administer
+      permission cascading_view = administrator + executive + parent->cascading_view + platform->administer
+      permission view = local_administrator + member + cascading_view
+      permission create_sub_org = administer
+      permission delete_org = administrator + parent->delete_org + platform->administer
+      permission cascading_manage_members = administrator + parent->cascading_manage_members + platform->administer
+      permission manage_members = local_administrator + member_manager + cascading_manage_members
+      permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
+      permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+      permission read_audit = auditor + administer
+  }
+  definition app {
+      relation organization: organization
+      relation administrator: user
+      relation creator: user
+      relation editor: user
+      relation viewer: user
+      relation commenter: user
+      relation approver: user
+      relation finance: user
+      relation exporter: user
+      relation inviter: user
+      relation invite_approver: user
+      relation workflow_approver: user
+      permission administer = administrator + organization->administer
+      permission create = creator + administer
+      permission view = viewer + editor + commenter + approver + finance + administer + organization->administer
+      permission edit = editor + administer
+      permission comment = commenter + approver + edit
+      permission approve = approver + administer
+      permission view_finance = finance + administer
+      permission export = exporter + administer
+      permission invite = inviter + administer
+      permission approve_invite = invite_approver + administer
+      permission approve_workflow = workflow_approver + administer
+  }
+  definition proposalapp/proposal {
+      relation app: app
+      relation owner: user
+      relation editor: user | team#member
+      relation reviewer: user | team#member
+      relation viewer: user | team#member
+      relation finance_viewer: user | team#member
+      permission view = owner + editor + reviewer + viewer + finance_viewer + app->view
+      permission edit = owner + editor + app->administer
+      permission review = owner + editor + reviewer + app->administer
+      permission approve = reviewer + app->administer
+      permission delete = owner + app->administer
+      permission view_finance = owner + finance_viewer + app->view_finance
+  }
+
+relationships: |
+  proposalapp/proposal:p1#owner@user:owen
+  proposalapp/proposal:p1#viewer@user:vic
+  proposalapp/proposal:p1#finance_viewer@user:fred
+
+assertions:
+  assertTrue:
+    - proposalapp/proposal:p1#view@user:owen
+    - proposalapp/proposal:p1#view@user:vic
+    - proposalapp/proposal:p1#view@user:fred
+    - proposalapp/proposal:p1#view_finance@user:owen
+    - proposalapp/proposal:p1#view_finance@user:fred
+  assertFalse:
+    # the need-to-know point: a plain viewer can open the proposal but not its pricing
+    - proposalapp/proposal:p1#view_finance@user:vic
+    # finance_viewer is read-only on finance, not an editor
+    - proposalapp/proposal:p1#edit@user:fred

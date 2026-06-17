@@ -1,0 +1,108 @@
+# Validator: the confidential/record tier breaks the admin cascade. Even a
+# user who IS an organizational administrator (and even the platform super-
+# admin) is DENIED a confidential record unless explicitly granted. The only
+# blanket path is break_glass (Control grants it time-boxed + audited).
+#
+# This is the regression guard: if anyone later adds `app->administer` or
+# `organization->administer` to confidential/record's view, adminuser/root
+# flip to TRUE below and this test fails loudly.
+#
+#   adminuser = organizational_administrator on org:acme  -> STILL denied
+#   root      = platform administrator                    -> STILL denied
+#   owen/val/responder = explicit owner/viewer/break_glass -> allowed
+
+schema: |
+  definition user {}
+  definition team {
+      relation member: user | team#member
+      permission membership = member
+  }
+  definition platform {
+      relation administrator: user
+      permission administer = administrator
+  }
+  definition organization {
+      relation parent: organization
+      relation platform: platform
+      relation administrator: user
+      relation local_administrator: user
+      relation executive: user
+      relation member_manager: user
+      relation position_manager: user
+      relation auditor: user
+      relation member: user
+      relation app: app
+      permission cascading_administer = administrator + parent->cascading_administer + platform->administer
+      permission administer = local_administrator + cascading_administer
+      permission cascading_view = administrator + executive + parent->cascading_view + platform->administer
+      permission view = local_administrator + member + cascading_view
+      permission create_sub_org = administer
+      permission delete_org = administrator + parent->delete_org + platform->administer
+      permission cascading_manage_members = administrator + parent->cascading_manage_members + platform->administer
+      permission manage_members = local_administrator + member_manager + cascading_manage_members
+      permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
+      permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+      permission read_audit = auditor + administer
+  }
+  definition app {
+      relation organization: organization
+      relation administrator: user
+      relation creator: user
+      relation editor: user
+      relation viewer: user
+      relation commenter: user
+      relation approver: user
+      relation finance: user
+      relation exporter: user
+      relation inviter: user
+      relation invite_approver: user
+      relation workflow_approver: user
+      permission administer = administrator + organization->administer
+      permission create = creator + administer
+      permission view = viewer + editor + commenter + approver + finance + administer + organization->administer
+      permission edit = editor + administer
+      permission comment = commenter + approver + edit
+      permission approve = approver + administer
+      permission view_finance = finance + administer
+      permission export = exporter + administer
+      permission invite = inviter + administer
+      permission approve_invite = invite_approver + administer
+      permission approve_workflow = workflow_approver + administer
+  }
+  definition confidential/record {
+      relation owner: user
+      relation editor: user | team#member
+      relation viewer: user | team#member
+      relation break_glass: user
+      permission view = owner + editor + viewer + break_glass
+      permission edit = owner + editor + break_glass
+      permission delete = owner
+  }
+
+relationships: |
+  organization:acme#platform@platform:ecosystem
+  organization:acme#administrator@user:adminuser
+  platform:ecosystem#administrator@user:root
+  confidential/record:c1#owner@user:owen
+  confidential/record:c1#viewer@user:val
+  confidential/record:c1#break_glass@user:responder
+
+assertions:
+  assertTrue:
+    # explicit grants resolve
+    - confidential/record:c1#view@user:owen
+    - confidential/record:c1#edit@user:owen
+    - confidential/record:c1#view@user:val
+    - confidential/record:c1#view@user:responder
+    # sanity: adminuser/root genuinely DO hold org/platform admin elsewhere
+    - organization:acme#administer@user:adminuser
+    - organization:acme#administer@user:root
+  assertFalse:
+    # the whole point: admin power does NOT cascade into a confidential record
+    - confidential/record:c1#view@user:adminuser
+    - confidential/record:c1#edit@user:adminuser
+    - confidential/record:c1#view@user:root
+    # viewer is read-only; nobody but owner deletes
+    - confidential/record:c1#edit@user:val
+    - confidential/record:c1#delete@user:val
+    - confidential/record:c1#delete@user:responder
