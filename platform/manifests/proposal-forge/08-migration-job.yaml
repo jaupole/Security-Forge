@@ -96,7 +96,7 @@ spec:
           # is centered between its neighbors. No migration. Lockstep with 09.
           # 2026-06-12: commit 1fa372e — Solicitation on its own full-width cover
           # row (long titles wrap wide). No migration. Lockstep with 09.
-          image: ghcr.io/jaupole/proposal-forge@sha256:48c9c4969eccf098a90794464fe4cf0dda6321ab31710cc7f2880bb9ab29d2c5
+          image: ghcr.io/jaupole/proposal-forge@sha256:a0f83bd1ceea1620d200e73635e9114195cd5f535672489fe736d4cf45476a2d
           imagePullPolicy: IfNotPresent
           # `prisma` is a runtime dependency; the CLI entry is build/index.js.
           # Overrides the image's tini ENTRYPOINT (no Chromium here).
