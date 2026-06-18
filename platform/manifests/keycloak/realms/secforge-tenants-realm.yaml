@@ -1041,17 +1041,56 @@ spec:
           # CTRL-06: no static control-audience mapper — aud=control is minted
           # only by an exchange requesting the optional `control-aud` scope (03f).
 
-      # ─── KNOWN DRIFT (pre-existing, NOT CTRL-06) ─────────────────────────
-      # The live `project-manager` user-login client is NOT represented here
-      # (created via the admin console; this realm-import is one-shot). A
-      # greenfield rebuild from this file would have NO project-manager client
-      # → PM users can't authenticate, and 03f's CTRL-06 pass skips it with a
-      # warning. Reconstruct its block from the live realm (mirror business-
-      # manager above: redirectUris https://projects.${DOMAIN}/*, backchannel
-      # .../auth/backchannel-logout, a project-manager self-audience mapper,
-      # STE=true) before relying on this file for DR.
-      #
-      # CTRL-06 also adds an OPTIONAL realm client scope `control-aud` (audience
+      # project-manager user-login client — members sign in here. Created live
+      # via the admin console 2026-06-12 (realm-import is one-shot); this block
+      # is the DR/greenfield source of truth, added 2026-06-18 to close the
+      # missing-client drift. Mirrors business-manager above. Secret published
+      # to OpenBao apps/project-manager/runtime#oidc_client_secret_tenants.
+      - clientId: project-manager
+        name: Project Manager
+        description: Project Manager user-facing OIDC (browser auth-code + PKCE). App project_manager.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: true
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: false
+        redirectUris:
+          - https://projects.${DOMAIN}/auth/callback
+        webOrigins:
+          - https://projects.${DOMAIN}
+        attributes:
+          pkce.code.challenge.method: S256
+          backchannel.logout.url: https://projects.${DOMAIN}/auth/backchannel-logout
+          post.logout.redirect.uris: https://projects.${DOMAIN}/
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          frontchannel.logout.session.required: "true"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange (see 03f). Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: project-manager-audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: project-manager
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "true"
+              lightweight.claim: "false"
+              userinfo.token.claim: "false"
+          # CTRL-06: no static control-audience mapper — aud=control is minted
+          # only by an exchange requesting the optional `control-aud` scope (03f).
+
+      # ─── CTRL-06 NOTE ───────────────────────────────────────────────────
+      # CTRL-06 adds an OPTIONAL realm client scope `control-aud` (audience
       # mapper included.custom.audience=control) assigned optional to all four
       # app clients above. It is intentionally NOT declared here — a partial
       # clientScopes block in this one-shot import can clobber Keycloak's
