@@ -139,6 +139,18 @@ spec:
             - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
             - { name: KEYCLOAK_REALM, value: platform }
             - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
+            # CTRL-06 (retire shared-audience trust): app-client callers MUST
+            # present an RFC-8693 token exchanged for aud=control. `require`
+            # rejects raw app tokens (401 token_exchange_required); the apps
+            # exchange via @jaupole/ecosystem-auth (controlAudience=control +
+            # controlExchangeScope=control-aud). Went live 2026-06-18 — see
+            # the KC `control-aud` optional client scope + per-app cutover.
+            # NOTE: do NOT drop this to the `off` default — off stops accepting
+            # exchanged aud=control tokens and would 401 every app. Rollback is
+            # `accept` (tolerates both), never `off`, while apps are on the
+            # exchanging build.
+            - { name: CONTROL_EXCHANGE_MODE, value: require }
+            - { name: CONTROL_EXCHANGE_AUDIENCE, value: control }
             # Admin-API client (created 2026-05-15). Service-account-only,
             # confidential, with realm-management roles: manage-users,
             # view-users, query-users, view-clients, view-realm.
