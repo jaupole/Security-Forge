@@ -264,7 +264,11 @@ definition proposalapp/proposal {
     relation viewer: user | team#member
     relation finance_viewer: user | team#member // may see pricing/rates (field-tier)
 
-    permission view   = owner + editor + reviewer + viewer + finance_viewer + app->view
+    // DEFAULT-DENY (Phase 3): record view derives from per-record grants +
+    // the org/app ADMIN cascade only — NOT app->view. So holding the app-level
+    // `view` permission lets you OPEN the app, not see every proposal; you see
+    // a proposal only if you own/edit/review/view it (or are an admin).
+    permission view   = owner + editor + reviewer + viewer + finance_viewer + app->administer
     permission edit   = owner + editor + app->administer
     permission review = owner + editor + reviewer + app->administer  // can comment + approve
     permission approve = reviewer + app->administer
@@ -382,7 +386,11 @@ definition project_manager/project {
     relation stakeholder: user | team#member     // read-only visibility (sponsor, client)
     relation finance_viewer: user | team#member  // may see cost/budget detail (field-tier)
 
-    permission view       = manager + contributor + stakeholder + finance_viewer + app->view
+    // DEFAULT-DENY (Phase 3): record view from per-record grants + the org/app
+    // ADMIN cascade only (not app->view). App-level view = open the app, not
+    // see every project; you see a project only if you manage/contribute/are a
+    // stakeholder on it (or are an admin).
+    permission view       = manager + contributor + stakeholder + finance_viewer + app->administer
     permission edit       = manager + contributor + app->administer
     permission administer = manager + app->administer    // baseline, approve CRs, close
     permission delete     = app->administer
