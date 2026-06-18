@@ -37,6 +37,12 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
+      annotations:
+        # Exclude ephemeral scratch/socket volumes from Velero fs-backup — no
+        # recoverable data, and they race the pod lifecycle (a pod replaced
+        # mid-backup fails the PodVolumeBackup -> PartiallyFailed -> trips
+        # VeleroBackupTooOld). The DB PVC and other real volumes still back up.
+        backup.velero.io/backup-volumes-excludes: tmp,spiffe-jwt,spiffe-workload-api
       labels:
         app.kubernetes.io/name: control
         app.kubernetes.io/component: api

@@ -30,6 +30,12 @@ spec:
       app.kubernetes.io/component: ui
   template:
     metadata:
+      annotations:
+        # Exclude ephemeral scratch volumes from Velero fs-backup — no
+        # recoverable data, and they race the pod lifecycle (a pod replaced
+        # mid-backup fails the PodVolumeBackup -> PartiallyFailed -> trips
+        # VeleroBackupTooOld).
+        backup.velero.io/backup-volumes-excludes: cache,run,tmp
       labels:
         app.kubernetes.io/name: portal
         app.kubernetes.io/component: ui

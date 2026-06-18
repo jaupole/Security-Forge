@@ -47,6 +47,15 @@ spec:
       app.kubernetes.io/component: app
   template:
     metadata:
+      annotations:
+        # Exclude ephemeral scratch/socket volumes from Velero fs-backup. These
+        # hold no recoverable data; backing them up is pointless and races the
+        # pod lifecycle — if the pod is replaced mid-backup the node-agent can't
+        # find it ("pods not found"), failing the PodVolumeBackup and marking the
+        # whole daily backup PartiallyFailed (which then doesn't bump the
+        # last-successful metric and trips VeleroBackupTooOld). The DB PVC and
+        # other real volumes still back up. See secforge-prod-audit notes.
+        backup.velero.io/backup-volumes-excludes: tmp,spiffe-jwt,spiffe-workload-api
       labels:
         app.kubernetes.io/name: member-hub
         app.kubernetes.io/component: app

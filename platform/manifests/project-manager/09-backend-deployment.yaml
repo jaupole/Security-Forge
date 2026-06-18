@@ -30,6 +30,12 @@ spec:
       app.kubernetes.io/component: app
   template:
     metadata:
+      annotations:
+        # Exclude the ephemeral scratch volume from Velero fs-backup — no
+        # recoverable data, and backing it up races the pod lifecycle (a pod
+        # replaced mid-backup fails the PodVolumeBackup -> PartiallyFailed ->
+        # trips VeleroBackupTooOld). Real volumes still back up.
+        backup.velero.io/backup-volumes-excludes: tmp
       labels:
         app.kubernetes.io/name: project-manager
         app.kubernetes.io/component: app
