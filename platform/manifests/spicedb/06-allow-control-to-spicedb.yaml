@@ -1,12 +1,22 @@
-# Allow `control` ns (Ecosystem Control's api Deployment) → SpiceDB
-# gRPC on 50051. Control's `isPlatformAdmin` + `writeOrgPlatformLink`
-# in src/api/lib/platform-admin.ts call SpiceDB directly via the
+# Allow `control` ns (Ecosystem Control's api Deployment AND its
+# CLI cron/one-shot Jobs) → SpiceDB gRPC on 50051. Control's
+# `isPlatformAdmin` + `writeOrgPlatformLink` in
+# src/api/lib/platform-admin.ts call SpiceDB directly via the
 # `@authzed/authzed-node` gRPC client. The platform's intended
 # pattern routes ecosystem apps through the AuthZEN façade in `app`
 # ns, but Control was built before the façade existed and still
 # uses direct calls. Until that's refactored (out-of-scope for the
 # 2026-05-16 Member Hub Day 4 session), this explicit allow keeps
 # /api/v1/me + org-mutating endpoints functional.
+#
+# 2026-06-18: widened from `component: api` to all `name: control`
+# pods. The CLI Jobs/CronJobs (signup-cleanup, grant-sweep, the
+# app-relations backfill) also write/delete SpiceDB tuples and were
+# silently blocked (UNAVAILABLE) under the api-only selector — the
+# block only surfaced once grant-sweep/backfill exercised it (signup-
+# cleanup is usually a no-op so it never tripped). `name: control`
+# matches the api + the control crons; portal (name: portal) in the
+# same ns is unaffected and stays blocked.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,7 +39,6 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: control
-              app.kubernetes.io/component: api
       ports:
         - protocol: TCP
           port: 50051
