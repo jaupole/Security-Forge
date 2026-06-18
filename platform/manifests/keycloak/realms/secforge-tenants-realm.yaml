@@ -856,7 +856,10 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 standard token exchange — the app exchanges the
+          # user token for one audienced to Control. Applied/owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           - name: member-hub-audience
@@ -870,16 +873,12 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: NO static control-audience mapper here — a raw app token
+          # must NOT carry aud=control. The control audience is minted ONLY by
+          # an RFC-8693 exchange that requests the OPTIONAL `control-aud` client
+          # scope (owned by 03f-keycloak-ctrl06-token-exchange.sh, since a
+          # partial clientScopes block in this one-shot import would clobber
+          # Keycloak's built-in default scopes).
 
       # ─── member-hub-admin (Keycloak Admin API service-account) ───
       # Member Hub → Keycloak Admin API for tenant-user management
@@ -976,7 +975,9 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange (see 03f). Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           - name: proposal-forge-audience
@@ -990,16 +991,8 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: no static control-audience mapper — aud=control is minted
+          # only by an exchange requesting the optional `control-aud` scope (03f).
       # business-manager (managerapp) user-login client — members sign in here.
       # Created live via the admin console 2026-06-12 (realm-import is one-shot);
       # this block is the DR/greenfield source of truth. Mirrors the platform
@@ -1029,7 +1022,9 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange (see 03f). Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           - name: business-manager-audience
@@ -1043,13 +1038,22 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: no static control-audience mapper — aud=control is minted
+          # only by an exchange requesting the optional `control-aud` scope (03f).
+
+      # ─── KNOWN DRIFT (pre-existing, NOT CTRL-06) ─────────────────────────
+      # The live `project-manager` user-login client is NOT represented here
+      # (created via the admin console; this realm-import is one-shot). A
+      # greenfield rebuild from this file would have NO project-manager client
+      # → PM users can't authenticate, and 03f's CTRL-06 pass skips it with a
+      # warning. Reconstruct its block from the live realm (mirror business-
+      # manager above: redirectUris https://projects.${DOMAIN}/*, backchannel
+      # .../auth/backchannel-logout, a project-manager self-audience mapper,
+      # STE=true) before relying on this file for DR.
+      #
+      # CTRL-06 also adds an OPTIONAL realm client scope `control-aud` (audience
+      # mapper included.custom.audience=control) assigned optional to all four
+      # app clients above. It is intentionally NOT declared here — a partial
+      # clientScopes block in this one-shot import can clobber Keycloak's
+      # built-in default scopes. It is created + assigned by
+      # platform/components/03f-keycloak-ctrl06-token-exchange.sh post-import.
