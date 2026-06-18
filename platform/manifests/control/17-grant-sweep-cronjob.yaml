@@ -1,0 +1,123 @@
+# Hourly CronJob that revokes per-resource grants past their expires_at
+# (deletes the SpiceDB tuple + the resource_grants row). Keeps adhoc /
+# break_glass shares time-bounded so need-to-know does not decay. See
+# ecosystem-control src/cli/grant-sweep.ts.
+#
+# RLS note: `resource_grants` is FORCE ROW LEVEL SECURITY on app.org_id
+# (control migration 078) and the runtime `control` role is NOBYPASSRLS, so a
+# single cross-org query matches zero rows. The CLI enumerates orgs from the
+# non-RLS `organizations` directory and revokes per-org under each org's
+# app.org_id via withTx — identical to the tickets-archive cron. It needs only
+# the control-db-app DB creds (config.ts validates the full env at import, so
+# the Keycloak/SpiceDB vars must be present even though the sweep uses only DB +
+# the SpiceDB write client).
+#
+# Same image + DB env as the API Deployment — only the CLI entrypoint differs
+# ("grants:sweep-expired"). Bump the digest in lockstep with
+# 09-backend-deployment.yaml.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-grant-sweep
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: grant-sweep
+spec:
+  # Hourly at :29 — off the round-hour and clear of signup-cleanup (:17) and
+  # the daily tickets-archive (03:41) so the three never overlap on the node.
+  schedule: "29 * * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: grant-sweep
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: sweep
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:61f1de2314b4ac556f88a383dd0020f08d183e5bf205392fb03028bda5426998
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "grants:sweep-expired"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                # Runtime `control` role (control-db-app) — per-org under RLS.
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
