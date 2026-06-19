@@ -30,9 +30,12 @@ spec:
       exclude:
         any:
           - resources:
-              # System namespaces run images we don't control as tightly; excluded
-              # to mirror disallow-latest-tag. Revisit when flipping to Enforce.
-              namespaces: [kube-system, kube-public, kube-node-lease, kyverno]
+              # System namespaces run upstream chart images whose version is set by
+              # the chart appVersion, not our Helm values — so Renovate can't digest-
+              # pin them (topolvm-system: topolvm-with-sidecar; trivy-system: trivy +
+              # operator + the operator-generated scan-job pods). Excluded to mirror
+              # disallow-latest-tag. Revisit when flipping to Enforce.
+              namespaces: [kube-system, kube-public, kube-node-lease, kyverno, topolvm-system, trivy-system]
       validate:
         message: "Container images must be pinned by @sha256 digest (audit H-4.8), not a mutable tag."
         pattern:
