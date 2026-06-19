@@ -802,7 +802,9 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange. Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           # Self-audience: every access token issued for this client
@@ -819,21 +821,9 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          # Cross-audience: tokens for member-hub also carry `aud=control`
-          # so member-hub can call Ecosystem Control's `/api/v1/me` to
-          # fetch the active-org context on sign-in (no separate token
-          # exchange needed — the user's session JWT already names
-          # Control as an audience).
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: NO static control-audience mapper — aud=control is minted
+          # only by an RFC-8693 exchange requesting the optional `control-aud`
+          # scope (owned by 03f-keycloak-ctrl06-token-exchange.sh).
 
       # ─── member-hub-admin (Keycloak Admin API service-account) ───
       - clientId: member-hub-admin
@@ -932,7 +922,9 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange (see 03f). Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           # Self-audience: every access token carries `aud=proposal-forge`
@@ -951,19 +943,8 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          # Cross-audience: tokens also carry `aud=control` so PF can call
-          # Ecosystem Control's /api/v1/me for the active-org context on
-          # sign-in (no separate token exchange — same pattern as member-hub).
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: no static control-audience mapper — aud=control is minted
+          # only by an exchange requesting the optional `control-aud` scope (03f).
 
       # ─── business-manager (browser auth-code + PKCE, user-facing) ──
       # secforge-prod migration: Project Tracker becomes ecosystem app
@@ -1001,7 +982,9 @@ spec:
           frontchannel.logout.session.required: "true"
           oauth2.device.authorization.grant.enabled: "false"
           oidc.ciba.grant.enabled: "false"
-          standard.token.exchange.enabled: "false"
+          # CTRL-06: RFC-8693 token exchange (see 03f). Owned day-2 by
+          # 03f-keycloak-ctrl06-token-exchange.sh (realm import is one-shot).
+          standard.token.exchange.enabled: "true"
           display.on.consent.screen: "false"
         protocolMappers:
           # Self-audience: every access token carries `aud=business-manager`
@@ -1017,18 +1000,8 @@ spec:
               introspection.token.claim: "true"
               lightweight.claim: "false"
               userinfo.token.claim: "false"
-          # Cross-audience: tokens also carry `aud=control` so BM can call
-          # Ecosystem Control's /api/v1/me for the active-org context on sign-in.
-          - name: control-audience-for-getme
-            protocol: openid-connect
-            protocolMapper: oidc-audience-mapper
-            consentRequired: false
-            config:
-              included.custom.audience: control
-              access.token.claim: "true"
-              id.token.claim: "false"
-              introspection.token.claim: "true"
-              lightweight.claim: "false"
+          # CTRL-06: no static control-audience mapper — aud=control is minted
+          # only by an exchange requesting the optional `control-aud` scope (03f).
 
       # ─── business-manager-system (Ecosystem Control service-account) ───
       # Backend-to-backend: BM's burn-tracking poller reads per-org IMAP config
