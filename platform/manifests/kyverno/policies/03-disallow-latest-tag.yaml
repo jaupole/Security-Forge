@@ -16,7 +16,8 @@ metadata:
     policies.kyverno.io/severity: medium
 spec:
   background: true
-  validationFailureAction: Audit
+  # Enforce (promoted 2026-05-13 hardening sprint; git reconciled to match live 2026-06-19).
+  validationFailureAction: Enforce
   rules:
     - name: validate-image-tag
       match:

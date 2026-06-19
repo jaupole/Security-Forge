@@ -80,6 +80,7 @@ spec:
                 - wazuh-agent
                 - velero
                 - ingress-nginx
+                - istio-ingress
                 - cert-manager
                 - image-builds
                 - topolvm-system
