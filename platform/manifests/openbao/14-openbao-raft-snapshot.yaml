@@ -115,8 +115,19 @@ data:
     export BAO_ADDR="https://openbao.openbao.svc.cluster.local:8200"
     export BAO_CACERT="/etc/ssl/openbao-ca/ca.crt"
     SA_JWT="$(cat /var/run/secrets/openbao/token)"
-    BAO_TOKEN="$(bao write -field=token auth/kubernetes/login \
-        role=platform-raft-snapshot jwt="$SA_JWT")"
+    # Fresh-pod cold-start: Cilium/ztunnel can RST the first connects until the
+    # endpoint policy map is programmed (same reason the platform-audit-anchor
+    # retries). Retry the login before giving up.
+    BAO_TOKEN=""
+    i=0
+    while [ "$i" -lt 10 ]; do
+      if BAO_TOKEN="$(bao write -field=token auth/kubernetes/login \
+            role=platform-raft-snapshot jwt="$SA_JWT" 2>/dev/null)" && [ -n "$BAO_TOKEN" ]; then
+        break
+      fi
+      i=$((i + 1)); echo "login attempt ${i} failed (cold-start?), retrying in 3s..."; sleep 3
+    done
+    [ -n "$BAO_TOKEN" ] || { echo "ERROR: OpenBao login failed after retries" >&2; exit 1; }
     export BAO_TOKEN
     TS="$(date -u +%Y%m%dT%H%M%SZ)"
     OUT="/backup/openbao-snapshot-${TS}.snap"
