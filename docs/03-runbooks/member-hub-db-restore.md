@@ -43,10 +43,13 @@ but here the failure mode is data loss, not just a boot failure.
     LIVE Raft DB and is therefore the method ADR-0020 deemed potentially
     inconsistent on restore.
   - The **application-consistent** `bao operator raft snapshot save` CronJob
-    that ADR-0020 designed is **NOT YET DEPLOYED** (operator-backlog: deploy
-    it — template = `platform/manifests/openbao/12-platform-audit-anchor.yaml`,
-    needs a one-time OpenBao-admin policy+role step). Until then, OpenBao DR
-    relies on the Velero PVC copy + the offline Shamir keys.
+    (ADR-0020) is now **DEPLOYED** (operator-backlog #96,
+    `platform/manifests/openbao/14-openbao-raft-snapshot.yaml`): every 6h it
+    writes a consistent `.snap` to the `openbao-raft-snapshots` PVC, which
+    Velero ships off-cluster — the preferred recovery artifact. Restore from
+    one via `bao operator raft snapshot restore` (per ADR-0020 §Recovery; a
+    detailed `openbao-backup-restore.md` is still pending). The Velero PVC copy
+    remains a secondary path.
 - **Seal keys**: offline Shamir 3-of-5 ([ADR-0009](../02-decisions/0009-openbao-seal-strategy.md)).
   A snapshot/PVC copy is useless without the Shamir threshold.
 

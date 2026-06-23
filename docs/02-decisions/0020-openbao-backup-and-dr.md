@@ -110,14 +110,16 @@ This raises the stakes of this ADR's backup from "restore consistency" to
 `pii-encryption` key) is lost without a usable backup + the Shamir threshold."
 Two consequences:
 
-1. **The consistent-snapshot CronJob is no longer just nice-to-have.** Until the
-   designed `bao operator raft snapshot save` CronJob is deployed, the only
-   OpenBao backup is Velero's daily fs-copy of the live `data-openbao-*` PVCs —
-   the inconsistent-copy method this ADR set out to replace. Deploying the
-   snapshot CronJob is now a P1 DR item (operator-backlog). Template:
-   `platform/manifests/openbao/12-platform-audit-anchor.yaml`; needs a one-time
-   OpenBao-admin policy (`read` on `sys/storage/raft/snapshot`) + k8s-auth role,
-   so it ships SUSPENDED like the audit-anchor.
+1. **The consistent-snapshot CronJob is now deployed** (2026-06-23,
+   operator-backlog #96 — `platform/manifests/openbao/14-openbao-raft-snapshot.yaml`):
+   every 6h `bao operator raft snapshot save` → the `openbao-raft-snapshots`
+   PVC (Velero ships it off-cluster). Least-privilege: policy `raft-snapshot`
+   (`read`+`sudo` on `sys/storage/raft/snapshot` ONLY) + k8s-auth role
+   `platform-raft-snapshot`, written once via the `admin-break-glass` k8s role.
+   This is now the preferred OpenBao recovery artifact; the Velero fs-copy of
+   the live `data-openbao-*` PVCs (the inconsistent-copy method this ADR set out
+   to replace) remains a secondary path. Residual: a restore drill + the pending
+   `openbao-backup-restore.md`.
 2. **Restore ordering for Member Hub** mirrors the control-DB contract: OpenBao
    restored + unsealed + the `pii-encryption` key confirmed present BEFORE the
    member-hub DB is trusted. Procedure + the decrypt-round-trip verify gate live
