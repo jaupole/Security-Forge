@@ -1,0 +1,130 @@
+# Weekly CronJob that reconciles SpiceDB `organization` tuples against the
+# control_db `organizations` directory: any org id that holds tuples in
+# SpiceDB but no longer has a row in control_db is an ORPHAN (left behind
+# when a hard-delete's post-commit SpiceDB cleanup failed, or when an
+# org-creation transaction wrote its tuples and then rolled back). The sweep
+# deletes those orphaned `organization:<id>#*` tuples. See ecosystem-control
+# src/cli/sweep-orphan-org-tuples.ts.
+#
+# Orphan tuples are unreachable (no Control endpoint resolves an org absent
+# from the DB) and therefore harmless — this is hygiene/drift reconcile, not
+# a security-critical sweep, hence weekly rather than hourly. The CLI guards
+# the org-creation race (orgs.ts writes tuples inside its tx, pre-commit) by
+# re-confirming each candidate's absence immediately before deleting.
+#
+# It needs the SpiceDB read+write client (50051; the control pod label is on
+# the `allow-control-to-spicedb` NetworkPolicy) and the control-db-app DB
+# creds (organizations is not RLS'd). config.ts validates the full env at
+# import, so the Keycloak vars must be present even though the sweep doesn't
+# use them.
+#
+# Same image + DB env as the API Deployment — only the CLI entrypoint differs
+# ("spicedb:sweep-orphan-org-tuples --apply"). Bump the digest in lockstep
+# with 09-backend-deployment.yaml.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-orphan-tuple-sweep
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: orphan-tuple-sweep
+spec:
+  # Weekly, Sunday 04:13 UTC — off the round-hour and clear of grant-sweep
+  # (:29 hourly), signup-cleanup (:17 hourly) and tickets-archive (03:41
+  # daily) so they never overlap on the single node.
+  schedule: "13 4 * * 0"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: orphan-tuple-sweep
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: sweep
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:5f81d53c26d67095898abb3c240c785be27f99859456e4b562715186503d5c7a
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "spicedb:sweep-orphan-org-tuples", "--apply"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                # Runtime `control` role (control-db-app) — organizations is not RLS'd.
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
