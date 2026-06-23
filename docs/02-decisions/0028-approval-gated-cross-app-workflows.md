@@ -107,3 +107,27 @@ Model the award handoff as the Control `proposal_to_project` workflow. Define th
 - Control engine: `Ecosystem Control/src/api/routes/workflows.ts`, migration `006_workflows.sql`.
 - [ADR-0008](./0008-authz-schema.md) three-tier ReBAC · [ADR-0012](./0012-token-exchange-feasibility.md) token-exchange NO-GO (audience-at-login) · [ADR-0026](./0026-org-defined-custom-roles-rbac-layer.md) `approve_workflow` + custom roles · [ADR-0029](./0029-per-app-database-strategy.md) per-app DBs with shared Control UUIDs.
 - Ecosystem notifications feed (the bell): org-wide, system publish endpoint; live fleet-wide.
+
+## Addendum (2026-06-23): forks resolved + phased build plan
+
+A design spike into the PF and PM data models resolved the open items. **Sign-off requested on §C (the PM labor model) before increment 3.**
+
+### A. Dispatch = PM PULLS (confirmed)
+On the workflow reaching `approved`, Control fires a bell notification to the assigned PM and exposes the snapshot at `GET /api/v1/orgs/:id/workflows/:id` to the destination app. PM fetches it using a **CTRL-06 exchanged token** (`aud=control`), creates the project, then `PATCH`es Control with `completed_resource_id` + status→`executed` (or `failed`). **This supersedes ADR-0012's token-exchange NO-GO** — CTRL-06 shipped (2026-06-18), so the app→Control auth direction is already the norm; no Control→PM egress/credentials needed. Mapping logic stays in PM.
+
+### B. Fork resolutions (most are operator inputs, not data)
+- **DLM — NO relocation needed.** PF's `Project.dlm` (`Decimal(6,4)`, proposal-wide) already maps 1:1 to PM's `projects.direct_labor_multiplier`. (Corrects the "proposal-level DLM (schema + rate math)" PF change in the table above — it's a no-op.)
+- **awardAmount, assignedPmUserId, grantPmAccess** are **operator inputs at the "Send to Project Manager" modal** (not PF data). `bidAmount` = PF pricing-summary `projectTotal`. `contractType` = carry PF's `proposalType` enum verbatim (PF has no separate ContractType; PM stores it as metadata).
+- **KC-sub → app-user**: both ends already resolve sub→local user (`resolveLocalUserId`); PM sets `manager_user_id` + the SpiceDB grant from `assignedPmUserId`.
+
+### C. PM labor model — DECISION (needs sign-off)
+PF HAS discipline-groups (`DisciplineGroup`→`LaborCategory`→`PersonnelAssignment`→`PricingLineItem`), so `laborByGroup` is reconstructable. **PM does NOT** — its cost model is per-WBS-node `cost_estimates` only (`estimate_type` fixed|labor, hours/hourly_rate, project-level DLM); no labor-group, no estimate↔person binding, no travel/subs/ODC tables.
+
+**Recommended (MVP, avoids a PM schema expansion):** on execute, PM seeds `wbs_nodes` from the PF deliverable tree (`ExtractedTask.taskNumber` → outline), then creates **group-level** labor `cost_estimates` per deliverable (hours = group total on that deliverable, hourly_rate = group blended base rate; DLM applied by PM as usual) plus **fixed** estimates for travel / subcontractors / additional costs — AND **stashes the full snapshot** (per-personnel backing, trip/sub detail, bid-vs-award) in `projects.custom_fields.sourceSnapshot` so nothing is lost and PM can surface/drill/reconcile. A dedicated PM labor-group/personnel-estimate schema is **deferred** to a later phase, only if the coarse model proves insufficient. Everything stays editable; the award amount drives reconciliation.
+
+### D. Increments (decision-stable first)
+1. ✅ **Foundation (build now, decision-stable):** the typed snapshot **Zod contract** + Control `POST /api/v1/orgs/:id/workflows` **initiate** endpoint (validates `workflow_type`+payload, writes `pending_workflows`, MVP auto-approves to `approved`, notifies the assigned PM). Independent of §C.
+2. **PF**: "Send to Project Manager" modal (pick PM, confirm award $, grant toggle) + snapshot builder from the pricing summary → POST Control initiate.
+3. **PM**: execution — pull snapshot, create project + WBS + group/fixed estimates + DLM + manager + SpiceDB grant + stash snapshot; PATCH `completed_resource_id`; bell alert. *(gated on §C sign-off)*
+4. **Polish**: proposed-vs-awarded reconciliation; Procurement/subcontractor mapping.
+5. **Later**: multi-role approval gate; PF auto-push on award.
