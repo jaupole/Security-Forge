@@ -1,0 +1,213 @@
+# OpenBao Raft snapshot backup — application-consistent DR backups (ADR-0020 /
+# operator-backlog #96). Takes `bao operator raft snapshot save` on a schedule
+# and writes to a dedicated PVC (captured off-cluster by Velero's
+# daily-everything fs-backup). This is the CONSISTENT backup ADR-0020 designed;
+# until it existed the only OpenBao backup was Velero's fs-copy of the LIVE
+# data-openbao PVCs (inconsistent live-Raft copy).
+#
+# Why this is now load-bearing: Member Hub migration 122 dropped plaintext
+# members.email — member emails are recoverable ONLY via the OpenBao
+# `pii-encryption` Transit key, so a clean OpenBao backup is the difference
+# between recoverable and PERMANENTLY-LOST member PII. See
+# docs/03-runbooks/member-hub-db-restore.md.
+#
+# Mirrors the platform-audit-anchor pattern (12-...): dedicated SA (no automount)
+# + audience-scoped projected token → OpenBao k8s-auth login (role
+# platform-raft-snapshot, policy raft-snapshot = read+sudo on the snapshot path
+# ONLY), in-cluster TLS via the openbao CA, hardened nonroot pod, scoped netpol.
+# The one-time OpenBao-admin step (write the policy + role) is done via the
+# kubernetes admin-break-glass role — see openbao-recovery.md.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-raft-snapshot
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-raft-snapshot
+    secforge.platform/component: openbao-dr
+automountServiceAccountToken: false
+---
+# Snapshot store. RWO local-path (single node); Velero daily-everything
+# fs-backups it off-cluster to MinIO, so the consistent snapshot lands in
+# object storage off the Raft volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openbao-raft-snapshots
+  namespace: openbao
+  labels:
+    app.kubernetes.io/name: openbao-raft-snapshot
+    secforge.platform/component: openbao-dr
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+# Egress for the snapshot pod ONLY: DNS + OpenBao :8200 (in-cluster login +
+# snapshot). No internet needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-raft-snapshot-egress
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-dr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao-raft-snapshot
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+      ports:
+        - {port: 8200, protocol: TCP}
+---
+# Ingress allow: snapshot pod → openbao:8200 (the ns default-deny-ingress
+# blocks same-ns pod→openbao otherwise). Scoped to the snapshot pod label only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-raft-snapshot-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-dr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao-raft-snapshot
+      ports:
+        - {port: 8200, protocol: TCP}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-raft-snapshot-script
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao-dr
+data:
+  snapshot.sh: |
+    #!/bin/sh
+    # Take one application-consistent OpenBao Raft snapshot → /backup, prune >30d.
+    # Auth: k8s-auth login as the platform-raft-snapshot role (policy grants ONLY
+    # read+sudo on sys/storage/raft/snapshot). Exit non-zero on any failure so
+    # kube_job_status_failed surfaces a missed backup.
+    set -eu
+    export BAO_ADDR="https://openbao.openbao.svc.cluster.local:8200"
+    export BAO_CACERT="/etc/ssl/openbao-ca/ca.crt"
+    SA_JWT="$(cat /var/run/secrets/openbao/token)"
+    BAO_TOKEN="$(bao write -field=token auth/kubernetes/login \
+        role=platform-raft-snapshot jwt="$SA_JWT")"
+    export BAO_TOKEN
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    OUT="/backup/openbao-snapshot-${TS}.snap"
+    echo "taking raft snapshot -> ${OUT}"
+    bao operator raft snapshot save "$OUT"
+    # Sanity: a real snapshot is a non-trivial gzip archive.
+    SZ="$(wc -c < "$OUT")"
+    if [ "$SZ" -lt 1024 ]; then
+      echo "ERROR: snapshot suspiciously small (${SZ} bytes)" >&2
+      exit 1
+    fi
+    echo "snapshot ok: ${OUT} (${SZ} bytes)"
+    # Retention: drop snapshots older than 30 days.
+    find /backup -name 'openbao-snapshot-*.snap' -mtime +30 -print -delete || true
+    # Drop the short-lived token (it also TTLs out).
+    bao token revoke -self >/dev/null 2>&1 || true
+    echo "done"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-raft-snapshot
+  namespace: openbao
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=seccompProfile RuntimeDefault is set at pod + container level; checkov does not detect it inside a CronJob jobTemplate"
+  labels:
+    app.kubernetes.io/name: openbao-raft-snapshot
+    secforge.platform/component: openbao-dr
+spec:
+  # Every 6h (matches ADR-0020's local-edition RPO target). Activated once the
+  # policy + role exist (done via break-glass in this change).
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-raft-snapshot
+            secforge.platform/component: openbao-dr
+        spec:
+          serviceAccountName: openbao-raft-snapshot
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: snapshot
+              image: docker.io/openbao/openbao:2.5.4
+              command: ["/bin/sh", "/scripts/snapshot.sh"]
+              env:
+                - {name: HOME, value: "/tmp"}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: "20m", memory: "64Mi"}
+                limits: {cpu: "500m", memory: "256Mi"}
+              volumeMounts:
+                - {name: script, mountPath: /scripts, readOnly: true}
+                - {name: backup, mountPath: /backup}
+                - {name: openbao-ca, mountPath: /etc/ssl/openbao-ca, readOnly: true}
+                - {name: bao-token, mountPath: /var/run/secrets/openbao, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: script
+              configMap: {name: openbao-raft-snapshot-script, defaultMode: 0444}
+            - name: backup
+              persistentVolumeClaim: {claimName: openbao-raft-snapshots}
+            - name: openbao-ca
+              secret:
+                secretName: openbao-tls
+                items:
+                  - {key: ca.crt, path: ca.crt}
+                defaultMode: 0444
+            - name: bao-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: https://kubernetes.default.svc.cluster.local
+                      expirationSeconds: 600
+            - name: tmp
+              emptyDir: {}
