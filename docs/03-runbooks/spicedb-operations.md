@@ -277,6 +277,64 @@ kubectl exec -n spicedb secforge-spicedb-db-1 -- \
 
 If close to `max_connections=100`, restart SpiceDB (`kubectl rollout restart`) to drain the pool.
 
+### Org admin locked out — `organization#administrator` tuple deleted (404 on every org endpoint)
+
+**Symptom.** A legitimate org admin gets `API 404 … /api/v1/orgs/<id>/members: {"error":"not_found"}` (and the same on every other org-scoped endpoint). Keycloak and the `organization_memberships` row look correct. The 404 is an *application* 404 (JSON body), not a mesh `RBAC: access denied` — the request reached Control and the SpiceDB `view` check returned false.
+
+**Root cause (fixed in ecosystem-control `1e71d1b`, 2026-06-23).** The `organization#administrator` relation was co-owned by two reconcilers that each DELETE from partial state — `syncOrgSystemRole` (from `system_role`) and `syncOrgRoleRelations` (from role bundles). An OA-via-`system_role` admin who held no admin *bundle* had their `administrator` tuple deleted the moment they assigned themselves a non-admin position (the assign-role path ran only `syncOrgRoleRelations`). With zero live org relations, `view` → false → 404. If you see this on a Control build **older** than `1e71d1b`, this is almost certainly it.
+
+**Production zed access.** The SpiceDB pod is distroless and the `spicedb` ns is default-deny ingress. Run zed as a one-shot pod that (a) is PSS-`restricted`-compliant, (b) uses a Kyverno-approved registry + pinned tag, and (c) carries label `role=zed-cli-oneshot` so the `allow-zed-admin-to-spicedb` NetworkPolicy admits it. The first few calls log `connection refused` retries (Istio ambient cold-start) before the real answer — that is expected. PSK: `kubectl get secret -n spicedb spicedb-config-vso -o jsonpath='{.data._raw}' | base64 -d | jq -r .data.preshared_key`.
+
+```bash
+# Helper used below (run on the box via `ssh secforge`, sudo kubectl):
+ZED_OVERRIDES='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"zed","image":"ghcr.io/authzed/zed:v0.30.1","command":["/usr/local/bin/zed","__ARGS__"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}}]}}'
+# Substitute __ARGS__ with the zed argv, all sharing: --endpoint spicedb.spicedb.svc:50051 --token <PSK> --no-verify-ca
+```
+
+**1. Diagnose.** Confirm the live check is false and inspect the tuple's liveness (the PG datastore keeps tombstones — always filter `deleted_xid`):
+
+```bash
+# Live check (expect: false when locked out)
+zed permission check organization:<orgId> view user:<userId> …
+
+# Tuple liveness — is_live=f means deleted (the bug); no row at all = never written
+sudo kubectl exec -n spicedb secforge-spicedb-db-1 -c postgres -- psql -U postgres -d spicedb -c \
+  "SELECT relation, userset_object_id, deleted_xid='9223372036854775807' AS is_live
+     FROM relation_tuple WHERE namespace='organization' AND object_id='<orgId>';"
+```
+
+**2. Restore.** Re-assert the tuples the active membership implies. The fixed code keeps these on subsequent reconciles; on an *un*patched build they will be deleted again on the next role op, so deploy `1e71d1b`+ first (or immediately after).
+
+```bash
+zed relationship touch organization:<orgId> administrator user:<userId> …   # OA → cascading admin/view
+zed relationship touch organization:<orgId> member        user:<userId> …   # base member (resource need-to-know)
+# verify: view / manage_members / administer all return true
+```
+
+**3. Fleet sweep.** Find any *other* locked-out admin = an active OA (or admin-bundle holder) in Control with no live `administrator` tuple in SpiceDB. Dump both sides and diff:
+
+```bash
+# Control: expected admins (active OA ∪ org-level `administer` bundle holders)
+sudo kubectl exec -n control control-db-1 -c postgres -- psql -U postgres -d control -tA -F'|' -c \
+  "SELECT org_id, user_id FROM organization_memberships
+    WHERE system_role='organizational_administrator' AND membership_status='active'
+   UNION
+   SELECT DISTINCT ur.org_id, ur.user_id FROM org_user_roles ur
+     JOIN org_role_permissions rp ON rp.org_role_id=ur.org_role_id
+    WHERE rp.app_id IS NULL AND rp.permission='administer'
+      AND (ur.expires_at IS NULL OR ur.expires_at>now());" | sort
+
+# SpiceDB: live administrator tuples
+sudo kubectl exec -n spicedb secforge-spicedb-db-1 -c postgres -- psql -U postgres -d spicedb -tA -F'|' -c \
+  "SELECT object_id, userset_object_id FROM relation_tuple
+    WHERE namespace='organization' AND relation='administrator'
+      AND deleted_xid='9223372036854775807';" | sort
+# Pairs present in the first list but absent from the second are locked out → restore (step 2).
+# (Live admin tuples for org_ids absent from `organizations` are orphans of deleted/test orgs — harmless.)
+```
+
+The same shape works for the `member` relation (signup-wizard founders predating `1e71d1b` lack a `member` tuple): diff active memberships against live `member` tuples and `touch` the gaps.
+
 ---
 
 ## Re-deploying from scratch
