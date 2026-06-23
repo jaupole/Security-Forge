@@ -96,3 +96,29 @@ be restored + unsealed (and VSO must have re-rendered the control DB Secrets)
 ordered procedure, plus the FORCE-RLS posture gate that must pass after any
 control-db restore, lives in
 [`docs/03-runbooks/control-db-restore.md`](../03-runbooks/control-db-restore.md).
+
+## Amendment (2026-06-22): member PII is now unrecoverable without the Transit key
+
+Member Hub migration 122 (Phase 4 Deploy 3) **dropped the plaintext
+`members.email` column**. Member emails now exist only as OpenBao Transit
+ciphertext (`pii-encryption`) + an HMAC lookup (`EMAIL_HMAC_KEY`), both held in
+this OpenBao's Raft store. The previous plaintext fallback — which let emails
+survive an OpenBao loss — is **gone**.
+
+This raises the stakes of this ADR's backup from "restore consistency" to
+"**irreversible member-PII loss** if the Raft data (and thus the
+`pii-encryption` key) is lost without a usable backup + the Shamir threshold."
+Two consequences:
+
+1. **The consistent-snapshot CronJob is no longer just nice-to-have.** Until the
+   designed `bao operator raft snapshot save` CronJob is deployed, the only
+   OpenBao backup is Velero's daily fs-copy of the live `data-openbao-*` PVCs —
+   the inconsistent-copy method this ADR set out to replace. Deploying the
+   snapshot CronJob is now a P1 DR item (operator-backlog). Template:
+   `platform/manifests/openbao/12-platform-audit-anchor.yaml`; needs a one-time
+   OpenBao-admin policy (`read` on `sys/storage/raft/snapshot`) + k8s-auth role,
+   so it ships SUSPENDED like the audit-anchor.
+2. **Restore ordering for Member Hub** mirrors the control-DB contract: OpenBao
+   restored + unsealed + the `pii-encryption` key confirmed present BEFORE the
+   member-hub DB is trusted. Procedure + the decrypt-round-trip verify gate live
+   in [`docs/03-runbooks/member-hub-db-restore.md`](../03-runbooks/member-hub-db-restore.md).
