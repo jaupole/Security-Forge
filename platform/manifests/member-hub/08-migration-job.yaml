@@ -77,7 +77,7 @@ spec:
           # 2026-06-12: commit d583bde — shared PeriodChip (ecosystem-ui 0.1.9) +
           # period-aware /dashboard windowing (+ pre-existing test fix). No new
           # migration. Restores 08/09 lockstep (08 had lagged at 9e38316).
-          image: ghcr.io/jaupole/member-hub@sha256:91e2d62c7f8e50b6871bd91d41143a8a7044be6c7d449cb73c3d217eaa4edfc0
+          image: ghcr.io/jaupole/member-hub@sha256:ec2cd41735df8a5ef98c8d2a2c913a48fee04f9c66a72c551d59b119e2f7c303
           imagePullPolicy: IfNotPresent
           command: ["/nodejs/bin/node", "dist/db/migrate.js"]
           env:
