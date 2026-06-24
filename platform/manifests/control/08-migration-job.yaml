@@ -77,7 +77,7 @@ spec:
           # 2026-06-11: bumped to apply migration 073 (organizations.kc_org_id).
           # (4410024c supersedes 36272f7d/0448ea93 — those were signed with
           # cosign v3's bundle format, which Kyverno can't verify.)
-          image: ghcr.io/jaupole/control@sha256:89ef0017ae160408ece6c6d2169edf932177a9fa3e55e8e90bd1b31b00789536
+          image: ghcr.io/jaupole/control@sha256:66e12ecac4e8c2d97281bdb339dc5dd4a60ba975a8a5c590afb22bea50041df0
           imagePullPolicy: IfNotPresent
           # Use the CLI's db:migrate command. dist/db/migrate.js is just an
           # exported module (no top-level call); the runnable entrypoint
