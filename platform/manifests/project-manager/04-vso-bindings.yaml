@@ -65,6 +65,11 @@ spec:
         # renders empty and the app keeps platform-only sign-in.
         OIDC_CLIENT_SECRET_TENANTS:
           text: '{{ if .Secrets.oidc_client_secret_tenants }}{{ .Secrets.oidc_client_secret_tenants }}{{ end }}'
+        # project-manager-system client-credentials secret for PM->Control
+        # workflow gate/manifest calls. Published by 05l to system_client_secret.
+        # Optional: absent renders empty (gate fails closed when enabled).
+        PM_SYSTEM_CLIENT_SECRET:
+          text: '{{ if .Secrets.system_client_secret }}{{ .Secrets.system_client_secret }}{{ end }}'
         # SpiceDB pre-shared key for gRPC auth (same value also rendered
         # into the spicedb pod from its own VSO binding — we just
         # consume it here, not own it).
