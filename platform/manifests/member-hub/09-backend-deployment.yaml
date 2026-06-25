@@ -187,6 +187,10 @@ spec:
             # lib/ecosystem-control.ts calls getMe() to fetch the active-org
             # context after OIDC sign-in. HTTP (TLS is at ingress edge).
             - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
+            # Configurable workflow gate (WORKFLOW-ENGINE-PLAN). Inert until "true"
+            # (Control deployed + member-hub-system reachable); then a Control-
+            # unreachable check fails closed on member status changes.
+            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The member-hub-db-app Secret has
