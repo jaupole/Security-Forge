@@ -130,7 +130,7 @@ spec:
             # proposal-forge-system Keycloak client + secret are provisioned and
             # Control is deployed with the gate routes — then flip to "true".
             # While "true" a Control-unreachable check fails CLOSED (blocks submit).
-            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
+            - { name: WORKFLOW_GATES_ENABLED, value: "true" }
             # Ecosystem Control — Service port 80 → pod 4000. PF calls /api/v1/me
             # for the active-org context (the org that drives RLS).
             - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
