@@ -122,6 +122,15 @@ spec:
             # staff?" link forces platform. Token verification trusts both.
             - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
             - { name: OIDC_CLIENT_ID, value: proposal-forge }
+            # Configurable workflow gate (WORKFLOW-ENGINE-PLAN §9). PF→Control
+            # client-credentials identity (azp Control matches). Secret arrives
+            # via VSO as PROPOSALAPP_SYSTEM_CLIENT_SECRET (04-vso-bindings).
+            - { name: PROPOSALAPP_SYSTEM_CLIENT_ID, value: proposal-forge-system }
+            # Master switch for the submit gate. Keep "false" until the
+            # proposal-forge-system Keycloak client + secret are provisioned and
+            # Control is deployed with the gate routes — then flip to "true".
+            # While "true" a Control-unreachable check fails CLOSED (blocks submit).
+            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
             # Ecosystem Control — Service port 80 → pod 4000. PF calls /api/v1/me
             # for the active-org context (the org that drives RLS).
             - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }

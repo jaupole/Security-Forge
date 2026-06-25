@@ -98,8 +98,10 @@ CLIENT_DESTINATIONS=(
   "project-manager|openbao://secret/apps/project-manager/runtime#oidc_client_secret"
   "member-hub-admin|openbao://secret/apps/member-hub/runtime#admin_client_secret"
   "member-hub-system|openbao://secret/apps/member-hub/runtime#system_client_secret"
-  # proposal-forge (proposalapp): single user-login client, no admin/system SA.
+  # proposal-forge (proposalapp): user-login client + a system service-account
+  # (proposal-forge-system) for the configurable workflow gate. No admin SA.
   "proposal-forge|openbao://secret/apps/proposal-forge/runtime#oidc_client_secret"
+  "proposal-forge-system|openbao://secret/apps/proposal-forge/runtime#system_client_secret"
   # business-manager (managerapp): single user-login client, no admin/system SA.
   "business-manager|openbao://secret/apps/business-manager/runtime#oidc_client_secret"
 )
