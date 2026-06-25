@@ -96,6 +96,9 @@ CLIENT_DESTINATIONS=(
   "control-portal|skip"
   "member-hub|openbao://secret/apps/member-hub/runtime#oidc_client_secret"
   "project-manager|openbao://secret/apps/project-manager/runtime#oidc_client_secret"
+  # project-manager (project_manager): user-login client + a system service
+  # account (project-manager-system) for the configurable workflow gate.
+  "project-manager-system|openbao://secret/apps/project-manager/runtime#system_client_secret"
   "member-hub-admin|openbao://secret/apps/member-hub/runtime#admin_client_secret"
   "member-hub-system|openbao://secret/apps/member-hub/runtime#system_client_secret"
   # proposal-forge (proposalapp): user-login client + a system service-account
