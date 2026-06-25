@@ -190,7 +190,7 @@ spec:
             # Configurable workflow gate (WORKFLOW-ENGINE-PLAN). Inert until "true"
             # (Control deployed + member-hub-system reachable); then a Control-
             # unreachable check fails closed on member status changes.
-            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
+            - { name: WORKFLOW_GATES_ENABLED, value: "true" }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The member-hub-db-app Secret has
