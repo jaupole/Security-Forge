@@ -1075,3 +1075,38 @@ spec:
               id.token.claim: "false"
               introspection.token.claim: "false"
               lightweight.claim: "false"
+
+      # ─── project-manager-system (Ecosystem Control service-account) ───
+      # PM → Control service-account for the configurable workflow gate +
+      # manifest registration (Control gates by azp=project-manager-system →
+      # project_manager). Client-credentials only; mirrors the other *-system
+      # clients. Secret -> OpenBao apps/project-manager/runtime#system_client_secret
+      # via 05l. NOTE: realm-import is one-shot — also create live via admin console.
+      - clientId: project-manager-system
+        name: Project Manager → Control System Client
+        description: Project Manager → Control service-account for the configurable workflow gate.
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          - name: aud-self
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: project-manager-system
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "false"
+              lightweight.claim: "false"
