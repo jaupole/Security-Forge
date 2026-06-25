@@ -104,6 +104,9 @@ spec:
             # Ecosystem Control — Service port 80 → pod 4000. BM calls /api/v1/me
             # for the active-org context (drives RLS) + app-activation flag.
             - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
+            # Configurable workflow gate (WORKFLOW-ENGINE-PLAN). Inert until "true";
+            # then a Control-unreachable check fails closed on budget-line changes.
+            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
             # Report PDF export via the shared Gotenberg document-render service.
             - { name: PDF_RENDERER, value: gotenberg }
             - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
