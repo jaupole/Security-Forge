@@ -117,6 +117,7 @@ definition organization {
     // Sub-admin "split" relations (set from job-role bundles):
     relation member_manager: user              // can invite/suspend/assign-roles to members
     relation position_manager: user            // can create/edit/delete role bundles
+    relation workflow_manager: user            // can build/edit/delete workflow rules (manage_workflows)
     relation auditor: user                     // can read audit.event for this org (operator-backlog #33 Part 4)
     relation member: user                      // belongs to this org
     relation app: app                          // org has activated this app
@@ -145,6 +146,11 @@ definition organization {
     permission manage_members = local_administrator + member_manager + cascading_manage_members
     permission cascading_manage_positions = administrator + parent->cascading_manage_positions + platform->administer
     permission manage_positions = local_administrator + position_manager + cascading_manage_positions
+    // manage_workflows: build/edit workflow rules. Mirrors manage_positions —
+    // OA cascades through the parent chain; Administrator + the workflow_manager
+    // bundle tier act on THIS org only. DISTINCT from app.approve_workflow (decide).
+    permission cascading_manage_workflows = administrator + parent->cascading_manage_workflows + platform->administer
+    permission manage_workflows = local_administrator + workflow_manager + cascading_manage_workflows
     // operator-backlog #33 Part 4: audit log read access.
     // `read_audit` is a SUPERSET of `administer` — anyone who can
     // administer the org can read its audit; PLUS the dedicated
