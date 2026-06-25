@@ -106,7 +106,7 @@ spec:
             - { name: ECOSYSTEM_CONTROL_API_URL, value: "http://control.control.svc.cluster.local" }
             # Configurable workflow gate (WORKFLOW-ENGINE-PLAN). Inert until "true";
             # then a Control-unreachable check fails closed on budget-line changes.
-            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
+            - { name: WORKFLOW_GATES_ENABLED, value: "true" }
             # Report PDF export via the shared Gotenberg document-render service.
             - { name: PDF_RENDERER, value: gotenberg }
             - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
