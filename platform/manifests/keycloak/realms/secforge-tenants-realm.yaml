@@ -993,6 +993,41 @@ spec:
               userinfo.token.claim: "false"
           # CTRL-06: no static control-audience mapper — aud=control is minted
           # only by an exchange requesting the optional `control-aud` scope (03f).
+
+      # ─── proposal-forge-system (Ecosystem Control service-account) ───
+      # Parity with the platform realm + member-hub-system (which is in both
+      # realms). The configurable workflow gate mints its token from the PLATFORM
+      # realm (KEYCLOAK_REALM=platform), so this tenants-realm copy is for
+      # realm-symmetry only; 05l publishes the platform secret. Client-
+      # credentials only; never a user login.
+      - clientId: proposal-forge-system
+        name: Proposal Forge → Control System Client
+        description: Proposal Forge → Control service-account for the configurable workflow gate (backend-to-backend).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          - name: aud-self
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: proposal-forge-system
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "false"
+              lightweight.claim: "false"
       # business-manager (managerapp) user-login client — members sign in here.
       # Created live via the admin console 2026-06-12 (realm-import is one-shot);
       # this block is the DR/greenfield source of truth. Mirrors the platform

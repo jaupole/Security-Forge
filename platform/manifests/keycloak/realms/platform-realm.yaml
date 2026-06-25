@@ -946,6 +946,44 @@ spec:
           # CTRL-06: no static control-audience mapper — aud=control is minted
           # only by an exchange requesting the optional `control-aud` scope (03f).
 
+      # ─── proposal-forge-system (Ecosystem Control service-account) ───
+      # PF → Control service-account for the configurable workflow gate
+      # (proposal submit calls /api/v1/system/workflow-gates/*; Control gates by
+      # `azp=proposal-forge-system`, not realm roles or audience). Client-
+      # credentials only; never a user login. Mirrors member-hub-system. Secret
+      # published to OpenBao apps/proposal-forge/runtime#system_client_secret by
+      # 05l-keycloak-secret-publish.sh.
+      - clientId: proposal-forge-system
+        name: Proposal Forge → Control System Client
+        description: Proposal Forge → Control service-account for the configurable workflow gate (backend-to-backend).
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        standardFlowEnabled: false
+        implicitFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        attributes:
+          backchannel.logout.session.required: "true"
+          backchannel.logout.revoke.offline.tokens: "false"
+          oauth2.device.authorization.grant.enabled: "false"
+          oidc.ciba.grant.enabled: "false"
+          standard.token.exchange.enabled: "false"
+        protocolMappers:
+          # Self-audience so tokens advertise `aud=proposal-forge-system`
+          # (Control trusts azp, but keeps audience discipline consistent).
+          - name: aud-self
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: proposal-forge-system
+              access.token.claim: "true"
+              id.token.claim: "false"
+              introspection.token.claim: "false"
+              lightweight.claim: "false"
+
       # ─── business-manager (browser auth-code + PKCE, user-facing) ──
       # secforge-prod migration: Project Tracker becomes ecosystem app
       # `managerapp`, renamed "Business Manager". Operator/staff login on the
