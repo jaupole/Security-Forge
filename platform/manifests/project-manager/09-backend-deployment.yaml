@@ -93,7 +93,7 @@ spec:
             # PM->Control gate/manifest calls; secret via VSO. Inert until
             # WORKFLOW_GATES_ENABLED=true AND project-manager-system provisioned.
             - { name: PM_SYSTEM_CLIENT_ID, value: project-manager-system }
-            - { name: WORKFLOW_GATES_ENABLED, value: "false" }
+            - { name: WORKFLOW_GATES_ENABLED, value: "true" }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. Feed DATABASE_URL from the `uri` key.
