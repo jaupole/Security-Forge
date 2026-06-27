@@ -81,7 +81,7 @@ spec:
             - name: sweep
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:8dc84a90dacbba238388713892f34746674c423491e72825e3ec324a384faad6
+              image: ghcr.io/jaupole/control@sha256:10d0e63e5060c995d18c9406827634b16f2a6d4836c474893cc67baf7b221a76
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "grants:sweep-expired"]
               env:
