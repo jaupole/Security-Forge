@@ -97,7 +97,7 @@ spec:
           # is centered between its neighbors. No migration. MUST match 08.
           # 2026-06-12: commit 1fa372e — Solicitation on its own full-width cover
           # row (long titles wrap wide). No migration. MUST match 08.
-          image: ghcr.io/jaupole/proposal-forge@sha256:36b37028b495b5896dc08bb2b1eeffcd86b29dcd66eec0980ae78a325943757c
+          image: ghcr.io/jaupole/proposal-forge@sha256:917c35bc2bed5645f21ed6a988e8fa412ef512d7ea927db9d775fdf1d42f9477
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3001, name: http, protocol: TCP }
