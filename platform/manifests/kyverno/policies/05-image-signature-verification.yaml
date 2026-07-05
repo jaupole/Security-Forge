@@ -49,12 +49,31 @@ spec:
                                        # are too slow to scan every pod
   validationFailureAction: Enforce     # our CI signs every image — block unsigned
   webhookConfiguration:
-    failurePolicy: Ignore              # don't wedge admission if Kyverno is down
-    timeoutSeconds: 30                 # raised from the 10s default: the keyless verify
-                                       # (ghcr signature fetch + Rekor/Fulcio) was blowing
-                                       # the budget under admission bursts and — because
-                                       # failurePolicy=Ignore — FAILING OPEN (pod admitted
-                                       # unverified). 30s (k8s max) lets verify complete.
+    failurePolicy: Fail                # FAIL CLOSED: if verification can't complete
+                                       # (Kyverno unreachable, or ghcr/Rekor/Fulcio times
+                                       # out within timeoutSeconds) the pod is DENIED, not
+                                       # admitted unverified. Closes the fail-open gap that
+                                       # let a transient verify timeout bypass enforcement
+                                       # (2026-06-30 ImageSignatureVerificationFailing).
+                                       # Safe here because: (a) kyverno-admission-controller
+                                       # runs 3 replicas (HA — webhook stays up across a
+                                       # single pod restart); (b) resourceFilters exclude
+                                       # kyverno / kube-system / kube-node-lease / Node /
+                                       # APIService, so a Kyverno outage can't wedge the
+                                       # control plane or Kyverno's own recovery; (c) this
+                                       # rule only scopes ghcr.io/(secforge|jaupole)/* — our
+                                       # own app images — never vendor/system images; and
+                                       # (d) Kyverno's image-verify cache means an already-
+                                       # verified digest re-admits from cache during a
+                                       # transient sigstore blip. Residual risk: a *sustained*
+                                       # sigstore/ghcr outage blocks first-time admission of
+                                       # our images (deploys + scale-up of new digests). See
+                                       # follow-up to move to key-based verify to drop the
+                                       # Rekor/Fulcio runtime dependency entirely.
+    timeoutSeconds: 30                 # k8s max. The keyless verify (ghcr signature fetch
+                                       # + Rekor/Fulcio) needs headroom under admission
+                                       # bursts; with failurePolicy=Fail a timeout now
+                                       # DENIES rather than silently admitting.
   rules:
     # SecForge-owned images: control + portal today (same keyless CI as the
     # keycloak overlay — see .github/workflows/*-image-build.yml). The
