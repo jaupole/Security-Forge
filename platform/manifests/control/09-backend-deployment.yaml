@@ -106,11 +106,10 @@ spec:
             - { name: API_PORT, value: "4000" }
             - { name: API_HOST, value: "0.0.0.0" }
             - { name: TRUST_PROXY, value: "1" }
-            # ONLYOFFICE Document Server usage watch (DOCENG Phase M): poller
-            # signs command-service calls with the fleet-shared DS JWT (VSO —
-            # see 04-vso-bindings.yaml). Absent env = poller no-ops.
-            - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
-            - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: ONLYOFFICE_JWT_SECRET } } }
+            # ONLYOFFICE usage watch lives in the CronJob (19-*), NOT here: the
+            # backend's /admin/onlyoffice/* endpoints read the DB only, so the
+            # API pod carries no DS URL or JWT (least privilege; and explicit
+            # *_SECRET env names trip Kyverno no-secret-shaped-env-vars).
             # Public TENANT front-door origin. Used for the post-OAuth
             # redirect back to the Portal (QBO/accounting connect), emailed
             # invite acceptUrls, and the CORS allow-origin. MUST be the

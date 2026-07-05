@@ -78,9 +78,11 @@ spec:
                 - { name: KEYCLOAK_REALM,                   value: platform }
                 - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
                 - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
-                # ONLYOFFICE Document Server (in-cluster) + fleet-shared JWT.
+                # ONLYOFFICE Document Server (in-cluster). The fleet-shared JWT
+                # arrives via envFrom (onlyoffice-jwt renders the key as
+                # ONLYOFFICE_JWT_SECRET) — never as a named env var, which the
+                # Kyverno no-secret-shaped-env-vars policy (ADR-0013) rejects.
                 - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
-                - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: ONLYOFFICE_JWT_SECRET } } }
                 # Runtime `control` role (control-db-app).
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
@@ -90,6 +92,10 @@ spec:
               envFrom:
                 - secretRef:
                     name: control-app-secrets
+                # Fleet-shared DS JWT: key ONLYOFFICE_JWT_SECRET (VSO-rendered,
+                # 04-vso-bindings.yaml) becomes the env var of the same name.
+                - secretRef:
+                    name: onlyoffice-jwt
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities: { drop: [ALL] }
