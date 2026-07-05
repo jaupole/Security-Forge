@@ -30,3 +30,29 @@ FROM mirror.gcr.io/onlyoffice/documentserver:9.4.0.1@sha256:e3da62a847b9a5d51a11
 RUN apt-get update \
  && apt-get upgrade -y \
  && rm -rf /var/lib/apt/lists/*
+
+# ── Proposal Forge built-in editor plugins ───────────────────────────────────
+# Bundle PF's two editor-panel plugins into the Document Server's sdkjs-plugins/
+# tree. The DS auto-discovers any folder there (services.CoAuthoring.plugins.uri
+# = "/sdkjs-plugins") and serves it SAME-ORIGIN — so the editor no longer needs
+# the per-session editorConfig.plugins.pluginsData manifest fetch that was
+# failing to load these. Each is a self-contained folder: config.json (relative
+# url/icons + stable asc.{GUID}) + index.html → plugins.js → code.js, plus
+# resources/ and translations/. PF hands each its short-lived per-session token
+# at runtime via editorConfig.plugins.options[guid] (read by the plugin from
+# Asc.plugin.info.options). Layout + auto-discovery per ONLYOFFICE helpcenter
+# "Adding new plugins to server editors" (docs-add-plugin) and
+# api.onlyoffice.com plugin on-premises install.
+#
+# VENDORED COPY: these folders mirror Proposal Forge's
+# client/public/plugins/{pf-fields,pf-library}/ — the DS image build cannot reach
+# the PF repo. Source of truth = PF; keep them in sync when the plugin code
+# changes there (same GUIDs, same built-in-form config.json).
+#
+# NOTE on the marketplace store: there is NO DS config key to disable ONLY the
+# onlyoffice.github.io plugin marketplace on 9.4 (services.CoAuthoring.plugins
+# exposes only uri/autostart/pluginsData; customization.plugins:false would also
+# kill THESE built-ins — upstream DocumentServer#2118 is open). PF suppresses it
+# per-session via editorConfig.plugins.disable instead. See ../README.md.
+COPY plugins/pf-fields/  /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-fields/
+COPY plugins/pf-library/ /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-library/

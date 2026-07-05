@@ -66,6 +66,51 @@ approved chain. Built by `.github/workflows/onlyoffice-image-build.yml`
 in the job summary). Set the GHCR package **public** after the first run; pin
 `09-deployment.yaml` to the printed digest.
 
+## Built-in editor plugins (Proposal Forge)
+
+Proposal Forge embeds two editor-panel plugins — **Proposal Fields** (insert
+`{{slug}}` placeholders) and **Boilerplate Library** (insert reusable org
+boilerplate). They are **built into this image** under
+`/var/www/onlyoffice/documentserver/sdkjs-plugins/{pf-fields,pf-library}/`
+(`image/Dockerfile` COPYs them from `image/plugins/`, a **vendored copy** of
+PF's `client/public/plugins/` — source of truth is the PF repo; keep in sync).
+
+The DS auto-discovers any folder under `sdkjs-plugins/`
+(`services.CoAuthoring.plugins.uri = "/sdkjs-plugins"`) and serves it
+same-origin, so the editor loads them without the per-session
+`editorConfig.plugins.pluginsData` manifest fetch that was **not** loading them
+on 9.4. PF drives them per session from its signed editor-config:
+`plugins.autostart:[<guid>,<guid>]` + a per-GUID `plugins.options:{<guid>:{ctx,api}}`
+carrying a short-lived token. The plugin reads that at `Asc.plugin.info.options`
+and fetches its data from PF cross-origin (the
+`/api/v1/onlyoffice/{fields,library}/:token` endpoints, CORS-pinned to this DS's
+public origin — which is exactly the built-in plugin frame's own origin).
+
+### Marketplace store is NOT disabled at the server (deliberate)
+
+There is **no Document Server config key** to disable only the
+onlyoffice.github.io plugin **marketplace/store** on 9.4:
+`services.CoAuthoring.plugins` exposes only `uri`/`autostart`/`pluginsData`, and
+`editorConfig.customization.plugins:false` would disable **all** plugins —
+including the two built-ins above (upstream **ONLYOFFICE/DocumentServer#2118** is
+open). We therefore do **not** mount a `local.json` overlay: the vendor image's
+entrypoint generates `local.json` from env (`JWT_ENABLED`, `JWT_SECRET`, …), and
+a read-only ConfigMap mounted over it would clobber that (breaking JWT). PF
+suppresses the store **per session** via `editorConfig.plugins.disable:[<marketplace-guid>]`
+instead (best-effort — browser-verify). The store fetch is a **client-side**
+browser call to onlyoffice.github.io, so the pod's zero-egress NetworkPolicy does
+not stop it; a hard block would need a CSP on `docs.${DOMAIN}`
+(`istio-ingress/20-virtualservices.yaml`) omitting `onlyoffice.github.io` +
+`plugins-services.onlyoffice.com`, but a too-strict CSP breaks the editor — treat
+that as a tested follow-up, not a prerequisite.
+
+### Changing the plugins = image rebuild
+
+The plugins live in the image, so a plugin change is an **image rebuild**: sync
+`image/plugins/` from PF, run `.github/workflows/onlyoffice-image-build.yml` (it
+also fires on a push touching `platform/manifests/onlyoffice/image/**`), then
+re-pin the new digest in `09-deployment.yaml` and re-apply it.
+
 ## First-deploy sequence (over `ssh secforge`)
 
 ```bash

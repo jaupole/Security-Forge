@@ -1,0 +1,25 @@
+{
+  "name": "Proposal Fields",
+  "nameLocale": { "en": "Proposal Fields" },
+  "guid": "asc.{B90B3621-D201-40AF-8FFB-87E0DE4CEDAA}",
+  "version": "1.0.0",
+  "minVersion": "8.1.0",
+  "variations": [
+    {
+      "description": "Insert Proposal Forge {{field}} placeholders at the cursor.",
+      "descriptionLocale": {
+        "en": "Insert Proposal Forge {{field}} placeholders at the cursor."
+      },
+      "url": "index.html",
+      "icons": ["resources/icon.png", "resources/icon@2x.png"],
+      "isViewer": false,
+      "isVisual": true,
+      "type": "panelRight",
+      "EditorsSupport": ["word"],
+      "initDataType": "none",
+      "initData": "",
+      "buttons": [],
+      "size": [320, 520]
+    }
+  ]
+}
