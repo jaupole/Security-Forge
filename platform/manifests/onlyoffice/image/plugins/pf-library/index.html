@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Boilerplate Library</title>
+    <!-- Vendored ONLYOFFICE plugin SDK (served same-origin from Proposal Forge,
+         so the plugin frame's script-src 'self' is satisfied — no third-party
+         script and no CDN dependency). Must load before code.js, which assigns
+         window.Asc.plugin.init / .button. -->
+    <script src="plugins.js"></script>
+    <style>
+      :root {
+        --pf-accent: #2563eb;
+        --pf-ink: #1f2937;
+        --pf-muted: #6b7280;
+        --pf-hair: #e5e7eb;
+        --pf-hover: #f3f4f6;
+        --pf-chip: #f1f5f9;
+        --pf-card: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --pf-ink: #e5e7eb;
+          --pf-muted: #9ca3af;
+          --pf-hair: #374151;
+          --pf-hover: #1f2937;
+          --pf-chip: #111827;
+          --pf-card: #0b1220;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13px;
+        color: var(--pf-ink);
+        background: var(--pf-card);
+      }
+      #pf-root { display: flex; flex-direction: column; height: 100%; padding: 10px; }
+      .pf-intro { color: var(--pf-muted); font-size: 11px; line-height: 1.5; margin: 0 0 8px; }
+      .pf-search {
+        width: 100%; padding: 6px 8px; margin-bottom: 8px;
+        border: 1px solid var(--pf-hair); border-radius: 8px;
+        background: var(--pf-card); color: var(--pf-ink); font-size: 12px;
+      }
+      .pf-list { flex: 1 1 auto; overflow-y: auto; }
+      .pf-group { border: 1px solid var(--pf-hair); border-radius: 10px; overflow: hidden; }
+      .pf-item {
+        display: block; width: 100%; padding: 8px 10px; border: 0;
+        border-bottom: 1px solid var(--pf-hair);
+        background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit;
+      }
+      .pf-item:last-child { border-bottom: 0; }
+      .pf-item:hover { background: var(--pf-hover); }
+      .pf-label { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pf-preview {
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden; margin-top: 2px; font-size: 11px; color: var(--pf-muted); line-height: 1.4;
+      }
+      .pf-state { color: var(--pf-muted); font-size: 12px; padding: 14px 4px; text-align: center; }
+      .pf-error { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div id="pf-root">
+      <p class="pf-intro">
+        Click a boilerplate block to insert it at the cursor. Blocks are your
+        organization's reusable content, shared across proposals.
+      </p>
+      <input id="pf-search" class="pf-search" type="text" placeholder="Filter boilerplate…" autocomplete="off" />
+      <div id="pf-list" class="pf-list">
+        <div class="pf-state">Loading boilerplate…</div>
+      </div>
+    </div>
+    <script src="code.js"></script>
+  </body>
+</html>
