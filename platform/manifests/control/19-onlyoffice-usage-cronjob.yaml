@@ -39,7 +39,21 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 0
+      # backoffLimit: 2 (not 0) absorbs the ambient-mesh startup race. This is a
+      # fresh short-lived pod every 60s; iptables redirection is committed at pod
+      # start but ztunnel occasionally hasn't finished enrolling the workload when
+      # the poller opens its first connections, so a minority of runs get their
+      # outbound sockets reset (`UND_ERR_SOCKET: other side closed` to the DS
+      # command service AND `ECONNRESET` to control-db, both at ~1-2s pod age).
+      # With backoffLimit: 0 each such reset marked the whole Job Failed -> a
+      # steady drip of KubeJobFailed alerts for a purely transient, self-healing
+      # condition. Two retries let the Job re-run once ztunnel is warm (~10s
+      # later) and complete cleanly. Safe under concurrencyPolicy: Forbid +
+      # startingDeadlineSeconds: 50 (3 attempts of a ~1-2s poll finish well
+      # inside the minute) and the DB-side FOR UPDATE row lock keeps retries
+      # idempotent. Deeper follow-up: app-level connect retry in
+      # ecosystem-control src/cli/onlyoffice-usage.ts.
+      backoffLimit: 2
       ttlSecondsAfterFinished: 3600
       template:
         metadata:
