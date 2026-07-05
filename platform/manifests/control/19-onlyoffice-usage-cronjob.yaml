@@ -64,7 +64,7 @@ spec:
             - name: poll
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:b1a7e68da993fe8bc50d0f46101755982ec4cd18431c235c64343162d26f81dd
+              image: ghcr.io/jaupole/control@sha256:a25ae27da015c488379b90ce536b8d66239466ddf72338176811c9b9bf5a49ce
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "onlyoffice:poll-usage"]
               env:
