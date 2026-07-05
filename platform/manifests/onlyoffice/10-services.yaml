@@ -1,0 +1,24 @@
+# In-cluster Service for the ONLYOFFICE Document Server. ClusterIP — reached
+# two ways, both gated by 05-network-policies.yaml + 06-authorization-policy.yaml:
+#   - browsers via the Istio gateway host docs.${DOMAIN}
+#     (istio-ingress/20-virtualservices.yaml routes here), and
+#   - consumer apps directly as
+#     http://onlyoffice.onlyoffice.svc.cluster.local:80
+#     (plaintext to the Service; ambient ztunnel wraps it in mTLS transparently).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onlyoffice
+  namespace: onlyoffice
+  labels:
+    app.kubernetes.io/name: onlyoffice
+    app.kubernetes.io/component: app
+    secforge.platform/component: onlyoffice
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: onlyoffice
+    app.kubernetes.io/component: app
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }

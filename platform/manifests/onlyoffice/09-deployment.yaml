@@ -1,0 +1,141 @@
+# ONLYOFFICE Docs (Document Server) — the fleet's embedded document editor +
+# conversion service (DOCENG Phase 1). Single all-in-one pod: nginx front on
+# :80 + docservice/converter Node services + embedded postgres/rabbitmq, all
+# under supervisord. That composition is fine at this scale — do NOT decompose
+# into external DB/MQ (spec DOCENG-P1).
+#
+# IMAGE: a thin SecForge build over upstream onlyoffice/documentserver:9.4.0.1
+# (9.4 removed the Community Edition connection limit), pinned by digest in
+# image/Dockerfile and rebuilt/signed by
+# .github/workflows/onlyoffice-image-build.yml, so it satisfies Kyverno
+# restrict-image-registries (ghcr.io/jaupole/*) + verify-image-signature
+# (Enforce). The GHCR package must be PUBLIC (no imagePullSecret here).
+#
+# SECURITY POSTURE (deviations are deliberate and documented):
+#   - RUNS AS ROOT: supervisord and the image's init scripts require root; the
+#     services drop privileges themselves (ds/postgres/rabbitmq users). This is
+#     why the namespace is PSS `baseline` (01-namespace.yaml) and `onlyoffice`
+#     is exempted in kyverno/policies/06-require-runasnonroot.yaml. Container
+#     securityContext is deliberately permissive-for-baseline — nothing dropped
+#     beyond the baseline defaults (no cap-drop, no readOnlyRootFilesystem, no
+#     seccomp pin): the AIO image's service mix (setuid drops, postgres, nginx)
+#     breaks under restricted-style constraints. Tightening cap-by-cap is a
+#     tracked hardening follow-up once the service is proven live.
+#   - JWT MANDATORY: JWT_ENABLED=true with the fleet-shared secret from OpenBao
+#     (VSO-rendered onlyoffice-jwt Secret, 04-vso-bindings.yaml). Every editor
+#     config, API call, and save callback is HMAC-signed.
+#   - WOPI off (we integrate via the native API), unauthorized storage off.
+#   - Zero-egress NetworkPolicy (05) is the primary SSRF containment for the
+#     DS's document-fetch path.
+#
+# Recreate strategy: heavy image + single-node cluster — a surge pod would
+# double the memory footprint and thrash the node.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onlyoffice
+  namespace: onlyoffice
+  labels:
+    app.kubernetes.io/name: onlyoffice
+    app.kubernetes.io/component: app
+    secforge.platform/component: onlyoffice
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      annotations:
+        # Exclude ephemeral volumes from Velero fs-backup — no recoverable
+        # data (documents transit the DS, they live in PF's MinIO), and they
+        # race the pod lifecycle (same rationale as gotenberg).
+        backup.velero.io/backup-volumes-excludes: ds-logs,ds-lib,ds-postgresql,ds-rabbitmq,tmp
+      labels:
+        app.kubernetes.io/name: onlyoffice
+        app.kubernetes.io/component: app
+        secforge.platform/component: onlyoffice
+    spec:
+      serviceAccountName: onlyoffice
+      automountServiceAccountToken: false
+      containers:
+        - name: documentserver
+          # TODO: pin digest from first CI build — replace DIGEST_PLACEHOLDER
+          # with the sha256 the onlyoffice-image-build workflow prints in its
+          # job summary. Kyverno rejects the placeholder.
+          image: ghcr.io/jaupole/onlyoffice-documentserver:9.4.0.1-secforge@sha256:DIGEST_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 80, name: http, protocol: TCP }
+          env:
+            # JWT is the DS's only application-layer auth — never run without it.
+            - { name: JWT_ENABLED, value: "true" }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: onlyoffice-jwt
+                  key: jwt_secret
+            - { name: JWT_HEADER, value: "Authorization" }
+            - { name: JWT_IN_BODY, value: "true" }
+            # Native API integration only — no WOPI surface.
+            - { name: WOPI_ENABLED, value: "false" }
+            # Refuse storage endpoints that present no valid JWT.
+            - { name: USE_UNAUTHORIZED_STORAGE, value: "false" }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits:   { cpu: "2",  memory: 4Gi }
+          # Big AIO image, slow first boot (supervisord brings up postgres,
+          # rabbitmq, then the Node services + font generation). startupProbe
+          # gives it up to 5 minutes before liveness takes over.
+          startupProbe:
+            httpGet: { path: /healthcheck, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /healthcheck, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthcheck, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Permissive-for-baseline on purpose — see header. Root + default
+          # caps are what the AIO image needs; PSS baseline still blocks
+          # privileged/hostNS/hostPort.
+          securityContext: {}
+          volumeMounts:
+            - { name: ds-logs, mountPath: /var/log/onlyoffice }
+            - { name: ds-lib, mountPath: /var/lib/onlyoffice }
+            - { name: ds-postgresql, mountPath: /var/lib/postgresql }
+            - { name: ds-rabbitmq, mountPath: /var/lib/rabbitmq }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        # All ephemeral by design: documents do NOT live in the DS (they
+        # transit; PF's MinIO is the store), and the embedded postgres only
+        # tracks in-flight editing sessions. A restart loses open co-editing
+        # state, which consumers must tolerate (force-save on shutdown is an
+        # app-layer concern). If cache persistence proves valuable, a small
+        # PVC is the follow-up — don't build it now (spec DOCENG-P1).
+        - name: ds-logs
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: ds-lib
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: ds-postgresql
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: ds-rabbitmq
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

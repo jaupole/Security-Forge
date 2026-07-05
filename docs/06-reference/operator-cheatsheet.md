@@ -33,6 +33,10 @@
 3. Run the unseal procedure (Section 2 below).
 4. Verify everything is back: `kubectl get pods --all-namespaces | grep -v "Running\|Completed"` should return nothing.
 
+Per-service notes:
+
+- **ONLYOFFICE Document Server** (`onlyoffice` ns) must come back on its own — no unseal needed, but it's a heavy all-in-one image with a slow boot (its startupProbe allows up to ~5 min, so it lingers in the not-Running list longer than everything else). Verify: `sudo kubectl exec -n onlyoffice deploy/onlyoffice -- curl -s http://localhost/healthcheck` → `true`.
+
 If it's been more than 24 hours since the cluster was last running, see Section 3 — there's a known multi-day-pause gotcha you'll hit.
 
 ---

@@ -79,6 +79,11 @@ APP_ROLES=(
   # (private image pull cred) via the scoped keycloak-ghcr policy. See
   # manifests/openbao/policies/keycloak-ghcr.hcl + manifests/keycloak/03b-ghcr-vso-binding.yaml.
   "keycloak-ghcr-vso|keycloak|keycloak-ghcr-vso|keycloak-ghcr|3600|86400"
+  # onlyoffice (DOCENG Phase 1) — VSO renders the Document Server's fleet-shared
+  # JWT secret (apps/onlyoffice/jwt) into the onlyoffice ns. Consumers (PF,
+  # later Control) sync the SAME path via their OWN roles — the vso policy
+  # carries their read grant. Policy: manifests/openbao/policies/onlyoffice.hcl.
+  "onlyoffice-vso|onlyoffice|onlyoffice-vso|onlyoffice|3600|86400"
 )
 
 echo ">>> Creating app-level kubernetes-auth roles"

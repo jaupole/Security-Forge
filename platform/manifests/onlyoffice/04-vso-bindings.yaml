@@ -1,0 +1,59 @@
+# VSO bindings for the onlyoffice namespace.
+#
+# Renders ONE K8s Secret:
+#   - onlyoffice-jwt → the Document Server's global JWT secret (key
+#     `jwt_secret`), consumed by JWT_SECRET on the Deployment (09).
+#
+# The secret is FLEET-SHARED BY DESIGN: the DS has a single global JWT secret,
+# and every consumer app (Proposal Forge today, Control's usage monitor next)
+# gets the SAME OpenBao path synced into its own namespace via its own
+# VaultStaticSecret (see proposal-forge/04-vso-bindings.yaml). Rotation =
+# rotate once in OpenBao → every VSO sync follows within refreshAfter; never
+# hand-copy it between namespaces.
+#
+# DEPLOY-TIME PREREQS (not applied by this manifest):
+#   1. OpenBao policy `onlyoffice` (manifests/openbao/policies/onlyoffice.hcl)
+#      + k8s-auth role `onlyoffice-vso` — APP_ROLES row in
+#      platform/components/05j-app-vso-roles.sh.
+#   2. Populate secret/apps/onlyoffice/jwt with jwt_secret=<256-bit random>
+#      (see README.md § First deploy).
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: onlyoffice-vso
+  namespace: onlyoffice
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: onlyoffice-vso
+    serviceAccount: onlyoffice-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# DS global JWT secret. Keys at the OpenBao path (jwt_secret) become keys in
+# the rendered Secret 1:1; the Deployment's secretKeyRef reads `jwt_secret`.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: onlyoffice-jwt
+  namespace: onlyoffice
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: onlyoffice-vso
+  mount: secret
+  type: kv-v2
+  path: apps/onlyoffice/jwt
+  refreshAfter: 1h
+  destination:
+    name: onlyoffice-jwt
+    create: true
+    type: Opaque
