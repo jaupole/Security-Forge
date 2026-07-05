@@ -49,27 +49,18 @@ spec:
                                        # are too slow to scan every pod
   validationFailureAction: Enforce     # our CI signs every image — block unsigned
   webhookConfiguration:
-    failurePolicy: Fail                # FAIL CLOSED: if verification can't complete
-                                       # (Kyverno unreachable, or ghcr/Rekor/Fulcio times
-                                       # out within timeoutSeconds) the pod is DENIED, not
-                                       # admitted unverified. Closes the fail-open gap that
-                                       # let a transient verify timeout bypass enforcement
-                                       # (2026-06-30 ImageSignatureVerificationFailing).
-                                       # Safe here because: (a) kyverno-admission-controller
-                                       # runs 3 replicas (HA — webhook stays up across a
-                                       # single pod restart); (b) resourceFilters exclude
-                                       # kyverno / kube-system / kube-node-lease / Node /
-                                       # APIService, so a Kyverno outage can't wedge the
-                                       # control plane or Kyverno's own recovery; (c) this
-                                       # rule only scopes ghcr.io/(secforge|jaupole)/* — our
-                                       # own app images — never vendor/system images; and
-                                       # (d) Kyverno's image-verify cache means an already-
-                                       # verified digest re-admits from cache during a
-                                       # transient sigstore blip. Residual risk: a *sustained*
-                                       # sigstore/ghcr outage blocks first-time admission of
-                                       # our images (deploys + scale-up of new digests). See
-                                       # follow-up to move to key-based verify to drop the
-                                       # Rekor/Fulcio runtime dependency entirely.
+    failurePolicy: Ignore              # STAYS FAIL-OPEN. Fail-closed was attempted live on
+                                       # 2026-07-05 and REVERTED: a burst of concurrent
+                                       # keyless verifications (what happens when every pod
+                                       # reschedules on a node reboot) triggers Sigstore
+                                       # TUF/Fulcio root-init failures inside Kyverno
+                                       # ("failed to get roots from fulcio: initializing tuf").
+                                       # With failurePolicy=Fail that would DENY our own app
+                                       # pods and block cluster recovery — turning a reboot
+                                       # into an outage. DO NOT set Fail until Kyverno keyless
+                                       # verification is reliable under load (pin/mirror the
+                                       # Sigstore TUF root + warm the image-verify cache).
+                                       # Tracked in docs/04-security/image-supply-chain-verification.md.
     timeoutSeconds: 30                 # k8s max. The keyless verify (ghcr signature fetch
                                        # + Rekor/Fulcio) needs headroom under admission
                                        # bursts; with failurePolicy=Fail a timeout now
@@ -142,24 +133,19 @@ spec:
   # to check. This replaces the old whole-org ghcr.io/cloudnative-pg/* and
   # ghcr.io/spiffe/* rules, which pointed `required: true` at orgs whose images
   # are mostly unsigned (the source of the Audit-mode fail noise).
-  validationFailureAction: Enforce
+  # STAYS AUDIT (not Enforce) as of 2026-07-05. Enforce+Fail was applied live and
+  # REVERTED within minutes: Kyverno logged real keyless-verify FAILURES for these
+  # (correctly-signed) vendor images — "failed to get roots from fulcio: initializing
+  # tuf" — under the burst of concurrent verifications the policy update triggered.
+  # Host-side `cosign verify` passes all of them, so the signatures are fine; the
+  # fault is Kyverno's Sigstore TUF/Fulcio init under load. In Enforce+Fail that
+  # would deny these vendors (incl. SPIRE, registry.k8s.io, cert-manager) on any mass
+  # reschedule. The 7 rules below are CORRECT and stay (Audit = report-only, no block);
+  # flip to Enforce + failurePolicy: Fail ONLY after the TUF/keyless reliability fix.
+  # See docs/04-security/image-supply-chain-verification.md.
+  validationFailureAction: Audit
   webhookConfiguration:
-    failurePolicy: Fail                # No fail-open — same posture as the secforge
-                                       # policy. A verify that cannot complete DENIES,
-                                       # it does not admit unverified.
-                                       # Safe here: kyverno-admission-controller is
-                                       # 3-replica HA; resourceFilters exclude kyverno /
-                                       # kube-system / kube-node-lease / Node / APIService;
-                                       # and Kyverno's image-verify cache re-admits an
-                                       # already-verified digest, so a transient sigstore /
-                                       # Fulcio / Rekor blip does NOT block reschedules of
-                                       # running vendor pods.
-                                       # Residual risk: a *sustained* sigstore — or, for the
-                                       # registry.k8s.io rule, accounts.google.com — outage
-                                       # blocks first-time admission of a NEW digest of these
-                                       # signed vendors (incl. SPIRE + spiffe-csi). If that
-                                       # is unacceptable, soak with failurePolicy: Ignore
-                                       # first, then flip to Fail.
+    failurePolicy: Ignore              # fail-open until TUF/keyless verification is reliable
     timeoutSeconds: 30                 # k8s max; absorb keyless-verify latency bursts.
   rules:
     # --- SPIFFE / SPIRE: only the repos that actually sign (spire + spiffe-csi).
