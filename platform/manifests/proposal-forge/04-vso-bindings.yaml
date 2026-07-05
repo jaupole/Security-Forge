@@ -99,23 +99,14 @@ spec:
         # GSA per-diem API key (api.gsa.gov/travel/perdiem/v2).
         GSA_API_KEY:
           text: '{{ .Secrets.gsa_api_key }}'
-        # Per-user editor OAuth (Word-for-web / Google Docs round-trip). Client
-        # id+secret per provider + the AES-256 key that seals users' tokens at
-        # rest (lib/user-oauth.ts). Names match the env vars the app reads. All
-        # guarded so an absent key renders empty (feature self-disables) rather
-        # than breaking PF startup. Client IDs aren't secret but ride here so all
-        # PF config stays in one place. Reaches the pod via envFrom (so the
-        # SECRET/KEY-named vars never appear in the pod spec → no Kyverno flag).
-        GOOGLE_OAUTH_CLIENT_ID:
-          text: '{{ if .Secrets.google_oauth_client_id }}{{ .Secrets.google_oauth_client_id }}{{ end }}'
-        GOOGLE_OAUTH_CLIENT_SECRET:
-          text: '{{ if .Secrets.google_oauth_client_secret }}{{ .Secrets.google_oauth_client_secret }}{{ end }}'
-        MICROSOFT_OAUTH_CLIENT_ID:
-          text: '{{ if .Secrets.microsoft_oauth_client_id }}{{ .Secrets.microsoft_oauth_client_id }}{{ end }}'
-        MICROSOFT_OAUTH_CLIENT_SECRET:
-          text: '{{ if .Secrets.microsoft_oauth_client_secret }}{{ .Secrets.microsoft_oauth_client_secret }}{{ end }}'
-        OAUTH_TOKEN_SEAL_KEY:
-          text: '{{ if .Secrets.oauth_token_seal_key }}{{ .Secrets.oauth_token_seal_key }}{{ end }}'
+        # DORMANT (DOCENG-A9, 2026-07-05): the Google/M365 provider round-trip
+        # was removed from PF ("at least for now" — operator decision; restore =
+        # git revert of PF d77aa6b + this hunk). The OAuth app registrations and
+        # the OpenBao values at apps/proposal-forge/runtime (google_oauth_*,
+        # microsoft_oauth_*, oauth_token_seal_key) stay in place — only the env
+        # rendering is removed so the running pod carries no unused credentials
+        # (least privilege). UserOAuthConnection rows rest AES-sealed under the
+        # retained oauth_token_seal_key.
 
 ---
 # GHCR image-pull credential (read:packages PAT on jaupole/proposal-forge).
