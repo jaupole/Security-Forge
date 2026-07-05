@@ -151,7 +151,8 @@ spec:
             - { name: ONLYOFFICE_PUBLIC_URL, value: "https://docs.secforge.dev" }
             - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
             - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://proposal-forge.proposal-forge.svc.cluster.local" }
-            - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: jwt_secret } } }
+            # (the PF-side VSO binding templates the key to env-var shape)
+            - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: ONLYOFFICE_JWT_SECRET } } }
             # CNPG-rendered DB connection string.
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: proposal-forge-db-app, key: uri } } }
           envFrom:
