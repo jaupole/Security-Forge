@@ -239,6 +239,14 @@ spec:
             - { name: MINIO_PORT,     value: "9000" }
             - { name: MINIO_USE_SSL,  value: "false" }
             - { name: MINIO_BUCKET,   value: member-hub-documents }
+            # ONLYOFFICE Document Server — staff document viewer (FLEET-MH1).
+            # PUBLIC_URL = browser embed origin; INTERNAL_URL = in-cluster DS
+            # (server-side, unused in view-only); CALLBACK_BASE = this app's
+            # in-cluster origin the DS fetches document bytes back from
+            # (Service :80 → pod :3000). JWT secret via envFrom below.
+            - { name: ONLYOFFICE_PUBLIC_URL,   value: "https://docs.secforge.dev" }
+            - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
+            - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://member-hub.member-hub.svc.cluster.local" }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, KEYCLOAK_ADMIN_CLIENT_SECRET,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY, EMAIL_HMAC_KEY from
@@ -252,6 +260,12 @@ spec:
             # account; rw on member-hub-documents only).
             - secretRef:
                 name: member-hub-documents-minio
+            # Adds ONLYOFFICE_JWT_SECRET rendered from the shared
+            # secret/apps/onlyoffice/jwt (FLEET-MH1). A *_SECRET literal in
+            # `env:` would trip Kyverno no-secret-shaped-env-vars, so it comes
+            # via envFrom the VSO-rendered Secret (04-vso-bindings.yaml).
+            - secretRef:
+                name: onlyoffice-jwt
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits:   { cpu: 1,    memory: 512Mi }

@@ -440,3 +440,52 @@ spec:
       ports:
         - { protocol: TCP, port: 3000 }
         - { protocol: TCP, port: 15008 }
+
+---
+# Egress: member-hub → ONLYOFFICE Document Server (:80 + HBONE). The backend
+# signs editor configs pointing the browser at the DS (server-side DS calls are
+# none today — the viewer is view-only). Mirror of onlyoffice's
+# allow-ingress-from-consumers. FLEET-MH1.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-onlyoffice
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Ingress: ONLYOFFICE Document Server → member-hub backend :3000. The DS fetches
+# document bytes from MH's one-time file-token URLs (view-only — no save
+# callback). Mirror of onlyoffice's allow-egress-to-member-hub. FLEET-MH1.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-onlyoffice
+  namespace: member-hub
+  labels:
+    secforge.platform/component: member-hub
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)

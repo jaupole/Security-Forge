@@ -57,3 +57,15 @@ path "transit/encrypt/pii-encryption" {
 path "transit/decrypt/pii-encryption" {
   capabilities = ["update"]
 }
+
+# Shared ONLYOFFICE Document Server JWT secret for the staff document viewer
+# (FLEET-MH1). One secret, N namespaces — rotate once in OpenBao and every VSO
+# sync follows. Rendered as ONLYOFFICE_JWT_SECRET via the onlyoffice-jwt
+# VaultStaticSecret (04-vso-bindings.yaml). MH's VSO role binds ONLY this
+# `member-hub` policy, so the grant lives here.
+path "secret/data/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}

@@ -122,6 +122,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: control
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: member-hub
       ports:
         - { protocol: TCP, port: 80 }
         - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
@@ -202,4 +205,29 @@ spec:
               kubernetes.io/metadata.name: project-manager
       ports:
         - { protocol: TCP, port: 3003 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Egress: DS → member-hub backend. The DS fetches documents from MH's one-time
+# file-token URLs (Service :80 → pod :3000; the allow is on the post-NAT pod
+# port 3000). FLEET-MH1 is view-only, so there is NO save callback. Mirror rule
+# (allow-ingress-from-onlyoffice) lives in member-hub/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-member-hub
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: member-hub
+      ports:
+        - { protocol: TCP, port: 3000 }
         - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
