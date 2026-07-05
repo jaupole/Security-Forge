@@ -120,24 +120,61 @@ metadata:
     policies.kyverno.io/subject: Pod
 spec:
   background: false
-  # Audit, NOT Enforce: 6 of 10 in-scope vendor images ship no cosign
-  # signature (all CloudNativePG; spiffe-helper; spire-controller-manager).
-  # Enforcing would block CloudNativePG + parts of SPIRE. See
-  # operator-backlog #41 for the path to narrowing/enforcing a true subset.
-  validationFailureAction: Audit
+  # TIER 1 ENFORCE — operator-backlog #41. A full cosign verify/tree survey of
+  # ALL 65 vendor repos running in-cluster (2026-07-05) sorts them into:
+  #   T1  cosign signature, keyless, verifiable  -> ENFORCED by the rules below.
+  #   T2  cosign signature, STATIC KEY            -> cert-manager core
+  #       (controller/webhook/cainjector); needs the published cosign pubkey via
+  #       a `keys` attestor. Deferred to a follow-up.
+  #   T3  ATTESTATIONS only, no signature         -> cloudnative-pg OPERATOR and
+  #       kyverno ship SLSA `.att` provenance but no `.sig`; need an
+  #       `attestations:` verify, not a signature attestor. Deferred.
+  #   T4  UNSIGNED / mirror-stripped              -> the majority (grafana,
+  #       prometheus/*, velero, wazuh, openbao, istio, rancher/k3s, minio,
+  #       authzed, topolvm, hashicorp VSO, cloudnative-pg DATA plane
+  #       [postgresql + barman], spiffe-helper, spire-controller-manager, and
+  #       every mirror.gcr.io / public.ecr.aws image). No signature exists — to
+  #       be handled by digest-pin + approved-digest allowlist and/or
+  #       mirror-and-sign, NOT here. They match NO rule below, so this policy
+  #       leaves them untouched.
+  # Rules reference ONLY repos empirically proven to carry a verifiable keyless
+  # signature — so Enforce can never block an unsigned image it was never meant
+  # to check. This replaces the old whole-org ghcr.io/cloudnative-pg/* and
+  # ghcr.io/spiffe/* rules, which pointed `required: true` at orgs whose images
+  # are mostly unsigned (the source of the Audit-mode fail noise).
+  validationFailureAction: Enforce
   webhookConfiguration:
-    failurePolicy: Ignore
-    timeoutSeconds: 30                 # match the secforge policy: same shared svc-ignore
-                                       # webhook; absorb keyless-verify latency bursts.
+    failurePolicy: Fail                # No fail-open — same posture as the secforge
+                                       # policy. A verify that cannot complete DENIES,
+                                       # it does not admit unverified.
+                                       # Safe here: kyverno-admission-controller is
+                                       # 3-replica HA; resourceFilters exclude kyverno /
+                                       # kube-system / kube-node-lease / Node / APIService;
+                                       # and Kyverno's image-verify cache re-admits an
+                                       # already-verified digest, so a transient sigstore /
+                                       # Fulcio / Rekor blip does NOT block reschedules of
+                                       # running vendor pods.
+                                       # Residual risk: a *sustained* sigstore — or, for the
+                                       # registry.k8s.io rule, accounts.google.com — outage
+                                       # blocks first-time admission of a NEW digest of these
+                                       # signed vendors (incl. SPIRE + spiffe-csi). If that
+                                       # is unacceptable, soak with failurePolicy: Ignore
+                                       # first, then flip to Fail.
+    timeoutSeconds: 30                 # k8s max; absorb keyless-verify latency bursts.
   rules:
-    - name: verify-cloudnative-pg
+    # --- SPIFFE / SPIRE: only the repos that actually sign (spire + spiffe-csi).
+    #     spiffe-helper and spire-controller-manager are UNSIGNED (T4) -> excluded.
+    - name: verify-spiffe-signed
       match:
         any:
           - resources:
               kinds: [Pod]
       verifyImages:
         - imageReferences:
-            - "ghcr.io/cloudnative-pg/*"
+            - "ghcr.io/spiffe/spire-server*"
+            - "ghcr.io/spiffe/spire-agent*"
+            - "ghcr.io/spiffe/oidc-discovery-provider*"
+            - "ghcr.io/spiffe/spiffe-csi-driver*"
           required: true
           mutateDigest: false
           verifyDigest: false
@@ -145,17 +182,19 @@ spec:
             - entries:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegExp: "^https://github\\.com/cloudnative-pg/"
+                    subjectRegExp: "^https://github\\.com/spiffe/(spire|spiffe-csi)/"
                     rekor:
                       url: "https://rekor.sigstore.dev"
-    - name: verify-spiffe
+    # --- OpenTelemetry Collector (docker.io/otel/*).
+    - name: verify-otel-collector
       match:
         any:
           - resources:
               kinds: [Pod]
       verifyImages:
         - imageReferences:
-            - "ghcr.io/spiffe/*"
+            - "otel/opentelemetry-collector-contrib*"
+            - "docker.io/otel/opentelemetry-collector-contrib*"
           required: true
           mutateDigest: false
           verifyDigest: false
@@ -163,6 +202,132 @@ spec:
             - entries:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegExp: "^https://github\\.com/spiffe/"
+                    subjectRegExp: "^https://github\\.com/open-telemetry/opentelemetry-collector-releases/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+    # --- Aqua trivy-operator (signature served via the mirror.gcr.io referrer).
+    #     Plain `trivy` via mirror.gcr.io is UNSIGNED (mirror strips it) -> excluded.
+    - name: verify-aqua-trivy-operator
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "mirror.gcr.io/aquasec/trivy-operator*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/aquasecurity/trivy-operator/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+    # --- Chainguard images (cgr.dev/chainguard/*), all signed by chainguard-images/images.
+    - name: verify-chainguard
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "cgr.dev/chainguard/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/chainguard-images/images/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+    # --- cert-manager CORE (controller/webhook/cainjector/acmesolver/ctl/
+    #     startupapicheck): TIER 2 — signed with cert-manager's STATIC cosign
+    #     key (not keyless), SHA-512, and NOT logged to Rekor. Verified against
+    #     the published key (cert-manager-pubkey-2021-09-20.pem) — confirmed
+    #     v1.20.2 controller/webhook/cainjector all pass, 2026-07-05. Key rotation
+    #     by cert-manager (rare) requires updating publicKeys here.
+    - name: verify-cert-manager-core
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "quay.io/jetstack/cert-manager-controller*"
+            - "quay.io/jetstack/cert-manager-webhook*"
+            - "quay.io/jetstack/cert-manager-cainjector*"
+            - "quay.io/jetstack/cert-manager-acmesolver*"
+            - "quay.io/jetstack/cert-manager-ctl*"
+            - "quay.io/jetstack/cert-manager-startupapicheck*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsZZKaaIRjOpzbiWYIDKO
+                      yry9XGBqAfve1iOGmt5VO1jpjNoEseT6zewozHfWTM7osxayy2WjN8G+QV39MlT3
+                      Vxo91/31g+Zcq8KcvxG+iB8GRaD9pNgLmghorv+eYDiPYMO/+fhsLImyG5WEoPct
+                      MeCBD7umZ/A2t96U9DQxVDqQbTHlsNludno1p1wsgRnfUM3QHexNljDvJg5FcDMo
+                      dCpVLpRNvbw0lbJVfybJ4siJ5o/MmXzy0QCJpw+yMIqvqMc8qgKJ1yooJtuTVF4t
+                      4/luP+EG/oVIiSWCFeRMqYdbJ3R+CJi+4LN7vFNYQM1Q/NwOB52RteaR7wnqmcBz
+                      qSYK32MM8xdPCQ5tioWwnPTRbPZuzsZsRmJsKBO9JUrBYdDntZX1xY5g4QNSufxi
+                      QgJgJSU7E4VGMvagEzB1JzvOr6A/qNFCO1Z6JsA3jw3cJLV1rSHfxqfSXBACTLDf
+                      6bOPWRILRKydTJA6uLKNKmo1/nFm3jvd5tHKOjy4VAQLJ/Vx9wBsAAiLa+06veun
+                      Oz3AJ9sNh3wLp21RL11u9TuOKRBipE/TYsBYp8jpIyWPXDSV+JcD/TZqoT8y0Z6S
+                      0damfUmspuK9DTQFL2crpeaqJSG9RA+OuPZLxGD1IMURTsPJB7kXhPtmceeirBnw
+                      sVcRHHDitVt8oO/x4Wus1c0CAwEAAQ==
+                      -----END PUBLIC KEY-----
+                    signatureAlgorithm: sha512
+                    # cert-manager does NOT publish these signatures to Rekor
+                    # (signed with --insecure-ignore-tlog). Skip tlog lookup or
+                    # verification always fails "no matching signatures".
+                    rekor:
+                      ignoreTlog: true
+    # --- cert-manager trust-manager + trust package (quay.io/jetstack/trust-*):
+    #     TIER 1 keyless (GitHub Actions), distinct from cert-manager core above.
+    - name: verify-cert-manager-trust
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "quay.io/jetstack/trust-manager*"
+            - "quay.io/jetstack/trust-pkg-*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github\\.com/cert-manager/trust-manager/"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+    # --- Kubernetes SIG images (registry.k8s.io/*): signed by the k8s release
+    #     robot via GOOGLE OIDC, not GitHub. Exact subject + accounts.google.com.
+    - name: verify-registry-k8s
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "registry.k8s.io/*"
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://accounts.google.com"
+                    subject: "krel-trust@k8s-releng-prod.iam.gserviceaccount.com"
                     rekor:
                       url: "https://rekor.sigstore.dev"
