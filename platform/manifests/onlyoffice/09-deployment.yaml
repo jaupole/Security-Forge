@@ -63,10 +63,9 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: documentserver
-          # TODO: pin digest from first CI build — replace DIGEST_PLACEHOLDER
           # with the sha256 the onlyoffice-image-build workflow prints in its
           # job summary. Kyverno rejects the placeholder.
-          image: ghcr.io/jaupole/onlyoffice-documentserver:9.4.0.1-secforge@sha256:DIGEST_PLACEHOLDER
+          image: ghcr.io/jaupole/onlyoffice-documentserver:9.4.0.1-secforge@sha256:c3965a59793891102b1ffc85b0d29d0d9b9d1e7cf5454c5312431c47bc86b56f
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 80, name: http, protocol: TCP }
