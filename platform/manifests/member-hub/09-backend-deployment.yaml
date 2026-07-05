@@ -134,6 +134,8 @@ spec:
             - { name: API_PORT, value: "3000" }
             - { name: API_HOST, value: "0.0.0.0" }
             - { name: TRUST_PROXY, value: "1" }
+            # General per-IP rate-limit ceiling (H-2). Raised 300->600 (2026-07-05).
+            - { name: RATE_LIMIT_GENERAL_PER_MIN, value: "600" }
             # Note: PORTAL_ORIGIN was set here historically pointing at
             # the old tailnet host (member-hub.${DOMAIN}); removed during
             # 2026-05-23 single-host consolidation. No app code reads it;

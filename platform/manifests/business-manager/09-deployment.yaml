@@ -73,6 +73,8 @@ spec:
           env:
             - { name: NODE_ENV, value: production }
             - { name: PORT, value: "3001" }
+            # General per-IP rate-limit ceiling (H-2). Raised 300->600 (2026-07-05).
+            - { name: RL_GENERAL_MAX, value: "600" }
             # Bind off loopback (the API now has auth — see BM_AUTH_MODE).
             - { name: HOST, value: "0.0.0.0" }
             # Lifts the PTRK-001 loopback tripwire: auth is enabled.

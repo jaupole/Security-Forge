@@ -104,6 +104,8 @@ spec:
           env:
             - { name: NODE_ENV, value: production }
             - { name: PORT, value: "3001" }
+            # General per-IP rate-limit ceiling (H-2). Raised 300->600 (2026-07-05).
+            - { name: RATE_LIMIT_GENERAL_MAX, value: "600" }
             # Chromium (Puppeteer) writes config/cache under HOME; /tmp is the
             # only writable mount under readOnlyRootFilesystem.
             - { name: HOME, value: "/tmp" }
