@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Assistant</title>
+    <!-- Vendored ONLYOFFICE plugin SDK (served same-origin, so the plugin frame's
+         script-src 'self' is satisfied — no third-party script, no CDN). Must
+         load before code.js, which assigns window.Asc.plugin.init / .button. -->
+    <script src="plugins.js"></script>
+    <style>
+      :root {
+        --pf-accent: #2563eb;
+        --pf-ink: #1f2937;
+        --pf-muted: #6b7280;
+        --pf-hair: #e5e7eb;
+        --pf-hover: #f3f4f6;
+        --pf-chip: #f1f5f9;
+        --pf-card: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --pf-ink: #e5e7eb;
+          --pf-muted: #9ca3af;
+          --pf-hair: #374151;
+          --pf-hover: #1f2937;
+          --pf-chip: #111827;
+          --pf-card: #0b1220;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13px;
+        color: var(--pf-ink);
+        background: var(--pf-card);
+      }
+      #pf-root { display: flex; flex-direction: column; height: 100%; padding: 10px; gap: 8px; }
+      .pf-intro { color: var(--pf-muted); font-size: 11px; line-height: 1.5; margin: 0; }
+      .pf-prompt {
+        width: 100%; min-height: 84px; resize: vertical; padding: 8px;
+        border: 1px solid var(--pf-hair); border-radius: 8px;
+        background: var(--pf-card); color: var(--pf-ink); font: inherit;
+      }
+      .pf-actions { display: flex; gap: 8px; }
+      .pf-btn {
+        flex: 1 1 auto; padding: 8px 10px; border: 1px solid var(--pf-hair);
+        border-radius: 8px; background: var(--pf-chip); color: var(--pf-ink);
+        font: inherit; font-weight: 600; cursor: pointer;
+      }
+      .pf-btn:hover:not(:disabled) { background: var(--pf-hover); }
+      .pf-btn:disabled { opacity: 0.5; cursor: default; }
+      .pf-btn-primary { background: var(--pf-accent); border-color: var(--pf-accent); color: #ffffff; }
+      .pf-out-label {
+        font-size: 10px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.06em; color: var(--pf-muted); margin: 2px 2px 0;
+      }
+      .pf-output {
+        flex: 1 1 auto; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+        padding: 8px; border: 1px solid var(--pf-hair); border-radius: 10px;
+        background: var(--pf-card); min-height: 80px;
+      }
+      .pf-state { color: var(--pf-muted); font-size: 12px; }
+      .pf-error { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div id="pf-root">
+      <p class="pf-intro">
+        Describe what you want written or rewritten, then insert the result at
+        your cursor. Generated text is a draft — review it before you use it.
+      </p>
+      <textarea
+        id="pf-prompt"
+        class="pf-prompt"
+        placeholder="e.g. Draft a short paragraph introducing our approach…"
+        autocomplete="off"
+      ></textarea>
+      <div class="pf-actions">
+        <button id="pf-generate" class="pf-btn pf-btn-primary" type="button">Generate</button>
+        <button id="pf-insert" class="pf-btn" type="button" disabled>Insert At Cursor</button>
+      </div>
+      <div class="pf-out-label">Result</div>
+      <div id="pf-output" class="pf-output">
+        <span class="pf-state">Your generated text will appear here.</span>
+      </div>
+    </div>
+    <script src="code.js"></script>
+  </body>
+</html>

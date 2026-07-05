@@ -45,7 +45,7 @@ RUN apt-get update \
 # api.onlyoffice.com plugin on-premises install.
 #
 # VENDORED COPY: these folders mirror Proposal Forge's
-# client/public/plugins/{pf-fields,pf-library}/ — the DS image build cannot reach
+# client/public/plugins/{pf-fields,pf-library,pf-assistant}/ — the DS image build cannot reach
 # the PF repo. Source of truth = PF; keep them in sync when the plugin code
 # changes there (same GUIDs, same built-in-form config.json).
 #
@@ -54,5 +54,6 @@ RUN apt-get update \
 # exposes only uri/autostart/pluginsData; customization.plugins:false would also
 # kill THESE built-ins — upstream DocumentServer#2118 is open). PF suppresses it
 # per-session via editorConfig.plugins.disable instead. See ../README.md.
-COPY plugins/pf-fields/  /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-fields/
-COPY plugins/pf-library/ /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-library/
+COPY plugins/pf-fields/    /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-fields/
+COPY plugins/pf-library/   /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-library/
+COPY plugins/pf-assistant/ /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-assistant/

@@ -1,0 +1,25 @@
+{
+  "name": "AI Assistant",
+  "nameLocale": { "en": "AI Assistant" },
+  "guid": "asc.{3B9D7F42-8C61-4E05-AF3D-1E6A2C594B70}",
+  "version": "1.0.0",
+  "minVersion": "8.2.0",
+  "variations": [
+    {
+      "description": "Draft or rewrite text with AI and insert it at the cursor.",
+      "descriptionLocale": {
+        "en": "Draft or rewrite text with AI and insert it at the cursor."
+      },
+      "url": "index.html",
+      "icons": ["resources/icon.png", "resources/icon@2x.png"],
+      "isViewer": false,
+      "isVisual": true,
+      "type": "panelRight",
+      "EditorsSupport": ["word", "cell", "slide", "pdf"],
+      "initDataType": "none",
+      "initData": "",
+      "buttons": [],
+      "size": [320, 520]
+    }
+  ]
+}
