@@ -49,6 +49,7 @@ spec:
         app.kubernetes.io/name: business-manager
         app.kubernetes.io/component: app
         secforge.platform/component: business-manager
+        minio-client: "true"   # MinIO NetworkPolicy gates ingress on this label
     spec:
       serviceAccountName: business-manager
       automountServiceAccountToken: false
@@ -112,6 +113,24 @@ spec:
             - { name: GOTENBERG_URL, value: "http://gotenberg.document-render.svc.cluster.local:3000" }
             # Same-origin SPA; the only cross-origin caller is the tailnet host.
             - { name: CORS_ALLOWED_ORIGINS, value: "https://bm.${DOMAIN}" }
+            # Document Engine (fleet v1) — MinIO object store for document
+            # attachments. The bucket-scoped creds (MINIO_ACCESS_KEY /
+            # MINIO_SECRET_KEY) arrive via envFrom below (never as literal env,
+            # per Kyverno no-secret-shaped-env-vars).
+            - { name: MINIO_ENDPOINT, value: "minio.minio.svc.cluster.local" }
+            - { name: MINIO_PORT, value: "9000" }
+            - { name: MINIO_USE_SSL, value: "false" }
+            - { name: MINIO_BUCKET, value: business-manager-documents }
+            # ONLYOFFICE Document Server (DOCENG) — embed origin the browser
+            # loads api.js from, in-cluster URL for ConvertService + SSRF host
+            # validation, and the base the DS uses to fetch documents back
+            # (one-time file-token URLs ride the mesh, not the gateway:
+            # Service :80 → pod :3001). Fleet v1 is view-only (no save callback).
+            # JWT secret is the fleet-shared DS secret (VSO-rendered from
+            # secret/apps/onlyoffice/jwt — see 04-vso-bindings.yaml, envFrom below).
+            - { name: ONLYOFFICE_PUBLIC_URL, value: "https://docs.secforge.dev" }
+            - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
+            - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://business-manager.business-manager.svc.cluster.local" }
             # CNPG-rendered DB connection string.
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: business-manager-db-app, key: uri } } }
           envFrom:
@@ -119,6 +138,16 @@ spec:
             # SAM_GOV_API_KEY (VSO → 04-vso-bindings.yaml).
             - secretRef:
                 name: business-manager-app-secrets
+            # MINIO_ACCESS_KEY + MINIO_SECRET_KEY (bucket-scoped; VSO →
+            # 04-vso-bindings.yaml). Optional: the VSO binding stays unrendered
+            # until the operator provisions the business-manager-documents MinIO
+            # user, so the pod still starts (documents API returns a clean 503).
+            - secretRef:
+                name: business-manager-documents-minio
+                optional: true
+            # ONLYOFFICE_JWT_SECRET — fleet-shared DS JWT (VSO → 04-vso-bindings.yaml).
+            - secretRef:
+                name: onlyoffice-jwt
           resources:
             requests: { cpu: 100m, memory: 384Mi }
             limits:   { cpu: 1,    memory: 1Gi }

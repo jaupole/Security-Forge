@@ -323,3 +323,80 @@ spec:
       ports:
         - { protocol: TCP, port: 3001 }
         - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
+
+---
+# App-pod egress to MinIO (documents API uploads/downloads + the ONLYOFFICE
+# view copies → business-manager-documents). Distinct from the CNPG barman rule
+# above (cnpg.io/cluster selector, shared backups bucket) — this is the app pod
+# reaching the object store on :9000. minio is ambient, so the call rides
+# ztunnel HBONE (:15008) alongside the app port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-app-to-minio
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Egress to the ONLYOFFICE Document Server (DOCENG): server-to-server
+# ConvertService + command API calls on the DS's :80. onlyoffice is ambient, so
+# the call rides ztunnel HBONE (:15008) alongside the app port. Mirror ingress
+# rule lives in onlyoffice/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-onlyoffice
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Ingress from the ONLYOFFICE Document Server (DOCENG): the DS fetches documents
+# from BM's one-time file-token URLs on the BM backend. Service :80 → pod :3001;
+# Cilium NPs are POST-NAT so the allow is on the pod port 3001. Fleet v1 is
+# view-only, so there is no save callback. Mirror egress rule lives in
+# onlyoffice/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-onlyoffice
+  namespace: business-manager
+  labels: { secforge.platform/component: business-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: business-manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 3001 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)

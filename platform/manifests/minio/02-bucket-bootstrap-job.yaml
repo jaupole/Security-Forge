@@ -12,6 +12,7 @@
 #   - ecosystem-graphics       (versioned + SSE-S3; ADR-0001 graphics library)
 #   - ecosystem-brand-kit      (versioned + SSE-S3; ADR-0002 brand-kit fonts)
 #   - proposal-forge-files     (versioned + SSE-S3; PF cover + RFP + asset uploads)
+#   - business-manager-documents (versioned + SSE-S3; BM engagement doc attachments + ONLYOFFICE view)
 #
 # Re-run safe: `mb --ignore-existing` and repeated `version enable` are no-ops.
 ---
@@ -120,6 +121,18 @@ spec:
               mc mb --ignore-existing local/project-manager-documents
               mc version enable local/project-manager-documents
               mc encrypt set sse-s3 local/project-manager-documents
+
+              # business-manager-documents: versioned + SSE-S3 server-side
+              # encryption. Holds engagement document attachments (and the
+              # ONLYOFFICE-rendered view copies) uploaded via Business
+              # Manager's documents API. The MinIO service account the app
+              # uses is provisioned out-of-band by
+              # 03-business-manager-documents-credentials-job.yaml (see
+              # docs/03-runbooks/business-manager-documents-bucket.md) — this
+              # Job only owns bucket creation, never credentials.
+              mc mb --ignore-existing local/business-manager-documents
+              mc version enable local/business-manager-documents
+              mc encrypt set sse-s3 local/business-manager-documents
 
               # ecosystem-graphics: per-org branded graphics library
               # (ADR-0001 Phase A in Member Hub/docs/02-decisions/).

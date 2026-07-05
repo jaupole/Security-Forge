@@ -6,17 +6,27 @@
 #                                    secret), session signing key, SAM.gov key
 #   - ghcr-pull-secret             → GHCR dockerconfigjson (image pull)
 #   - cnpg-minio-credentials       → barman-cloud → MinIO (CNPG backups)
+#   - business-manager-documents-minio → rw creds for the business-manager-
+#                                    documents bucket (documents API uploads +
+#                                    ONLYOFFICE view copies)
+#   - onlyoffice-jwt               → fleet-shared ONLYOFFICE Document Server JWT
 #
-# NO app-level MinIO secret + NO SpiceDB PSK (unlike proposal-forge): Business
-# Manager has no object storage day-1 (reports stream via Gotenberg) and uses
-# org-tier + RLS authz, not per-resource SpiceDB.
+# NO SpiceDB PSK (unlike proposal-forge): Business Manager uses org-tier + RLS
+# authz, not per-resource SpiceDB. App-level MinIO (business-manager-documents)
+# + the ONLYOFFICE JWT arrived with the Document Engine wiring (fleet v1) — the
+# app had no object storage day-1; reports still stream via Gotenberg.
 #
 # DEPLOY-TIME PREREQS (Phase 6 — not applied by this manifest):
 #   1. OpenBao policy `business-manager` + k8s-auth role `business-manager-vso`
 #      (bind SA business-manager-vso → policy). Add a row to APP_ROLES in
 #      platform/components/05j-app-vso-roles.sh + a vso.hcl read rule.
-#   2. Populate the OpenBao KV paths below (runtime/ghcr-pull).
-#   3. Publish the business-manager Keycloak client_secret to
+#   2. Populate the OpenBao KV paths below (runtime/ghcr-pull, plus
+#      minio/business-manager-documents for the documents bucket; the shared
+#      apps/onlyoffice/jwt path already exists fleet-wide).
+#   3. Create the business-manager-documents MinIO bucket (versioned + SSE-S3,
+#      02-bucket-bootstrap-job.yaml) + a bucket-scoped service account
+#      (03-business-manager-documents-credentials-job.yaml).
+#   4. Publish the business-manager Keycloak client_secret to
 #      apps/business-manager/runtime via 05l-keycloak-secret-publish.sh.
 
 ---
@@ -156,3 +166,81 @@ spec:
           text: '{{ .Secrets.access_key }}'
         ACCESS_SECRET_KEY:
           text: '{{ .Secrets.secret_key }}'
+
+---
+# App-level MinIO credentials for the business-manager-documents bucket.
+# Distinct from the CNPG barman creds above (shared `backups` bucket); this
+# set grants rw on the per-app `business-manager-documents` bucket only, used
+# by the documents API for engagement file attachments + the ONLYOFFICE view
+# copies rendered through the fleet Document Server.
+#
+# Rendered as MINIO_ACCESS_KEY + MINIO_SECRET_KEY, consumed via envFrom on the
+# backend Deployment (09-deployment.yaml).
+#
+# OPERATOR PREREQUISITE: the OpenBao secret at secret/minio/business-manager-
+# documents (keys: access_key, secret_key) must exist, created alongside the
+# MinIO bucket + a bucket-scoped service account. Until then VSO leaves the
+# Secret unrendered; the backend's envFrom secretRef is optional (09-deployment)
+# so the pod still starts and uploads return a clean 503.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: business-manager-documents-minio-vso
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: business-manager-vso
+  mount: secret
+  type: kv-v2
+  path: minio/business-manager-documents
+  refreshAfter: 1h
+  destination:
+    name: business-manager-documents-minio
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        MINIO_ACCESS_KEY:
+          text: '{{ .Secrets.access_key }}'
+        MINIO_SECRET_KEY:
+          text: '{{ .Secrets.secret_key }}'
+
+---
+# ONLYOFFICE Document Server fleet-shared JWT secret (DOCENG Phase 1/2). BM
+# signs the editor embed config it hands the browser with it (fleet v1 is
+# view-only — the DS fetches the document via a one-time file token and posts no
+# save callback). SAME OpenBao path as the onlyoffice namespace's own sync
+# (onlyoffice/04-vso-bindings.yaml) — one secret, N namespaces, VSO-managed;
+# rotation = rotate in OpenBao, every sync follows. Read grant for the
+# business-manager-vso role (`vso` policy) lives in openbao/policies/vso.hcl.
+# Rendered as ONLYOFFICE_JWT_SECRET, consumed via envFrom on the backend.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: onlyoffice-jwt
+  namespace: business-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: business-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/onlyoffice/jwt
+  refreshAfter: 1h
+  destination:
+    name: onlyoffice-jwt
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ONLYOFFICE_JWT_SECRET:
+          text: '{{ .Secrets.jwt_secret }}'
