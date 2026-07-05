@@ -380,3 +380,33 @@ spec:
           text: '{{ .Secrets.username }}'
         password:
           text: '{{ .Secrets.password }}'
+---
+# ONLYOFFICE Document Server shared JWT (DOCENG Phase M usage watch): Control
+# signs command-service requests with it. SAME OpenBao path as the onlyoffice
+# and proposal-forge syncs — one secret, N namespaces, VSO-managed; rotation in
+# OpenBao propagates to all consumers.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: onlyoffice-jwt
+  namespace: control
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: control-vso
+  mount: secret
+  type: kv-v2
+  path: apps/onlyoffice/jwt
+  refreshAfter: 1h
+  destination:
+    name: onlyoffice-jwt
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ONLYOFFICE_JWT_SECRET:
+          text: '{{ .Secrets.jwt_secret }}'
