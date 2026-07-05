@@ -188,3 +188,40 @@ spec:
           text: '{{ .Secrets.access_key }}'
         MINIO_SECRET_KEY:
           text: '{{ .Secrets.secret_key }}'
+
+---
+# ONLYOFFICE Document Server fleet-shared JWT secret (DOCENG). PM signs editor
+# embed configs + ConvertService (DOCX->PDF) calls and verifies the DS's save
+# callbacks with it — editable project documents + awarded-proposal viewer.
+# SAME OpenBao path as the onlyoffice namespace's own sync
+# (onlyoffice/04-vso-bindings.yaml) — one secret, N namespaces, VSO-managed;
+# rotation = rotate in OpenBao, every sync follows. PM's VSO role
+# (project-manager-vso) binds ONLY the `project-manager` policy (not the shared
+# `vso` policy PF rides), so the read grant lives in
+# openbao/policies/project-manager.hcl. Rendered as ONLYOFFICE_JWT_SECRET,
+# consumed via envFrom on the backend Deployment (09-backend-deployment.yaml).
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: onlyoffice-jwt
+  namespace: project-manager
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: project-manager-vso
+  mount: secret
+  type: kv-v2
+  path: apps/onlyoffice/jwt
+  refreshAfter: 1h
+  destination:
+    name: onlyoffice-jwt
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ONLYOFFICE_JWT_SECRET:
+          text: '{{ .Secrets.jwt_secret }}'

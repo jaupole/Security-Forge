@@ -41,6 +41,7 @@ spec:
               # Consumer apps (server-to-server DS API calls).
               - cluster.local/ns/proposal-forge/sa/proposal-forge
               - cluster.local/ns/business-manager/sa/business-manager
+              - cluster.local/ns/project-manager/sa/project-manager
               - cluster.local/ns/control/sa/control
       # L4 ONLY (principal + port). This service has no waypoint proxy, so
       # ztunnel can enforce mTLS identity + destination port but NOT L7 fields

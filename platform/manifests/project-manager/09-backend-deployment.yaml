@@ -124,6 +124,22 @@ spec:
             - { name: MINIO_PORT,     value: "9000" }
             - { name: MINIO_USE_SSL,  value: "false" }
             - { name: MINIO_BUCKET,   value: project-manager-documents }
+            # ─── ONLYOFFICE Document Server (DOCENG) ───────────────────
+            # Editable project documents + awarded-proposal viewer + DOCX→PDF
+            # convert. PUBLIC_URL = the embed origin the browser loads api.js
+            # from (docs.${DOMAIN}); INTERNAL_URL = in-cluster DS for
+            # server-to-server ConvertService + SSRF host validation;
+            # CALLBACK_BASE = PM's in-cluster origin the DS uses to fetch
+            # documents back AND POST save callbacks (Service :80 → pod :3003;
+            # rides the mesh, not the gateway). Routes mount at
+            # /api/v1/onlyoffice/* (files/:token + callback/:projectId/:documentId).
+            # The JWT secret is the fleet-shared DS secret (VSO-rendered from
+            # secret/apps/onlyoffice/jwt) and arrives via the onlyoffice-jwt
+            # envFrom below — NEVER as a literal env, per Kyverno
+            # no-secret-shaped-env-vars.
+            - { name: ONLYOFFICE_PUBLIC_URL,   value: "https://docs.secforge.dev" }
+            - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
+            - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://project-manager.project-manager.svc.cluster.local" }
           envFrom:
             # Adds OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS,
             # SPICEDB_PRESHARED_KEY, SESSION_KEY from the VSO-rendered Secret.
@@ -139,6 +155,11 @@ spec:
             - secretRef:
                 name: project-manager-documents-minio
                 optional: true
+            # ONLYOFFICE_JWT_SECRET — fleet-shared DS JWT (VSO → 04-vso-bindings.yaml).
+            # Read grant is in openbao/policies/project-manager.hcl (PM's VSO role
+            # binds only the project-manager policy, not the shared `vso` policy).
+            - secretRef:
+                name: onlyoffice-jwt
           resources:
             requests: { cpu: 50m,  memory: 128Mi }
             limits:   { cpu: 500m, memory: 256Mi }

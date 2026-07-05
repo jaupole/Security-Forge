@@ -57,6 +57,21 @@ path "secret/metadata/minio/project-manager-documents" {
   capabilities = ["read"]
 }
 
+# ONLYOFFICE Document Server fleet-shared JWT secret (DOCENG). PM signs editor
+# embed configs + ConvertService (DOCX->PDF) calls and verifies the DS's save
+# callbacks with it. Shared fleet secret — the SAME OpenBao path across every
+# consumer namespace (proposal-forge, business-manager, control, project-manager);
+# rotate once in OpenBao and every VSO sync follows. Rendered as
+# ONLYOFFICE_JWT_SECRET via the onlyoffice-jwt VaultStaticSecret
+# (04-vso-bindings.yaml). PM's VSO role binds ONLY this `project-manager` policy
+# (not the shared `vso` policy PF rides), so the grant lives here.
+path "secret/data/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}
+
 # Field-level PII encryption — Transit key shared with other apps.
 path "transit/encrypt/pii-encryption" {
   capabilities = ["update"]

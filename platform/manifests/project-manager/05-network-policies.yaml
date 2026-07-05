@@ -409,3 +409,60 @@ spec:
       ports:
         - { protocol: TCP, port: 3003 }
         - { protocol: TCP, port: 15008 }  # HBONE — Istio Ambient ztunnel mesh tunnel
+
+---
+# Egress to the ONLYOFFICE Document Server (DOCENG): server-to-server
+# ConvertService (DOCX->PDF) + command API calls on the DS's :80. onlyoffice is
+# ambient, so the call rides ztunnel HBONE (:15008) alongside the app port.
+# Mirror ingress rule lives in onlyoffice/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-onlyoffice
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Ingress from the ONLYOFFICE Document Server (DOCENG): the DS fetches documents
+# from PM's one-time file-token URLs AND POSTs save callbacks back — PM has
+# EDITABLE documents (unlike BM's view-only), so this rule covers both fetch and
+# callback. Service :80 → pod :3003; Cilium NPs are POST-NAT so the allow is on
+# the pod port 3003. Routes: GET /api/v1/onlyoffice/files/:token and
+# POST /api/v1/onlyoffice/callback/:projectId/:documentId. Mirror egress rule
+# lives in onlyoffice/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-onlyoffice
+  namespace: project-manager
+  labels:
+    secforge.platform/component: project-manager
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: project-manager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: onlyoffice
+      ports:
+        - { protocol: TCP, port: 3003 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
