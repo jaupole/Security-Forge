@@ -1,0 +1,109 @@
+# Every-minute CronJob polling the ONLYOFFICE Document Server command service
+# (`{"c":"license"}`) for edit/view connection counts — the DOCENG Phase M
+# usage watch. Stores samples (30-day retention) + daily peaks (kept forever),
+# raises operator alerts (notifications bell + platform-sender email) when a
+# configurable threshold is crossed (default edit=18 — a single-node capacity
+# watermark, NOT a license ceiling: DS >= 9.4 Community removed the connection
+# limit), and a DS-unreachable alert after 3 consecutive failed polls. See
+# ecosystem-control src/cli/onlyoffice-usage.ts; admin surface is the Portal
+# admin "Document Server" Oversight card via /api/v1/admin/onlyoffice/*.
+#
+# Cadence note: 1 minute is the k8s CronJob floor and matches the spec's 60s.
+# All cross-poll state (cooldowns, outage episodes, recovery countdown) lives
+# in the DB (`onlyoffice_watch_state`), so per-invocation processes are fine
+# and `concurrencyPolicy: Forbid` + a `FOR UPDATE` row lock serialise overlap.
+# No wait-for-db initContainer (unlike the hourly crons): at this cadence a
+# DB-unavailable run just fails fast and the next minute retries.
+#
+# JWT: the poller signs command-service calls with the fleet-shared DS secret
+# (VSO -> `onlyoffice-jwt`, see 04-vso-bindings.yaml). Unset URL => no-op.
+# Same image + env discipline as the API Deployment — only the CLI entrypoint
+# differs. Bump the digest in lockstep with 09-backend-deployment.yaml.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-onlyoffice-usage
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: onlyoffice-usage-watch
+spec:
+  schedule: "* * * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 50
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: onlyoffice-usage-watch
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: poll
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:b1a7e68da993fe8bc50d0f46101755982ec4cd18431c235c64343162d26f81dd
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "onlyoffice:poll-usage"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                # ONLYOFFICE Document Server (in-cluster) + fleet-shared JWT.
+                - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
+                - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: ONLYOFFICE_JWT_SECRET } } }
+                # Runtime `control` role (control-db-app).
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
