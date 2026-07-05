@@ -69,16 +69,37 @@ Gap-A unsigned images, **this is the control that matters** — and it is not en
    identity are pinned down. Medium effort, 2 image families.
 
 3. **Gap B — digest-pin everything, then enforce (recommended baseline, universal).**
-   This is the highest-leverage move for the unsigned majority.
-   - Pin all 54 tag-only images to `@sha256:` digests in their manifests/helm values.
-     Current digests are available with zero registry calls from the running pods'
-     `status.containerStatuses[].imageID`.
+   This is the highest-leverage move for the unsigned majority, but it is **not a
+   single manifest sweep** — see the deployment-mechanism reality below.
+   - Current digests for all 54 tag-only images are available with zero registry
+     calls from the running pods' `status.containerStatuses[].imageID` (mapping
+     captured 2026-07-05).
    - Narrow the `require-image-digest` namespace exclusions (only genuinely
      unmanageable ones — e.g. k3s-bundled in `kube-system` — stay excluded).
-   - Flip `require-image-digest` **Audit → Enforce**. Combined with the enforced
-     registry allowlist and GitOps review, this gives immutability for images we
-     cannot cryptographically verify. **Do the pinning first — flipping to Enforce
-     against 54 unpinned images would block admission.**
+   - Flip `require-image-digest` **Audit → Enforce** **only after** every managed
+     workload is pinned — flipping against 54 unpinned images would block admission.
+
+   ### Deployment-mechanism reality (why this is staged, per-chart infra work)
+   Vendors are **not** deployed as raw digest-pinnable manifests. They come from:
+   - **Script-driven Helm** — `platform/install-all.sh` + `platform/components/*.sh`
+     run `helm install` with values in `platform/values/*.yaml` (e.g.
+     `loki.yaml`, `otel-collector.yaml`, `kube-prometheus-stack.yaml`, `openbao.yaml`,
+     `spire.yaml`). Pinning = add a per-chart image **digest override** in the values
+     file (chart-specific key path).
+   - **Operator-managed CRs** — CNPG image is in the `Cluster` CR (`imageName`);
+     Prometheus/Alertmanager images are in the operator CRs. An operator will
+     **re-assert** its image field, so a Kyverno mutate-digest would fight the
+     operator — these must be pinned in the CR, not mutated.
+   - **A few raw manifests** — jobs/cronjobs (openbao snapshot, audit verifier
+     python, VSO watchdog) and operator bundles (spicedb, keycloak-operator) —
+     directly pinnable.
+   - **k3s-bundled** — `rancher/*` in `kube-system` (already excluded).
+
+   Because it spans ~10 Helm charts + operator CRs, this is a **staged, infra-owned**
+   effort: pin one chart/CR → confirm the workload still admits → repeat → only then
+   flip `require-image-digest` to Enforce. A blanket Kyverno `mutateDigest` is
+   **not** a safe shortcut here (TOFU rather than review-approved, and it conflicts
+   with operator reconcile loops that re-set image fields).
 
 4. **Gap A crown jewels — mirror-and-sign.** For the dependencies whose integrity
    matters most and which are unsigned upstream:
