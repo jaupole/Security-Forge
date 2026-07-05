@@ -265,3 +265,17 @@ path "secret/data/apps/business-manager/+" {
 path "secret/metadata/apps/business-manager/+" {
   capabilities = ["read", "list"]
 }
+
+# MinIO scoped-user credentials for Business Manager document storage
+# (business-manager-documents bucket — versioned, SSE-S3). Rendered by the
+# `business-manager-documents-minio-vso` VaultStaticSecret into the
+# business-manager-documents-minio K8s Secret, consumed via envFrom in the
+# business-manager Deployment. Added when BM became a Document Engine consumer
+# (fleet v1). The fleet-shared apps/onlyoffice/jwt path BM also reads is granted
+# above (shared across all Document Engine consumer namespaces).
+path "secret/data/minio/business-manager-documents" {
+  capabilities = ["read"]
+}
+path "secret/metadata/minio/business-manager-documents" {
+  capabilities = ["read"]
+}
