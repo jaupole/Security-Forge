@@ -1,0 +1,40 @@
+# onlyoffice namespace — the fleet's ONLYOFFICE Docs (Document Server), the
+# embedded browser editor + conversion service behind the PF Document Engine
+# (DOCENG Phase 1, pf-document-engine program). Unlike Gotenberg
+# (document-render), BROWSERS must reach this service (the editor iframe loads
+# api.js and holds a WebSocket to the DS), so it gets an Istio gateway host
+# (docs.${DOMAIN}) like the apps — see istio-ingress/20-virtualservices.yaml.
+#
+# THREAT MODEL: the DS fetches documents from consumer apps' one-time URLs and
+# POSTs save callbacks back — a server-side fetcher, i.e. an SSRF-shaped
+# surface. Caged in layers, same doctrine as document-render:
+#   1. NetworkPolicy: default-deny both directions; egress ONLY to DNS and the
+#      proposal-forge app port. Zero internet egress (fonts are baked into the
+#      image; documents come from PF only). 05-network-policies.yaml.
+#   2. JWT mandatory (JWT_ENABLED=true): every API/editor/callback interaction
+#      is signed with the fleet-shared secret from OpenBao. 09-deployment.yaml.
+#   3. Ambient mTLS + AuthorizationPolicy: only the ingress gateways and the
+#      consumer app SAs may reach the DS. 06-authorization-policy.yaml.
+#   4. The DS example app (/example) is denied at the gateway (directResponse
+#      404 in the VirtualService).
+#
+# PSS BASELINE, NOT RESTRICTED (deviation from the platform default): the DS is
+# an all-in-one vendor image running nginx + postgres + rabbitmq + the
+# docservice/converter Node services under supervisord AS ROOT. PSS `restricted`
+# rejects root pods outright; the image cannot run non-root without forking the
+# vendor's supervisord/setuid layout. Baseline still forbids host namespaces,
+# hostPort, privileged. The Kyverno require-run-as-nonroot Enforce policy has a
+# matching documented `onlyoffice` namespace exemption
+# (kyverno/policies/06-require-runasnonroot.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: onlyoffice
+  labels:
+    app.kubernetes.io/name: onlyoffice
+    app.kubernetes.io/part-of: secforge-platform
+    secforge.platform/component: onlyoffice
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline

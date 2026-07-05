@@ -27,6 +27,11 @@
 #   - topolvm-system: lvmd needs root to /dev/* for LVM2 operations;
 #                  topolvm-node DaemonSet needs hostPath for /run/topolvm
 #                  CSI socket + privileged for volume mount/unmount.
+#   - onlyoffice:  ONLYOFFICE Document Server AIO vendor image runs
+#                  supervisord as root (nginx + embedded postgres/rabbitmq
+#                  + Node services; each drops privileges itself). Namespace
+#                  is PSS baseline with default-deny NetworkPolicies + JWT —
+#                  see platform/manifests/onlyoffice/01-namespace.yaml.
 
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -61,6 +66,7 @@ spec:
                 - istio-system
                 - trivy-system
                 - topolvm-system
+                - onlyoffice
       validate:
         message: |
           Containers must run as non-root. Set

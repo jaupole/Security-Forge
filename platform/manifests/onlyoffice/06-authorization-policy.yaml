@@ -1,0 +1,53 @@
+# Istio AuthorizationPolicy (L4) for the ONLYOFFICE Document Server.
+#
+# An ALLOW policy makes the workload default-deny: once this exists, every
+# inbound request to the onlyoffice pods must match a rule or it is rejected by
+# the ztunnel enforcing it. We allow only the SPIFFE principals of the ingress
+# gateways (browser editor traffic via docs.${DOMAIN}) and the consumer apps
+# (server-to-server ConvertService/command calls) — i.e. mTLS workload
+# identity, not just "same namespace". Defense in depth: NetworkPolicy (05) =
+# which namespace, this = which workload identity.
+#
+# Mesh trust domain is cluster.local (the app-layer SPIRE domain
+# secforge.platform is a SEPARATE identity used for OpenBao/SpiceDB, not for
+# mesh authz). So principals are cluster.local/ns/<ns>/sa/<sa>.
+#
+# BOTH ingress gateway planes (public `istio-ingress` Deployment + tailnet
+# `istio-ingress-tailnet` Deployment) run under the SAME ServiceAccount
+# `istio-ingress` (see istio-ingress/10-tailnet-gateway.yaml +
+# 11-public-gateway.yaml), so one gateway principal covers both.
+#
+# NOTE: kubelet health probes are not subject to this policy (ztunnel exempts
+# node-originated probes), so readiness/liveness on :80/healthcheck keep working.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-consumers-to-onlyoffice
+  namespace: onlyoffice
+  labels:
+    secforge.platform/component: onlyoffice
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              # Ingress gateways (public + tailnet planes — one shared SA).
+              - cluster.local/ns/istio-ingress/sa/istio-ingress
+              # Consumer apps (server-to-server DS API calls).
+              - cluster.local/ns/proposal-forge/sa/proposal-forge
+              - cluster.local/ns/control/sa/control
+      # L4 ONLY (principal + port). This service has no waypoint proxy, so
+      # ztunnel can enforce mTLS identity + destination port but NOT L7 fields
+      # (methods/paths). Including an L7 condition like `methods:` makes ztunnel
+      # reject everything ("allow policies exist, but none allowed"), because the
+      # rule can't be satisfied at L4. Principal + port is the right control here.
+      # (The /example path denial is therefore done at the gateway, in the
+      # VirtualService — not here.)
+      to:
+        - operation:
+            ports: ["80"]

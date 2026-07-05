@@ -1,0 +1,142 @@
+# NetworkPolicies for the onlyoffice namespace — the Document Server cage.
+#
+# Default-deny both directions. The DS needs exactly three flows:
+#   - INGRESS from the Istio ingress gateways (the browser editor: api.js +
+#     WebSocket, terminated at docs.${DOMAIN} and forwarded here on :80);
+#   - INGRESS from the consumer app namespaces (proposal-forge ConvertService/
+#     command API calls; control's usage-monitor command-service polling);
+#   - EGRESS to proposal-forge only (the DS fetches documents from PF's
+#     one-time URLs and POSTs save callbacks to PF's app port 3001).
+# Plus DNS. NOTHING else — zero internet egress (fonts are baked into the
+# image; documents come from PF only), no kube-apiserver, no other in-cluster
+# services. Same doctrine as document-render.
+#
+# Ports: 80 = DS nginx front; 3001 = PF backend; 15008 = ztunnel HBONE — this
+# namespace and its peers are ambient, so every cross-ns flow rides HBONE and
+# 15008 must be allowed alongside the app port ON BOTH ENDS (the mirror rules
+# live in proposal-forge/05-network-policies.yaml).
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# DNS only (service-name resolution for the PF callback/fetch URLs). NO
+# kube-apiserver allow, NO internet, NO other in-cluster services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+
+---
+# Ingress: the Istio ingress gateways (istio-ingress ns — public + tailnet
+# planes) → DS :80. This is the browser editor path: docs.${DOMAIN} terminates
+# at the gateway, which forwards here. The AuthorizationPolicy (06) narrows
+# this to the gateway SA's SPIFFE principal.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-gateway
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Ingress: consumer app namespaces → DS :80 (server-to-server ConvertService +
+# command API calls). proposal-forge = Document Engine consumer; control = the
+# usage monitor's command-service polling. The AuthorizationPolicy (06)
+# narrows this to the exact consumer SPIFFE principals.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-consumers
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: proposal-forge
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# Egress: DS → proposal-forge backend ONLY. The DS fetches documents from PF's
+# one-time download URLs and POSTs save/convert callbacks to PF. Mirror rule
+# (allow-ingress-from-onlyoffice) lives in proposal-forge/05-network-policies.yaml.
+# When Control becomes a document SOURCE (not just a command-API caller), add
+# an equivalent allow-egress-to-control here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-proposal-forge
+  namespace: onlyoffice
+  labels: { secforge.platform/component: onlyoffice, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: onlyoffice
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: proposal-forge
+      ports:
+        - { protocol: TCP, port: 3001 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)

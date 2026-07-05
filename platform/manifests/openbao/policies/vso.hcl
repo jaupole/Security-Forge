@@ -237,6 +237,20 @@ path "secret/metadata/minio/proposal-forge-files" {
   capabilities = ["read"]
 }
 
+# ONLYOFFICE Document Server fleet-shared JWT secret (DOCENG Phase 1).
+# The DS has ONE global JWT secret at apps/onlyoffice/jwt; every CONSUMER app
+# namespace syncs the same path via its own VSO role (all of which carry this
+# `vso` policy) — today the `onlyoffice-jwt` VaultStaticSecret in
+# platform/manifests/proposal-forge/04-vso-bindings.yaml, Control next. The
+# onlyoffice namespace itself reads it under the dedicated `onlyoffice`
+# policy (onlyoffice.hcl), not this one.
+path "secret/data/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/onlyoffice/jwt" {
+  capabilities = ["read"]
+}
+
 # Business Manager (business-manager ns / ecosystem app managerapp) —
 # apps/business-manager/runtime bundle (OIDC_CLIENT_SECRET,
 # OIDC_CLIENT_SECRET_TENANTS, SESSION_KEY, SAM_GOV_API_KEY) +

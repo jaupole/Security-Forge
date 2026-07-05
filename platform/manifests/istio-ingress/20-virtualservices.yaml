@@ -327,3 +327,46 @@ spec:
         host: business-manager.business-manager.svc.cluster.local
         port:
           number: 80
+---
+# ONLYOFFICE Document Server (DOCENG Phase 1) — the browser editor endpoint.
+# docs.${DOMAIN} → onlyoffice ns. Public + tailnet gateways (the editor iframe
+# is loaded by the PF app, which is public since 2026-06-16; the DS itself
+# enforces JWT on every editor/API interaction, and the onlyoffice
+# AuthorizationPolicy admits only the gateway + consumer principals).
+#
+# Route 1 denies the DS's bundled example/test app (/example) with a 404
+# directResponse — first directResponse in this file; Istio HTTPRoute shape is
+# `directResponse: { status: <int> }` in place of `route:`.
+# Route 2 (default) carries the editor traffic: WebSocket co-editing sessions
+# are long-lived, so timeout 3600s (grafana precedent above) instead of the
+# 15s Istio default.
+#
+# ${DOMAIN} placeholder — apply ONLY via lib/apply-manifest.sh (06a), never
+# raw kubectl.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: onlyoffice
+  namespace: istio-ingress
+spec:
+  gateways:
+  - istio-ingress/secforge-gateway
+  - istio-ingress/secforge-gateway-tailnet
+  hosts:
+  - docs.${DOMAIN}
+  http:
+  - match:
+    - uri:
+        prefix: /example
+    name: deny-example
+    directResponse:
+      status: 404
+  - name: onlyoffice
+    route:
+    - destination:
+        host: onlyoffice.onlyoffice.svc.cluster.local
+        port:
+          number: 80
+    timeout: 3600s

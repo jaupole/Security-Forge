@@ -209,3 +209,37 @@ spec:
           text: '{{ .Secrets.access_key }}'
         ACCESS_SECRET_KEY:
           text: '{{ .Secrets.secret_key }}'
+
+---
+# ONLYOFFICE Document Server fleet-shared JWT secret (DOCENG Phase 1/2). PF
+# signs editor embed configs + ConvertService calls and verifies the DS's save
+# callbacks with it. SAME OpenBao path as the onlyoffice namespace's own sync
+# (onlyoffice/04-vso-bindings.yaml) — one secret, N namespaces, VSO-managed;
+# rotation = rotate in OpenBao, every sync follows. Read grant for the
+# proposal-forge-vso role (`vso` policy) lives in openbao/policies/vso.hcl.
+# Rendered as ONLYOFFICE_JWT_SECRET, consumed via envFrom on the backend.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: onlyoffice-jwt
+  namespace: proposal-forge
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: proposal-forge-vso
+  mount: secret
+  type: kv-v2
+  path: apps/onlyoffice/jwt
+  refreshAfter: 1h
+  destination:
+    name: onlyoffice-jwt
+    create: true
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ONLYOFFICE_JWT_SECRET:
+          text: '{{ .Secrets.jwt_secret }}'

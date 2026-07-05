@@ -1,0 +1,50 @@
+# ResourceQuota + LimitRange for the onlyoffice namespace.
+#
+# ResourceQuota caps the SUM of all pods' requests/limits in this namespace.
+# LimitRange sets DEFAULT requests/limits for any pod that doesn't declare
+# them (so Kyverno's require-resource-limits never has to fail-the-deploy
+# on a missing limit; the LimitRange fills it in).
+#
+# Sized for ONE heavy all-in-one pod (nginx + postgres + rabbitmq + Node
+# services) with headroom for a Recreate-strategy replacement pod plus VSO/
+# debug ephemera — this is the biggest single service on the node after the
+# apps, and the quota is what stops it starving them (single-node cluster).
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: onlyoffice-quota
+  namespace: onlyoffice
+  labels:
+    secforge.platform/component: onlyoffice
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    limits.cpu: "3"
+    limits.memory: 6Gi
+    pods: "5"
+    persistentvolumeclaims: "0"   # emptyDir only — documents transit, they don't live here
+    services.loadbalancers: "0"   # the Istio gateway fronts it; no LB Services
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: onlyoffice-limits
+  namespace: onlyoffice
+  labels:
+    secforge.platform/component: onlyoffice
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "2"
+        memory: 4Gi
+      defaultRequest:
+        cpu: 500m
+        memory: 1Gi
+      max:
+        cpu: "2"
+        memory: 4Gi
