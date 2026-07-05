@@ -142,6 +142,16 @@ spec:
             - { name: AI_PROVIDER, value: gemini }
             - { name: GEMINI_MODEL, value: gemini-2.5-flash }
             - { name: GSA_API_BASE, value: "https://api.gsa.gov/travel/perdiem/v2" }
+            # ONLYOFFICE Document Server (DOCENG Phase 2+) — embed origin the
+            # browser loads api.js from, in-cluster URL for ConvertService and
+            # SSRF host validation, and the base DS uses to call PF back
+            # (one-time file URLs + save callbacks ride the mesh, not the
+            # gateway). JWT secret is the fleet-shared DS secret (VSO-rendered
+            # from secret/apps/onlyoffice/jwt — see 04-vso-bindings.yaml).
+            - { name: ONLYOFFICE_PUBLIC_URL, value: "https://docs.secforge.dev" }
+            - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
+            - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://proposal-forge.proposal-forge.svc.cluster.local" }
+            - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: jwt_secret } } }
             # CNPG-rendered DB connection string.
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: proposal-forge-db-app, key: uri } } }
           envFrom:
