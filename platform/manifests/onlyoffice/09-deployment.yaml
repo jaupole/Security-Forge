@@ -65,7 +65,7 @@ spec:
         - name: documentserver
           # with the sha256 the onlyoffice-image-build workflow prints in its
           # job summary. Kyverno rejects the placeholder.
-          image: ghcr.io/jaupole/onlyoffice-documentserver:9.4.0.1-secforge@sha256:2f09389afdc8280cbc185088c2a80adaa3ccfa01e1d0fd25090e94bdb1038f29
+          image: ghcr.io/jaupole/onlyoffice-documentserver:9.4.0.1-secforge@sha256:be66804b7712c1c87b5d8e776d80bf05f1596f38502a9ba191924486814a44ff
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 80, name: http, protocol: TCP }
