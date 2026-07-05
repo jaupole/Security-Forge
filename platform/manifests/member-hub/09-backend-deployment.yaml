@@ -124,7 +124,7 @@ spec:
           # 2026-06-12: commit d583bde — shared PeriodChip (ecosystem-ui 0.1.9) on
           # the dashboard + period-aware (?period=7d|30d|90d|12m) windowing of the
           # members/revenue figures. No new migration. MUST match 08.
-          image: ghcr.io/jaupole/member-hub@sha256:b7a3f5c5abfe2df6cfa7bccf000ad168d66e09409acaa0269c30d97899d8244a
+          image: ghcr.io/jaupole/member-hub@sha256:758049a4074a9126ba3bc107c20aad12144b09c1385364475362985d09f8581e
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
