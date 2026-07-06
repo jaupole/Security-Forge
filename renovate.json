@@ -100,6 +100,15 @@
       "automergeStrategy": "squash"
     },
     {
+      "description": "Initial tag->digest PINS backfill (pinDigests): extends the H-4.7 cadence fix above from `digest` to `pin`. Initial pins were still gated behind the base-image dashboardApproval rule, so tag-only images (~40) never got pinned despite pinDigests:true — leaving Gap B / require-image-digest unenforceable. A `pin` update introduces NO new image; it just stamps the ALREADY-running digest onto the ref, so it needs no CVE soak and carries the same risk profile as the digest-refresh auto-merge (repo-only; cluster rolled separately). Version (major/minor/patch) bumps still require dashboard approval via the base-image rule. To revert to fully-manual, set automerge:false (or dependencyDashboardApproval:true).",
+      "matchManagers": ["dockerfile", "kubernetes", "helm-values"],
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["pin"],
+      "dependencyDashboardApproval": false,
+      "automerge": true,
+      "automergeStrategy": "squash"
+    },
+    {
       "description": "Keycloak base image — operator review before merge. Both version and digest updates surface on the dependency dashboard and merge only on operator approval; merging runs the keycloak-image-build pipeline, then the CR digest is cut over by hand (operator-backlog #48).",
       "matchManagers": ["regex"],
       "matchPackageNames": ["quay.io/keycloak/keycloak"],
