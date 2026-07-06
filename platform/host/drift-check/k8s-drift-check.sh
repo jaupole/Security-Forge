@@ -46,7 +46,11 @@ ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_
 #                              immutable one-shot Jobs: diff always errors
 #   - realm-import|-realm\.yaml keycloak realm imports are one-shot CRs; the
 #                              authoritative realm state lives in Keycloak's DB
-EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration-job|realm-import|13-kyverno-image-verify-note'
+#   - spicedb/tests/         SpiceDB validation fixtures, not k8s objects
+#   - /realms/               keycloak realm-import payloads (one-shot; realm
+#                            truth lives in Keycloak's DB)
+#   - bootstrap-job          immutable one-shot Jobs (minio bucket bootstrap)
+EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration-job|bootstrap-job|realm-import|/realms/|spicedb/tests/|13-kyverno-image-verify-note'
 
 # Helm releases whose values files are the source of truth:
 #   release:namespace:values-file
