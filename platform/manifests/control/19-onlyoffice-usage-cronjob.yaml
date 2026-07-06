@@ -12,8 +12,15 @@
 # All cross-poll state (cooldowns, outage episodes, recovery countdown) lives
 # in the DB (`onlyoffice_watch_state`), so per-invocation processes are fine
 # and `concurrencyPolicy: Forbid` + a `FOR UPDATE` row lock serialise overlap.
-# No wait-for-db initContainer (unlike the hourly crons): at this cadence a
-# DB-unavailable run just fails fast and the next minute retries.
+# wait-for-db initContainer (same pattern as the hourly crons): originally
+# omitted on the theory that a DB-unavailable run just fails fast and the next
+# minute retries — but 2026-07-06 showed that any CNPG Cluster spec change
+# (e.g. the digest-pin rollout, or future Renovate image bumps) restarts the
+# single-instance control-db for 1-3 min, long enough for consecutive runs to
+# exhaust backoffLimit and drip KubeJobFailed alerts. Waiting on pg_isready
+# absorbs those windows; activeDeadlineSeconds: 240 bounds the wait so a
+# genuinely prolonged outage still fails loudly instead of wedging silently
+# under concurrencyPolicy: Forbid.
 #
 # JWT: the poller signs command-service calls with the fleet-shared DS secret
 # (VSO -> `onlyoffice-jwt`, see 04-vso-bindings.yaml). Unset URL => no-op.
@@ -54,6 +61,11 @@ spec:
       # idempotent. Deeper follow-up: app-level connect retry in
       # ecosystem-control src/cli/onlyoffice-usage.ts.
       backoffLimit: 2
+      # Bounds wait-for-db (and the whole run): long enough to ride out a CNPG
+      # instance restart (~1-3 min), short enough that a real prolonged outage
+      # surfaces as a Failed job rather than a silent stall behind
+      # concurrencyPolicy: Forbid.
+      activeDeadlineSeconds: 240
       ttlSecondsAfterFinished: 3600
       template:
         metadata:
@@ -74,6 +86,25 @@ spec:
             fsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
           containers:
             - name: poll
               # Digest-pinned. Same image as the backend Deployment.
