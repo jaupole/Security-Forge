@@ -27,47 +27,6 @@ spec:
   policyTypes:
     - Ingress
 
-# ──────────────────────────────────────────────────────────────────────
-# Allow `app` ns (AuthZEN façade etc.) → SpiceDB gRPC on 50051.
-# Direct app → SpiceDB calls are not the recommended pattern; apps go
-# through the AuthZEN façade. The label-based source restriction here
-# only allows pods carrying `app.kubernetes.io/name: authzen-facade`.
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-authzen-facade-to-spicedb
-  namespace: spicedb
-  labels:
-    secforge.platform/component: spicedb
-spec:
-  podSelector:
-    matchLabels:
-      authzed.com/cluster: spicedb
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: app
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: authzen-facade
-      ports:
-        - protocol: TCP
-          port: 50051
-
-# ──────────────────────────────────────────────────────────────────────
-# Allow SpiceDB → SpiceDB self-dispatch on port 50053.
-#
-# Even with `dispatchClusterEnabled: false`, the SpiceDB operator wires
-# `SPICEDB_DISPATCH_UPSTREAM_ADDR=kubernetes:///spicedb.spicedb:dispatch`
-# (the dispatch port on its own Service) for the pod's permission-
-# check path. Without an explicit ingress allow, the self-loop traffic
-# fails the default-deny-ingress rule and CheckPermission times out
-# with "context deadline exceeded while waiting for connections to
-# become ready" after 60s.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
