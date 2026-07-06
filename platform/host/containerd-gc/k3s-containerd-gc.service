@@ -1,0 +1,9 @@
+[Unit]
+Description=Prune unreferenced containerd images (weekly)
+After=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/containerd-gc.sh
+Nice=10
+IOSchedulingClass=idle

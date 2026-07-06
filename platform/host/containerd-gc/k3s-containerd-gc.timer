@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly containerd image prune
+
+[Timer]
+OnCalendar=Sun *-*-* 06:23:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
