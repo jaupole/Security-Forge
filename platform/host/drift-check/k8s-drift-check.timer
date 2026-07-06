@@ -1,0 +1,12 @@
+[Unit]
+Description=Run k8s-drift-check daily
+
+[Timer]
+# 05:41 UTC — after the nightly backup (02:00) and audit anchors (01:41/02:41),
+# before the workday. RandomizedDelaySec avoids colliding with other timers.
+OnCalendar=*-*-* 05:41:00 UTC
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

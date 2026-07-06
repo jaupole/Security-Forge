@@ -1,0 +1,10 @@
+[Unit]
+Description=Detect repo-vs-live drift (manifests + helm values) and export metrics
+After=network-online.target k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/k8s-drift-check.sh
+# Server-side dry-run diffs across ~150 manifests; keep it off the fast path.
+Nice=10
+IOSchedulingClass=idle

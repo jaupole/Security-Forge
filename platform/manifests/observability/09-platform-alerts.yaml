@@ -543,3 +543,47 @@ spec:
               degrading until it succeeds. Inspect: kubectl -n observability logs job/<latest job>.
               Common causes: Loki query failure, OpenBao login/sign failure, or GitHub PAT expired
               (secret/platform/audit-anchors-push-token).
+    - name: secforge-drift
+      rules:
+        # Fed by the k8s-drift-check host timer (platform/host/drift-check/,
+        # daily 05:41 UTC) via the node-exporter textfile collector. This is
+        # the merge-without-apply detector — the 2026-07-05 infra sweep found
+        # five findings in this class (see operator-backlog #99 item 4).
+        - alert: SecforgeManifestDrift
+          expr: secforge_manifest_drift_files > 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} repo manifest(s) differ from the live cluster (merge-without-apply drift)"
+            description: |
+              The daily k8s-drift-check found manifests under platform/manifests/ whose rendered
+              content does not match the live cluster — a merged commit was never applied, or a
+              live object was hand-edited. Per-file diffs:
+                journalctl -u k8s-drift-check --since "-24h"
+              Reconcile via the deploy path (apply-manifest.sh from /home/ops/secforge), or codify
+              the live state back into the repo. Do NOT blind-apply DB-touching manifests — CNPG
+              Cluster spec changes can roll single-instance databases (backlog #99 item 1 history).
+        - alert: SecforgeHelmValuesDrift
+          expr: secforge_helm_values_drift_releases > 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} helm release(s) run values that differ from the repo values file"
+            description: |
+              helm get values != rendered platform/values/<file> for one or more pinned releases —
+              a values change was merged but never `helm upgrade`d (the debug-1 failure mode:
+              VSO/trust-manager digest pins sat unapplied for a day). Identify via
+              journalctl -u k8s-drift-check, then roll with platform/lib/install-helm.sh using the
+              owning component script's exact arguments.
+        - alert: SecforgeDriftCheckStale
+          expr: time() - secforge_drift_check_last_run_timestamp_seconds > 172800
+          labels:
+            severity: warning
+          annotations:
+            summary: "k8s-drift-check has not completed in >48h"
+            description: |
+              The drift detector itself is not running (timer disabled, script erroring, or
+              node-exporter textfile collector broken). Silence from it is NOT "no drift".
+              Check: systemctl status k8s-drift-check.timer && journalctl -u k8s-drift-check.
