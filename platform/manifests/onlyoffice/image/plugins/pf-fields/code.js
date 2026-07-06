@@ -167,10 +167,17 @@
   }
 
   function loadFields() {
-    var url = ctx.api + '/api/v1/onlyoffice/fields/' + encodeURIComponent(ctx.token)
+    var url = ctx.api + '/api/v1/onlyoffice/fields'
     // credentials omitted on purpose: this is a cross-origin/third-party frame
-    // with no session — the token in the URL is the entire authorization.
-    fetch(url, { method: 'GET', credentials: 'omit', mode: 'cors' })
+    // with no session — the Bearer token is the entire authorization. It rides
+    // the Authorization HEADER, never the URL path, so it stays out of ingress
+    // access logs (token-in-URL leak fix). Requires PF ≥ sec/token-url-transport.
+    fetch(url, {
+      method: 'GET',
+      credentials: 'omit',
+      mode: 'cors',
+      headers: { Authorization: 'Bearer ' + ctx.token },
+    })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status)
         return res.json()
