@@ -61,3 +61,27 @@ spec:
     name: wazuh-oidc-vso
     create: true
     type: Opaque
+
+---
+# Archive-shipper MinIO credentials (rule 44: OpenBao is authoritative).
+# Source of truth: secret/data/wazuh/archive-minio (staged when the MinIO
+# user is provisioned — see manifests/minio/03-wazuh-archive-credentials-job.yaml).
+# Reuses the wazuh-vso VaultAuth above.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: wazuh-archive-minio
+  namespace: wazuh
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: wazuh-vso
+  mount: secret
+  type: kv-v2
+  path: wazuh/archive-minio
+  refreshAfter: 1h
+  destination:
+    name: wazuh-archive-minio
+    create: true
+    type: Opaque

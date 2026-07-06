@@ -21,12 +21,12 @@
 #   - Runs as uid/gid 999 (the wazuh-manager data owner) so no fsGroup
 #     chown ever touches the shared PV.
 #
-# Pre-condition (one-time, operator): the `wazuh/wazuh-archive-minio`
-# Secret (keys MINIO_ACCESS_KEY / MINIO_SECRET_KEY, random values) must
-# exist BEFORE this CronJob runs — created alongside the MinIO user by
-# manifests/minio/03-wazuh-archive-credentials-job.yaml (see its header).
-# It is deliberately NOT declared here: a repo manifest would clobber the
-# real credentials on every re-apply.
+# Pre-condition (one-time, operator): the credentials are staged in
+# OpenBao at secret/wazuh/archive-minio (rule 44 — OpenBao authoritative)
+# and rendered into this namespace as Secret `wazuh-archive-minio` by the
+# VaultStaticSecret in 03-vso-binding.yaml. Provisioning flow lives in
+# manifests/minio/03-wazuh-archive-credentials-job.yaml. Rotation =
+# update OpenBao + re-run the credentials Job; VSO re-renders within 1h.
 ---
 # Shipper pod → MinIO S3 API. wazuh is default-deny-egress; this opens
 # exactly minio:9000 (+ ztunnel HBONE 15008, ambient namespace) for the
@@ -92,11 +92,16 @@ spec:
           restartPolicy: Never
           automountServiceAccountToken: false
           securityContext:
-            # uid/gid 999 == owner of the wazuh-manager data files. No
-            # fsGroup: it would chown the shared manager PV on mount.
+            # uid/gid 999 == owner of the wazuh-manager data files.
+            # fsGroup makes the projected Secret volume group-readable
+            # (root:0400 otherwise — the first run failed on exactly that);
+            # OnRootMismatch keeps kubelet from walking the 29G manager PV,
+            # whose root already carries group 999 + setgid.
             runAsNonRoot: true
             runAsUser: 999
             runAsGroup: 999
+            fsGroup: 999
+            fsGroupChangePolicy: OnRootMismatch
             seccompProfile:
               type: RuntimeDefault
           containers:
@@ -156,6 +161,6 @@ spec:
             - name: minio-creds
               secret:
                 secretName: wazuh-archive-minio
-                defaultMode: 0400
+                defaultMode: 0440
             - name: tmp
               emptyDir: {}
