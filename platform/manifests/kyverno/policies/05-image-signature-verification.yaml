@@ -49,22 +49,23 @@ spec:
                                        # are too slow to scan every pod
   validationFailureAction: Enforce     # our CI signs every image — block unsigned
   webhookConfiguration:
-    failurePolicy: Ignore              # STAYS FAIL-OPEN. Fail-closed was attempted live on
-                                       # 2026-07-05 and REVERTED: a burst of concurrent
-                                       # keyless verifications (what happens when every pod
-                                       # reschedules on a node reboot) triggers Sigstore
-                                       # TUF/Fulcio root-init failures inside Kyverno
-                                       # ("failed to get roots from fulcio: initializing tuf").
-                                       # With failurePolicy=Fail that would DENY our own app
-                                       # pods and block cluster recovery — turning a reboot
-                                       # into an outage. DO NOT set Fail until Kyverno keyless
-                                       # verification is reliable under load (pin/mirror the
-                                       # Sigstore TUF root + warm the image-verify cache).
-                                       # Tracked in docs/04-security/image-supply-chain-verification.md.
-    timeoutSeconds: 30                 # k8s max. The keyless verify (ghcr signature fetch
-                                       # + Rekor/Fulcio) needs headroom under admission
-                                       # bursts; with failurePolicy=Fail a timeout now
-                                       # DENIES rather than silently admitting.
+    failurePolicy: Fail                # FAIL-CLOSED (backlog #97, 2026-07-XX after soak).
+                                       # The 2026-07-05 attempt (#95/#96) was reverted because
+                                       # Kyverno fetched the Fulcio/TUF root from
+                                       # tuf-repo-cdn.sigstore.dev AT ADMISSION and raced init
+                                       # under reboot bursts ("failed to get roots from fulcio:
+                                       # initializing tuf"), denying signed pods. That is now
+                                       # structurally impossible: the trust material (Fulcio
+                                       # root, Rekor + CT-log pubkeys) is PINNED OFFLINE on the
+                                       # verify-secforge rule below, so verification makes no
+                                       # Sigstore call — only a ghcr signature pull, which
+                                       # shares fate with the image pull. Proven under a
+                                       # sigstore-blackholed 33-pod burst (33/33 admit). Only
+                                       # the SecForge-own policy is Fail; vendors stays Ignore.
+                                       # BREAK-GLASS to flip back: docs/03-runbooks/kyverno-signature-fail-closed.md
+    timeoutSeconds: 30                 # k8s max. Offline verify measured 64ms cache-cold,
+                                       # so this is pure headroom; with failurePolicy=Fail a
+                                       # timeout DENIES rather than silently admitting.
   rules:
     # SecForge-owned images: control + portal today (same keyless CI as the
     # keycloak overlay — see .github/workflows/*-image-build.yml). The
