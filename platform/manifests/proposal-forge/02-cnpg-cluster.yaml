@@ -52,7 +52,7 @@ spec:
 
   resources:
     requests: { cpu: 100m, memory: 256Mi }
-    limits:   { cpu: 1,    memory: 1Gi }
+    limits:   { cpu: "1",  memory: 1Gi }  # quoted: the API canonicalizes the quantity to "1"; unquoted it is a permanent kubectl-diff phantom
 
   monitoring:
     enablePodMonitor: false
