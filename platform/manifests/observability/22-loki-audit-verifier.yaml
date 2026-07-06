@@ -248,7 +248,10 @@ metadata:
     app.kubernetes.io/name: platform-loki-audit-verifier
     secforge.platform/component: platform-loki-audit
 spec:
-  suspend: true
+  # Live has run unsuspended since bootstrap completed; the repo copy was never
+  # updated, so a repo re-apply would silently halt the tamper-evidence hash
+  # chain (infra-sweep debt-6). suspend:false is the operational state.
+  suspend: false
   schedule: "41 2 * * *"            # daily 02:41 UTC (after the anchor at 01:41)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1

@@ -42,8 +42,11 @@ spec:
       # observability added 2026-06-08: the platform-loki-audit-anchor
       # (manifests/observability/21-) calls OpenBao transit/sign over in-cluster
       # TLS and needs the OpenBao internal CA to verify openbao.openbao.svc.
+      # project-manager added 2026-07-06: it mounted a hardcoded copy of this
+      # ConfigMap (deleted 08a manifest) that a CA rotation would have orphaned —
+      # the exact anti-pattern #78 eliminated (infra-sweep debt-3).
       matchExpressions:
-        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge, business-manager, observability] }
+        - { key: kubernetes.io/metadata.name, operator: In, values: [control, member-hub, proposal-forge, business-manager, observability, project-manager] }
 ---
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
