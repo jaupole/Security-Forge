@@ -244,14 +244,35 @@ prometheus-node-exporter:
       cpu: 10m
       memory: 32Mi
     limits:
-      cpu: 100m
-      memory: 64Mi
+      cpu: 200m            # was 100m: CPUThrottlingHigh showed 67% throttling
+      memory: 64Mi         # of the metrics source since 2026-06-05 (debug-6)
 
   extraArgs:
     # Read host textfile collector written by /usr/local/sbin/mount-count-exporter.sh
     # (systemd timer, every 60s). Exposes node_mount_count + node_mount_max_limit.
     # /host/root is the hostPath mount of / in the node-exporter DaemonSet.
     - --collector.textfile.directory=/host/root/var/lib/node_exporter/textfile_collector
+
+# ─── apiserver histogram-bucket cardinality (infra-sweep opt-6) ─────────
+# ~95k of ~307k head series were apiserver/etcd(kine) duration + size
+# histogram buckets. Nothing on this box consumes them: the kps apiserver
+# SLO/burn-rate default rules that would are disabled below (single-node
+# k3s — apiserver latency SLOs are noise; up/down + resource alerts carry
+# the signal). Dropping at scrape time saves ~100k series / a few hundred
+# MiB of Prometheus RSS under its 2Gi limit.
+kubeApiServer:
+  serviceMonitor:
+    metricRelabelings:
+      - sourceLabels: [__name__]
+        regex: '(apiserver|etcd)_request_duration_seconds_bucket|apiserver_request_sli_duration_seconds_bucket|apiserver_request_body_size_bytes_bucket|apiserver_response_sizes_bucket'
+        action: drop
+
+defaultRules:
+  rules:
+    # Consume the buckets dropped above — disabled deliberately with them.
+    kubeApiserverBurnrate: false
+    kubeApiserverHistogram: false
+    kubeApiserverSlos: false
 
 # ─── k3s control-plane scrapers off ────────────────────────────────────
 # k3s embeds controller-manager, scheduler, etcd into a single process and

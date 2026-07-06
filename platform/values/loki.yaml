@@ -10,6 +10,10 @@ deploymentMode: SingleBinary
 
 loki:
   auth_enabled: false   # single-tenant
+  # Grafana Labs usage callhome — egress-blocked anyway (stats.grafana.org),
+  # producing ~90 ztunnel outbound-refused errors/hour of log noise (debug-5).
+  analytics:
+    reporting_enabled: false
   schemaConfig:
     configs:
       - from: 2026-01-01
