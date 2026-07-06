@@ -9,8 +9,8 @@ the production status snapshot. Open work and follow-ups live in
 > [docs/99-archive/PLAN-local-edition.md](./docs/99-archive/PLAN-local-edition.md). The build is complete;
 > day-to-day work is now feature and operations work against the running cluster.
 
-**Last updated:** 2026-06-07 (documentation drift sweep — see
-[docs/06-reference/doc-drift-audit-2026-06-07.md](./docs/06-reference/doc-drift-audit-2026-06-07.md)).
+**Last updated:** 2026-07-06 (infra-sweep doc-drift pass: Project Manager marked live, surfaces table
+updated — see operator-backlog #99; previous sweep: [docs/06-reference/doc-drift-audit-2026-06-07.md](./docs/06-reference/doc-drift-audit-2026-06-07.md)).
 
 ## Substrate
 
@@ -35,8 +35,9 @@ the production status snapshot. Open work and follow-ups live in
 | `grafana.secforge.dev` | Grafana | tailnet-only |
 | `wazuh.secforge.dev` | Wazuh dashboard | tailnet-only |
 | `pf.secforge.dev` | Proposal Forge | tailnet-only |
+| `projects.secforge.dev` | Project Manager (PMBOK PM app) | public |
 
-Apps not yet deployed: **Project Tracker** (PM app — schema/identity provisioned, app not live).
+All planned ecosystem apps are deployed (Project Manager went live 2026-06, `projects.secforge.dev`). Undeployed local-edition residue (`apps/authzen-facade`, `apps/security-events-collector`) is tracked for deletion in operator-backlog #99.
 
 ## Platform components (live versions)
 
