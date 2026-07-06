@@ -80,7 +80,7 @@ spec:
           # e.g. ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:<digest>
           # 2026-06-10: CVE-refresh rebuild (same 8.33.0, fresh upstream OS layer) on
           # the rootless CI runner — pentest base-image-CVE backlog reduction.
-          image: ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:b6c17439d93b831027c31b391f9e37dd1613a1ebfd99c68a093f90854183bb33
+          image: ghcr.io/jaupole/gotenberg:8.33.0-secforge@sha256:bbcf5c613fd6242e6699d6efbb8f99c75512acd035f29ddab940905b02edf917
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3000, name: http, protocol: TCP }
