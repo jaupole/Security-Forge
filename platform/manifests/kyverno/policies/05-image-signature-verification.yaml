@@ -96,8 +96,51 @@ spec:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
                     subjectRegExp: "^https://github\\.com/(secforge|jaupole)/"
+                    # OFFLINE-PINNED trust material (backlog #97, 2026-07-06).
+                    # Prior fail-closed attempts (#95/#96) died on a TUF/Fulcio
+                    # root-init race under reboot bursts, because Kyverno fetched
+                    # the trust root from tuf-repo-cdn.sigstore.dev at admission.
+                    # Our CI (cosign v2, #90) attaches a self-contained bundle
+                    # (cert + SCT + Rekor inclusion proof), so verification can be
+                    # fully OFFLINE: pin the Fulcio ROOT (root only — the
+                    # intermediate rides in the signature bundle), the Rekor
+                    # pubkey (verifies the attached inclusion proof, no
+                    # rekor.sigstore.dev call), and the CT-log pubkey (verifies
+                    # the SCT, no TUF). The only remaining network dep is the ghcr
+                    # signature pull, which shares fate with the image pull.
+                    # Proven 2026-07-06: 33 signed pods admitted with sigstore
+                    # DNS-blackholed + failurePolicy:Fail; tampered digest denied;
+                    # 64ms cache-cold. REFRESH: these rotate on a years cadence
+                    # (Fulcio root valid to 2031-10-05); re-extract via
+                    # `cosign initialize` if Sigstore rotates the root. See
+                    # docs/04-security/image-supply-chain-verification.md.
+                    roots: |-
+                      -----BEGIN CERTIFICATE-----
+                      MIIB9zCCAXygAwIBAgIUALZNAPFdxHPwjeDloDwyYChAO/4wCgYIKoZIzj0EAwMw
+                      KjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0y
+                      MTEwMDcxMzU2NTlaFw0zMTEwMDUxMzU2NThaMCoxFTATBgNVBAoTDHNpZ3N0b3Jl
+                      LmRldjERMA8GA1UEAxMIc2lnc3RvcmUwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAT7
+                      XeFT4rb3PQGwS4IajtLk3/OlnpgangaBclYpsYBr5i+4ynB07ceb3LP0OIOZdxex
+                      X69c5iVuyJRQ+Hz05yi+UF3uBWAlHpiS5sh0+H2GHE7SXrk1EC5m1Tr19L9gg92j
+                      YzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRY
+                      wB5fkUWlZql6zJChkyLQKsXF+jAfBgNVHSMEGDAWgBRYwB5fkUWlZql6zJChkyLQ
+                      KsXF+jAKBggqhkjOPQQDAwNpADBmAjEAj1nHeXZp+13NWBNa+EDsDP8G1WWg1tCM
+                      WP/WHPqpaVo0jhsweNFZgSs0eE7wYI4qAjEA2WB9ot98sIkoF3vZYdd3/VtWB5b9
+                      TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
+                      -----END CERTIFICATE-----
                     rekor:
                       url: "https://rekor.sigstore.dev"
+                      pubkey: |-
+                        -----BEGIN PUBLIC KEY-----
+                        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwr
+                        kBbmLSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==
+                        -----END PUBLIC KEY-----
+                    ctlog:
+                      pubkey: |-
+                        -----BEGIN PUBLIC KEY-----
+                        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEiPSlFi0CmFTfEjCUqF9HuCEcYXNK
+                        AaYalIJmBZ8yyezPjTqhxrKBpMnaocVtLJBI1eM3uXnQzQGAJdJ4gs9Fyw==
+                        -----END PUBLIC KEY-----
 
 ---
 apiVersion: kyverno.io/v1
