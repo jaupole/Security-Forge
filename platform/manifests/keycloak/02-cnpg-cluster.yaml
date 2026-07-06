@@ -14,6 +14,13 @@ spec:
   smartShutdownTimeout: 10          # single-instance: fast-shutdown so an imageName roll can't hang on the app connection pool (2026-07-06)
   primaryUpdateStrategy: unsupervised
 
+  # Codified from live 2026-07-06 (infra-sweep debt-4): backup.target was set
+  # on the live CR only, so a repo re-apply would have silently removed it.
+  # Harmless on single-instance (falls back to primary); matters if a standby
+  # is ever added.
+  backup:
+    target: prefer-standby
+
   enableSuperuserAccess: false
 
   storage:
