@@ -142,6 +142,9 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          # Host /tmp is a 4G tmpfs; trivy copies multi-GB layers into $TMPDIR
+          # and ENOSPCs there (see gotenberg run 28765004461). runner.temp is on disk.
+          TMPDIR: ${{ runner.temp }}
         run: |
           ./.claude/scripts/install-verify.sh trivy
           # install-verify appends ~/.local/bin to $GITHUB_PATH (for *later* steps);
