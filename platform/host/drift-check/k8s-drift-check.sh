@@ -50,10 +50,13 @@ EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration
 
 # Helm releases whose values files are the source of truth:
 #   release:namespace:values-file
+# NOTE: kyverno is deliberately absent — it is NOT a helm release on this
+# cluster (helm ls -A shows none) and platform/values/kyverno.yaml is
+# unwired config (infra-sweep opt-7, tracked in backlog #99). Add it here
+# if/when kyverno is migrated to a helm install.
 HELM_RELEASES=(
   "vault-secrets-operator:vault-secrets-operator:values/vault-secrets-operator.yaml"
   "trust-manager:cert-manager:values/trust-manager.yaml"
-  "kyverno:kyverno:values/kyverno.yaml"
 )
 
 set -a
