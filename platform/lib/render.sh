@@ -19,4 +19,10 @@ set +a
 input="${1:?usage: render.sh <input-file>}"
 [[ -f "$input" ]] || { echo "ERR: file not found: $input" >&2; exit 1; }
 
-envsubst < "$input"
+# envsubst allowlist — only substitute named globals, not arbitrary shell vars.
+# A bare envsubst blanks $vars inside embedded container scripts (e.g. the
+# OpenBao raft-snapshot and guardrail-selftest CronJobs). Keep this list
+# identical to apply-manifest.sh so rendered previews match what gets applied.
+ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_EMAIL} ${WILDCARD_CERT_NAMESPACE} ${WILDCARD_CERT_SECRET} ${STORAGE_CLASS} ${KEYCLOAK_PLATFORM_REALM} ${KEYCLOAK_TENANTS_REALM} ${TIMEZONE} ${PUBLIC_IP} ${TAILNET_IP}'
+
+envsubst "$ALLOW" < "$input"
