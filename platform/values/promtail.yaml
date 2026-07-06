@@ -14,6 +14,27 @@ config:
   snippets:
     pipelineStages:
       - cri: {}
+      # ── Capability-token redaction (token-in-URL access-log leak) ──────────
+      # The Istio gateway's default JSON access log records the full request
+      # path, and Proposal Forge's capability tokens ride URL path segments
+      # (public-fill invite tokens, ONLYOFFICE plugin/file tokens). Scrub them
+      # at ingest so no live credential persists in Loki. The app-layer fix
+      # moves tokens out of URLs (proposal-forge sec/token-url-transport);
+      # these stages are defense-in-depth for the transition tail, stale
+      # links, and any future app that regresses to token-in-path.
+      # Anchor-safe: lines are rewritten BEFORE ingestion, so the Loki audit
+      # anchor (21-loki-audit-anchor.yaml) commits the already-redacted
+      # content — nothing in-store is ever mutated.
+      - replace:
+          # Any JWT: blank its SIGNATURE only. header.claims stay readable for
+          # debugging; the logged token is cryptographically unusable.
+          expression: 'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.([A-Za-z0-9_-]{16,})'
+          replace: 'REDACTED'
+      - replace:
+          # Token path segment on PF's capability routes (64-hex invite/file
+          # tokens; plugin JWTs while deprecated token-in-path routes linger).
+          expression: '(?:/forms/fill/|/onlyoffice/(?:fields|library|ai|files)/)([A-Za-z0-9._~%-]{16,})'
+          replace: 'REDACTED'
       - json:
           expressions:
             level: level
