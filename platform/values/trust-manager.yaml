@@ -18,3 +18,11 @@ resources:
   limits:
     cpu: 100m
     memory: 128Mi
+# Digest-pinned (Gap B / require-image-digest). The trust-manager chart exposes
+# dedicated digest fields; tag defaults to the chart appVersion (trust-manager)
+# and the build default (trust-pkg), which match the running versions, so the
+# digest alone pins them. Renovate keeps tag+digest in lockstep on refresh.
+image:
+  digest: sha256:23e2ab0711d77c3d25a7297d480883e8d037659db88dcdc0dab788a08a1b2097
+defaultPackageImage:
+  digest: sha256:06fe54a72d1ddb268d64a022d0d9f031aa93204136a8e9a131913fc968a3889d
