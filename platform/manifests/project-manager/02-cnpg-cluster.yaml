@@ -15,6 +15,7 @@ metadata:
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+  smartShutdownTimeout: 10          # single-instance: fast-shutdown so an imageName roll can't hang on the app connection pool (2026-07-06)
   primaryUpdateStrategy: unsupervised
 
   enableSuperuserAccess: false
