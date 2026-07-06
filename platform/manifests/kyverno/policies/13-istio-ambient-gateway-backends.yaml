@@ -1,0 +1,43 @@
+# Gateway HTTP backends stay ambient-enrolled.
+#
+# Mutates the listed namespaces to (re-)assert `istio.io/dataplane-mode: ambient`
+# so a label wipe (namespace re-apply from a manifest that omits it) cannot
+# silently drop a public-gateway backend out of the mesh — traffic would still
+# flow, but without mTLS/ztunnel enforcement.
+#
+# Codified 2026-07-06 from the live object (originally kubectl-applied ad-hoc
+# 2026-06-03 during the ambient-enrollment incident; flagged as live-only by
+# the 06-07 doc-drift audit and the 07-05 infra sweep, debt-5).
+#
+# NOTE: project-manager and business-manager are intentionally NOT listed —
+# they are not ambient-enrolled today. If either becomes a gateway backend,
+# add it here AND ambient-label the namespace deliberately.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: istio-ambient-gateway-backends
+  annotations:
+    policies.kyverno.io/category: Istio
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/title: Gateway HTTP backends stay ambient-enrolled
+spec:
+  background: false
+  rules:
+    - name: ensure-ambient-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              names:
+                - control
+                - member-hub
+                - observability
+                - wazuh
+                - proposal-forge
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              istio.io/dataplane-mode: ambient

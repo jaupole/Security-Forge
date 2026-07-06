@@ -109,8 +109,12 @@ done
 # 9. PrometheusRules + the CT-log monitor (detective controls). 09-platform-alerts
 #    was previously applied ad-hoc; wired here so a rebuild restores the alerts +
 #    the ct-monitor CronJob (threat-model P2/P3 — see 20-ct-monitor.yaml).
+#    10-app-alerts carries the app/security alert pack (OpenBaoSealed,
+#    KeycloakHTTP5xxRate, SpiceDB, …) — it sat unwired from 2026-05-20 to
+#    2026-07-06 and was never live (infra-sweep debt-1).
 "$LIB/apply-manifest.sh" \
   "$PLATFORM_DIR/manifests/observability/09-platform-alerts.yaml" \
+  "$PLATFORM_DIR/manifests/observability/10-app-alerts.yaml" \
   "$PLATFORM_DIR/manifests/observability/20-ct-monitor.yaml"
 
 echo
