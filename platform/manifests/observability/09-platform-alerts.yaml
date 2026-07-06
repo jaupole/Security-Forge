@@ -353,20 +353,31 @@ spec:
             description: |
               Kyverno ENFORCE policy {{ $labels.policy_name }} recorded {{ $value }} cosign
               verification FAILURE(s) in the last 15m.
-              NOTE: this policy is webhookConfiguration.failurePolicy=Ignore, so a verification
-              that times out FAILS OPEN — the pod is admitted UNVERIFIED (it is NOT denied) and
-              deploys are not blocked. The alert still matters: signature enforcement was bypassed.
-              Most common cause here: the keyless verify (ghcr.io signature fetch + Rekor/Fulcio)
-              exceeds the admission webhook timeout under an admission burst — check CoreDNS
-              (single replica?) and ghcr.io / rekor.sigstore.dev latency. The per-policy webhook
-              timeout was raised to 30s on 2026-06-01 to absorb these.
-              If the error is auth (401/403) the ghcr-pull PAT may have expired — it lives at
-              secret/apps/control/ghcr-pull (and secret/apps/member-hub/ghcr-pull) in OpenBao;
-              rotate it, then force-sync VSO:
-                for ns in control kyverno member-hub; do kubectl annotate vaultstaticsecret \
-                  -n $ns ghcr-pull-secret vso.hashicorp.com/force-sync="$(date +%s)" --overwrite; done
-              Other causes: an unsigned/tampered image was pushed, or the cosign subject/issuer
-              identity regex drifted out of sync with the signing workflow.
+              FAILURE SEMANTICS DIFFER BY POLICY (as of 2026-07-06, backlog #97):
+                - verify-image-signature-secforge: failurePolicy=Fail (FAIL-CLOSED). A verify
+                  failure DENIES the pod — deploys ARE blocked. Under fail-closed, a sustained
+                  firing is page-worthy. Break-glass to flip back to Ignore:
+                  docs/03-runbooks/kyverno-signature-fail-closed.md.
+                - verify-image-signature-vendors: failurePolicy=Ignore (report-only) — a failure
+                  admits the pod UNVERIFIED; enforcement was merely bypassed.
+              Trust material is pinned OFFLINE (Fulcio root + Rekor/CT-log pubkeys), so a verify
+              failure is NOT a Sigstore/TUF-latency timeout anymore. Likely causes now:
+                1. EXPECTED test noise — the guardrail-selftest CronJob and any deliberate
+                   unsigned/tampered-image test increment this counter; it self-clears in ~15m.
+                2. ghcr signature-pull auth (401/403): the ghcr-pull PAT expired. The pull cred is
+                   OpenBao secret/data/{control,member-hub}/ghcr-pull, VSO-rendered to
+                   ghcr-pull-secret in each ns. Rotate the PAT in OpenBao, then RE-CREATE the
+                   VaultStaticSecret CRs (force-sync is INEFFECTIVE for the #77 VSO-wedge — a
+                   VSO roll / OpenBao restart wedges some VSS in SecretSynced=False; delete+apply
+                   the CR fixes it, synced in ~5s):
+                     for ns in control keycloak kyverno member-hub proposal-forge; do
+                       f=$(grep -rl "name: ghcr-pull-secret" /home/ops/secforge/platform/manifests/$ns/ \
+                             | xargs grep -l VaultStaticSecret | head -1)
+                       kubectl delete vaultstaticsecret -n $ns ghcr-pull-secret
+                       bash /home/ops/secforge/platform/lib/apply-manifest.sh "$f"
+                     done
+                3. A genuinely unsigned/tampered image was pushed, or the cosign subject/issuer
+                   identity regex drifted out of sync with the signing workflow.
         # Scrape-gap guard so image-trust monitoring can't silently go blind
         # the way velero/cert-manager metrics did before their ServiceMonitors.
         - alert: KyvernoMetricsDown
