@@ -15,9 +15,9 @@
  * window.Asc.plugin.info.options (options.all + options[guid] flattened — see
  * ONLYOFFICE sdkjs/common/plugins.js ~L732 for the merge and
  * common/plugins/plugin_base.js ~L641/L644 for info / info.options; verified
- * 2026-07-05). That is the PRIMARY channel; a query-string read is kept only as
- * a fallback for a URL-loaded variation. No session cookie is used: the token
- * is the whole capability, and the endpoint is CORS-scoped to the DS origin.
+ * 2026-07-05). That is the ONLY channel — the token is presented to the plugin
+ * data route via `Authorization: Bearer`, never the URL path. No session cookie
+ * is used: the token is the whole capability, CORS-scoped to the DS origin.
  */
 (function () {
   'use strict'
@@ -39,19 +39,6 @@
 
   function trimSlashes(s) {
     return String(s || '').replace(/\/+$/, '')
-  }
-
-  /** Read the launch context from this frame's own query string. */
-  function ctxFromQuery() {
-    try {
-      var q = new URLSearchParams(window.location.search)
-      var token = q.get('ctx')
-      if (!token) return null
-      var api = q.get('api')
-      return { token: token, api: trimSlashes(api) || window.location.origin }
-    } catch (e) {
-      return null
-    }
   }
 
   /** Read the launch context from the plugin options the editor passes to this
@@ -199,9 +186,13 @@
         render(searchEl.value)
       })
     }
-    // Options first (the built-in channel); query string only as a fallback for
-    // a URL-loaded variation.
-    ctx = ctxFromOptions() || ctxFromQuery()
+    // Options are the ONLY launch channel: this built-in plugin loads same-origin
+    // from the DS with no query string, and the context (incl. the capability
+    // token) comes from the server-signed editor-config. A query-string fallback
+    // was removed — it would have posted the Bearer token to a caller-supplied
+    // host if the frame were ever loaded via a crafted URL (dead code as
+    // deployed, but a needless token-exfil surface).
+    ctx = ctxFromOptions()
     if (!ctx) {
       // No launch context (e.g. a read-only/viewer session that carries no
       // plugin options): sit idle rather than erroring — there is simply

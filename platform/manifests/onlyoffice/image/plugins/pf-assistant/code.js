@@ -9,15 +9,15 @@
  *
  * This is a BUILT-IN Document Server plugin: it ships inside the DS image under
  * sdkjs-plugins/pf-assistant/ and loads same-origin from the DS, so this frame
- * has NO query string. Launch context arrives as plugin OPTIONS the editor
+ * has NO query string. Launch context arrives ONLY as plugin OPTIONS the editor
  * passes: PF sets editorConfig.plugins.options['asc.{…}'] = { base, token, model }
  * and the DS hands the plugin a single merged options object at
  * window.Asc.plugin.info.options (options.all + options[guid] flattened). `base`
- * is already scoped to the token — `${origin}/api/v1/onlyoffice/ai/${token}` — so
- * the plugin only appends `/v1/chat/completions`. That is the PRIMARY channel; a
- * query-string read is a fallback for a URL-loaded variation. No session cookie
- * is used: the token is the whole capability, and the endpoint is CORS-scoped to
- * the DS origin.
+ * is the TOKENLESS proxy path — `${origin}/api/v1/onlyoffice/ai` — and the plugin
+ * appends `/v1/chat/completions`; the capability token rides the
+ * `Authorization: Bearer` header (NOT the URL — token-in-URL access-log leak
+ * fix). No session cookie is used: the token is the whole capability, and the
+ * endpoint is CORS-scoped to the DS origin.
  */
 (function () {
   'use strict'
@@ -35,19 +35,6 @@
 
   function trimSlashes(s) {
     return String(s || '').replace(/\/+$/, '')
-  }
-
-  /** Read the launch context from this frame's own query string (fallback). */
-  function ctxFromQuery() {
-    try {
-      var q = new URLSearchParams(window.location.search)
-      var base = trimSlashes(q.get('base'))
-      var token = q.get('token')
-      if (!base || !token) return null
-      return { base: base, token: token, model: q.get('model') || DEFAULT_MODEL }
-    } catch (e) {
-      return null
-    }
   }
 
   /** Read the launch context from the plugin options the editor passes to this
@@ -203,8 +190,13 @@
     if (generateBtn) generateBtn.addEventListener('click', generate)
     if (insertBtn) insertBtn.addEventListener('click', insertResult)
 
-    // Options first (the built-in channel); query string only as a fallback.
-    ctx = ctxFromOptions() || ctxFromQuery()
+    // Options are the ONLY launch channel: this built-in plugin loads same-origin
+    // from the DS with no query string, and the context (incl. the capability
+    // token) comes from the server-signed editor-config. A query-string fallback
+    // was removed — it would have posted the Bearer token to a caller-supplied
+    // `?base=` host if the frame were ever loaded via a crafted URL (dead code as
+    // deployed, but a needless token-exfil surface).
+    ctx = ctxFromOptions()
     if (!ctx) {
       // No launch context (e.g. a read-only/viewer session that carries no
       // plugin options): sit idle rather than erroring.
