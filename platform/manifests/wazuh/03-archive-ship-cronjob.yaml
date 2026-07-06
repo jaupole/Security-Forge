@@ -88,6 +88,13 @@ spec:
             app.kubernetes.io/name: wazuh-archive-ship
             # Required by the MinIO chart's NetworkPolicy (minio-client=true).
             minio-client: "true"
+            # OUT of the ambient mesh: the first backlog ship ran at 1.6 GiB/s
+            # through ztunnel and OOM-killed it 3x (256Mi limit) — brief mesh
+            # disruption for every ambient workload. MinIO is not ambient, so
+            # non-ambient clients (velero/kopia, CNPG barman) already talk to
+            # it directly; this pod follows that norm. NetworkPolicy still
+            # scopes the egress; objects are SSE-S3 at rest.
+            istio.io/dataplane-mode: none
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false
@@ -134,7 +141,11 @@ spec:
                   du -sh /archives || true
                   # --exclude "*.json": today's archive is still being written;
                   # it ships tomorrow once rotated to .json.gz.
-                  mc mirror --quiet --exclude "*.json" /archives archive/wazuh-archive/wazuh-manager-0/archives
+                  # --limit-upload: unthrottled, the local mirror moves >1.5 GiB/s
+                  # and starves the node (and killed ztunnel before the pod left
+                  # the mesh). 64 MiB/s ships a daily archive in seconds and the
+                  # 29G backlog in ~8 min without contending with the SIEM/DBs.
+                  mc mirror --quiet --limit-upload 64MiB --exclude "*.json" /archives archive/wazuh-archive/wazuh-manager-0/archives
                   echo "=== prune: local .gz older than ${RETENTION_DAYS}d (mirror succeeded) ==="
                   find /archives -name '*.gz' -mtime +"${RETENTION_DAYS}" -print -delete
                   # Drop emptied month/year dirs (find depth-first; ignore busy roots).
