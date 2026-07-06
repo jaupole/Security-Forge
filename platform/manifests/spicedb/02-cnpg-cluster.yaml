@@ -43,4 +43,11 @@ spec:
   plugins:
     - name: barman-cloud.cloudnative-pg.io
       enabled: true
+      parameters:
+        # REQUIRED — links the cluster to the ObjectStore CR (same drift/fix
+        # as keycloak, backlog #47). Applying this manifest WITHOUT it strips
+        # the plugin sidecar + volume and wedges the primary unready — caused
+        # a ~12-min spicedb outage on 2026-07-06 during the debt-4 reconcile.
+        # No serverName: spicedb archives under the default cluster-name path.
+        barmanObjectName: minio-backup
       isWALArchiver: true
