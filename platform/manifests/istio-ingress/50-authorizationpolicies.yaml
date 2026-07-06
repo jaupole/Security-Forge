@@ -1,7 +1,8 @@
 # Edge authz — DENY by source IP. Uses notRemoteIpBlocks on the XFF-derived
 # ORIGINAL client IP (remoteIpBlocks is un-spoofable at the first hop;
 # numTrustedProxies=0). Replaces nginx whitelist-source-range. See ADR-0032.
-#   - auth-admin-tailnet:   keycloak /admin* — tailnet / in-cluster / node only
+#   - auth-admin-tailnet:   keycloak /admin* — BLANKET DENY on the public gateway
+#                           (no source exception — see backlog #74)
 #   - billing-allowlist:    billing.${DOMAIN} — Stripe webhook source IPs only
 #   - portal-deny-internal: portal /api/v1/admin|system never public
 #                           (the rest of the control API is org-management, open)
@@ -17,15 +18,22 @@ metadata:
   name: auth-admin-tailnet
   namespace: istio-ingress
 spec:
+  # BLANKET DENY of /admin* on the public gateway (backlog #74, 2026-07-06).
+  # Previously carried a `from.source.notRemoteIpBlocks` exception (tailnet +
+  # pod CIDR + node IP) so pod-sourced callers could reach /admin publicly.
+  # That exception was fragile: under CNI hostPort SNAT an external client can
+  # present as the node IP (65.21.25.40) and slip past the deny. It is also no
+  # longer needed — in-cluster admin REST callers (Control, Member-Hub) resolve
+  # auth.${DOMAIN} to the internal keycloak-auth-internal ClusterIP via the
+  # CoreDNS `rewrite name exact` rule, so their traffic goes pod→ClusterIP→
+  # keycloak and NEVER traverses these ingress-gateway pods (this policy's
+  # selector is istio:ingress). The tailnet admin CONSOLE is a different host
+  # (kc.${DOMAIN}, tailnet gateway) and the public master-realm LOGIN is
+  # /realms/* (not /admin), so both are unaffected. Dropping the `from` block
+  # makes this deny robust regardless of source-IP handling.
   action: DENY
   rules:
-  - from:
-    - source:
-        notRemoteIpBlocks:
-        - 100.64.0.0/10
-        - 10.42.0.0/16
-        - 65.21.25.40/32
-    to:
+  - to:
     - operation:
         hosts:
         - auth.${DOMAIN}
