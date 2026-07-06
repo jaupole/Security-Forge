@@ -46,8 +46,12 @@ persistence:
   accessMode: ReadWriteOnce
 
 resources:
-  requests: { cpu: 200m, memory: 512Mi }
-  limits:   { cpu: 1,    memory: 2Gi }
+  # requests.memory tracks observed steady state (~1.9Gi after the 2026-07-06
+  # wazuh-archive tenant landed) so MinIO is not first in eviction ordering
+  # (infra-sweep opt-9); limit raised 2Gi -> 3Gi after the working set parked
+  # at GOMEMLIMIT (95% of the old cap) and ContainerMemoryNearLimit re-fired.
+  requests: { cpu: 200m, memory: 1536Mi }
+  limits:   { cpu: 1,    memory: 3Gi }
 # Recreate (not RollingUpdate): single replica on a RWO volume — a surge pod
 # cannot mount the PVC and would hang the rollout. Recreate stops the old pod
 # first. A brief (~seconds) MinIO blip on each upgrade is unavoidable here.
@@ -57,7 +61,7 @@ deploymentUpdate:
 # pressing the hard limit. Added 2026-06-14 after recurring
 # ContainerMemoryNearLimit alerts (working set parked >90% of the old 1Gi cap).
 environment:
-  GOMEMLIMIT: "1800MiB"
+  GOMEMLIMIT: "2700MiB"  # ~90% of the 3Gi hard cap (raised with it 2026-07-06)
 
 securityContext:
   enabled: true
