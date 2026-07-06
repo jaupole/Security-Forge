@@ -209,6 +209,20 @@ done
 systemctl daemon-reload
 systemctl enable --now k8s-drift-check.timer
 
+# ─── 6c. Weekly containerd image prune ─────────────────────────────────
+green "==> containerd-gc (weekly unreferenced-image prune)"
+install -m 0755 -o root -g root \
+    "$PLATFORM_DIR/host/containerd-gc/containerd-gc.sh" \
+    /usr/local/sbin/containerd-gc.sh
+
+for unit in k3s-containerd-gc.service k3s-containerd-gc.timer; do
+  install -m 0644 -o root -g root \
+      "$PLATFORM_DIR/host/containerd-gc/$unit" \
+      "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now k3s-containerd-gc.timer
+
 # ─── 7. k3s audit policy + config ─────────────────────────────────────
 green "==> k3s audit policy + config (idempotent — restarts k3s only on diff)"
 mkdir -p /etc/rancher/k3s
