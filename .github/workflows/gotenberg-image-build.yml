@@ -136,6 +136,9 @@ jobs:
       - name: Scan built image for CVEs (Trivy)
         env:
           REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          # Host /tmp is a 4G tmpfs; trivy copies multi-GB layers (chromium) into
+          # $TMPDIR and ENOSPCs there (run 28765004461). runner.temp is on disk.
+          TMPDIR: ${{ runner.temp }}
         run: |
           ./.claude/scripts/install-verify.sh trivy
           export PATH="$HOME/.local/bin:$PATH"
