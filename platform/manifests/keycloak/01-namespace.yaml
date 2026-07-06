@@ -6,6 +6,13 @@ metadata:
     app.kubernetes.io/name: keycloak
     app.kubernetes.io/part-of: secforge-platform
     secforge.platform/component: keycloak
+    # Ambient enrollment (backlog #74-3, 2026-07-06): gives keycloak's clients
+    # SPIFFE identity so the L4 client gate (12-authorization-policy.yaml) can
+    # scope who reaches :8443. Before this, ambient app namespaces bypassed the
+    # kube-router allow-list in 05-network-policies.yaml entirely (ztunnel
+    # egress capture + un-meshed destination). Also asserted by the Kyverno
+    # ClusterPolicy istio-ambient-gateway-backends against label wipes.
+    istio.io/dataplane-mode: ambient
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

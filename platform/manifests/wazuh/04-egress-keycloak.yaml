@@ -22,3 +22,4 @@ spec:
         - {port: 8080, protocol: TCP}
         - {port: 443, protocol: TCP}    # keycloak-auth-internal Service (443->8443) for in-cluster OIDC backchannel
         - {port: 8443, protocol: TCP}   # keycloak-service direct
+        - {port: 15008, protocol: TCP} # HBONE — ztunnel mesh tunnel (keycloak is ambient)

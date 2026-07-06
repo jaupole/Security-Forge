@@ -1,0 +1,84 @@
+# L4 client gate for keycloak (backlog #74-3, 2026-07-06).
+#
+# Ambient/ztunnel-enforced ALLOW policy on the keycloak server pod. With the
+# keycloak namespace ambient-enrolled (01-namespace.yaml), every in-mesh
+# client presents a SPIFFE identity and this policy is the effective L4
+# control for mesh traffic. The kube-router allow-list in
+# 05-network-policies.yaml stays load-bearing for NON-mesh sources
+# (openbao, vault-secrets-operator remain un-meshed) and now also carries
+# the :15008 HBONE allows this mesh path depends on.
+#
+# ALLOW semantics: once attached, ANY traffic not matching a rule is denied.
+# So every legitimate flow must be listed — including prometheus (:9000) and
+# JGroups gossip (:7800/:57800, inert at 1 replica but load-bearing the day
+# keycloak scales to 2). Kubelet health probes are ambient-exempt.
+#
+# Principal sources were enumerated live 2026-07-06 by sweeping every
+# deploy/sts/cronjob for KEYCLOAK/OIDC env vars:
+#   - istio-ingress/istio-ingress: both gateways (public auth.${DOMAIN},
+#     tailnet kc.${DOMAIN}) share this SA and HBONE to ambient backends.
+#   - control: app + portal + 6 admin-REST cronjobs (grant-sweep etc).
+#   - member-hub, proposal-forge, project-manager, business-manager: OIDC.
+#   - observability/kps-grafana: Grafana OIDC.
+#   - wazuh/default: wazuh-dashboard OIDC (chart runs it on the default SA).
+#   - keycloak/keycloak-operator: CR reconciliation + health (8443 + 9000).
+#   - keycloak/keycloak: self/realm-import defensive; gossip.
+#   - openbao deliberately NOT listed: its OIDC calls ride its hostAlias
+#     (auth.${DOMAIN} → istio-ingress gateway ClusterIP, see
+#     openbao/06-networkpolicies-main.yaml), so they arrive here with the
+#     GATEWAY's identity — already allowed. openbao stays un-meshed.
+#   - onlyoffice deliberately NOT listed: no KEYCLOAK/OIDC env — its auth
+#     rides member-hub. Add it here only if it ever becomes a direct client.
+#
+# The DB pods (cnpg.io/cluster=secforge-keycloak-db) are NOT selected — CNPG
+# operator and keycloak→DB flows are unaffected by this policy.
+#
+# Break-glass: kubectl delete authorizationpolicy -n keycloak
+# keycloak-l4-client-gate (restores default-allow instantly, no restart).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: keycloak-l4-client-gate
+  namespace: keycloak
+  labels:
+    secforge.platform/component: keycloak
+spec:
+  selector:
+    matchLabels:
+      app: keycloak
+  action: ALLOW
+  rules:
+  # HTTPS clients — user-facing via gateways + server-to-server OIDC/admin.
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-ingress/sa/istio-ingress
+        - cluster.local/ns/control/sa/control
+        - cluster.local/ns/member-hub/sa/member-hub
+        - cluster.local/ns/proposal-forge/sa/proposal-forge
+        - cluster.local/ns/project-manager/sa/project-manager
+        - cluster.local/ns/business-manager/sa/business-manager
+        - cluster.local/ns/observability/sa/kps-grafana
+        - cluster.local/ns/wazuh/sa/default
+        - cluster.local/ns/keycloak/sa/keycloak-operator
+        - cluster.local/ns/keycloak/sa/keycloak
+    to:
+    - operation:
+        ports: ["8443"]
+  # Management port — prometheus scrape + operator health.
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/observability/sa/kps-prometheus
+        - cluster.local/ns/keycloak/sa/keycloak-operator
+    to:
+    - operation:
+        ports: ["9000"]
+  # JGroups gossip between keycloak replicas (self-SA). Inert at 1 replica.
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/keycloak/sa/keycloak
+    to:
+    - operation:
+        ports: ["7800", "57800"]
