@@ -81,6 +81,8 @@ spec:
     ports:
     - protocol: TCP
       port: 8443
+    - protocol: TCP
+      port: 15008  # HBONE — ztunnel mesh tunnel (ambient mesh peers)
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -107,6 +109,8 @@ spec:
     ports:
     - protocol: TCP
       port: 9000
+    - protocol: TCP
+      port: 15008  # HBONE — ztunnel mesh tunnel (ambient mesh peers)
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -130,6 +134,8 @@ spec:
     ports:
     - protocol: TCP
       port: 8443
+    - protocol: TCP
+      port: 15008  # HBONE — ztunnel mesh tunnel (ambient mesh peers)
 
 ---
 # CRITICAL: the keycloak-ns CNPG cluster pods (secforge-keycloak-db-*) live
@@ -168,6 +174,8 @@ spec:
     ports:
     - protocol: TCP
       port: 5432
+    - protocol: TCP
+      port: 15008  # HBONE — ztunnel mesh tunnel (ambient mesh peers)
 
 ---
 # CNPG operator (in postgres-operator ns) needs reachable to the DB pod for
@@ -228,3 +236,5 @@ spec:
     ports:
     - protocol: TCP
       port: 8443
+    - protocol: TCP
+      port: 15008  # HBONE — ztunnel mesh tunnel (ambient mesh peers)

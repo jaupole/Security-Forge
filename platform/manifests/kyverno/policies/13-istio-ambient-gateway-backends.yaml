@@ -9,9 +9,15 @@
 # 2026-06-03 during the ambient-enrollment incident; flagged as live-only by
 # the 06-07 doc-drift audit and the 07-05 infra sweep, debt-5).
 #
-# NOTE: project-manager and business-manager are intentionally NOT listed —
-# they are not ambient-enrolled today. If either becomes a gateway backend,
-# add it here AND ambient-label the namespace deliberately.
+# List trued-up 2026-07-06 (#74-3): the earlier NOTE claiming project-manager
+# and business-manager are not ambient was stale — both (plus document-render
+# and onlyoffice) have been ambient-enrolled gateway backends since their
+# rollouts. keycloak added deliberately with its enrollment for the L4 client
+# gate (keycloak/12-authorization-policy.yaml): a label wipe there would strip
+# the gate's enforcement, so the assert is load-bearing. openbao is NOT listed
+# and NOT ambient — its keycloak OIDC path rides its hostAlias → istio-ingress
+# gateway (see openbao/06-networkpolicies-main.yaml), so it needs no mesh
+# identity; enrolling it would put raft/seal traffic on ztunnel for no gain.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -36,6 +42,11 @@ spec:
                 - observability
                 - wazuh
                 - proposal-forge
+                - project-manager
+                - business-manager
+                - document-render
+                - onlyoffice
+                - keycloak
       mutate:
         patchStrategicMerge:
           metadata:

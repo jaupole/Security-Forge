@@ -5,11 +5,11 @@
 #
 # Producers split by mesh membership (see 07-service-mesh.md
 # "Ambient + Kubernetes NetworkPolicy"):
-#   - keycloak: NOT ambient → plain OTLP on 4317/4318.
-#   - control, member-hub: Ambient (so is observability) → traffic arrives
-#     over HBONE 15008. They are configured with
+#   - control, member-hub, keycloak: Ambient (so is observability) → traffic
+#     arrives over HBONE 15008. They are configured with
 #     OTEL_EXPORTER_OTLP_ENDPOINT=…:4318; without 15008 here their traces
-#     were silently dropped at this ingress (2026-06-03).
+#     were silently dropped at this ingress (2026-06-03; keycloak hit the
+#     same on its ambient enrollment 2026-07-06 — moved into this rule).
 # Not yet added: proposal-forge (no OTEL env / not exporting), spicedb,
 # istio-system.
 apiVersion: networking.k8s.io/v1
@@ -26,14 +26,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Non-ambient producers: plain OTLP on the app ports.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: keycloak
-      ports:
-        - { protocol: TCP, port: 4317 }
-        - { protocol: TCP, port: 4318 }
     # Ambient producers: traffic is tunnelled ztunnel→ztunnel over HBONE
     # (15008). App ports kept for the pre/non-Ambient path.
     - from:
@@ -41,7 +33,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [control, member-hub]
+                values: [control, member-hub, keycloak]
       ports:
         - { protocol: TCP, port: 4317 }
         - { protocol: TCP, port: 4318 }

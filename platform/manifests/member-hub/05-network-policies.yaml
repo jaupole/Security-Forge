@@ -129,6 +129,7 @@ spec:
               kubernetes.io/metadata.name: keycloak
       ports:
         - { protocol: TCP, port: 8443 }
+        - { protocol: TCP, port: 15008 }  # HBONE — ztunnel mesh tunnel (keycloak is ambient)
 
 ---
 # Egress to SpiceDB for fully_consistent permission checks.

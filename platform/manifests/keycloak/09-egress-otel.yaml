@@ -22,3 +22,4 @@ spec:
       ports:
         - {port: 4317, protocol: TCP}
         - {port: 4318, protocol: TCP}
+        - {port: 15008, protocol: TCP} # HBONE — ztunnel mesh tunnel (both ns ambient)
