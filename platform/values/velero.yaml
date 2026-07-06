@@ -169,7 +169,10 @@ configuration:
     repositoryConfigData:
       name: "velero-repo-maintenance"
       global:
-        keepLatestMaintenanceJobs: 3
+        # 1 (was 3): 23 BackupRepositories x3 + orphans = 84 completed Job
+        # objects whose unpinned images dominate the Warning-event stream
+        # via kyverno require-image-digest audit spam (infra-sweep debug-4).
+        keepLatestMaintenanceJobs: 1
         podResources:
           cpuRequest: "100m"
           cpuLimit: "500m"

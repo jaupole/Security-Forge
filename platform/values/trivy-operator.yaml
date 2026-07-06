@@ -40,7 +40,10 @@ operator:
   configAuditScannerEnabled: true
   rbacAssessmentScannerEnabled: true
   exposedSecretScannerEnabled: true
-  metricsVulnIdEnabled: true         # exposes CVE IDs in Prometheus metrics
+  # Disabled 2026-07-06 (infra-sweep opt-6): per-CVE-ID series were ~17k of
+  # Prometheus head cardinality; the trivy-wazuh-reporter already ships full
+  # findings to the SIEM every 6h, and summary counts stay via the reports.
+  metricsVulnIdEnabled: false
   # Re-scan interval; default 6h. Bumping to 12h cuts CPU at the cost of
   # detection lag. 6h is fine.
   scanJobTimeout: 5m
