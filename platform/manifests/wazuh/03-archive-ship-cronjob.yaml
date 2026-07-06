@@ -1,0 +1,161 @@
+# Wazuh archive shipper — daily ship-then-prune of the manager's raw event
+# archives (/var/ossec/logs/archives, ~540 MB/day of daily-rotated .json.gz)
+# to the versioned MinIO wazuh-archive bucket.
+#
+# WHY (2026-07-05 infra sweep, opt-1 / backlog #99 item 3):
+#   - The archives had NO rotation — the 50Gi manager PV was filling.
+#   - Worse: 09c-velero-tune.sh excludes the wazuh-manager PV from Velero
+#     PV backup, JUSTIFIED by "archives are also shipped to the
+#     wazuh-archive MinIO bucket" — which was never built. Until this
+#     CronJob, the SIEM's raw event history had zero off-PV copies.
+#
+# Design:
+#   - `mc mirror` is incremental; `--exclude "*.json"` skips the current
+#     day's still-growing uncompressed archive (it ships tomorrow as .gz).
+#   - Prune runs ONLY after a successful mirror: local .gz older than
+#     RETENTION_DAYS are deleted (30d hot on the PV; full history in MinIO).
+#   - Credentials are file-mounted (backlog #61 pattern), created by
+#     manifests/minio/03-wazuh-archive-credentials-job.yaml with an
+#     APPEND-ONLY MinIO policy (no DeleteObject) — a compromised manager
+#     cannot erase shipped history.
+#   - Runs as uid/gid 999 (the wazuh-manager data owner) so no fsGroup
+#     chown ever touches the shared PV.
+#
+# Pre-condition (one-time, operator): the `wazuh/wazuh-archive-minio`
+# Secret (keys MINIO_ACCESS_KEY / MINIO_SECRET_KEY, random values) must
+# exist BEFORE this CronJob runs — created alongside the MinIO user by
+# manifests/minio/03-wazuh-archive-credentials-job.yaml (see its header).
+# It is deliberately NOT declared here: a repo manifest would clobber the
+# real credentials on every re-apply.
+---
+# Shipper pod → MinIO S3 API. wazuh is default-deny-egress; this opens
+# exactly minio:9000 (+ ztunnel HBONE 15008, ambient namespace) for the
+# shipper pod only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-archive-ship-to-minio
+  namespace: wazuh
+  labels:
+    secforge.platform/component: wazuh
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wazuh-archive-ship
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+        - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+    # kube-dns for resolving minio.minio.svc
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wazuh-archive-ship
+  namespace: wazuh
+  labels:
+    app.kubernetes.io/name: wazuh-archive-ship
+    secforge.platform/component: wazuh
+spec:
+  # 03:47 UTC — after the manager's daily archive rotation (02:00) and the
+  # nightly Velero backup window.
+  schedule: "47 3 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # First run ships the ~29G backlog; steady state is one day's file.
+      activeDeadlineSeconds: 5400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: wazuh-archive-ship
+            # Required by the MinIO chart's NetworkPolicy (minio-client=true).
+            minio-client: "true"
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            # uid/gid 999 == owner of the wazuh-manager data files. No
+            # fsGroup: it would chown the shared manager PV on mount.
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: ship
+              image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 999
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                - name: MC_CONFIG_DIR
+                  value: /tmp/.mc
+                - name: RETENTION_DAYS
+                  value: "30"
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ACCESS="$(cat /run/secrets/minio/MINIO_ACCESS_KEY)"
+                  SECRET_K="$(cat /run/secrets/minio/MINIO_SECRET_KEY)"
+                  export MC_HOST_archive="http://${ACCESS}:${SECRET_K}@minio.minio.svc.cluster.local:9000"
+                  for i in $(seq 1 30); do mc --quiet ready archive 2>/dev/null && break; sleep 2; done
+                  echo "=== ship: incremental mirror of compressed archives ==="
+                  du -sh /archives || true
+                  # --exclude "*.json": today's archive is still being written;
+                  # it ships tomorrow once rotated to .json.gz.
+                  mc mirror --quiet --exclude "*.json" /archives archive/wazuh-archive/wazuh-manager-0/archives
+                  echo "=== prune: local .gz older than ${RETENTION_DAYS}d (mirror succeeded) ==="
+                  find /archives -name '*.gz' -mtime +"${RETENTION_DAYS}" -print -delete
+                  # Drop emptied month/year dirs (find depth-first; ignore busy roots).
+                  find /archives -mindepth 1 -depth -type d -empty -print -delete 2>/dev/null || true
+                  echo "=== after ==="
+                  du -sh /archives || true
+                  mc du archive/wazuh-archive/wazuh-manager-0 || true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: "1", memory: 256Mi }
+              volumeMounts:
+                - name: manager-data
+                  mountPath: /archives
+                  subPath: logs/archives
+                - name: minio-creds
+                  mountPath: /run/secrets/minio
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: manager-data
+              persistentVolumeClaim:
+                claimName: wazuh-manager-data-wazuh-manager-0
+            - name: minio-creds
+              secret:
+                secretName: wazuh-archive-minio
+                defaultMode: 0400
+            - name: tmp
+              emptyDir: {}
