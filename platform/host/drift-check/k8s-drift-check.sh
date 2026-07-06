@@ -63,6 +63,11 @@ EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration
 HELM_RELEASES=(
   "vault-secrets-operator:vault-secrets-operator:values/vault-secrets-operator.yaml"
   "trust-manager:cert-manager:values/trust-manager.yaml"
+  "kps:observability:values/kube-prometheus-stack.yaml"
+  "loki:observability:values/loki.yaml"
+  "trivy-operator:trivy-system:values/trivy-operator.yaml"
+  "velero:velero:values/velero.yaml"
+  "minio:minio:values/minio.yaml"
 )
 
 set -a
@@ -99,7 +104,9 @@ helm_drifted=0
 for entry in "${HELM_RELEASES[@]}"; do
   IFS=: read -r release ns values <<< "$entry"
   live=$(helm get values "$release" -n "$ns" -o json 2>/dev/null)
-  want=$(envsubst "$ALLOW" < "$PLATFORM_DIR/$values" | python3 -c 'import json,sys,yaml; print(json.dumps(yaml.safe_load(sys.stdin), sort_keys=True))' 2>/dev/null)
+  # default=str: YAML date-typed scalars (loki schemaConfig from:) must
+  # stringify the same way helm's JSON output renders them.
+  want=$(envsubst "$ALLOW" < "$PLATFORM_DIR/$values" | python3 -c 'import json,sys,yaml; print(json.dumps(yaml.safe_load(sys.stdin), sort_keys=True, default=str))' 2>/dev/null)
   norm_live=$(echo "$live" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))' 2>/dev/null)
   if [ -z "$live" ]; then
     echo "ERROR: helm release $ns/$release not found"
