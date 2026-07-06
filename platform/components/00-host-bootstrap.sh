@@ -195,6 +195,20 @@ systemctl start mount-count-exporter.service  # fire once immediately
 
 mkdir -p /var/lib/node_exporter/textfile_collector
 
+# ─── 6b. Repo-vs-live drift check (merge-without-apply detector) ───────
+green "==> k8s-drift-check (daily repo-vs-live diff, textfile metric)"
+install -m 0755 -o root -g root \
+    "$PLATFORM_DIR/host/drift-check/k8s-drift-check.sh" \
+    /usr/local/sbin/k8s-drift-check.sh
+
+for unit in k8s-drift-check.service k8s-drift-check.timer; do
+  install -m 0644 -o root -g root \
+      "$PLATFORM_DIR/host/drift-check/$unit" \
+      "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now k8s-drift-check.timer
+
 # ─── 7. k3s audit policy + config ─────────────────────────────────────
 green "==> k3s audit policy + config (idempotent — restarts k3s only on diff)"
 mkdir -p /etc/rancher/k3s
