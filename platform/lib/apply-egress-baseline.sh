@@ -41,4 +41,4 @@ if ! kubectl get ns "$NS" >/dev/null 2>&1; then
 fi
 
 echo ">>> applying egress baseline to ns/$NS"
-NS="$NS" envsubst < "$TPL" | kubectl apply -f -
+NS="$NS" envsubst '${NS}' < "$TPL" | kubectl apply -f -
