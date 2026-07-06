@@ -3,19 +3,19 @@
 # Applied 2026-05-14 alongside default-deny-ingress. The chart-managed
 # `keycloak-network-policy` (intra-pod gossip 7800/57800) stays in place.
 # Adds explicit allow rules so default-deny-ingress doesn't break:
-#   - User-facing HTTPS via ingress-nginx (ingress-nginx ns → 8443)
-#   - In-cluster OIDC server-to-server clients (mostly travel via ingress
-#     hostAlias in current setup, but rule supports direct pod→keycloak
-#     for future hardening that drops the public-DNS detour)
+#   - Istio ingress gateways (public + tailnet) → 8443  (user-facing HTTPS)
+#   - In-cluster OIDC / admin-REST server-to-server clients → 8443
 #   - Prometheus metrics scrape (observability/prometheus → 9000)
 #   - keycloak-operator → keycloak-0 (CR reconciliation)
+#   - keycloak → its own CNPG database (5432); CNPG operator → DB
 #
-# Note: openbao, observability, wazuh currently call keycloak via
-# `auth.secforge.dev` hostAlias → ingress-nginx ClusterIP. So those flows
-# are actually covered by `allow-ingress-nginx-to-keycloak`. The
-# `allow-cluster-oidc-clients-to-keycloak` rule below is for the eventual
-# hardening that drops the public-DNS round-trip in favour of in-cluster
-# service-name resolution.
+# In-cluster client path (current, ADR-0032 + CoreDNS rewrite): clients keep
+# `KEYCLOAK_URL=https://auth.secforge.dev`, but in-cluster that hostname
+# resolves to the `keycloak-auth-internal` ClusterIP via the CoreDNS
+# `rewrite name exact` rule (keycloak/05b-internal-port443-service.yaml),
+# so their OIDC/admin back-channel is pod → ClusterIP → keycloak:8443 and
+# never traverses the ingress gateway. This replaced the ingress-nginx /
+# hostAlias detour referenced in earlier revisions of this file.
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -32,6 +32,28 @@ spec:
 
 
 ---
+# In-cluster OIDC / admin-REST clients allowed to reach keycloak:8443.
+#
+# Enforcement reality (verified live 2026-07-06 — backlog #74 follow-up #1):
+#   * NON-AMBIENT clients (openbao, vault-secrets-operator) have no
+#     `istio.io/dataplane-mode=ambient` ns label, so their traffic is plain
+#     pod→pod and THIS kube-router L4 rule genuinely gates them. They must
+#     stay listed or their keycloak calls break under default-deny-ingress.
+#   * AMBIENT clients (observability, wazuh, control, member-hub,
+#     proposal-forge, project-manager, business-manager, onlyoffice) have
+#     their egress captured by ztunnel. keycloak is not in the mesh (no
+#     waypoint), so ambient→keycloak bypasses this ingress netpol at L4
+#     (proven: a `control` grant-sweep reached the admin REST API while
+#     `control` was absent from this list). They are listed here for
+#     defense-in-depth / intent-documentation — the rule becomes real
+#     enforcement for them if keycloak ever joins the ambient mesh. Their
+#     effective L4 gate today is the mesh; L7 auth (client creds / JWT) is
+#     the primary control regardless. See backlog for the "no L4 client
+#     allow-list on the un-meshed keycloak ingress" follow-up.
+#
+# Removed dead entries `app`/`ecosystem` (Local-Edition namespaces that do
+# not exist in prod). NetworkPolicy ingress is allow-only, so this edit can
+# only widen or no-op — it cannot introduce a new drop.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -51,7 +73,11 @@ spec:
         matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: In
-          values: [openbao, observability, wazuh, app, ecosystem, vault-secrets-operator]
+          # non-ambient (real L4 enforcement here):
+          values: [openbao, vault-secrets-operator,
+          # ambient (documented; effective L4 gate is the mesh):
+                    observability, wazuh, control, member-hub,
+                    proposal-forge, project-manager, business-manager, onlyoffice]
     ports:
     - protocol: TCP
       port: 8443
