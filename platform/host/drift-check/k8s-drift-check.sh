@@ -50,7 +50,9 @@ ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_
 #   - /realms/               keycloak realm-import payloads (one-shot; realm
 #                            truth lives in Keycloak's DB)
 #   - bootstrap-job          immutable one-shot Jobs (minio bucket bootstrap)
-EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration-job|bootstrap-job|realm-import|/realms/|spicedb/tests/|13-kyverno-image-verify-note'
+#   - keycloak/operator/     vendor bundle (kustomization is not a k8s object;
+#                            operator.yaml PSA-warns on server dry-run)
+EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration-job|bootstrap-job|realm-import|/realms/|spicedb/tests/|keycloak/operator/|13-kyverno-image-verify-note'
 
 # Helm releases whose values files are the source of truth:
 #   release:namespace:values-file
@@ -75,6 +77,14 @@ while IFS= read -r f; do
   checked=$((checked + 1))
   out=$(envsubst "$ALLOW" < "$f" | kubectl diff -f - 2>&1)
   rc=$?
+  if [ $rc -eq 1 ]; then
+    # Ignore generation-only diffs: Kyverno mutate policies make the server
+    # dry-run predict a generation bump on some objects with zero real field
+    # changes (observed on system-netpol/kube-system-allows) — permanent
+    # phantom otherwise.
+    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cv 'generation:')
+    if [ "$real" -eq 0 ]; then rc=0; fi
+  fi
   if [ $rc -eq 1 ]; then
     drifted=$((drifted + 1))
     echo "DRIFT: $rel"

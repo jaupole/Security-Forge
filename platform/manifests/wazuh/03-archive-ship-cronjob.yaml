@@ -147,9 +147,10 @@ spec:
                   # 29G backlog in ~8 min without contending with the SIEM/DBs.
                   mc mirror --quiet --limit-upload 64MiB --exclude "*.json" /archives archive/wazuh-archive/wazuh-manager-0/archives
                   echo "=== prune: local .gz older than ${RETENTION_DAYS}d (mirror succeeded) ==="
-                  find /archives -name '*.gz' -mtime +"${RETENTION_DAYS}" -print -delete
-                  # Drop emptied month/year dirs (find depth-first; ignore busy roots).
-                  find /archives -mindepth 1 -depth -type d -empty -print -delete 2>/dev/null || true
+                  # The mc image ships no `find`; mc find handles local paths.
+                  mc find /archives --name "*.gz" --older-than "${RETENTION_DAYS}d" --exec "mc rm {}" || true
+                  # Emptied month/year dirs are cosmetic; clean if rmdir exists.
+                  command -v rmdir >/dev/null && rmdir /archives/*/* /archives/* 2>/dev/null || true
                   echo "=== after ==="
                   du -sh /archives || true
                   mc du archive/wazuh-archive/wazuh-manager-0 || true
