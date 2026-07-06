@@ -149,6 +149,19 @@ path "secret/metadata/wazuh/oidc" {
   capabilities = ["read"]
 }
 
+# Wazuh archive-shipper MinIO credentials (append-only user for the
+# wazuh-archive bucket). Staged by the operator alongside
+# manifests/minio/03-wazuh-archive-credentials-job.yaml; rendered into the
+# wazuh ns as Secret `wazuh-archive-minio` for the archive-ship CronJob
+# (manifests/wazuh/03-archive-ship-cronjob.yaml). Rule 44: the OpenBao
+# copy is authoritative; rotate here, VSO re-renders within refreshAfter.
+path "secret/data/wazuh/archive-minio" {
+  capabilities = ["read"]
+}
+path "secret/metadata/wazuh/archive-minio" {
+  capabilities = ["read"]
+}
+
 # Control plane API (control ns).
 #   - keycloak/clients/control: OIDC client_secret for the user-login client
 #   - keycloak/clients/control-admin: client_secret for the admin-API
