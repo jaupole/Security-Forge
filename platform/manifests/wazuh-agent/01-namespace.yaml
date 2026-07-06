@@ -23,7 +23,7 @@ metadata:
   name: wazuh-agent
   labels:
     secforge.platform/component: wazuh-agent
-    secforge.platform/edition: local
+    secforge.platform/edition: prod
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/warn: privileged
     pod-security.kubernetes.io/audit: privileged

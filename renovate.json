@@ -21,8 +21,6 @@
   "osvVulnerabilityAlerts": true,
   "ignoreDeps": [
     "github.com/secforge/lib",
-    "local/authzen-facade",
-    "local/security-events-collector",
     "ghcr.io/jaupole/control",
     "ghcr.io/jaupole/portal",
     "ghcr.io/jaupole/keycloak",

@@ -14,7 +14,7 @@ metadata:
   name: wazuh
   labels:
     secforge.platform/component: wazuh
-    secforge.platform/edition: local
+    secforge.platform/edition: prod
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/warn: baseline
     pod-security.kubernetes.io/audit: baseline
