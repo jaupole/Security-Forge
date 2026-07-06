@@ -1,0 +1,63 @@
+# NetworkPolicies for the istio-ingress namespace (infra-sweep sec-5).
+#
+# The internet-facing namespace previously had ZERO L3/L4 policy — a
+# compromised gateway pod could reach anything in-cluster (databases,
+# MinIO, SpiceDB) and any egress the node allows. Istio
+# AuthorizationPolicies (50-) enforce L7 at the gateway but nothing
+# bounded the pods themselves.
+#
+# Scope decisions:
+#   - EGRESS-ONLY. No Ingress policyType: public traffic arrives on
+#     hostPorts 80/443 and must never depend on netpol nuance.
+#   - Namespace-level allowlist (all ports within each destination ns):
+#     the destinations are the routed backends enumerated from the live
+#     VirtualServices 2026-07-06 plus istiod (XDS/SDS) and kube-dns.
+#     Ambient backends are reached via HBONE :15008 on pod IPs, which the
+#     namespaceSelector rules also match. Port-level tightening is a
+#     possible follow-up; the namespace boundary is the main win.
+#   - Applies to ALL pods in the ns (both gateways). Adding a routed
+#     backend in a NEW namespace requires adding it here — the drift
+#     check will surface a forgotten apply.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-egress-allowlist
+  namespace: istio-ingress
+  labels:
+    secforge.platform/component: istio-ingress
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # kube-dns
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # istiod XDS/SDS + ambient control plane
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    # Routed backend namespaces (from live VirtualServices 2026-07-06):
+    - to:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - business-manager
+                  - control
+                  - keycloak
+                  - member-hub
+                  - observability
+                  - onlyoffice
+                  - openbao
+                  - project-manager
+                  - proposal-forge
+                  - wazuh
