@@ -4,9 +4,9 @@
 # this completes the bookend so the namespace is closed by default. Existing
 # allow rules cover the legitimate ingress traffic:
 #   - `minio` (chart-default) — same-ns pods with minio-client=true → 9000/9001
-#   - `allow-cross-ns-minio-clients` — observability, app, wazuh,
+#   - `allow-cross-ns-minio-clients` — observability, wazuh,
 #     velero ns + minio-client=true label → 9000; plus keycloak, spicedb,
-#     app, verify-restore ns (any pod, used by CNPG barman backup) → 9000
+#     verify-restore ns (any pod, used by CNPG barman backup) → 9000
 #
 # k3s flannel-vxlan bypasses NetworkPolicy for kubelet probes (nsenter), so
 # no explicit kubelet-probe allow rule is needed for pod readiness.

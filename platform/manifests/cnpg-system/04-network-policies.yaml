@@ -111,7 +111,7 @@ spec:
         matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: In
-          values: [keycloak, spicedb, verify-restore, app, ecosystem, postgres-operator]
+          values: [keycloak, spicedb, verify-restore, postgres-operator]
     ports:
     - protocol: TCP
       port: 9090

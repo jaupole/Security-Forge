@@ -87,9 +87,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openbao
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: app
       ports:
         - protocol: TCP
           port: 1514

@@ -4,7 +4,6 @@
 #
 # Allowed flows:
 #   ingress-nginx (any ns)              → openbao:8200 (Ingress for UI/API)
-#   app ns                              → openbao:8200 (workload JWT auth)
 #   control ns (api pods)               → openbao:8200 (Transit field encryption)
 #   spicedb ns                          → openbao:8200 (PSK rotation in Phase 5.10)
 #   keycloak ns                         → openbao:8200 (OIDC validation if needed)
@@ -18,7 +17,7 @@
 #   openbao → ingress-nginx:443         (public Keycloak OIDC URL via hostAlias — F-CLU-11)
 #   openbao → keycloak.keycloak.svc:8080 (kept for non-OIDC pod-direct paths)
 #   openbao → spire-server.spire.svc:8443 (SPIRE JWKS for jwt auth)
-#   openbao → secforge-app-db.app:5432  (database secrets engine)
+#   openbao → secforge-spicedb-db.spicedb:5432 (database secrets engine)
 #   openbao → kube-dns                  (DNS)
 #   openbao pod-to-pod                  → :8201 (Raft)
 
@@ -48,30 +47,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-ingress
-      ports:
-        - protocol: TCP
-          port: 8200
-
-# ──────────────────────────────────────────────────────────────────────
-# Ingress: allow `app` ns → openbao:8200 (workload JWT auth from BFFs).
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-app-ns-to-openbao
-  namespace: openbao
-  labels:
-    secforge.platform/component: openbao
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: openbao
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: app
       ports:
         - protocol: TCP
           port: 8200
@@ -348,17 +323,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8443
-    # secforge-app-db Postgres (Phase 5.7 database engine)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: app
-          podSelector:
-            matchLabels:
-              cnpg.io/cluster: secforge-app-db
-      ports:
-        - protocol: TCP
-          port: 5432
     # secforge-spicedb-db Postgres (Phase 7d.2 database engine — required
     # for `database/config/secforge-spicedb` connection-verify and
     # `database/creds/spicedb-readwrite` dynamic-cred mint).
