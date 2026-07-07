@@ -81,7 +81,7 @@ spec:
             - name: archive
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:f969a7216d64bbfa4db0b792dc519dc448f4a5f20299053fe0640c32ba10cc89
+              image: ghcr.io/jaupole/control@sha256:44d7ed2c5750ad2cd4ad5dd3e8be8feab6c256ce1c32854188c36d8e0c890cee
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "tickets:archive-closed"]
               env:
