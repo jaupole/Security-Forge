@@ -5,7 +5,7 @@
 #     depending on chart version)
 #   - Reconciles CNPG Cluster CRs by talking to the K8s API
 #   - Connects to PostgreSQL clusters across namespaces (keycloak, spicedb,
-#     app, ecosystem, verify-restore) for status checks + readiness
+#     verify-restore) for status checks + readiness
 #
 # Applied 2026-05-14.
 
@@ -91,7 +91,7 @@ spec:
         matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: In
-          values: [keycloak, spicedb, verify-restore, app, ecosystem, cnpg-system]
+          values: [keycloak, spicedb, verify-restore, cnpg-system]
     ports:
     - protocol: TCP
       port: 5432  # postgres

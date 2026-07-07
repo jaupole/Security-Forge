@@ -4,7 +4,7 @@
 # registration: pods with `spiffe.io/spire-managed-identity: "true"` get an SVID.
 #
 # This file adds NAMESPACE-SCOPED registrations for the platform-component
-# namespaces — keycloak, spicedb, openbao, app, istio-system. In those
+# namespaces — keycloak, spicedb, openbao, istio-system. In those
 # namespaces, every pod gets an identity automatically without the label.
 #
 # Reconciled by spire-controller-manager (chart's `watchClassless: true`).
@@ -64,23 +64,6 @@ spec:
       - key: kubernetes.io/metadata.name
         operator: In
         values: ["openbao"]
-  ttl: "1h"
-  jwtTtl: "5m"
-  fallback: false
-  autoPopulateDNSNames: false
-
----
-apiVersion: spire.spiffe.io/v1alpha1
-kind: ClusterSPIFFEID
-metadata:
-  name: secforge-app
-spec:
-  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
-  namespaceSelector:
-    matchExpressions:
-      - key: kubernetes.io/metadata.name
-        operator: In
-        values: ["app"]
   ttl: "1h"
   jwtTtl: "5m"
   fallback: false
