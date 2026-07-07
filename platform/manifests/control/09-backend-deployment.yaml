@@ -96,7 +96,7 @@ spec:
           # organizations.kc_org_id (commit b447727; image rebuilt as
           # 0875911 after pinning CI back to cosign v2 — v3 bundle-format
           # signatures are invisible to Kyverno).
-          image: ghcr.io/jaupole/control@sha256:4eba1ac8b40da37af3efc6acd5d260e27a04b474967eaa886bda90bafb732ea7
+          image: ghcr.io/jaupole/control@sha256:476f69094d03e9dd1293899c0edc265fe68a32bc8d5dcece740a39845d6ce04f
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
