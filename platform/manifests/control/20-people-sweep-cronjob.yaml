@@ -1,0 +1,119 @@
+# Daily CronJob: canonical-people self-heal sweep (DB-unification P1).
+# Runs ecosystem-control `admin:backfill-people` — an IDEMPOTENT
+# create-or-adopt of a person row for every active membership. Covers (a) the
+# initial P1 backfill (first run), (b) any membership path that missed the
+# API-layer upsert hook, and (c) drift after restores. See
+# ecosystem-control src/cli/backfill-people.ts.
+#
+# One-shot manual run (e.g. the initial backfill at P1 deploy):
+#   kubectl create job -n control --from=cronjob/control-people-sweep people-backfill-once
+#
+# NOTE: this pod has no spiffe-helper sidecar, so the CLI stores email_hmac
+# only (EMAIL_HMAC_KEY env) — email_enc enriches later via the API-pod hooks.
+#
+# Same image + env as the grant-sweep cron — only the CLI entrypoint differs.
+# Bump the digest in lockstep with 09-backend-deployment.yaml.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-people-sweep
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: people-sweep
+spec:
+  # Daily 04:17 UTC — clear of the other control crons.
+  schedule: "17 4 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: people-sweep
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: people-sweep
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:476f69094d03e9dd1293899c0edc265fe68a32bc8d5dcece740a39845d6ce04f
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "admin:backfill-people"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                # Runtime `control` role (control-db-app) — per-org under RLS.
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
