@@ -30,6 +30,7 @@ The node is hardened: public SSH is closed (Tailscale-only) and operator/admin i
 3. **Reference, don't duplicate.** All architecture decisions are in `docs/01-architecture/` and `docs/02-decisions/`. Operational procedures in `docs/03-runbooks/`. Reference docs in `docs/06-reference/`.
 4. **Keep PLAN.md and the trackers current** as deployed state changes.
 5. **Write decisions down.** Non-trivial choices become ADRs in `docs/02-decisions/`. Number sequentially.
+6. **Never run `git` as root in the ops clone (`/home/ops/secforge`).** The clone and its SSH deploy key belong to the `ops` user. `sudo git pull` fails auth **silently** (root has no deploy key) and leaves the clone stale — the next `kubectl apply` then ships old manifests as a "successful" no-op — and any root-run git write leaves root-owned files under `.git/` that break every later `ops` pull. Rule: plain `git` as `ops`; `sudo -n` only for `kubectl`. This broke three deploys on 2026-07-06. After any accidental root git run: `sudo chown -R ops:ops /home/ops/secforge` and re-pull, then re-apply.
 
 ## Architecture stack (committed decisions)
 
