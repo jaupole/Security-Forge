@@ -59,7 +59,7 @@ spec:
       containers:
         - name: api
           # Bump to the signed digest after first image build.
-          image: ghcr.io/jaupole/project-manager@sha256:60a16ab95ca3754fefd6ef57660a730f48ad7394b9599120060e67bad8cd74da
+          image: ghcr.io/jaupole/project-manager@sha256:e9d6bdd3ebac4d355c82e7a7e16388e285fb3a6ad024b00d6cc34f8f7839b03c
           imagePullPolicy: IfNotPresent
           ports:
             - { containerPort: 3003, name: http, protocol: TCP }
