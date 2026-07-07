@@ -17,6 +17,13 @@
 #   4. Prunes the Docker build cache (docker builder prune --keep-storage).
 #      BuildKit layer cache accumulates across image builds; safe to prune as
 #      layers are re-fetchable from GHCR on next build.
+#   5. Deletes stale runner SELF-UPDATE leftovers (bin.<ver>/externals.<ver>
+#      sibling dirs). The live install is the plain bin/ + externals/ pair;
+#      the versioned copies are what previous auto-updates left behind
+#      (~800 MB per runner per update — 5 GB across 7 runners found when
+#      NodeDiskSpaceWarn fired on vg0-runner, 2026-07-07). The sweep is
+#      skipped entirely while any Runner.Worker is active, and any versioned
+#      dir referenced by a live listener/worker cmdline is kept.
 #
 # NOT done here:
 #   - containerd image GC: handled by k3s kubelet image-gc-high-threshold=70
@@ -25,7 +32,7 @@
 #
 # Usage: sudo bash platform/scripts/runner-cleanup.sh
 #
-# Scheduled: platform/host/runner-cleanup.cron -> /etc/cron.d/runner-cleanup (Mon/Wed/Fri 04:00 Europe/Berlin, as root).
+# Scheduled: platform/host/runner-cleanup.cron -> /etc/cron.d/runner-cleanup (DAILY 04:00 Europe/Berlin, as root; was Mon/Wed/Fri until 2026-07-07 — a heavy build day outran the 48-72h gap).
 
 set -euo pipefail
 
@@ -100,6 +107,29 @@ if id github-runner &>/dev/null; then
   fi
 else
   log "github-runner user not present - skipping Docker prune"
+fi
+
+# ── 5. Stale runner self-update dirs (bin.<ver>/externals.<ver>) ─────────────
+# The runner's auto-update leaves the previous versions' bin.X.Y.Z and
+# externals.X.Y.Z dirs behind; the live install is the plain bin/ +
+# externals/ pair (verified 2026-07-07: every Runner.Listener runs from
+# .../bin). Guard rails: skip the sweep while a job is running, and never
+# delete a versioned dir that a live listener/worker cmdline references
+# (covers the brief window where an update relaunches from a versioned path).
+if pgrep -f 'Runner\.Worker' >/dev/null 2>&1; then
+  log "Runner job in progress - skipping self-update leftover sweep"
+else
+  live_cmdlines=$(pgrep -af 'Runner\.(Listener|Worker)' 2>/dev/null || true)
+  swept=0
+  for stale in "${RUNNER_BASE}"/*/bin.* "${RUNNER_BASE}"/*/externals.*; do
+    [[ -d "${stale}" ]] || continue
+    if [[ -n "${live_cmdlines}" ]] && grep -qF "${stale}" <<<"${live_cmdlines}"; then
+      log "KEEP (referenced by running process): ${stale}"
+      continue
+    fi
+    rm -rf "${stale}" && swept=$((swept + 1))
+  done
+  log "Self-update leftover sweep done - ${swept} stale dir(s) removed"
 fi
 
 log "Done."
