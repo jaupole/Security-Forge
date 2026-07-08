@@ -1,0 +1,38 @@
+# harness-ci.snippet.yml — paste these steps into your app's image-build workflow,
+# AFTER the step that applies migrations to a test Postgres. The conformance
+# harness (DB-unification D9) fails the build on schema drift vs
+# db/conformance-manifest.json. Shift-left: it runs pre-merge on the migration-
+# built DB, so prod (deployed via the same migrations) matches.
+#
+# Prereqs already in your job: a Postgres service (or testcontainer) reachable at
+# $DATABASE_URL, migrations applied, pnpm+node set up. The runner has jq but NO
+# psql, so facts are captured via the postgres image and evaluated with jq.
+#
+# Set runtime_role to your app's connect role via -v runtime_role='<app>_app'
+# (or your single login role). Leaving it '' makes the role check vacuous — do
+# NOT ship it empty; PF/BM shipped a nonexistent *_app once and the check was a
+# no-op until corrected (P5).
+
+      - name: Checkout conformance harness
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: jaupole/Security-Forge
+          # Pin to a Security-Forge main commit SHA. Bump when you adopt harness
+          # changes. (Latest as of this template: the #153 merge.)
+          ref: <SF_MAIN_SHA>
+          sparse-checkout: platform/scripts
+          path: _harness
+          persist-credentials: false
+
+      - name: DB conformance
+        run: |
+          docker run --rm -i --network host postgres:16-alpine \
+            psql "$DATABASE_URL" -X -q -At -P footer=off -v runtime_role='<app>_app' \
+            -f - < _harness/platform/scripts/db-conformance.sql > /tmp/facts.txt
+          bash _harness/platform/scripts/db-conformance.sh \
+            --facts-file /tmp/facts.txt \
+            --manifest db/conformance-manifest.json \
+            --migrations migrations
+
+# Also add db/** to the workflow's push + pull_request paths so schema changes
+# trigger the check.

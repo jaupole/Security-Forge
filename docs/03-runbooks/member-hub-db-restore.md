@@ -1,5 +1,15 @@
 # Runbook — member-hub DB restore (encrypted-PII aware)
 
+> **⚠️ POST-CONSOLIDATION (P5 / [ADR-0044](../02-decisions/0044-physical-db-consolidation.md)).**
+> As of 2026-07-08 the `member_hub` database is one of five databases on the consolidated
+> `ecosystem-db` cluster (backups → `s3://backups/cnpg/ecosystem-db`). **Cluster-level restore is
+> now [ecosystem-db-operations.md](./ecosystem-db-operations.md)** — a full restore brings back all
+> five databases together, and OpenBao must still come back FIRST (§0/§3 below). **This runbook's
+> encrypted-PII VALIDATION gate (§5 — schema-is-post-122 + ciphertext-present + decrypt
+> round-trip) remains the authoritative go/no-go for the `member_hub` database after any restore.**
+> The single-cluster `member-hub-db` steps below apply to the OLD per-app cluster, retained as the
+> rollback net until decommission (~2026-07-15); after that, use the consolidated pipeline.
+>
 > Audit ref: **M-8 follow-on / Phase-4 Deploy-3**. Restores the Member Hub
 > Postgres (`member-hub-db`, namespace `member-hub`) from a CNPG/barman backup.
 > Pairs with [ADR-0020](../02-decisions/0020-openbao-backup-and-dr.md) (OpenBao

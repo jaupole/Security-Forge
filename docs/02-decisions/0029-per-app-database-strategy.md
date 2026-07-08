@@ -67,9 +67,13 @@ DB — this ADR only decides DB topology, not tenancy enforcement.
 - **Physical consolidation** (one `ecosystem-db` CNPG cluster, five databases; keycloak +
   spicedb keep dedicated clusters) is an OPTIONAL, recommended later step — see the
   `db-unification/specs/physical-consolidation.md` spec — executed only after the spine
-  phases land. It changes physical packing, not this logical decision.
+  phases land. It changes physical packing, not this logical decision. **Executed 2026-07-08 —
+  see [ADR-0044](./0044-physical-db-consolidation.md).** This ADR's logical decision is
+  unchanged by it (still five databases, five roles, no cross-DB SQL, splittable).
 
 ## Status of implementation
 
-Tracked in `db-unification/PROGRESS.md`. P0 (fleet data standards + conformance harness +
-security fixes) is in progress; the canonical entities land in P1–P3.
+Tracked in `db-unification/PROGRESS.md`. **Shipped**: P0 (fleet data standards + conformance
+harness + security fixes), the canonical entities (P1 people → P2 clients → P3 engagements),
+P4 convergence, and the P5 physical consolidation ([ADR-0044](./0044-physical-db-consolidation.md))
+all landed by 2026-07-08.

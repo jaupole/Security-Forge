@@ -50,7 +50,7 @@ All planned ecosystem apps are deployed (Project Manager went live 2026-06, `pro
 | Outbound secret sync | Vault Secrets Operator | — |
 | Workload identity | SPIRE — trust domain `secforge.platform` | — |
 | Service mesh | Istio Ambient — mesh trustDomain `cluster.local` | pilot 1.30.0 |
-| Database | CloudNativePG / Postgres | operator 1.29.1 / pg 17.6 |
+| Database | CloudNativePG / Postgres — one consolidated `ecosystem-db` cluster (5 app databases: control/member_hub/proposal_forge/business_manager/project_manager) + dedicated keycloak & spicedb clusters (ADR-0044) | operator 1.29.1 / pg 17.6 |
 | Object storage | MinIO (dedicated partition, SSE-S3) | RELEASE.2025-09-07 |
 | KMS | OpenBao Transit | — |
 | Admission | Kyverno (17 ClusterPolicies) | v1.18.0 |

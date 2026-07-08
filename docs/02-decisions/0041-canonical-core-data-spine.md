@@ -73,8 +73,36 @@ column bumps on every UPDATE to order sync.
 - Ambiguous client dedupe (F2 backfill) produces a review file for the operator — human
   adjudication, not silent merges (P2).
 
+## As-built (shipped 2026-07-08) — deltas from the decision above
+
+The decision held; four implementation details settled differently and are now the authoritative
+architecture:
+
+- **Transport is PULL, not push.** The "Control outbox → per-app `/system/core-sync` push" above
+  was replaced by a pull: each app polls `GET /api/v1/system/core-export?entity=<e>&cursor=<n>`
+  with its existing system token. Control had no egress client / app-URL registry / outbound
+  token minting, and its egress netpols were deliberately tight — push meant new attack surface.
+  Pull is fleet-native (BM already polled PF/PM feeds). The synchronous projection-upsert from the
+  Control API response (no read-after-write race) is unchanged. `core_sync_outbox`, the
+  subscription registry, and the Control-side worker were removed from scope and **never built**.
+- **Per-entity cursors + 24h reconcile.** Each app runs one poller with independent per-entity
+  cursors (person/client/engagement), 60s + jitter, version-guarded upserts, and a 24h full
+  reconcile from cursor 0 that heals any missed/out-of-order row.
+- **Cross-app correlation is engagement-keyed** (P4 wave 3). The ad-hoc pointer columns
+  (`pf_project_id`, `pm_project_id`) and free-text client columns (`client_name`, `agency`) were
+  **dropped**, not just deprecated; sync and the golden thread key on `engagement_id`.
+- **Org scope is manifest-driven** (bm#12): the list of org-scoped models is derived from each
+  app's `db/conformance-manifest.json` (fail-closed on drift), not hand-maintained.
+
+Related decisions that landed alongside: the RLS GUC was unified on `app.org_id`
+([ADR-0042](./0042-rls-guc-standard-app-org-id.md)); the migration runner/outbox/numbering were
+extracted into `@jaupole/ecosystem-db` ([ADR-0043](./0043-ecosystem-db-shared-package.md)); and
+the app databases were physically consolidated onto one cluster
+([ADR-0044](./0044-physical-db-consolidation.md)) — the projections now live there.
+
 ## Status of implementation
 
-Entities land P1 (people) → P2 (clients) → P3 (engagements), strictly ordered. Tracked in
-`db-unification/PROGRESS.md`. This ADR records the decision; `specs/core-schema.md` holds the
+**Shipped 2026-07-08.** Entities landed P1 (people) → P2 (clients) → P3 (engagements) →
+P4 (convergence: GUC unification, EAV retirement, `users` retirement, pointer/free-text drops),
+strictly ordered. Tracked in `db-unification/PROGRESS.md`; `specs/core-schema.md` holds the
 authoritative DDL, APIs, and backfill.

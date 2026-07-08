@@ -1,5 +1,15 @@
 # Runbook — control-db restore (FORCE-RLS aware)
 
+> **⚠️ POST-CONSOLIDATION (P5 / [ADR-0044](../02-decisions/0044-physical-db-consolidation.md)).**
+> As of 2026-07-08 the `control` database is one of five databases on the consolidated
+> `ecosystem-db` cluster (backups → `s3://backups/cnpg/ecosystem-db`). **Cluster-level restore is
+> now [ecosystem-db-operations.md](./ecosystem-db-operations.md)** — a full restore brings back
+> all five databases together. **This runbook's app-specific VALIDATION gate below (the FORCE-RLS
+> posture go/no-go, §5) remains the authoritative check for the `control` database after any
+> restore** — run it against `control` on `ecosystem-db`. The single-cluster `control-db` recovery
+> manifests in §4 apply to the OLD per-app cluster, retained as the rollback net until decommission
+> (~2026-07-15); after that, use the consolidated pipeline.
+>
 > Audit ref: **EC-003 / SC-3.4 / R4**. Restores the control-plane Postgres
 > (`control-db`, namespace `control`) from a barman backup **without losing the
 > FORCE ROW LEVEL SECURITY posture** the 2026-06-02 cutover established. Pairs
