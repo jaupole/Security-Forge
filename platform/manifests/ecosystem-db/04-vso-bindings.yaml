@@ -52,3 +52,16 @@ spec:
     name: cnpg-minio-credentials
     create: true
     type: Opaque
+    # The OpenBao KV blob holds `access_key`/`secret_key`; the ObjectStore
+    # (06) references `ACCESS_KEY_ID`/`ACCESS_SECRET_KEY` — rename via templates
+    # and excludeRaw (drops _raw + the original lowercase keys). Mirrors
+    # member-hub/04-vso-bindings.yaml's cnpg-minio-credentials-vso block.
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        ACCESS_KEY_ID:
+          text: "{{ .Secrets.access_key }}"
+        ACCESS_SECRET_KEY:
+          text: "{{ .Secrets.secret_key }}"
