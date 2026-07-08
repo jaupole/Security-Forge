@@ -1,0 +1,54 @@
+# VSO bindings for the ecosystem-db namespace (DB-unification P5).
+#
+# Renders ONE K8s Secret: `cnpg-minio-credentials` — the barman-cloud → MinIO
+# backup bucket credentials, consumed by the ObjectStore CR (06-objectstore.yaml).
+# This is the SAME OpenBao path the app clusters read (secret/minio/cnpg/credentials).
+#
+# ─── GATE A (OpenBao break-glass day) ────────────────────────────────────────
+# The K8s-auth role binding (SA `ecosystem-db-vso` → an OpenBao policy that grants
+# read on `secret/minio/cnpg/credentials`) does NOT exist yet. It is created on the
+# operator's break-glass day via:
+#   - components/05c-openbao-configure.sh  (policy, if a new policy name is used)
+#   - components/05j-app-vso-roles.sh       (APP_ROLES row — stub added in this PR)
+# Applying THIS file before that role exists → VSO can't authenticate and the
+# secret stays unrendered (the cluster then can't archive WAL). So apply order on
+# the bao day is: 05c/05j → 04-vso-bindings → verify secret rendered → first WAL.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: ecosystem-db-vso
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: ecosystem-db-vso
+    serviceAccount: ecosystem-db-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+# barman-cloud → MinIO bucket credentials for base backups + WAL archiving.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: cnpg-minio-credentials-vso
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: ecosystem-db-vso
+  mount: secret
+  type: kv-v2
+  path: minio/cnpg/credentials
+  refreshAfter: 1h
+  destination:
+    name: cnpg-minio-credentials
+    create: true
+    type: Opaque

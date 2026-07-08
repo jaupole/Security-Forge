@@ -1,0 +1,22 @@
+# Daily ScheduledBackup for the consolidated ecosystem-db cluster.
+# 03:15 UTC — staggered after the app clusters (keycloak 02:30, member-hub 02:45,
+# …) so the MinIO PUT bursts don't overlap. Once the 5 app clusters are
+# decommissioned (P5 step 5), this is the ONE backup pipeline for the fleet's app
+# data; the per-app ScheduledBackups are removed with their clusters.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: ecosystem-db-daily
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: cloudnativepg
+    secforge.platform/cluster: ecosystem-db
+spec:
+  schedule: "0 15 3 * * *"          # 6-field CNPG cron (sec min hr dom mon dow)
+  backupOwnerReference: self
+  cluster:
+    name: ecosystem-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  immediate: false

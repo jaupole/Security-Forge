@@ -84,6 +84,15 @@ APP_ROLES=(
   # later Control) sync the SAME path via their OWN roles — the vso policy
   # carries their read grant. Policy: manifests/openbao/policies/onlyoffice.hcl.
   "onlyoffice-vso|onlyoffice|onlyoffice-vso|onlyoffice|3600|86400"
+  # ecosystem-db (DB-unification P5 — consolidated CNPG cluster) — VSO renders
+  # ONLY the barman→MinIO backup creds (secret/minio/cnpg/credentials, granted by
+  # the shared `vso` policy, same as every app's CNPG backup-cred read) into the
+  # ecosystem-db ns for the cluster's ObjectStore. This ns runs no app, so no
+  # app-runtime secrets. (A scoped `ecosystem-db-cnpg` policy granting ONLY
+  # minio/cnpg/credentials would be a cleaner least-privilege alternative — add it
+  # to 05c + policies/ if preferred; this stub reuses `vso` for fleet consistency.)
+  # Applied on the OpenBao break-glass day (GATE A) with the 04-vso-bindings CRs.
+  "ecosystem-db-vso|ecosystem-db|ecosystem-db-vso|vso|3600|86400"
 )
 
 echo ">>> Creating app-level kubernetes-auth roles"

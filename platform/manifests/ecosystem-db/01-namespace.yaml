@@ -1,0 +1,20 @@
+# Namespace for the consolidated ecosystem-db CNPG cluster (DB-unification P5).
+#
+# ONE Postgres cluster hosting the 5 app databases (control, member_hub,
+# proposal_forge, business_manager, project_manager). Keycloak + SpiceDB keep
+# their own dedicated clusters (different blast domain + upgrade cadence).
+#
+# Ambient mesh: labelled `istio.io/dataplane-mode: ambient` to MATCH the 5 app
+# namespaces (all ambient). Cross-namespace app→ecosystem-db:5432 traffic then
+# rides ztunnel→ztunnel HBONE (15008), exactly like the existing app→control
+# mesh path — the netpols in 05-network-policies.yaml allow both 5432 and 15008.
+# (The exact port set MUST be validated end-to-end with ONE app — member_hub —
+# before cutting the other four; see docs/03-runbooks/ecosystem-db-operations.md.)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/edition: prod
+    istio.io/dataplane-mode: ambient

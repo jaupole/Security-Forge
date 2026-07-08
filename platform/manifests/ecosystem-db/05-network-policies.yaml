@@ -1,0 +1,183 @@
+# NetworkPolicies for the ecosystem-db namespace (DB-unification P5).
+#
+# Default-deny both directions + minimal allows, matching the fleet pattern.
+# This file holds the ecosystem-db-SIDE rules. The APP-side egress rule
+# (each app ns → ecosystem-db:5432/15008) is applied per-app AT CUTOVER (it is
+# additive + inert until the app's DATABASE_URL is repointed) — the exact YAML is
+# in docs/03-runbooks/ecosystem-db-operations.md §Cutover, one app at a time.
+#
+# AMBIENT / HBONE: all 5 app namespaces AND this one are ambient, so cross-ns
+# app→db traffic is tunnelled ztunnel→ztunnel over HBONE (15008), delivered to
+# 5432. The app-ingress rule below allows BOTH — mirror of the app→control mesh
+# rule. VALIDATE end-to-end with member-hub FIRST (per the P5 addendum) before
+# relying on this for the other four.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+
+---
+# DNS + kube-apiserver. The CNPG manager inside the postgres pod fetches its TLS
+# certs from the API server at startup; without this the cluster never reaches
+# Ready. Same shape as every app ns's allow-egress-essentials.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-essentials
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock:
+            cidr: 65.21.25.40/32
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+
+---
+# Intra-namespace: CNPG operand pods ↔ each other (replication today is N/A at 1
+# instance, but keep parity for a future scale-up), VSO-rendered Secret bookkeeping.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+---
+# CNPG operator (postgres-operator + cnpg-system) → the db pod for reconciliation,
+# probes, and barman metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-db
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ecosystem-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [postgres-operator, cnpg-system]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 9187 }
+        - { protocol: TCP, port: 9090 }
+
+---
+# CNPG pods → MinIO for barman base backups + WAL archiving + retention. Without
+# this, default-deny-egress silently breaks all backups (the plugin exits 0 but
+# ships nothing — the fleet has been bitten by exactly this).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-minio
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ecosystem-db
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minio
+      ports:
+        - { protocol: TCP, port: 9000 }
+
+---
+# ★ P5 KEY RULE ★ — ingress from the 5 app namespaces → the db pod on 5432
+# (+ 15008 HBONE, ambient mesh). One policy with an explicit ns allow-list
+# (least privilege: only these 5 namespaces, only the cnpg cluster pods, only the
+# two ports) — mirrors the minio 03-allow-cross-ns-clients convention. Inert until
+# each app's DATABASE_URL is repointed at cutover; the matching app-SIDE egress
+# rule is applied per-app then (runbook).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-apps
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/policy-tier: layer-a
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ecosystem-db
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [control, member-hub, proposal-forge, business-manager, project-manager]
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 15008 }  # HBONE — ztunnel mesh tunnel (ambient)
