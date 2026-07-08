@@ -8,6 +8,39 @@ Manifests: `platform/manifests/ecosystem-db/`. All applies go through
 `apply-manifest.sh` over `ssh secforge` (envsubst) — **never raw kubectl** (ships
 literal `${STORAGE_CLASS}`).
 
+> ## ✅ EXECUTED 2026-07-08 — corrections from the live cutover (these SUPERSEDE the sections below)
+> All 5 apps were consolidated onto `ecosystem-db`. Three assumptions below were WRONG; the real mechanism:
+> 1. **The DB connection is NOT in OpenBao.** It's the CNPG operator's per-cluster
+>    `<cluster>-db-app` Secret (host/port/username/password/dbname/uri), referenced
+>    by each deployment/cronjob/migration-Job env. So the cutover is **NOT** a
+>    `DATABASE_URL` rotation in OpenBao — it's: build an `<app>-ecodb` Secret (host →
+>    `ecosystem-db-rw.ecosystem-db.svc`, **same** user/password copied from
+>    `<cluster>-db-app` — the dump-carried SCRAM hash matches on ecosystem-db) and
+>    repoint the deployment's DB env refs at it (codified in git: `<cluster>-db-app`
+>    → `<app>-ecodb`, literal `<cluster>-db-rw.<ns>` → `ecosystem-db-rw.ecosystem-db`).
+>    **break-glass (`admin-break-glass` role, §openbao-recovery.md) was needed only
+>    for the ONE OpenBao write that IS real — the `ecosystem-db-vso` backup role.**
+> 2. **Restore must be PLAIN format.** `pg_dump -Fc | pg_restore` over a pipe
+>    restores NOTHING (custom format needs a seekable file). Use
+>    `pg_dump <db> | psql -d <db>` (plain SQL streams). Roles load once up front via
+>    `pg_dumpall --roles-only` (drop postgres/streaming_replica/cnpg_metrics_exporter).
+> 3. **Every DB consumer must be repointed, not just the deployment** — migration
+>    Jobs AND cronjobs (member-hub audit-*, control sweeps). Miss them → split-brain.
+>    PM/PF/BM have no cronjobs.
+>
+> Per-app cutover as actually run: apply the `<ns> → ecosystem-db` egress netpol
+> (5432 + 15008 HBONE) → scale app to 0 → `CREATE DATABASE` + `pg_dump|psql` →
+> rowcount-gate (`pg_stat_user_tables` old-vs-new, abort on mismatch) → `kubectl
+> patch` the deployment DB env → `<app>-ecodb` → scale up → verify (rollout, active
+> connections, RLS `SET ROLE`; control also runs the FORCE-RLS posture gate —
+> `verify-control-force-rls-posture.sql` PASSED against a logical restore).
+>
+> **`<app>-ecodb` Secrets are LIVE hand-created k8s objects (not in git)** — same
+> posture as CNPG's own `<cluster>-db-app`. DR-reproduction (recreate from OpenBao/
+> VSO) is a deferred follow-up; until then they must be recreated by hand on a
+> cluster rebuild. **The `<cluster>-db-app` Secrets + old clusters remain until
+> decommission — rollback = repoint env refs back + scale.**
+
 > ## ⚠️ TWO HUMAN GATES — do not automate past these
 > - **GATE A — OpenBao break-glass day.** The root token is dead; only the operator
 >   has break-glass access. Everything OpenBao-touching is batched for that day:
