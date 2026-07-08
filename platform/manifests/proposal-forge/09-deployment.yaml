@@ -156,7 +156,7 @@ spec:
             # (the PF-side VSO binding templates the key to env-var shape)
             - { name: ONLYOFFICE_JWT_SECRET, valueFrom: { secretKeyRef: { name: onlyoffice-jwt, key: ONLYOFFICE_JWT_SECRET } } }
             # CNPG-rendered DB connection string.
-            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: proposal-forge-db-app, key: uri } } }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: proposal-forge-ecodb, key: uri } } }
           envFrom:
             # OIDC_CLIENT_SECRET, SPICEDB_PRESHARED_KEY, SESSION_KEY,
             # GEMINI_API_KEY, GSA_API_KEY (VSO → 04-vso-bindings.yaml).

@@ -7,7 +7,7 @@
 # Re-runs are safe — migrate.ts is idempotent (records applied versions in
 # a schema_migrations table; re-applying a migration is a no-op).
 #
-# CNPG auto-renders the `member-hub-db-app` Secret with:
+# CNPG auto-renders the `member-hub-ecodb` Secret with:
 #   - username, password, dbname, host, port, jdbc-uri, uri, pgpass
 # We feed DATABASE_URL from the `uri` key directly (pg connection string).
 
@@ -58,7 +58,7 @@ spec:
             - sh
             - -c
             - |
-              until pg_isready -h member-hub-db-rw.member-hub.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
+              until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
                 echo "waiting for member-hub-db..."
                 sleep 2
               done
@@ -86,7 +86,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: member-hub-db-app
+                  name: member-hub-ecodb
                   key: uri
           securityContext:
             allowPrivilegeEscalation: false

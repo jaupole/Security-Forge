@@ -5,7 +5,7 @@
 # pending migrations (tracked in _prisma_migrations) and is a no-op when
 # the DB is already current.
 #
-# CNPG auto-renders `proposal-forge-db-app` with host/port/user/password/
+# CNPG auto-renders `proposal-forge-ecodb` with host/port/user/password/
 # dbname/uri/jdbc-uri/pgpass. Prisma wants a single connection string, so
 # DATABASE_URL is fed from the `uri` key.
 #
@@ -55,7 +55,7 @@ spec:
             - sh
             - -c
             - |
-              until pg_isready -h proposal-forge-db-rw.proposal-forge.svc.cluster.local -p 5432 -U proposal_forge -d proposal_forge -t 3; do
+              until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U proposal_forge -d proposal_forge -t 3; do
                 echo "waiting for proposal-forge-db..."
                 sleep 2
               done
@@ -107,7 +107,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: proposal-forge-db-app
+                  name: proposal-forge-ecodb
                   key: uri
             # Prisma's migration engine writes to a temp dir.
             - name: TMPDIR

@@ -8,7 +8,7 @@
 # and the runtime `control` role is NOBYPASSRLS, so the CLI archives
 # per-org (enumerating orgs from the non-RLS organizations directory and
 # running the UPDATE under each org's app.org_id via withTx). It needs
-# only the control-db-app DB creds — same env shape as the signup-cleanup
+# only the control-ecodb DB creds — same env shape as the signup-cleanup
 # cron (config.ts validates the full env at import, so the Keycloak/SpiceDB
 # vars are present even though the archive command doesn't use them).
 #
@@ -66,7 +66,7 @@ spec:
                 - sh
                 - -c
                 - |
-                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U control -d control -t 3; do
                     echo "waiting for control-db..."
                     sleep 2
                   done
@@ -98,13 +98,13 @@ spec:
                 - { name: KEYCLOAK_REALM,                   value: platform }
                 - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
                 - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
-                # Runtime `control` role (control-db-app) — the archive runs as
+                # Runtime `control` role (control-ecodb) — the archive runs as
                 # the normal DML role, per-org under RLS. No migrator/superuser.
-                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
-                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
-                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
-                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
-                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
                 - secretRef:
                     name: control-app-secrets

@@ -5,7 +5,7 @@
 # safe — `prisma migrate deploy` only applies pending migrations (tracked in
 # _prisma_migrations) and is a no-op when the DB is already current.
 #
-# CNPG auto-renders `business-manager-db-app` with host/port/user/password/
+# CNPG auto-renders `business-manager-ecodb` with host/port/user/password/
 # dbname/uri/jdbc-uri/pgpass. Prisma wants a single connection string, so
 # DATABASE_URL is fed from the `uri` key.
 #
@@ -55,7 +55,7 @@ spec:
             - sh
             - -c
             - |
-              until pg_isready -h business-manager-db-rw.business-manager.svc.cluster.local -p 5432 -U business_manager -d business_manager -t 3; do
+              until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U business_manager -d business_manager -t 3; do
                 echo "waiting for business-manager-db..."
                 sleep 2
               done
@@ -83,7 +83,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: business-manager-db-app
+                  name: business-manager-ecodb
                   key: uri
             # Prisma's migration engine writes to a temp dir.
             - name: TMPDIR

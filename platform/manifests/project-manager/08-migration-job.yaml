@@ -6,7 +6,7 @@
 # Re-runs are safe — migrate.ts is idempotent (records applied versions in
 # a schema_migrations table; re-applying a migration is a no-op).
 #
-# CNPG auto-renders the `project-manager-db-app` Secret with:
+# CNPG auto-renders the `project-manager-ecodb` Secret with:
 #   - username, password, dbname, host, port, jdbc-uri, uri, pgpass
 # We feed DATABASE_URL from the `uri` key directly.
 
@@ -57,7 +57,7 @@ spec:
             - sh
             - -c
             - |
-              until pg_isready -h project-manager-db-rw.project-manager.svc.cluster.local -p 5432 -U project_manager -d project_manager -t 3; do
+              until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U project_manager -d project_manager -t 3; do
                 echo "waiting for project-manager-db..."
                 sleep 2
               done
@@ -80,7 +80,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: project-manager-db-app
+                  name: project-manager-ecodb
                   key: uri
           securityContext:
             allowPrivilegeEscalation: false

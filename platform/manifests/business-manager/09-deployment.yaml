@@ -134,7 +134,7 @@ spec:
             - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
             - { name: ONLYOFFICE_CALLBACK_BASE, value: "http://business-manager.business-manager.svc.cluster.local" }
             # CNPG-rendered DB connection string.
-            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: business-manager-db-app, key: uri } } }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: business-manager-ecodb, key: uri } } }
           envFrom:
             # OIDC_CLIENT_SECRET, OIDC_CLIENT_SECRET_TENANTS, SESSION_KEY,
             # SAM_GOV_API_KEY (VSO → 04-vso-bindings.yaml).

@@ -195,20 +195,20 @@ spec:
             - { name: WORKFLOW_GATES_ENABLED, value: "true" }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
-            # CNPG-rendered DB credentials. The member-hub-db-app Secret has
+            # CNPG-rendered DB credentials. The member-hub-ecodb Secret has
             # discrete fields per CNPG convention; config.ts wants them
             # as discrete env vars rather than a single URL.
-            - { name: PGHOST, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: host } } }
-            - { name: PGPORT, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: port } } }
-            - { name: PGUSER, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: username } } }
-            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: password } } }
-            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: dbname } } }
+            - { name: PGHOST, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: host } } }
+            - { name: PGPORT, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: port } } }
+            - { name: PGUSER, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: username } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: password } } }
+            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: dbname } } }
             # Member Hub's env validator requires DATABASE_URL specifically
             # (Control composes its own from PG* vars; member-hub doesn't).
             # CNPG renders the full postgresql:// URI in the `uri` field of
-            # member-hub-db-app. The URI's password segment will rotate with
+            # member-hub-ecodb. The URI's password segment will rotate with
             # CNPG password rotation, picked up on next pod restart.
-            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: member-hub-db-app, key: uri } } }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: member-hub-ecodb, key: uri } } }
             # OTLP exporter (Wazuh / Tempo collection point). Service is named
             # `otel-collector` (the pod label is `opentelemetry-collector`); the
             # earlier value used the pod-label name and silently failed at DNS.

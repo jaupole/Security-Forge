@@ -146,7 +146,7 @@ spec:
                 - sh
                 - -c
                 - |
-                  until pg_isready -h member-hub-db-rw.member-hub.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
                     echo "waiting for member-hub-db-rw..."
                     sleep 2
                   done
@@ -197,13 +197,13 @@ spec:
                 - name: OPENBAO_ADDR
                   value: https://openbao.openbao.svc.cluster.local:8200
                 - name: PGHOST
-                  value: member-hub-db-rw.member-hub.svc.cluster.local
+                  value: ecosystem-db-rw.ecosystem-db.svc.cluster.local
                 - name: PGDATABASE
                   value: member_hub
                 - name: PGUSER
                   valueFrom:
                     secretKeyRef:
-                      name: member-hub-db-app
+                      name: member-hub-ecodb
                       key: username
                 # Node trusts the OpenBao internal CA via this env (read
                 # at process startup, before any TLS). The CA cert lives
@@ -242,7 +242,7 @@ spec:
                 name: openbao-internal-ca-cert
             - name: db-creds
               secret:
-                secretName: member-hub-db-app
+                secretName: member-hub-ecodb
                 items:
                   - key: password
                     path: password
