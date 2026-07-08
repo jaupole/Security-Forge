@@ -35,11 +35,14 @@ literal `${STORAGE_CLASS}`).
 > connections, RLS `SET ROLE`; control also runs the FORCE-RLS posture gate —
 > `verify-control-force-rls-posture.sql` PASSED against a logical restore).
 >
-> **`<app>-ecodb` Secrets are LIVE hand-created k8s objects (not in git)** — same
-> posture as CNPG's own `<cluster>-db-app`. DR-reproduction (recreate from OpenBao/
-> VSO) is a deferred follow-up; until then they must be recreated by hand on a
-> cluster rebuild. **The `<cluster>-db-app` Secrets + old clusters remain until
-> decommission — rollback = repoint env refs back + scale.**
+> **`<app>-ecodb` Secrets are now VSO-managed (DR-durable) as of 2026-07-08.** They
+> began as LIVE hand-created k8s objects; the DR gap (plaintext app-role passwords
+> lived nowhere durable — DB backups carry only SCRAM *hashes*) is now CLOSED: the 6
+> conn fields for each app live in OpenBao at `apps/<app>/ecodb`, and a
+> `<app>-ecodb-vso` VaultStaticSecret renders each `<app>-ecodb` Secret (VSO adopted
+> the existing objects via `overwrite:true`, byte-identical — zero serving impact).
+> See §"ecodb connection secrets (DR)" below. **The `<cluster>-db-app` Secrets + old
+> clusters still remain until decommission — rollback = repoint env refs back + scale.**
 
 > ## ⚠️ TWO HUMAN GATES — do not automate past these
 > - **GATE A — OpenBao break-glass day.** The root token is dead; only the operator
@@ -214,6 +217,39 @@ Delete the old `<app>` Cluster + PVCs + its ScheduledBackup + ObjectStore; keep
 the final MinIO backup 90 days. Keep each `platform/manifests/<app>/02-cnpg-cluster.yaml`
 in the repo **marked retired** (multi-box escape hatch). Free the app namespaces'
 db-pod resource requests in their ResourceQuotas.
+
+## ecodb connection secrets (DR)
+
+Each app connects to `ecosystem-db` via a `<app>-ecodb` k8s Secret (keys:
+`host port username password dbname uri`) referenced by its deployment, migration
+Job, and cronjob env. These are **VSO-managed** (since 2026-07-08): the plaintext
+values live durably in OpenBao at `secret/data/apps/<app>/ecodb`, and a
+`<app>-ecodb-vso` VaultStaticSecret (`platform/manifests/<app>/04-vso-bindings.yaml`)
+renders them. This closes the DR gap — CNPG base backups carry only SCRAM password
+*hashes*, so without this the app-role plaintext passwords would exist nowhere
+recoverable.
+
+Authorization: control/member-hub/proposal-forge/business-manager read via the
+shared `vso` policy's `apps/<app>/+` wildcard (no policy edit needed);
+project-manager rides the dedicated `project-manager` policy, which carries an
+explicit `apps/project-manager/ecodb` grant (added 2026-07-08).
+
+**Populate on a break-glass day** (mint `admin-break-glass`, see
+`openbao-recovery.md`), for each app:
+
+```bash
+# read the 6 values from the LIVE secret, write them to OpenBao (values never
+# leave the node). $BG = a break-glass admin token.
+bao kv put secret/apps/<app>/ecodb \
+  host=<h> port=<p> username=<u> password=<pw> dbname=<d> uri=<uri>
+```
+
+The VaultStaticSecret then renders `<app>-ecodb` automatically (`overwrite:true`
+lets it adopt a pre-existing hand-made Secret byte-identically). **DR rebuild:**
+restore `ecosystem-db` from backup (roles+data, incl. SCRAM hashes), then VSO
+re-renders every `<app>-ecodb` from OpenBao — no manual secret reconstruction.
+Rotating an app-role password = `ALTER ROLE` on the cluster + update the OpenBao
+blob; VSO re-syncs within `refreshAfter` (1h) or on `kubectl delete secret`.
 
 ## Ongoing operations
 

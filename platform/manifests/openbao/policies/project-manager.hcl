@@ -35,6 +35,20 @@ path "secret/metadata/apps/project-manager/ghcr-pull" {
   capabilities = ["read"]
 }
 
+# ecosystem-db consolidated-cluster connection secret (DB-unification P5).
+# Renders `project-manager-ecodb` (host/port/username/password/dbname/uri for
+# the project_manager role on the shared ecosystem-db CNPG cluster) via the
+# project-manager-ecodb-vso VaultStaticSecret (04-vso-bindings.yaml). The other
+# 4 apps get the equivalent grant from the shared `vso` policy's apps/<app>/+
+# wildcard; PM rides this dedicated policy, so the grant is enumerated here.
+# Added to the LIVE policy on the 2026-07-08 P5 break-glass day.
+path "secret/data/apps/project-manager/ecodb" {
+  capabilities = ["read"]
+}
+path "secret/metadata/apps/project-manager/ecodb" {
+  capabilities = ["read"]
+}
+
 # barman-cloud → MinIO credentials for the project-manager-db CNPG cluster's
 # WAL archiving + base backups. Shared path across all CNPG clusters.
 path "secret/data/minio/cnpg/credentials" {
