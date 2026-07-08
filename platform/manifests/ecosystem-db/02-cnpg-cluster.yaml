@@ -1,0 +1,84 @@
+# Consolidated Postgres cluster for the 5 ecosystem apps (DB-unification P5).
+#
+# ONE cluster, FIVE databases (control, member_hub, proposal_forge,
+# business_manager, project_manager). ~71 MB total at capture (control 16 / MH 14
+# / PF 13 / BM 16 / PM 12) — 20Gi is ample headroom.
+#
+# ─── ROLES + DATABASES + DATA are NOT bootstrapped here ──────────────────────
+# They are loaded at CUTOVER from each app's LIVE cluster, per-app, one at a time
+# (see docs/03-runbooks/ecosystem-db-operations.md §Cutover):
+#   1. `pg_dumpall --roles-only` from each `<ns>-db-1` pod, filtered to that app's
+#      roles (drop postgres/streaming_replica/cnpg_metrics_exporter) — applied up
+#      front. This reproduces the EXACT live role posture AND the SCRAM password
+#      hashes, so only the DATABASE_URL *host* changes at cutover. The live matrix
+#      (reproduce exactly, re-verify at cutover):
+#        control  : control, control_migrator, control_owner(NOLOGIN), control_reader  — all NOBYPASSRLS
+#        member-hub: member_hub(BYPASSRLS), member_hub_app(NOLOGIN), audit_verifier    — BYPASSRLS owner is REQUIRED (SECURITY DEFINER posture); do not "fix"
+#        proposal-forge / business-manager: single login role, NOBYPASSRLS (FORCE RLS binds it)
+#        project-manager: project_manager(BYPASSRLS), project_manager_app(NOLOGIN)
+#   2. `pg_dump -Fc <app-db>` → `pg_restore` into the matching database here.
+# initdb below creates only a neutral management database so the cluster reaches
+# Ready; nothing app-facing depends on it.
+#
+# Migrations continue to run per-app via each app's migration Job (now the shared
+# @jaupole/ecosystem-db runner) against its own database on this cluster.
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ecosystem-db
+  namespace: ecosystem-db
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/edition: prod
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+  smartShutdownTimeout: 10          # single-instance: fast-shutdown so an imageName roll can't hang on the app connection pools
+  primaryUpdateStrategy: unsupervised
+
+  # In-pod `postgres` peer superuser stays available for the cutover pg_restore
+  # + role bootstrap (kubectl exec … psql -U postgres); external password
+  # superuser access is disabled, same as every app cluster.
+  enableSuperuserAccess: false
+
+  storage:
+    size: 20Gi
+    storageClass: ${STORAGE_CLASS}
+
+  bootstrap:
+    initdb:
+      # Neutral management database (NOT an app DB). The 5 app databases are
+      # restored at cutover (see header). C locale + UTF8 mirrors the app clusters.
+      database: ecosystem_db
+      owner: ecosystem_db
+      encoding: UTF8
+      localeCollate: C
+      localeCType: C
+
+  postgresql:
+    # Tuned ONCE for the consolidated cluster instead of five times. Kept close
+    # to the app-cluster defaults; scale shared_buffers/max_connections here (the
+    # single place) if the combined load profile warrants it post-cutover.
+    parameters:
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+      max_connections: "200"          # 5 apps' pools + migration Jobs on one instance
+
+  resources:
+    # Sized for 5 small DBs on one instance (was 256Mi/1Gi per app cluster ×5).
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: 2,    memory: 2Gi }
+
+  monitoring:
+    enablePodMonitor: false
+
+  # WAL archiving + base backups to MinIO via barman-cloud plugin. ObjectStore CR
+  # in 06-objectstore.yaml; ScheduledBackup in 07-cnpg-scheduled-backup.yaml.
+  # barmanObjectName is REQUIRED — links the cluster to the ObjectStore by name.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      enabled: true
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: minio-backup
