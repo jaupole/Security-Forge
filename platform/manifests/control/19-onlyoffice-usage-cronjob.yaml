@@ -94,7 +94,7 @@ spec:
                 - sh
                 - -c
                 - |
-                  until pg_isready -h control-db-rw.control.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U control -d control -t 3; do
                     echo "waiting for control-db..."
                     sleep 2
                   done
@@ -128,12 +128,12 @@ spec:
                 # ONLYOFFICE_JWT_SECRET) — never as a named env var, which the
                 # Kyverno no-secret-shaped-env-vars policy (ADR-0013) rejects.
                 - { name: ONLYOFFICE_INTERNAL_URL, value: "http://onlyoffice.onlyoffice.svc.cluster.local" }
-                # Runtime `control` role (control-db-app).
-                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
-                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
-                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
-                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
-                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+                # Runtime `control` role (control-ecodb).
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
                 - secretRef:
                     name: control-app-secrets

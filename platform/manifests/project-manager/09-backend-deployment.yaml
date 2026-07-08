@@ -100,7 +100,7 @@ spec:
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. Feed DATABASE_URL from the `uri` key.
-            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: project-manager-db-app, key: uri } } }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: project-manager-ecodb, key: uri } } }
             - { name: PGSSLMODE, value: "require" }
             # OTLP exporter.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability.svc.cluster.local:4318" }

@@ -171,14 +171,14 @@ spec:
             - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
             # SpiceDB — in-cluster Service.
             - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
-            # CNPG-rendered DB credentials. The control-db-app Secret has
+            # CNPG-rendered DB credentials. The control-ecodb Secret has
             # discrete fields per CNPG convention; config.ts wants them
             # as discrete env vars rather than a single URL.
-            - { name: PGHOST, valueFrom: { secretKeyRef: { name: control-db-app, key: host } } }
-            - { name: PGPORT, valueFrom: { secretKeyRef: { name: control-db-app, key: port } } }
-            - { name: PGUSER, valueFrom: { secretKeyRef: { name: control-db-app, key: username } } }
-            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-db-app, key: password } } }
-            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-db-app, key: dbname } } }
+            - { name: PGHOST, valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+            - { name: PGPORT, valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+            - { name: PGUSER, valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+            - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
             # NOTE: the cross-org READ role (control_reader, withExemptRead,
             # FORCE-RLS audit EC-003) is NOT injected via env — db-exempt.ts
             # fetches its credentials from OpenBao at runtime (ADR-0013), using
