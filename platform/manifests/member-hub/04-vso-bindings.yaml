@@ -262,3 +262,33 @@ spec:
       templates:
         ONLYOFFICE_JWT_SECRET:
           text: '{{ .Secrets.jwt_secret }}'
+
+---
+# ecosystem-db consolidated-cluster connection secret (DB-unification P5).
+# Renders `member-hub-ecodb` (host/port/username/password/dbname/uri for this app's
+# role on the shared ecosystem-db CNPG cluster) from OpenBao apps/member-hub/ecodb.
+# The deployment + migration Job + cronjobs reference `member-hub-ecodb` (SF#152).
+# overwrite:true because this VSS ADOPTED the pre-existing hand-made secret at
+# the P5 break-glass cutover (2026-07-08); VSO now owns + self-heals it.
+# Populate the OpenBao path on a break-glass day — see
+# docs/03-runbooks/ecosystem-db-operations.md §"ecodb connection secrets (DR)".
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: member-hub-ecodb-vso
+  namespace: member-hub
+  labels:
+    secforge.platform/component: ecosystem-db
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: member-hub-vso
+  mount: secret
+  type: kv-v2
+  path: apps/member-hub/ecodb
+  refreshAfter: 1h
+  hmacSecretData: true
+  destination:
+    name: member-hub-ecodb
+    create: true
+    overwrite: true
+    type: Opaque
