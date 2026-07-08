@@ -53,6 +53,22 @@ pattern (already allow-listed in the MinIO cross-ns netpol; see
 backup of an existing app cluster into `verify-restore`, confirm it reaches Ready
 and a table row count matches, then tear it down. **Show the operator the result.**
 
+> **✓ RUN 2026-07-08 — PASSED.** `09i-control-restore-drill.sh` restored
+> `control-db-daily-20260708024500` into `verify-restore` (healthy in 120s); the
+> FORCE-RLS posture gate passed every assertion (36 FORCE'd control_owner RLS
+> tables, 35 org_isolation + 13 exempt_read policies, `control` non-bypassrls sees
+> 0 sentinel rows, `control_reader` cross-org read), then auto-torn-down. Backups
+> restore + the FORCE-RLS posture survives (rule 41). This satisfies the P5 precond.
+>
+> **Barman-plugin note (flagged at the drill):** CNPG warns that
+> `externalClusters.barmanObjectStore` (the recovery syntax in the app clusters
+> and 09i) is deprecated and removed in CNPG 1.30. The ecosystem-db **backups**
+> already use the new barman-cloud **plugin** (06-objectstore.yaml + the cluster's
+> `plugins:` block), but a full-DR **recovery** of ecosystem-db would still use the
+> deprecated `externalClusters.barmanObjectStore` block. Migrate the recovery path
+> to the plugin's recovery mechanism before CNPG 1.30 (fleet-wide item, not a P5
+> blocker — the cutover DATA move below is logical pg_dump/pg_restore, unaffected).
+
 ## Phase 2 — GATE A: the OpenBao break-glass day
 
 Order matters. Do ALL of this on the one break-glass day:
