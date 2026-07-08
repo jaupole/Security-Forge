@@ -1,0 +1,19 @@
+{
+  "app": "<app_snake_case>",
+  "guc": "app.org_id",
+  "runtime_role": "<app>_app",
+  "_note": "DB-unification D9 / data-standards §6. The harness (platform/scripts/db-conformance.{sql,sh}) checks the LIVE schema against this file: every org_scoped table must have org_id + FORCE RLS + an org_isolation policy on the app.org_id GUC. runtime_role is the role the app connects as — set it to your single login role if you have no SET-ROLE split (proposal_forge/business_manager pattern), or the NOLOGIN <app>_app role if you do (member_hub/project_manager). append_only and rls_exempt entries document intentional deviations so the harness does not flag them.",
+  "org_scoped": [
+    "core_people",
+    "core_clients",
+    "core_engagements"
+  ],
+  "append_only": [
+    "COMMENT: list audit/event tables here — they have per-command policies + universal-false UPDATE/DELETE instead of a plain org_isolation policy"
+  ],
+  "rls_exempt": [
+    "core_sync_cursor",
+    "schema_migrations"
+  ],
+  "_rls_exempt_note": "Non-tenant infrastructure tables (app-global cursors, migration bookkeeping, cross-org worker/outbox tables reachable only via SECURITY DEFINER). Each MUST be a deliberate, listed exemption — silent ones are exactly what the harness catches."
+}

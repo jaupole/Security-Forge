@@ -185,6 +185,23 @@ Run the full guardrail suite against the new app:
 
 Expected: all 9 scripts PASS.
 
+## Data plane (DB / RLS / canonical core)
+
+If the app has a database, use the [`templates/app-repo/db/`](../../templates/app-repo/db/)
+starter — it encodes the fleet DB decisions so the app is conformant on day one (ADRs
+[0029](../02-decisions/0029-per-app-database-strategy.md)/[0041](../02-decisions/0041-canonical-core-data-spine.md)/[0042](../02-decisions/0042-rls-guc-standard-app-org-id.md)/[0043](../02-decisions/0043-ecosystem-db-shared-package.md)/[0044](../02-decisions/0044-physical-db-consolidation.md)).
+
+- [ ] Adopt `@jaupole/ecosystem-db`'s `/migrate` runner (thin `src/db/migrate.ts` wrapper).
+- [ ] Every org-scoped table gets the `db/rls-template.sql` shape (FORCE RLS, `app.org_id` GUC).
+- [ ] Apply `db/core-projections.sql`; wire `db/core-sync.stub.ts` (reference: PM's
+      `src/lib/core-sync.ts`); register the app as a `core-export` consumer with Control.
+- [ ] Fill `db/conformance-manifest.json`; add `db/harness-ci.snippet.yml` to the build workflow.
+- [ ] **Operator**: add the database to the consolidated cluster — see
+      [ecosystem-db-operations.md](./ecosystem-db-operations.md) §"Add a database for a new app"
+      (create DB + role, `allow-ingress-from-apps` netpol, app-side egress netpol, point
+      `DATABASE_URL` at `ecosystem-db-rw`; make the app's `<app>-ecodb` secret OpenBao-backed +
+      VSO-rendered per ADR-0044).
+
 ## Operator-time prerequisites that aren't in the templates
 
 The templates cover the developer-facing layers. Before the app can be
@@ -203,3 +220,5 @@ deployed in-cluster, the operator also needs to:
 - [secrets-guardrails-verification.md](./secrets-guardrails-verification.md) — verify suite
 - [migrate-env-to-openbao.md](./migrate-env-to-openbao.md) — for apps coming from a `.env` past
 - [`templates/app-repo/`](../../templates/app-repo/) — the templates themselves
+- [`templates/app-repo/db/`](../../templates/app-repo/db/) — the DB / RLS / canonical-core starter
+- [ecosystem-db-operations.md](./ecosystem-db-operations.md) — the consolidated DB cluster (ADR-0044)
