@@ -68,7 +68,7 @@ spec:
   resources:
     # Sized for 5 small DBs on one instance (was 256Mi/1Gi per app cluster ×5).
     requests: { cpu: 200m, memory: 512Mi }
-    limits:   { cpu: 2,    memory: 2Gi }
+    limits:   { cpu: "2",  memory: 2Gi }  # quoted: CNPG webhook stores Quantity as string; unquoted int shows as eternal kubectl-diff drift
 
   monitoring:
     enablePodMonitor: false
