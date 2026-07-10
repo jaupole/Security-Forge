@@ -244,8 +244,8 @@ prometheus-node-exporter:
       cpu: 10m
       memory: 32Mi
     limits:
-      cpu: 200m            # was 100m: CPUThrottlingHigh showed 67% throttling
-      memory: 64Mi         # of the metrics source since 2026-06-05 (debug-6)
+      cpu: 1               # 100m→200m (2026-06-05) still throttled 24/7; give burst headroom
+      memory: 128Mi        # 64Mi tripped ContainerMemoryNearLimit (>85%) on 2026-07-10
 
   extraArgs:
     # Read host textfile collector written by /usr/local/sbin/mount-count-exporter.sh
