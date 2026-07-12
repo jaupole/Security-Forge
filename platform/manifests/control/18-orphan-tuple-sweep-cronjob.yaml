@@ -88,7 +88,7 @@ spec:
             - name: sweep
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:780cb423386d0ac9fac93cf656141f1c7d05ae029e3fc8c78ef13ea12f6ea08d
+              image: ghcr.io/jaupole/control@sha256:28800cb84519f1693c4f5c787fcc76c344c8f9fc5f388227fda83609baf7040b
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "spicedb:sweep-orphan-org-tuples", "--apply"]
               env:
