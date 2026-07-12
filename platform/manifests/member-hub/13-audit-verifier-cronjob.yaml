@@ -165,6 +165,14 @@ spec:
                       key: password
                 - name: VERIFY_BATCH
                   value: "5000"
+                # MH-06: arm enforcement — on a real per-org chain mismatch the
+                # verifier sets audit.tamper_flag, which lib/audit.ts record()
+                # reads to refuse further audit writes until an operator clears
+                # it. Armed 2026-07-12 after a dry-run window confirmed
+                # `status: ok` (570/570) on prod. Set to "false" to revert to
+                # log-only dry-run.
+                - name: AUDIT_VERIFY_ENFORCE
+                  value: "true"
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
