@@ -1,0 +1,123 @@
+# Daily CronJob that purges idempotency_keys rows older than the 48h
+# retry window (CTRL-10, app-optimization Phase 3 / Binding Resolution R8).
+# migration 021 created the table with a comment-promise of this cleanup
+# that was never built, so the table grew forever and permanently retained
+# full response bodies (PII: member emails, invitation payloads). The purge
+# is a bounded, batched, idempotent DELETE (src/cli/idempotency-purge.ts).
+#
+# Same image + DB env as the API Deployment — only the CLI entrypoint
+# differs ("idempotency:purge"). When the backend deployment image digest
+# is bumped, this manifest is bumped in lockstep by deploy-app.sh (its sed
+# rewrites every ghcr.io/jaupole/control@sha256 pin under this dir).
+#
+# idempotency_keys is NOT org-scoped and carries no RLS policy, so the CLI
+# reaches it via apiPool directly (same as the idempotency middleware).
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-idempotency-purge
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+    secforge.platform/role: idempotency-purge
+spec:
+  # Daily at 03:37 UTC. Off the round-hour to avoid the :00 noise band; a
+  # quiet hour since the 48h retention window makes exact timing immaterial.
+  schedule: "37 3 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: control
+            secforge.platform/component: control
+            secforge.platform/role: idempotency-purge
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: purge
+              # Digest-pinned. Same image as the backend Deployment.
+              # Bump in lockstep with 09-backend-deployment.yaml.
+              image: ghcr.io/jaupole/control@sha256:652186b0bb2c0c1806240f41dfb55c43bae62506f52396d7653b825d505a61fc
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "idempotency:purge"]
+              env:
+                - { name: NODE_ENV,                         value: production }
+                - { name: API_PORT,                         value: "4000" }
+                - { name: API_HOST,                         value: "0.0.0.0" }
+                - { name: TRUST_PROXY,                      value: "1" }
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                # Internal CA for any client the CLI loads on import (mirrors
+                # the backend Deployment / signup-cleanup CronJob).
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
+                - { name: KEYCLOAK_REALM,                   value: platform }
+                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                - { name: KEYCLOAK_TENANTS_REALM,           value: secforge-tenants }
+                - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
+                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
+              envFrom:
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
