@@ -279,7 +279,7 @@ a fresh per-app cluster:
 1. Rename `platform/manifests/<app>/{02-cnpg-cluster,06-objectstore,07-cnpg-scheduled-backup}.yaml.retired`
    back to `.yaml` and add a `bootstrap.recovery` section pointing at the final
    backup in `s3://backups/cnpg/<app>` (final on-demand backup `<app>-db-final-sf155`,
-   taken 2026-07-13, kept ≥90 days — delete manually after 2026-10-11).
+   taken 2026-07-13, auto-expires via MinIO ILM 90 days after creation ≈ 2026-10-11 — see the ILM rules in platform/manifests/minio/02-bucket-bootstrap-job.yaml).
 2. `apply-manifest.sh` the three files; wait for recovery to complete.
 3. Repoint the app back: `DATABASE_URL`/`PGHOST` env → `<app>-db-rw.<ns>.svc` (the
    `<app>-ecodb` VSO Secrets keep rendering; the env source is what you change).
