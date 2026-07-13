@@ -166,6 +166,28 @@ spec:
               mc version enable local/proposal-forge-files
               mc encrypt set sse-s3 local/proposal-forge-files
 
+              # ---- backups bucket lifecycle (SF#162) ----------------------
+              # The bucket is versioned, so barman/velero deletes only write
+              # delete markers — noncurrent versions otherwise accumulate
+              # forever. Bucket-wide: reclaim noncurrent versions 30 days
+              # after they become noncurrent (keeps the accidental-delete
+              # recovery window versioning exists for) and drop expired
+              # delete markers. Per retired-CNPG prefix (SF#155 decommission,
+              # 2026-07-13): expire current versions 90 days after creation —
+              # the final <app>-db-final-sf155 backups age out 2026-10-11 —
+              # and purge their noncurrent versions after 1 day. ILM deletes
+              # by metadata, so it also cleans versions encrypted with the
+              # retired KMS key that mc cannot list.  errors
+              # on a duplicate rule definition —  keeps re-runs
+              # idempotent (mc has no rule upsert).
+              mc ilm rule add --noncurrent-expire-days 30 local/backups 2>/dev/null || true
+              mc ilm rule add --expire-delete-marker local/backups 2>/dev/null || true
+              for app in control member-hub proposal-forge business-manager project-manager; do
+                mc ilm rule add --prefix "cnpg/${app}/" --expire-days 90 --noncurrent-expire-days 1 local/backups 2>/dev/null || true
+              done
+              echo "--- backups ilm ---"
+              mc ilm rule ls local/backups || true
+
               echo "--- buckets ---"
               mc ls local/
               echo "Bootstrap complete."
