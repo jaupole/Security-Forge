@@ -41,8 +41,9 @@ literal `${STORAGE_CLASS}`).
 > conn fields for each app live in OpenBao at `apps/<app>/ecodb`, and a
 > `<app>-ecodb-vso` VaultStaticSecret renders each `<app>-ecodb` Secret (VSO adopted
 > the existing objects via `overwrite:true`, byte-identical — zero serving impact).
-> See §"ecodb connection secrets (DR)" below. **The `<cluster>-db-app` Secrets + old
-> clusters still remain until decommission — rollback = repoint env refs back + scale.**
+> See §"ecodb connection secrets (DR)" below. **DECOMMISSIONED 2026-07-13 (SF#155):
+> the 5 old per-app clusters + their `<cluster>-db-app` Secrets are deleted. Rollback
+> is now restore-from-backup only — see §Rollback.**
 
 > ## ⚠️ TWO HUMAN GATES — do not automate past these
 > - **GATE A — OpenBao break-glass day.** The root token is dead; only the operator
@@ -271,6 +272,19 @@ blob; VSO re-syncs within `refreshAfter` (1h) or on `kubectl delete secret`.
 
 ## Rollback
 
-Old clusters are untouched until Phase 4. Rollback = repoint `DATABASE_URL` back
-to `<app>-db-rw.<ns>.svc` + scale up. After the Phase-4 deletes, rollback = restore
-from MinIO into a fresh per-app cluster (the retired manifests are still in git).
+**Phase 4 executed 2026-07-13 (SF#155) — the old per-app clusters are GONE.** The
+repoint-env-refs-back path no longer exists. Rollback now means restoring data into
+a fresh per-app cluster:
+
+1. Rename `platform/manifests/<app>/{02-cnpg-cluster,06-objectstore,07-cnpg-scheduled-backup}.yaml.retired`
+   back to `.yaml` and add a `bootstrap.recovery` section pointing at the final
+   backup in `s3://backups/cnpg/<app>` (final on-demand backup `<app>-db-final-sf155`,
+   taken 2026-07-13, kept ≥90 days — delete manually after 2026-10-11).
+2. `apply-manifest.sh` the three files; wait for recovery to complete.
+3. Repoint the app back: `DATABASE_URL`/`PGHOST` env → `<app>-db-rw.<ns>.svc` (the
+   `<app>-ecodb` VSO Secrets keep rendering; the env source is what you change).
+4. Note the MinIO backups only cover data up to the 2026-07-08 cutover — anything
+   written to `ecosystem-db` since must be migrated separately (it is the live truth).
+
+For `ecosystem-db` itself, rollback = PITR/restore from
+`s3://backups/cnpg/ecosystem-db` per §Restore drill.

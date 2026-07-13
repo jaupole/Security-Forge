@@ -1,3 +1,8 @@
+# RETIRED 2026-07-13 (SF#155) — decommissioned after DB-unification P5 (ADR-0044).
+# App now runs on the consolidated ecosystem-db cluster. This manifest is the
+# multi-box escape hatch: to resurrect, rename back to .yaml and restore data
+# from the final MinIO backup (s3://backups/cnpg/control, kept ≥90 days from
+# 2026-07-13). The .retired suffix keeps it out of drift-check + apply globs.
 # Postgres cluster for the control-plane API.
 #
 # Migrations 001-021 (incl. RLS at 019, audit-log hash chain at 020,
