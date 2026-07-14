@@ -42,6 +42,15 @@ Short, append-only documents that record *why* we chose one approach over anothe
 | [0034](./0034-stripe-connect-oauth-for-tenant-payments.md) | Stripe Connect (OAuth, Standard accounts) for tenant payments — replaces bring-your-own-keys | Accepted (strategy) — implementation phased |
 | [0035](./0035-tailscale-replaces-teleport.md) | Tailscale replaces Teleport for operator access | Accepted (supersedes 0024) |
 | [0036](./0036-production-authentication-factors-passkeys.md) | Production authentication factors — passkeys (mandatory for operators, flexible for tenants) | Accepted (supersedes 0007 posture) |
+| [0037](./0037-dedicated-document-rendering-service.md) | Dedicated document-rendering service (Gotenberg) | Accepted |
+| [0038](./0038-ecosystem-block-document-framework.md) | Ecosystem block-document framework (web · email · PDF · dashboards) | Accepted |
+| [0039](./0039-rootless-docker-for-ci-runners.md) | Rootless Docker for the self-hosted CI runners | Accepted |
+| [0040](./0040-fleet-ci-reusable-build-and-sudoers-gated-deploy.md) | Fleet CI/CD — reusable build workflow + sudoers-gated one-command deploys | Accepted |
+| [0041](./0041-canonical-core-data-spine.md) | Canonical Core Data Spine — People, Clients, Engagements | Accepted |
+| [0042](./0042-rls-guc-standard-app-org-id.md) | Fleet RLS session-context standard — `app.org_id` / `app.user_id` | Accepted |
+| [0043](./0043-ecosystem-db-shared-package.md) | `@jaupole/ecosystem-db` — shared migration runner, outbox, numbering | Accepted |
+| [0044](./0044-physical-db-consolidation.md) | Physical DB consolidation — one `ecosystem-db` cluster, five databases | Accepted |
+| [0045](./0045-csp-inline-styles-accepted.md) | Inline-styles CSP keyword accepted fleet-wide (rule-18 deviation) | Accepted |
 
 ## Template
 
