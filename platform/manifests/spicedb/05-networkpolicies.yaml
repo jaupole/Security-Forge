@@ -49,6 +49,8 @@ spec:
       ports:
         - protocol: TCP
           port: 50053
+        - protocol: TCP
+          port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Allow spicedb-operator (separate ns) → SpiceDB pod (health checks,
@@ -75,6 +77,8 @@ spec:
       ports:
         - protocol: TCP
           port: 50051
+        - protocol: TCP
+          port: 15008   # ambient HBONE (spicedb-operator enrolled, 7c-2)
         - protocol: TCP
           port: 8080
         - protocol: TCP
@@ -108,6 +112,8 @@ spec:
       ports:
         - protocol: TCP
           port: 50051
+        - protocol: TCP
+          port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Allow Phase 7 Prometheus → SpiceDB metrics.
@@ -133,6 +139,8 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+        - protocol: TCP
+          port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Allow Postgres ingress from SpiceDB and from the postgres-operator
@@ -168,6 +176,8 @@ spec:
           port: 5432
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Egress for SpiceDB pods.
@@ -204,6 +214,8 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        - protocol: TCP
+          port: 15008   # ambient HBONE (7c-2 enrollment sweep)
     # Self-dispatch (SpiceDB → its own Service:dispatch on 50053).
     - to:
         - podSelector:

@@ -1,25 +1,80 @@
-# Mesh-wide PeerAuthentication.
+# Mesh-wide PeerAuthentication — STRICT (Phase 7c-2, executed 2026-07-14).
 #
-# Phase 6 (current): PERMISSIVE.
-#   Reason — non-mesh callers still exist and legitimately need to reach
-#   ambient-labeled pods:
-#     - ingress-nginx (in ingress-nginx ns, not in the mesh) routes
-#       external HTTPS traffic to BFF / app pods.
-#     - openbao (openbao ns, not in the mesh) opens connections to in-mesh
-#       services (e.g., for dynamic Postgres credential minting).
-#     - kube probes (kubelet, on the host network) hit pod IPs directly.
-#   PERMISSIVE accepts mTLS when present (mesh peers) and plaintext when the
-#   source has no SVID (non-mesh peers). It is NOT "no mTLS"; it is "mTLS
-#   preferred, plaintext tolerated for migration."
+# History: PERMISSIVE from Phase 6 until 7c-2. The migration-era non-mesh
+# callers (ingress-nginx, plaintext openbao→mesh, per-app DB clusters) are
+# gone: ingress is the istio-ingress gateway (mesh identity), the CNPG
+# operator namespaces (postgres-operator, cnpg-system) and spicedb are
+# ambient-enrolled, and kubelet probes are exempted natively by ambient.
 #
-# Tighten to STRICT once every legitimate caller is mesh-resident or has
-# explicit AuthorizationPolicy ALLOW (Phase 7c-1 in the local edition).
+# STRICT means: every mesh-resident pod REJECTS plaintext inbound. Non-mesh
+# pods (openbao, minio, spire, kyverno, cert-manager, VSO, velero,
+# trivy-system, istio-system itself, kube-system) are unaffected — they are
+# not mesh workloads, and mesh→non-mesh egress stays plaintext-capable.
+#
+# Deliberate NON-enrollments (do not label these ambient without a plan):
+#   - openbao: reaches keycloak via hostAlias→public-gateway; enrolling it
+#     changes its identity path (see #74-3 notes).
+#   - minio:   bulk backup/document traffic through ztunnel OOMs it — the
+#     2026-07-06 wazuh-shipper incident (1.6GiB/s → ztunnel OOM ×3). Enroll
+#     only with a throughput plan.
+#
+# Explicit PERMISSIVE exceptions below, each with its plaintext caller:
+#   - observability: istiod/ztunnel/gateway emit OTLP to otel-collector:4317
+#     from istio-system (non-mesh); kps-operator admission webhook is called
+#     by the kube-apiserver (host network).
+#   - wazuh: host-network wazuh agents (DaemonSet + the host agent) connect
+#     to the manager on 1514/1515/55000 with no mesh identity.
+#   - postgres-operator: STRICT except the cnpg webhook port (9443), called
+#     plaintext-TLS by the kube-apiserver.
+# Tighten any of these by moving its callers into the mesh first.
 
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
   name: default
   namespace: istio-system
+  labels:
+    secforge.platform/component: istio
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: observability
+  labels:
+    secforge.platform/component: istio
 spec:
   mtls:
     mode: PERMISSIVE
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: wazuh
+  labels:
+    secforge.platform/component: istio
+spec:
+  mtls:
+    mode: PERMISSIVE
+---
+# CNPG operator: STRICT namespace default rides istio-system/default; this
+# workload-scoped policy re-opens ONLY the admission-webhook port for the
+# kube-apiserver (host network, no SVID).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: cnpg-webhook-permissive
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: istio
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  portLevelMtls:
+    "9443":
+      mode: PERMISSIVE

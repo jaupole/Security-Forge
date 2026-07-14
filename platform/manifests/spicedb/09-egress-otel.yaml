@@ -21,3 +21,4 @@ spec:
       ports:
         - {port: 4317, protocol: TCP}
         - {port: 4318, protocol: TCP}
+        - {port: 15008, protocol: TCP}   # ambient HBONE (7c-2 enrollment sweep)

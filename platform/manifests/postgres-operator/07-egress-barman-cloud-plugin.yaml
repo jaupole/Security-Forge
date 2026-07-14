@@ -38,3 +38,5 @@ spec:
       ports:
         - port: 9090
           protocol: TCP
+        - port: 15008   # ambient HBONE (7c-2 enrollment sweep)
+          protocol: TCP
