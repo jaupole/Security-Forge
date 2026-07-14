@@ -188,6 +188,16 @@ spec:
               echo "--- backups ilm ---"
               mc ilm rule ls local/backups || true
 
+              # member-hub-documents lifecycle (2026-07-06 KMS-rotation residue):
+              # noncurrent versions sealed under the retired secforge-minio-key
+              # are unreadable (poisoning every --versions operation on the
+              # bucket) and unrecoverable-by-read; ILM deletes by metadata, so
+              # a 30-day noncurrent-version expiry purges them while keeping a
+              # 30-day accidental-delete recovery window for document versions
+              # going forward. Current versions are never touched.
+              mc ilm rule add --noncurrent-expire-days 30 local/member-hub-documents 2>/dev/null || true
+              mc ilm rule add --expire-delete-marker local/member-hub-documents 2>/dev/null || true
+
               echo "--- buckets ---"
               mc ls local/
               echo "Bootstrap complete."
