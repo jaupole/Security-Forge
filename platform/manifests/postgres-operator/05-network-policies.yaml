@@ -99,6 +99,8 @@ spec:
       port: 8000  # cnpg-managed metrics
     - protocol: TCP
       port: 9187  # postgres_exporter
+    - protocol: TCP
+      port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 ---
 apiVersion: networking.k8s.io/v1

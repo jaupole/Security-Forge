@@ -1,6 +1,6 @@
 # ADR-0010: Istio Ambient mode (not sidecar); SPIRE as external CA deferred
 
-**Status**: Accepted (with deferral — see "Deferred: SPIRE as Istio's CA" below)
+**Status**: Accepted — deferral RESOLVED 2026-07-14 (see Amendment 2026-07-14)
 **Date**: 2026-04-29
 **Decision-makers**: Jason Upole
 
@@ -157,3 +157,35 @@ Phase 7c-1 (operator option-A decision) landed a scope-limited slice of the Phas
 - **Still deferred** (now formally tracked as Phase 7c-2 / [operator-backlog #21](../06-reference/operator-backlog.md)): SPIRE-as-Istio-CA cutover, multi-ns ambient enrollment (keycloak, spicedb, openbao, observability), trust-domain unification cluster.local → secforge.local, and rewrite of `app`-ns AuthorizationPolicy `principals` from `cluster.local/...` to `secforge.local/...`.
 
 Status stays "Accepted (with deferral)" — 7c-1 narrows but does not close the deferral. Closing happens at 7c-2 alongside the trust-domain flip. This amendment exists so future readers know which slice landed when.
+
+
+## Amendment 2026-07-14 — Phase 7c-2 executed; SPIRE-as-CA deferral resolved as UPSTREAM-BLOCKED
+
+Phase 7c-2 ran 2026-07-14 (operator-backlog #21). Outcome per scope item:
+
+- **SPIRE as Istio's CA — resolved as NOT EXECUTABLE, upstream-blocked.** Istio's
+  SPIRE integration (istio.io/latest/docs/ops/integrations/spire/) is
+  sidecar-only; this mesh is ambient (ztunnel), which has no supported SPIRE
+  SDS path. The deferral is closed as "will not do under ambient". Re-open
+  only if upstream ships ambient+SPIRE support. Citadel remains the mesh CA;
+  SPIRE continues to serve JWT-SVIDs for app→OpenBao under secforge.platform
+  (the two identity planes stay separate by necessity, not by choice).
+- **Multi-ns ambient enrollment — DONE.** postgres-operator, cnpg-system and
+  spicedb enrolled (keycloak/observability/wazuh/apps were already enrolled by
+  earlier phases). openbao and minio are deliberate non-enrollments (hostAlias
+  identity path / ztunnel bulk-throughput OOM — see peer-auth.yaml comments).
+- **Mesh-wide STRICT — DONE.** istio-system/default PeerAuthentication is
+  STRICT; explicit PERMISSIVE exceptions: observability (istio-system OTLP +
+  kps-operator webhook), wazuh (host-network agents), postgres-operator
+  webhook port 9443 (kube-apiserver). Verified live: all apps readyz 200,
+  full OIDC login path 200, 3/3 CNPG clusters healthy, CNPG webhook admits,
+  on-demand backup completed, wazuh agents Active, zero not-ready pods.
+- **Trust-domain unification cluster.local → secforge.platform — DEFERRED
+  DELIBERATELY.** Without SPIRE-as-CA it only relabels Citadel-minted
+  identities: mesh-wide identity churn + policy dual-listing risk for a
+  naming-consistency win. Revisit alongside any future ambient+SPIRE support.
+  AuthorizationPolicy principals therefore stay `cluster.local/...`.
+- The 7c-1 CNPG PERMISSIVE override and the entire retired
+  `infrastructure/istio/` Local-Edition tree (incl. the stale 7c-2 draft dir,
+  which targeted namespaces that no longer exist) were deleted; the live
+  policy source is `platform/manifests/istio/peer-auth.yaml`.

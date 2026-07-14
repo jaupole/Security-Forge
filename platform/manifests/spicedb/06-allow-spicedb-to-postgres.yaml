@@ -22,6 +22,8 @@ spec:
     ports:
     - protocol: TCP
       port: 5432
+    - protocol: TCP
+      port: 15008   # ambient HBONE (7c-2 enrollment sweep)
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -53,3 +55,5 @@ spec:
       port: 9187
     - protocol: TCP
       port: 9090
+    - protocol: TCP
+      port: 15008   # ambient HBONE (7c-2 enrollment sweep)

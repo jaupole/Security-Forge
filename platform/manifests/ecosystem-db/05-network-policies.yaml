@@ -125,6 +125,7 @@ spec:
         - { protocol: TCP, port: 8000 }
         - { protocol: TCP, port: 9187 }
         - { protocol: TCP, port: 9090 }
+        - { protocol: TCP, port: 15008 }   # ambient HBONE (operator ns enrolled, 7c-2)
 
 ---
 # CNPG pods → MinIO for barman base backups + WAL archiving + retention. Without
