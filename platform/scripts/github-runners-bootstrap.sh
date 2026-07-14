@@ -55,6 +55,8 @@ declare -A REPOS=(
   [member-hub]=member-hub
   [proposal-forge]=proposal-forge
   [business-manager]=business-manager
+  [project-manager]=project-manager
+  [ecosystem-db]=ecosystem-db
 )
 
 # Pinned runner version. Bump deliberately. NOTE: GitHub does NOT force an
