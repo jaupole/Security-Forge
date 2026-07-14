@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # Thin SecForge derivative of the upstream Gotenberg image. Same Gotenberg, but
 # the Debian base + Chromium/LibreOffice dependency closure are apt-upgraded to
@@ -14,7 +14,7 @@
 # Result: ghcr.io/jaupole/gotenberg:<version>-secforge, signed, digest-pinned in
 # 09-deployment.yaml.
 
-ARG GOTENBERG_VERSION=8.33.0
+ARG GOTENBERG_VERSION=8.33.0@sha256:bddd8ea9d076e2d08b6ddaa6efae6403185202c6dab65a6488ed0a6923d6d8e8
 
 # mirror.gcr.io = Google's transparent Docker Hub pull-through cache (identical
 # bytes, no Docker Hub anonymous pull-rate limit on the self-hosted runner —
