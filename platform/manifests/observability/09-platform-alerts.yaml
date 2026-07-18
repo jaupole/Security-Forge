@@ -344,7 +344,7 @@ spec:
                 policy_name=~"verify-image-signature.*",
                 rule_result="fail",
                 policy_validation_mode="enforce"}[15m])
-            ) > 0
+            ) > 1.5
           for: 2m
           labels:
             severity: critical
@@ -353,6 +353,10 @@ spec:
             description: |
               Kyverno ENFORCE policy {{ $labels.policy_name }} recorded {{ $value }} cosign
               verification FAILURE(s) in the last 15m.
+              Threshold >1.5 (2026-07-18): a single isolated verify blip (transient ghcr
+              signature fetch on Kyverno 1h cache refresh; the Job/Pod controller retry
+              self-heals it) no longer pages. >=2 failures in 15m still pages -- a real
+              incident (unsigned image, expired ghcr-pull PAT) fails repeatedly.
               FAILURE SEMANTICS DIFFER BY POLICY (as of 2026-07-06, backlog #97):
                 - verify-image-signature-secforge: failurePolicy=Fail (FAIL-CLOSED). A verify
                   failure DENIES the pod — deploys ARE blocked. Under fail-closed, a sustained

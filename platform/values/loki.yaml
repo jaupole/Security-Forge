@@ -10,6 +10,15 @@ deploymentMode: SingleBinary
 
 loki:
   auth_enabled: false   # single-tenant
+  server:
+    # 32MiB (default 4MiB): the querier->frontend result for one split interval of
+    # a log-burst day (istio-ingress 2026-07-13, 4.8MB) exceeded the gRPC server
+    # max, so the frontend never received the finished query and the HTTP client
+    # hung until read-timeout -- platform-loki-audit-anchor failed nightly on that
+    # window forever (RCA 2026-07-18). Applies to both directions on the shared
+    # single-binary server block.
+    grpc_server_max_recv_msg_size: 33554432
+    grpc_server_max_send_msg_size: 33554432
   # Grafana Labs usage callhome — egress-blocked anyway (stats.grafana.org),
   # producing ~90 ztunnel outbound-refused errors/hour of log noise (debug-5).
   analytics:

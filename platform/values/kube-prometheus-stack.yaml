@@ -245,7 +245,7 @@ prometheus-node-exporter:
       memory: 32Mi
     limits:
       cpu: 1               # 100m→200m (2026-06-05) still throttled 24/7; give burst headroom
-      memory: 128Mi        # 64Mi tripped ContainerMemoryNearLimit (>85%) on 2026-07-10
+      memory: 256Mi        # 64Mi tripped 2026-07-10; 128Mi tripped again 2026-07-14/17 (transient spikes, steady ~40Mi)
 
   extraArgs:
     # Read host textfile collector written by /usr/local/sbin/mount-count-exporter.sh
