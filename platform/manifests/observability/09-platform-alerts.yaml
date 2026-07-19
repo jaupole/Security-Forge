@@ -33,15 +33,16 @@ spec:
           # the series in the 0.80–0.85 band so a workload parked near a correctly-
           # sized limit can't oscillate FIRING/RESOLVED. Primary fix is right-sizing;
           # this stops residual boundary flapping without hiding genuine OOM creep.
+          # wazuh-indexer is excluded — see WazuhIndexerAnonMemoryHigh below.
           expr: |
             (
-              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
                / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
               > 0.85
             )
             or
             (
-              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
                / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
               > 0.80
               and on (namespace, pod, container)
@@ -58,9 +59,42 @@ spec:
               raised or the workload changes. Backstops: ContainerMemoryAtLimit (>0.95) + ContainerOOMKilled.
               Current value: {{ $value | humanizePercentage }}
 
+        # wazuh-indexer is EXCLUDED from ContainerMemoryNearLimit above: OpenSearch
+        # mmaps Lucene segments, so working_set (anon + active file cache + kernel
+        # slab) creeps toward ANY limit over uptime with no OOM risk — the kernel
+        # reclaims cache under pressure. Chasing it cost three limit bumps
+        # (2Gi->3Gi->4Gi->6Gi; RCA 2026-07-18). Anon RSS is the OOM-relevant signal
+        # for this workload — a real heap/off-heap leak still fires. Backstops
+        # ContainerMemoryAtLimit (>0.95) + ContainerOOMKilled still cover it too.
+        - alert: WazuhIndexerAnonMemoryHigh
+          expr: |
+            (
+              (sum by (namespace, pod, container) (container_memory_rss{namespace="wazuh",container="wazuh-indexer"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="wazuh",container="wazuh-indexer",resource="memory",unit="byte"}))
+              > 0.85
+            )
+            or
+            (
+              (sum by (namespace, pod, container) (container_memory_rss{namespace="wazuh",container="wazuh-indexer"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="wazuh",container="wazuh-indexer",resource="memory",unit="byte"}))
+              > 0.80
+              and on (namespace, pod, container)
+              (ALERTS{alertname="WazuhIndexerAnonMemoryHigh",alertstate="firing"} == 1)
+            )
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "wazuh-indexer anon memory (RSS) >85% of limit ({{ $labels.namespace }}/{{ $labels.pod }})"
+            description: |
+              wazuh-indexer anonymous RSS (heap + off-heap; page cache and slab excluded) has
+              held >85% of the container memory limit for >30m (clears below 80%). Unlike
+              working_set this cannot be cache creep — investigate a JVM heap/off-heap leak,
+              or raise limit AND heap deliberately (values/wazuh.yaml, heap stays ~50% of limit).
+              Current value: {{ $value | humanizePercentage }}
         - alert: ContainerMemoryAtLimit
           expr: |
-            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD"})
+            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
              / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
             > 0.95
           for: 2m
@@ -592,6 +626,22 @@ spec:
               VSO/trust-manager digest pins sat unapplied for a day). Identify via
               journalctl -u k8s-drift-check, then roll with platform/lib/install-helm.sh using the
               owning component script's exact arguments.
+        - alert: SecforgeHelmManifestDrift
+          expr: secforge_helm_manifest_drift_releases > 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} helm release(s) have live objects that differ from the deployed manifest"
+            description: |
+              helm get manifest != live cluster for one or more releases. Classic cause: a FAILED
+              helm upgrade partially mutated live objects before dying — helm three-way patching
+              diffs manifest-to-manifest, so every later correct upgrade sees no diff and never
+              repairs the residue (kps rev-8 left a literal STORAGE_CLASS placeholder in the
+              Prometheus/Alertmanager CRs for 8 days; RCA 2026-07-18). Also catches manual kubectl
+              edits to helm-owned objects. Identify via journalctl -u k8s-drift-check, then
+              kubectl patch the live object back to the rendered-manifest value — re-running the
+              component script will NOT fix it.
         - alert: SecforgeDriftCheckStale
           expr: time() - secforge_drift_check_last_run_timestamp_seconds > 172800
           labels:

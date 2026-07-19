@@ -17,8 +17,16 @@
 #   2. For every pinned helm release in HELM_RELEASES, compare
 #      `helm get values` (user-supplied values) against the rendered repo
 #      values file — catches merged-but-never-`helm upgrade`d values.
-#   3. Write node-exporter textfile metrics; PrometheusRule
-#      SecforgeManifestDrift / SecforgeHelmValuesDrift alert on them.
+#   3. For every release in HELM_RELEASES, diff the DEPLOYED release
+#      manifest (helm get manifest) against the live objects — catches the
+#      drift class helm cannot self-repair: a FAILED upgrade that partially
+#      mutated live objects before dying leaves residue no later manifest-
+#      to-manifest diff will ever touch (kps rev-8 left a literal
+#      \ in the Prometheus/Alertmanager CRs for 8 days,
+#      RCA 2026-07-18), plus manual kubectl edits to helm-owned objects.
+#   4. Write node-exporter textfile metrics; PrometheusRule
+#      SecforgeManifestDrift / SecforgeHelmValuesDrift /
+#      SecforgeHelmManifestDrift alert on them.
 #      Per-file detail lands in the journal (journalctl -u k8s-drift-check).
 #
 # Runs as root from a systemd timer (see k8s-drift-check.timer, daily).
@@ -68,6 +76,9 @@ HELM_RELEASES=(
   "trivy-operator:trivy-system:values/trivy-operator.yaml"
   "velero:velero:values/velero.yaml"
   "minio:minio:values/minio.yaml"
+  # wazuh added 2026-07-19 — it was absent from both drift checks while its
+  # values file drifted (indexer memory bump applied only via helm upgrade).
+  "wazuh:wazuh:values/wazuh.yaml"
 )
 
 set -a
@@ -117,6 +128,66 @@ for entry in "${HELM_RELEASES[@]}"; do
   fi
 done
 
+# Live-vs-deployed-manifest drift (see header item 3). Repair = kubectl patch
+# the live object back to the rendered-manifest value; a plain re-run of the
+# owning component script will NOT fix it (no manifest-to-manifest diff).
+helm_manifest_drifted=0
+for entry in "${HELM_RELEASES[@]}"; do
+  IFS=: read -r release ns values <<< "$entry"
+  manifest=$(helm get manifest "$release" -n "$ns" 2>/dev/null)
+  if [ -z "$manifest" ]; then
+    echo "ERROR: helm get manifest $ns/$release returned nothing"
+    errored=$((errored + 1))
+    continue
+  fi
+  # Doc filter before diffing:
+  #   - ClusterComplianceReport dropped: the trivy-operator chart embeds the
+  #     builtin compliance reports from static assets (managed-by: kubectl
+  #     label baked in) while the operator reconciles the live CRs at runtime
+  #     — their truth is the operator's; permanent label-only phantom.
+  #   - PersistentVolumeClaim dropped: chart-templated PVCs collide with the
+  #     static-PV binding pattern (minio/wazuh bind pre-created PVs; PVC truth
+  #     lives in manifests/*/static-pvs*, covered by the manifest loop above)
+  #     and admission-defaulted immutable spec fields error the dry-run.
+  #   - Release namespace injected into namespace-less namespaced docs (helm
+  #     injects it at install; kubectl diff -n errors on multi-ns charts like
+  #     kps that also ship explicit kube-system objects).
+  manifest=$(printf '%s' "$manifest" | NS="$ns" python3 -c 'import os, sys, yaml
+CLUSTER_SCOPED = {"Namespace", "ClusterRole", "ClusterRoleBinding",
+    "CustomResourceDefinition", "MutatingWebhookConfiguration",
+    "ValidatingWebhookConfiguration", "ValidatingAdmissionPolicy",
+    "ValidatingAdmissionPolicyBinding", "PriorityClass", "IngressClass",
+    "StorageClass", "PersistentVolume", "APIService", "RuntimeClass",
+    "ClusterPolicy", "ClusterComplianceReport"}
+DROP = {"ClusterComplianceReport", "PersistentVolumeClaim"}
+docs = []
+for d in yaml.safe_load_all(sys.stdin):
+    if not d or d.get("kind") in DROP:
+        continue
+    if d["kind"] not in CLUSTER_SCOPED and not d["metadata"].get("namespace"):
+        d["metadata"]["namespace"] = os.environ["NS"]
+    docs.append(d)
+print(yaml.safe_dump_all(docs, default_flow_style=False))')
+  out=$(printf '%s' "$manifest" | kubectl diff -f - 2>&1)
+  rc=$?
+  if [ $rc -eq 1 ]; then
+    # Generation phantom filter (as the manifest loop above) plus live-only
+    # operational annotations a re-apply would strip: rollout revision,
+    # rollout-restart timestamps, helm adoption markers.
+    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cvE 'generation:|deployment\.kubernetes\.io/revision|kubectl\.kubernetes\.io/restartedAt|meta\.helm\.sh/release-')
+    if [ "$real" -eq 0 ]; then rc=0; fi
+  fi
+  if [ $rc -eq 1 ]; then
+    helm_manifest_drifted=$((helm_manifest_drifted + 1))
+    echo "HELM MANIFEST DRIFT: $ns/$release live objects != deployed release manifest"
+    echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | head -20
+  elif [ $rc -gt 1 ]; then
+    errored=$((errored + 1))
+    echo "ERROR: helm manifest diff $ns/$release: $(echo "$out" | head -2 | tr '
+' ' ')"
+  fi
+done
+
 mkdir -p "$OUTDIR"
 cat > "$TMPFILE" <<EOF
 # HELP secforge_manifest_drift_files Manifests whose rendered content differs from the live cluster (merge-without-apply drift).
@@ -125,6 +196,9 @@ secforge_manifest_drift_files $drifted
 # HELP secforge_helm_values_drift_releases Helm releases whose live user-supplied values differ from the repo values file.
 # TYPE secforge_helm_values_drift_releases gauge
 secforge_helm_values_drift_releases $helm_drifted
+# HELP secforge_helm_manifest_drift_releases Helm releases whose live objects differ from the deployed release manifest (failed-upgrade residue or manual edit; helm cannot self-repair this).
+# TYPE secforge_helm_manifest_drift_releases gauge
+secforge_helm_manifest_drift_releases $helm_manifest_drifted
 # HELP secforge_drift_check_errors Files/releases the drift check could not evaluate.
 # TYPE secforge_drift_check_errors gauge
 secforge_drift_check_errors $errored
@@ -137,4 +211,4 @@ secforge_drift_check_last_run_timestamp_seconds $(date +%s)
 EOF
 mv "$TMPFILE" "$OUTFILE"
 
-echo "done: checked=$checked drifted=$drifted helm_drifted=$helm_drifted errors=$errored"
+echo "done: checked=$checked drifted=$drifted helm_drifted=$helm_drifted helm_manifest_drifted=$helm_manifest_drifted errors=$errored"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 07p — Wazuh alert-index retention via an OpenSearch ISM policy.
+# 07p — Wazuh index retention via OpenSearch ISM policies.
 #
 # THE PROBLEM
 #   Nothing prunes the indexer. wazuh-alerts-4.x-YYYY.MM.DD indices
@@ -8,19 +8,31 @@
 #   the operator-backlog #20 livenessProbe bug crash-looped the manager
 #   and one day's index ballooned to 10.7M docs / 11.5 GB (the manager
 #   re-ingesting logs across 52 restarts) before anyone noticed.
+#   2026-07-19: the weekly wazuh-monitoring-* / wazuh-statistics-* indices
+#   turned out to be just as unbounded (they merely grow slower). Unbounded
+#   index count also feeds the indexer's slab/page-cache working-set creep
+#   (see ContainerMemoryNearLimit RCA in values/wazuh.yaml).
 #
 # THE FIX
-#   An Index State Management (ISM) policy 'wazuh-alerts-retention':
-#   a fresh index sits in 'hot', and RETENTION_DAYS after creation the
-#   index transitions to 'delete' and is removed. The policy's
-#   ism_template auto-attaches it to every NEW index matching
-#   wazuh-alerts-* — no per-index action needed going forward.
+#   Index State Management (ISM) policies: a fresh index sits in 'hot',
+#   and RETENTION days after creation the index transitions to 'delete'
+#   and is removed. Each policy's ism_template auto-attaches it to every
+#   NEW index matching its patterns — no per-index action needed going
+#   forward.
 #
-#   Tune retention by editing RETENTION_DAYS below (default 60d).
+#     wazuh-alerts-retention  60d  wazuh-alerts-*
+#     wazuh-ops-retention     90d  wazuh-monitoring-*, wazuh-statistics-*
 #
-# Idempotent: creates the policy if absent, updates it in place (ISM
+#   wazuh-states-* is deliberately NOT covered — those are current-state
+#   inventory indices (one per manager), not time-series; deleting them
+#   loses live state.
+#
+#   Tune retention by editing the apply_retention_policy calls below.
+#
+# Idempotent: creates each policy if absent, updates it in place (ISM
 # requires if_seq_no/if_primary_term for updates) if present. Re-running
-# is safe. Also enrols any already-existing wazuh-alerts-* index.
+# is safe. Also enrols any already-existing matching index (ism_template
+# only attaches at index-creation time).
 #
 # Uses the ambient kubectl context. curl runs inside the indexer pod,
 # which already trusts localhost:9200's TLS.
@@ -35,9 +47,6 @@ if ! command -v kubectl >/dev/null 2>&1; then
 fi
 
 NS=wazuh
-POLICY=wazuh-alerts-retention
-RETENTION_DAYS=60
-INDEX_PATTERN='wazuh-alerts-*'
 
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 red()   { printf '\033[31m%s\033[0m\n' "$*" >&2; }
@@ -48,17 +57,25 @@ P=$(kubectl get secret -n "$NS" wazuh-indexer-creds -o jsonpath='{.data.password
 idx_get() { kubectl exec    -n "$NS" wazuh-indexer-0 -c wazuh-indexer -- curl -s -k -u "$U:$P" "$@"; }
 idx_put() { kubectl exec -i -n "$NS" wazuh-indexer-0 -c wazuh-indexer -- curl -s -k -u "$U:$P" "$@"; }
 
-POLICY_BODY=$(cat <<JSON
+# apply_retention_policy <policy-name> <retention-days> <priority> <pattern>[,<pattern>...]
+apply_retention_policy() {
+  local policy=$1 days=$2 priority=$3 patterns_csv=$4
+  local patterns_json
+  patterns_json=$(printf '%s' "$patterns_csv" | awk -F, '{
+    for (i = 1; i <= NF; i++) printf "%s\"%s\"", (i > 1 ? ", " : ""), $i }')
+
+  local body
+  body=$(cat <<JSON
 {
   "policy": {
-    "description": "SecForge: delete wazuh-alerts indices ${RETENTION_DAYS}d after creation",
+    "description": "SecForge: delete ${patterns_csv} indices ${days}d after creation",
     "default_state": "hot",
     "states": [
       {
         "name": "hot",
         "actions": [],
         "transitions": [
-          { "state_name": "delete", "conditions": { "min_index_age": "${RETENTION_DAYS}d" } }
+          { "state_name": "delete", "conditions": { "min_index_age": "${days}d" } }
         ]
       },
       {
@@ -68,43 +85,53 @@ POLICY_BODY=$(cat <<JSON
       }
     ],
     "ism_template": [
-      { "index_patterns": ["${INDEX_PATTERN}"], "priority": 100 }
+      { "index_patterns": [${patterns_json}], "priority": ${priority} }
     ]
   }
 }
 JSON
 )
 
-EXISTING=$(idx_get "https://localhost:9200/_plugins/_ism/policies/${POLICY}")
+  local existing resp
+  existing=$(idx_get "https://localhost:9200/_plugins/_ism/policies/${policy}")
 
-if printf '%s' "$EXISTING" | grep -q "\"_id\":\"${POLICY}\""; then
-    SEQ=$(printf '%s' "$EXISTING" | sed -n 's/.*"_seq_no":\([0-9]*\).*/\1/p')
-    PT=$(printf '%s'  "$EXISTING" | sed -n 's/.*"_primary_term":\([0-9]*\).*/\1/p')
-    green "==> updating existing ISM policy '${POLICY}' (seq_no=${SEQ} primary_term=${PT})"
-    RESP=$(printf '%s' "$POLICY_BODY" | idx_put -XPUT -H 'Content-Type: application/json' \
-        "https://localhost:9200/_plugins/_ism/policies/${POLICY}?if_seq_no=${SEQ}&if_primary_term=${PT}" \
-        --data-binary @-)
-else
-    green "==> creating ISM policy '${POLICY}'"
-    RESP=$(printf '%s' "$POLICY_BODY" | idx_put -XPUT -H 'Content-Type: application/json' \
-        "https://localhost:9200/_plugins/_ism/policies/${POLICY}" \
-        --data-binary @-)
-fi
-echo "    indexer: ${RESP}"
-printf '%s' "$RESP" | grep -q "\"_id\":\"${POLICY}\"" \
-    || { red "policy PUT failed — see response above."; exit 1; }
+  if printf '%s' "$existing" | grep -q "\"_id\":\"${policy}\""; then
+      local seq pt
+      seq=$(printf '%s' "$existing" | sed -n 's/.*"_seq_no":\([0-9]*\).*/\1/p')
+      pt=$(printf '%s'  "$existing" | sed -n 's/.*"_primary_term":\([0-9]*\).*/\1/p')
+      green "==> updating existing ISM policy '${policy}' (seq_no=${seq} primary_term=${pt})"
+      resp=$(printf '%s' "$body" | idx_put -XPUT -H 'Content-Type: application/json' \
+          "https://localhost:9200/_plugins/_ism/policies/${policy}?if_seq_no=${seq}&if_primary_term=${pt}" \
+          --data-binary @-)
+  else
+      green "==> creating ISM policy '${policy}'"
+      resp=$(printf '%s' "$body" | idx_put -XPUT -H 'Content-Type: application/json' \
+          "https://localhost:9200/_plugins/_ism/policies/${policy}" \
+          --data-binary @-)
+  fi
+  echo "    indexer: ${resp}"
+  printf '%s' "$resp" | grep -q "\"_id\":\"${policy}\"" \
+      || { red "policy PUT failed — see response above."; exit 1; }
 
-# Enrol any wazuh-alerts-* index that already exists (ism_template only
-# attaches at index-creation time, so anything created before the policy
-# existed needs an explicit add). No-op when there are no such indices.
-green "==> enrolling existing ${INDEX_PATTERN} indices (if any)"
-ADD=$(printf '{"policy_id":"%s"}' "$POLICY" | idx_put -XPOST -H 'Content-Type: application/json' \
-    "https://localhost:9200/_plugins/_ism/add/${INDEX_PATTERN}" --data-binary @-)
-echo "    indexer: ${ADD}"
+  # Enrol matching indices that already exist (ism_template only attaches at
+  # index-creation time). Already-managed indices come back in the response's
+  # failed list — harmless. No-op when there are no such indices.
+  green "==> enrolling existing ${patterns_csv} indices (if any)"
+  local add
+  add=$(printf '{"policy_id":"%s"}' "$policy" | idx_put -XPOST -H 'Content-Type: application/json' \
+      "https://localhost:9200/_plugins/_ism/add/${patterns_csv}" --data-binary @-)
+  echo "    indexer: ${add}"
+}
 
-cat <<EOF
+apply_retention_policy wazuh-alerts-retention 60 100 'wazuh-alerts-*'
+apply_retention_policy wazuh-ops-retention    90  50 'wazuh-monitoring-*,wazuh-statistics-*'
 
-✓ ISM policy '${POLICY}' applied — ${INDEX_PATTERN} indices auto-delete
-${RETENTION_DAYS} days after creation, and the policy attaches to new
-indices automatically (ism_template).
+cat <<'EOF'
+
+✓ ISM retention applied:
+    wazuh-alerts-retention  60d  wazuh-alerts-*
+    wazuh-ops-retention     90d  wazuh-monitoring-*, wazuh-statistics-*
+  Policies auto-attach to new matching indices (ism_template); existing
+  indices were enrolled explicitly. wazuh-states-* is intentionally
+  unmanaged (current-state, not time-series).
 EOF
