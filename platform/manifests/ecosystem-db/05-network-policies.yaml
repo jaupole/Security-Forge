@@ -109,9 +109,16 @@ metadata:
     secforge.platform/component: ecosystem-db
     secforge.platform/policy-tier: layer-a
 spec:
+  # cnpg.io/cluster EXISTS (any value), not the pinned prod name: a restore
+  # drill / side-by-side DR cluster (e.g. ecosystem-db-drill) carries its own
+  # cluster label and was silently walled off from MinIO + the operator by the
+  # exact match — its barman restore died on "connection closed" (discovered
+  # by the 2026-07-19 restore drill). Mirrors the minio-side
+  # allow-cross-ns-minio-clients podSelector, which already uses Exists.
   podSelector:
-    matchLabels:
-      cnpg.io/cluster: ecosystem-db
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -140,9 +147,16 @@ metadata:
     secforge.platform/component: ecosystem-db
     secforge.platform/policy-tier: layer-a
 spec:
+  # cnpg.io/cluster EXISTS (any value), not the pinned prod name: a restore
+  # drill / side-by-side DR cluster (e.g. ecosystem-db-drill) carries its own
+  # cluster label and was silently walled off from MinIO + the operator by the
+  # exact match — its barman restore died on "connection closed" (discovered
+  # by the 2026-07-19 restore drill). Mirrors the minio-side
+  # allow-cross-ns-minio-clients podSelector, which already uses Exists.
   podSelector:
-    matchLabels:
-      cnpg.io/cluster: ecosystem-db
+    matchExpressions:
+      - key: cnpg.io/cluster
+        operator: Exists
   policyTypes: [Egress]
   egress:
     - to:
