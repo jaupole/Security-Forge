@@ -15,6 +15,15 @@
 #
 # Kyverno pattern semantics: the " | " inside the image string is OR.
 # An image must match one of the listed patterns to be admitted.
+#
+# 2026-07-19 tightening: the blanket Docker-Hub aliases (docker.io/library/*,
+# library/*, mirror.gcr.io/*, public.ecr.aws/*) let ANY Docker Official image
+# into every namespace. Swept live + repo usage and narrowed to the exact
+# repos in use: our digest-pinned utility images on mirror.gcr.io
+# (Renovate-managed, digest REQUIRED by the pattern) plus the wazuh
+# vendor-chart's four public.ecr.aws repos (tag-tolerant; the chart renders
+# tags). docker.io orgs with zero live or repo consumers (istio, nginxinc,
+# rclone, alpine) were dropped in the same pass.
 
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -46,22 +55,22 @@ spec:
           registry+org prefixes:
           ghcr.io/{authzed,cloudnative-pg,spiffe,secforge,jaupole,jkroepke,topolvm},
           quay.io/{brancz,jetstack,keycloak,kiwigrid,minio,prometheus,prometheus-operator},
-          reg.kyverno.io/*,
-          registry.k8s.io/*,
-          mirror.gcr.io/*,
-          rancher/*,
-          velero/*,
-          wazuh/*,
-          otel/*,
-          public.ecr.aws/*,
-          hashicorp/*,
+          reg.kyverno.io/*, registry.k8s.io/*,
+          rancher/*, velero/*, wazuh/*, otel/*, hashicorp/*,
           localhost/secforge/*,
-          registry.istio.io/release/* (istio 1.30+ moved its hub off Docker Hub).
+          registry.istio.io/release/* (istio 1.30+ moved its hub off Docker Hub),
+          docker.io/{grafana,openbao,kiwigrid,velero},
+          cgr.dev/chainguard/*.
+          Docker-Hub-mirror namespaces are deliberately NOT blanket-allowed:
+          mirror.gcr.io only for digest-pinned library/python, library/busybox
+          and alpine/k8s plus aquasec/* (trivy);
+          public.ecr.aws only for the wazuh vendor-chart utility repos
+          (docker/library/{busybox,alpine}, bitnami/kubectl, curl/curl).
           To approve a new registry, edit
           platform/manifests/kyverno/policies/08-restrict-image-registries.yaml.
         pattern:
           spec:
             =(initContainers):
-              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | ghcr.io/secforge/* | ghcr.io/jaupole/* | ghcr.io/jkroepke/* | ghcr.io/topolvm/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/* | rancher/* | velero/* | docker.io/velero/* | wazuh/* | otel/* | public.ecr.aws/* | hashicorp/* | localhost/secforge/* | docker.io/library/* | library/* | docker.io/istio/* | registry.istio.io/release/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | docker.io/rclone/* | docker.io/alpine/* | alpine/* | cgr.dev/chainguard/* | docker.io/nginxinc/*"
+              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | ghcr.io/secforge/* | ghcr.io/jaupole/* | ghcr.io/jkroepke/* | ghcr.io/topolvm/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/library/python:*@sha256:* | mirror.gcr.io/library/busybox:*@sha256:* | mirror.gcr.io/alpine/k8s:*@sha256:* | mirror.gcr.io/aquasec/* | rancher/* | velero/* | docker.io/velero/* | wazuh/* | otel/* | public.ecr.aws/docker/library/busybox:* | public.ecr.aws/docker/library/alpine:* | public.ecr.aws/bitnami/kubectl:* | public.ecr.aws/curl/curl:* | hashicorp/* | localhost/secforge/* | registry.istio.io/release/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | cgr.dev/chainguard/*"
             containers:
-              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | ghcr.io/secforge/* | ghcr.io/jaupole/* | ghcr.io/jkroepke/* | ghcr.io/topolvm/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/* | rancher/* | velero/* | docker.io/velero/* | wazuh/* | otel/* | public.ecr.aws/* | hashicorp/* | localhost/secforge/* | docker.io/library/* | library/* | docker.io/istio/* | registry.istio.io/release/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | docker.io/rclone/* | docker.io/alpine/* | alpine/* | cgr.dev/chainguard/* | docker.io/nginxinc/*"
+              - image: "ghcr.io/authzed/* | ghcr.io/cloudnative-pg/* | ghcr.io/spiffe/* | ghcr.io/secforge/* | ghcr.io/jaupole/* | ghcr.io/jkroepke/* | ghcr.io/topolvm/* | quay.io/brancz/* | quay.io/jetstack/* | quay.io/keycloak/* | quay.io/kiwigrid/* | quay.io/minio/* | quay.io/prometheus/* | quay.io/prometheus-operator/* | reg.kyverno.io/* | registry.k8s.io/* | mirror.gcr.io/library/python:*@sha256:* | mirror.gcr.io/library/busybox:*@sha256:* | mirror.gcr.io/alpine/k8s:*@sha256:* | mirror.gcr.io/aquasec/* | rancher/* | velero/* | docker.io/velero/* | wazuh/* | otel/* | public.ecr.aws/docker/library/busybox:* | public.ecr.aws/docker/library/alpine:* | public.ecr.aws/bitnami/kubectl:* | public.ecr.aws/curl/curl:* | hashicorp/* | localhost/secforge/* | registry.istio.io/release/* | docker.io/grafana/* | docker.io/openbao/* | docker.io/kiwigrid/* | cgr.dev/chainguard/*"
