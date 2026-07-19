@@ -12,8 +12,12 @@
 # enforced, so a rogue image in the gateway namespace is still blocked at
 # admission where it matters.
 #
-# PolicyExceptions are enabled cluster-wide (--enablePolicyException=true,
-# kyverno install). Kept in the kyverno namespace alongside the policies.
+# PolicyExceptions are honored ONLY from the kyverno namespace
+# (--exceptionNamespace=kyverno on all three controllers, values/kyverno.yaml
+# features.policyExceptions.namespace). On kyverno v1.18+ that flag MUST be
+# non-empty: the reports-controller engine hard-errors on "" and silently runs
+# background scans WITHOUT exception support while admission still honors
+# them (split-brain, found 2026-07-19).
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
@@ -27,6 +31,15 @@ spec:
       ruleNames:
         - validate-container-images
         - autogen-validate-container-images
+    # `auto` can never carry an @sha256 digest either — same structural
+    # impossibility, same minimal Deployment/RS scope. Gateway PODS keep both
+    # policies: post-injection they run the real image, and their (audit-mode)
+    # digest finding stays visible — pinning the injected image by digest is an
+    # istiod-config improvement, not report noise.
+    - policyName: require-image-digest
+      ruleNames:
+        - require-digest
+        - autogen-require-digest
   match:
     any:
       - resources:

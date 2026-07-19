@@ -51,7 +51,11 @@ reportsController:
 features:
   policyExceptions:
     enabled: true                   # let us write PolicyException CRs
-    namespace: ""                   # any namespace can hold exceptions
+    # MUST be non-empty on kyverno v1.18+: the reports-controller engine
+    # hard-errors on an empty value and silently runs background scans WITHOUT
+    # exception support (admission still honors them — split-brain, found
+    # 2026-07-19). kyverno ns only = least privilege for who may grant excepts.
+    namespace: "kyverno"
   # Allow validate.failureAction: Audit (warn) AND Enforce (block).
   # We'll start most policies in Audit mode; flip to Enforce after one
   # week of clean reports.
