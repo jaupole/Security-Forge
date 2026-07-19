@@ -105,6 +105,12 @@ jobs:
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
+          # Always re-resolve FROM tags at build time. Default pull:false lets a
+          # persistent self-hosted runner serve a stale cached base for floating
+          # tags (e.g. distroless :nonroot) - audited 2026-07-19 during the
+          # control libssl3 CVE chase (that build WAS fresh, but only by luck of
+          # cache GC; make it deterministic).
+          pull: true
           context: platform/manifests/keycloak/image
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}

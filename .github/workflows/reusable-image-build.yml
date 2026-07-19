@@ -142,6 +142,12 @@ jobs:
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
+          # Always re-resolve FROM tags at build time. Default pull:false lets a
+          # persistent self-hosted runner serve a stale cached base for floating
+          # tags (e.g. distroless :nonroot) - audited 2026-07-19 during the
+          # control libssl3 CVE chase (that build WAS fresh, but only by luck of
+          # cache GC; make it deterministic).
+          pull: true
           context: ${{ inputs.context }}
           build-args: ${{ inputs.build-args }}
           platforms: linux/amd64
