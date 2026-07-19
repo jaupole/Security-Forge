@@ -14,7 +14,7 @@
 # compromised verifier can only fail to detect — it cannot mutate the chain or the
 # audit logs. Runs in the openbao ns to mount the three audit PVCs read-only.
 #
-# SHIPS SUSPENDED — unsuspended alongside the anchor once anchors exist (see
+# suspend:false is the operational state — re-enabled 2026-07-19 alongside the anchor (see
 # docs/03-runbooks/platform-audit-anchor-activation.md).
 ---
 apiVersion: v1
@@ -167,12 +167,22 @@ data:
                 length = a["offset_to"] - a["offset_from"]
                 if checked > 0 and budget - length < 0:
                     break
+                # Stream in 8MiB chunks — a whole-range read() OOMs the 256Mi pod
+                # on large catch-up anchors (a 662MB range exists as of 2026-07-19).
                 f.seek(a["offset_from"])
-                seg = f.read(length)
-                if len(seg) != length:
+                h = hashlib.sha256()
+                got, remaining = 0, length
+                while remaining > 0:
+                    chunk = f.read(min(8 * 1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    h.update(chunk)
+                    got += len(chunk)
+                    remaining -= len(chunk)
+                if got != length:
                     raise Tamper("{}: range [{}..{}] unreadable/short".format(
                         node, a["offset_from"], a["offset_to"]))
-                seg_sha = hashlib.sha256(seg).hexdigest()
+                seg_sha = h.hexdigest()
                 if seg_sha != a["segment_sha256"]:
                     raise Tamper("{}: segment hash mismatch in [{}..{}] (date {}). "
                                  "committed={} local={}".format(node, a["offset_from"],
@@ -216,7 +226,7 @@ metadata:
     app.kubernetes.io/name: platform-audit-verifier
     secforge.platform/component: platform-audit
 spec:
-  suspend: true                     # unsuspended alongside the anchor (runbook)
+  suspend: false                    # re-enabled 2026-07-19 alongside the anchor
   schedule: "37 * * * *"            # hourly at :37
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1

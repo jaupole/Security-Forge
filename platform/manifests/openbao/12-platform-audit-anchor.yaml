@@ -25,9 +25,11 @@
 #
 # Reuses: transit/keys/audit-signing + the audit-signer policy (05c), the
 # platform-audit-signer k8s-auth role (05j), and the member-hub VSO-PAT +
-# hardened-nonroot-pod patterns. Runs in the openbao ns. The CronJob ships
-# SUSPENDED — the operator unsuspends it after the one-time OpenBao-admin steps
-# (see docs/03-runbooks/platform-audit-anchor-activation.md).
+# hardened-nonroot-pod patterns. Runs in the openbao ns. Shipped suspended
+# until the one-time OpenBao-admin steps completed (runbook:
+# docs/03-runbooks/platform-audit-anchor-activation.md); suspend:false is the
+# operational state (loki-anchor pattern). Re-enabled 2026-07-19 after fixing
+# the catch-up OOM (whole-segment read at a 192Mi limit — now streamed).
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -294,12 +296,24 @@ data:
                                    node, size, offset_from))
         if size == offset_from:
             return "{}: no new bytes since offset {} — skip".format(node, offset_from)
+        # Stream in 8MiB chunks — a whole-segment read() OOMed the 192Mi pod on
+        # catch-up (openbao-2 had a 662MB unanchored segment, found 2026-07-19).
+        # Digest and line count are byte-identical to the old single read.
+        h = hashlib.sha256()
+        seg_len, line_count = 0, 0
         with open(audit_file, "rb") as f:
             f.seek(offset_from)
-            segment = f.read(size - offset_from)
-        offset_to = offset_from + len(segment)
-        line_count = segment.count(b"\n")
-        segment_sha = hashlib.sha256(segment).hexdigest()
+            remaining = size - offset_from
+            while remaining > 0:
+                chunk = f.read(min(8 * 1024 * 1024, remaining))
+                if not chunk:
+                    break
+                h.update(chunk)
+                line_count += chunk.count(b"\n")
+                seg_len += len(chunk)
+                remaining -= len(chunk)
+        offset_to = offset_from + seg_len
+        segment_sha = h.hexdigest()
         full_hash = hashlib.sha256((prev_full + segment_sha).encode()).hexdigest()
         signature = bao_sign(bao_token, full_hash)
 
@@ -326,7 +340,7 @@ data:
         gh_put_json(gh_token, state_path, new_state, state_sha,
                     "platform-audit state {} -> offset {}".format(node, offset_to))
         return "{}: anchored {} bytes [{}..{}], {} lines -> {}".format(
-            node, len(segment), offset_from, offset_to, line_count, anchor_path)
+            node, seg_len, offset_from, offset_to, line_count, anchor_path)
 
     def main():
         gh_token = read_file(GH_TOKEN_FILE)
@@ -359,9 +373,10 @@ metadata:
     app.kubernetes.io/name: platform-audit-anchor
     secforge.platform/component: platform-audit
 spec:
-  # SHIPS SUSPENDED — operator unsuspends after the one-time OpenBao-admin steps
+  # suspend:false is the operational state (re-enabled 2026-07-19; had sat
+  # suspended since ~2026-06-11 — the catch-up segment read OOMed the pod).
   # (audit device enable + role + PAT). See the activation runbook.
-  suspend: true
+  suspend: false
   schedule: "23 0 * * *"            # daily 00:23 UTC (staggered from member-hub 00:17)
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3

@@ -1,0 +1,39 @@
+# PolicyException: istio gateway Deployments/ReplicaSets carry the literal
+# image `auto` — istiod's injection template replaces it at POD creation, so
+# the controller objects can never satisfy restrict-image-registries. The
+# background scanner therefore logged ~264 enforce-mode fails/day against the
+# two gateway Deployments + their ReplicaSets (found in the 2026-07-19 health
+# check), polluting policy reports with permanent noise.
+#
+# Scope is deliberately MINIMAL: only Deployment/ReplicaSet named istio-ingress*
+# in the istio-ingress namespace, only for restrict-image-registries. The PODS
+# are NOT excepted — after injection they run the real image (docker.io/istio/*
+# or registry.istio.io/release/*, both on the allowlist) and stay fully
+# enforced, so a rogue image in the gateway namespace is still blocked at
+# admission where it matters.
+#
+# PolicyExceptions are enabled cluster-wide (--enablePolicyException=true,
+# kyverno install). Kept in the kyverno namespace alongside the policies.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: istio-gateway-image-auto
+  namespace: kyverno
+  labels:
+    secforge.platform/component: kyverno-policies
+spec:
+  exceptions:
+    - policyName: restrict-image-registries
+      ruleNames:
+        - validate-container-images
+        - autogen-validate-container-images
+  match:
+    any:
+      - resources:
+          kinds:
+            - Deployment
+            - ReplicaSet
+          namespaces:
+            - istio-ingress
+          names:
+            - "istio-ingress*"
