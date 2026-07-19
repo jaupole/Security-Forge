@@ -261,30 +261,6 @@ spec:
         - { protocol: TCP, port: 15008 }  # HBONE — observability is Ambient too
 
 ---
-# Egress to MinIO for CNPG barman-cloud base + WAL backups.
-# Scoped to the CNPG-managed postgres pods only.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-egress-to-minio
-  namespace: project-manager
-  labels:
-    secforge.platform/component: project-manager
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: project-manager-db
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: minio
-      ports:
-        - { protocol: TCP, port: 9000 }
-
----
 # App-pod egress to MinIO — required by the documents API (modules/documents)
 # to upload/download project file attachments to the project-manager-documents
 # bucket. Distinct from the CNPG egress above (different pod selector); same
@@ -339,35 +315,6 @@ spec:
               - 169.254.0.0/16
       ports:
         - { protocol: TCP, port: 443 }
-
----
-# CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
-# the project-manager-db pod for reconciliation, probes, and barman metrics.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-cnpg-operator-to-db
-  namespace: project-manager
-  labels:
-    secforge.platform/component: project-manager
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: project-manager-db
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: [postgres-operator, cnpg-system]
-      ports:
-        - { protocol: TCP, port: 5432 }
-        - { protocol: TCP, port: 8000 }
-        - { protocol: TCP, port: 9187 }
-        - { protocol: TCP, port: 9090 }
 
 ---
 # Ingress: Istio tailnet ingress gateway (istio-ingress ns) →

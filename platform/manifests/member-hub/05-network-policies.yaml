@@ -249,37 +249,6 @@ spec:
         - { protocol: TCP, port: 15008 }  # HBONE — observability is Ambient too (see 07-service-mesh.md)
 
 ---
-# Egress to MinIO for CNPG plugin-barman-cloud base + WAL backups + retention.
-# Without this, default-deny-egress silently breaks all CNPG backups — barman
-# reports the scheduled backup "completed" because the plugin process exited,
-# but no data was actually shipped, and the retention pass can't list existing
-# backups to enforce its policy. Discovered during 2026-05-16 drift sweep —
-# member-hub-db ScheduledBackups had been firing daily with hidden failure.
-# Scope: only the CNPG-managed postgres pods (label cnpg.io/cluster=member-hub-db).
-# The API pod has its own egress rule below (allow-egress-app-to-minio) since
-# document-upload landed 2026-05-27.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-egress-to-minio
-  namespace: member-hub
-  labels:
-    secforge.platform/component: member-hub
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: member-hub-db
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: minio
-      ports:
-        - { protocol: TCP, port: 9000 }
-
----
 # App-pod egress to MinIO — required by the member-documents API to
 # upload/download file attachments to the member-hub-documents bucket.
 # Distinct from the CNPG egress above (different pod selector); same
@@ -391,35 +360,6 @@ spec:
       ports:
         - { protocol: TCP, port: 587 }
         - { protocol: TCP, port: 465 }
-
----
-# CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
-# the member-hub-db pod for reconciliation, probes, and barman metrics.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-cnpg-operator-to-db
-  namespace: member-hub
-  labels:
-    secforge.platform/component: member-hub
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: member-hub-db
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: [postgres-operator, cnpg-system]
-      ports:
-        - { protocol: TCP, port: 5432 }
-        - { protocol: TCP, port: 8000 }
-        - { protocol: TCP, port: 9187 }
-        - { protocol: TCP, port: 9090 }
 
 ---
 # Ingress: Istio ingress gateways (public + tailnet, istio-ingress ns) →

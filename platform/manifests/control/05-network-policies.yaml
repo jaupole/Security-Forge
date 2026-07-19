@@ -282,36 +282,6 @@ spec:
         - { protocol: TCP, port: 15008 }  # HBONE — observability is Ambient too (see 07-service-mesh.md)
 
 ---
-# Egress to MinIO for CNPG plugin-barman-cloud base + WAL backups + retention.
-# Without this, default-deny-egress silently breaks all CNPG backups — barman
-# reports the scheduled backup "completed" because the plugin process exited,
-# but no data was actually shipped, and the retention pass can't list existing
-# backups to enforce its policy. Discovered during 2026-05-16 drift sweep —
-# control-db ScheduledBackups had been firing daily with hidden failure.
-# Scope: only the CNPG-managed postgres pods (label cnpg.io/cluster=control-db),
-# not the app pods — the app shouldn't talk to MinIO directly from this ns.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-egress-to-minio
-  namespace: control
-  labels:
-    secforge.platform/component: control
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: control-db
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: minio
-      ports:
-        - { protocol: TCP, port: 9000 }
-
----
 # Egress to MinIO from the Control app pod (ADR-0001 Phase A).
 # Distinct from the CNPG egress above (which covers WAL/barman
 # backups). Control's graphics CRUD endpoints read/write the
@@ -379,35 +349,6 @@ spec:
               - 169.254.0.0/16
       ports:
         - { protocol: TCP, port: 443 }
-
----
-# CNPG operator (in postgres-operator + cnpg-system ns) needs to reach
-# the control-db pod for reconciliation, probes, and barman metrics.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-cnpg-operator-to-db
-  namespace: control
-  labels:
-    secforge.platform/component: control
-    secforge.platform/policy-tier: layer-a
-spec:
-  podSelector:
-    matchLabels:
-      cnpg.io/cluster: control-db
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: [postgres-operator, cnpg-system]
-      ports:
-        - { protocol: TCP, port: 5432 }
-        - { protocol: TCP, port: 8000 }
-        - { protocol: TCP, port: 9187 }
-        - { protocol: TCP, port: 9090 }
 
 ---
 # Ingress: Istio ingress gateways (public + tailnet, both in the
