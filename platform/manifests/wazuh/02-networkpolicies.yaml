@@ -56,6 +56,8 @@ spec:
           port: 55000     # manager API
         - protocol: TCP
           port: 5601      # dashboard
+        - protocol: TCP
+          port: 15008   # ztunnel HBONE (ambient mesh; 2026-07-19 15008 sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Allow keycloak + openbao namespaces to send syslog events to the Wazuh
@@ -90,6 +92,8 @@ spec:
       ports:
         - protocol: TCP
           port: 1514
+        - protocol: TCP
+          port: 15008   # ztunnel HBONE (ambient mesh; 2026-07-19 15008 sweep)
 
 # ──────────────────────────────────────────────────────────────────────
 # Phase 7d Item 5 — wazuh-agent ns DaemonSet → manager:1514 (events)
