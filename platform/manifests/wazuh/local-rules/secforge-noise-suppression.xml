@@ -72,4 +72,22 @@
     <description>Application-error false positive from the Trivy findings log - suppressed</description>
   </rule>
 
+  <!-- ============================================================ -->
+  <!-- 100104 - 100001/100008 self-match inside k3s-audit payloads   -->
+  <!-- ============================================================ -->
+  <!-- The k3s audit policy logs RequestResponse BODIES; any kubectl
+       diff/apply touching wazuh-manager-config emits an audit event that
+       EMBEDS the manager config - including the very extraPatterns regex
+       text these rules match on ("Pomelo.*error", "error"...). The daily
+       k8s-drift-check dry-run reproduces it on schedule at 05:41 UTC
+       (found 2026-07-19: 24x 100001 + 10x 100008 per week, all k3s-audit).
+       Suppress the app-error rules for k3s-audit lines only; the real
+       k3s-audit rules (07n decoder) and real app-log matches are
+       unaffected. -->
+  <rule id="100104" level="0">
+    <if_sid>100001,100008</if_sid>
+    <program_name>k3s-audit</program_name>
+    <description>App-error pattern matched inside a k3s-audit payload (embedded config text) - suppressed</description>
+  </rule>
+
 </group>
