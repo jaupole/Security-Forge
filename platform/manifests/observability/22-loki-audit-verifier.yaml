@@ -284,6 +284,9 @@ spec:
               command: ["python3", "/app/verify.py"]
               env:
                 - {name: LOKI_ADDR, value: "http://loki.observability.svc.cluster.local:3100"}
+                # MUST MATCH the anchor (21-) exactly — see the LOKI_LIMIT comment there
+                # (limit-dependent result sets on dup-chunk windows; incident 2026-07-19).
+                - {name: LOKI_LIMIT, value: "5000"}
                 - {name: ANCHORS_REPO, value: "jaupole/secforge-audit-anchors"}
                 - {name: ANCHORS_BRANCH, value: "main"}
                 - {name: ANCHOR_DIR, value: "platform/loki"}

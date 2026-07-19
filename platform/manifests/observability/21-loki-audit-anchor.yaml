@@ -449,8 +449,14 @@ spec:
                 - {name: SETTLE_SECONDS, value: "172800"}
                 - {name: MANIFEST_DIR, value: "/manifests"}
                 - {name: MANIFEST_RETENTION_DAYS, value: "35"}
-                # 2000 (default 5000): caps per-page result bytes well under the 32MiB Loki gRPC ceiling
-                - {name: LOKI_LIMIT, value: "2000"}
+                # MUST MATCH the verifier (22-) exactly: on windows containing
+                # duplicated chunks, Loki returns LIMIT-DEPENDENT result sets, so an
+                # anchor/verifier limit mismatch manufactures a false TAMPER
+                # (istio-ingress 2026-07-14, incident 2026-07-19: anchored at 2000,
+                # verified at 5000, 88 keys diverged). 5000 = the historical value all
+                # pre-existing anchors were built with; per-page bytes stay safe under
+                # the 32MiB gRPC ceiling.
+                - {name: LOKI_LIMIT, value: "5000"}
                 - {name: LOKI_NAMESPACES, value: "keycloak,spicedb,kyverno,spire,wazuh,cert-manager,vault-secrets-operator,istio-ingress,istio-system,velero"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
                 - {name: HOME, value: "/tmp"}
