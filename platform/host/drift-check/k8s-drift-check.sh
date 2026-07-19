@@ -64,10 +64,11 @@ EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration
 
 # Helm releases whose values files are the source of truth:
 #   release:namespace:values-file
-# NOTE: kyverno is deliberately absent — it is NOT a helm release on this
-# cluster (helm ls -A shows none) and platform/values/kyverno.yaml is
-# unwired config (infra-sweep opt-7, tracked in backlog #99). Add it here
-# if/when kyverno is migrated to a helm install.
+# NOTE: an earlier revision claimed kyverno was "NOT a helm release" — wrong.
+# The release has existed since 2026-05-08; the helm ls that wrote that note ran
+# without KUBECONFIG and saw an empty list. Reconciled 2026-07-19 (rev 2 helm
+# upgrade baked the live-patched --exceptionNamespace args into the stored
+# manifest); kyverno is drift-checked like every other release below.
 HELM_RELEASES=(
   "vault-secrets-operator:vault-secrets-operator:values/vault-secrets-operator.yaml"
   "trust-manager:cert-manager:values/trust-manager.yaml"
@@ -79,6 +80,7 @@ HELM_RELEASES=(
   # wazuh added 2026-07-19 — it was absent from both drift checks while its
   # values file drifted (indexer memory bump applied only via helm upgrade).
   "wazuh:wazuh:values/wazuh.yaml"
+  "kyverno:kyverno:values/kyverno.yaml"
 )
 
 set -a
