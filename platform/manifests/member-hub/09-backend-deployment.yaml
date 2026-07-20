@@ -81,6 +81,33 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      # Boot-order gate (RCA-sso-switcher §6.4 / backlog #101): on a host
+      # reboot every single-replica app used to crash-loop ~7x for ~20 min
+      # while ecosystem-db came up. Holding the pod in Init: until the DB
+      # answers turns that churn into a clean ordered start. Mirrors the
+      # identical initContainer in 08-migration-job.yaml (same pinned CNPG
+      # image — a T4 vendor image outside the fail-closed #97 signature
+      # scope). Unbounded on purpose: a Deployment pod waiting in Init is
+      # the desired state while a dependency is down.
+      initContainers:
+        - name: wait-for-db
+          image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U member_hub -d member_hub -t 3; do
+                echo "waiting for ecosystem-db..."
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 128Mi }
       containers:
         - name: api
           # 536ae579 = full SecForge dashboard design-system (Phases 0-5:
