@@ -7,13 +7,13 @@
 # alertmanagerConfigMatcherStrategy.type=None, set in
 # platform/values/kube-prometheus-stack.yaml (alertmanagerSpec).
 #
-# SECRET: the SMTP password (Gmail app password) is NOT in git. It lives in
-# the `alertmanager-smtp-gmail` Secret (key: password) in this namespace.
-# TODO: migrate it to OpenBao + a VSO binding (see README-alerting.md).
-#   Create manually (until VSO):
-#     printf '%s' '<app-password>' | kubectl create secret generic \
-#       alertmanager-smtp-gmail -n observability \
-#       --from-file=password=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
+# SECRET: the SMTP password is a Resend sending-only API key, stored in
+# OpenBao at secret/observability/alertmanager-smtp and rendered into the
+# `alertmanager-smtp-resend` Secret by 16-alertmanager-smtp-vso-binding.yaml.
+# Migration from the manual Gmail app-password Secret is one-shot via
+# 07r-alertmanager-email-resend.sh (2026-07-20). DO NOT apply this file
+# before that script has rendered the Secret — a missing authPassword
+# Secret invalidates the AlertmanagerConfig and drops email routing.
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: AlertmanagerConfig
 metadata:
@@ -48,10 +48,10 @@ spec:
       - receiver: blackhole
         matchers:
           - name: alertname
-            matchType: =
+            matchType: '='
             value: KubeJobFailed
           - name: namespace
-            matchType: =
+            matchType: '='
             value: trivy-system
           - name: job_name
             matchType: =~
@@ -66,11 +66,15 @@ spec:
     - name: email-ops
       emailConfigs:
         - to: jaupole@googlemail.com
-          from: jaupole@googlemail.com
-          smarthost: smtp.gmail.com:587
-          authUsername: jaupole@googlemail.com
+          # Resend platform sender (same verified secforge.dev domain as
+          # Control's noreply@ default; distinct local part so alert mail is
+          # filterable). Username is literally `resend`; the password is a
+          # dedicated sending-only API key — never Control's platform key.
+          from: alerts@secforge.dev
+          smarthost: smtp.resend.com:587
+          authUsername: resend
           authPassword:
-            name: alertmanager-smtp-gmail
+            name: alertmanager-smtp-resend
             key: password
           requireTLS: true
           # firing-only: with sendResolved:true every flap cost a 2nd (RESOLVED)

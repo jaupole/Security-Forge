@@ -24,7 +24,7 @@
 #                                                 (per-org IdP federation,
 #                                                 branding, themes scope
 #                                                 cleanly to one org)
-#   - ssoSessionIdleTimeout: 1800 (30 min)      — tenants get a longer
+#   - ssoSessionIdleTimeout: 10800 (3 h)        — tenants get a longer
 #     ssoSessionMaxLifespan: 43200 (12 h)         working session than
 #                                                 staff (per the architecture
 #                                                 doc; staff is 15 min / 8 h)
@@ -149,7 +149,9 @@ spec:
     # 8 h — see architecture doc). Remember-me still capped to 8 h idle
     # / 24 h absolute (a passkey re-tap is cheap, multi-day session is
     # not). Offline tokens disabled (we don't issue them).
-    ssoSessionIdleTimeout: 1800
+    # 10800 (3 h): raised from 1800 (2026-07-20, RCA-sso-switcher §6.5) —
+    # same rationale as platform-realm.yaml.
+    ssoSessionIdleTimeout: 10800
     ssoSessionMaxLifespan: 43200
     ssoSessionIdleTimeoutRememberMe: 28800
     ssoSessionMaxLifespanRememberMe: 86400

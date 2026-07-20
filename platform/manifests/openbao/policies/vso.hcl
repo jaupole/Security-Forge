@@ -162,6 +162,20 @@ path "secret/metadata/wazuh/archive-minio" {
   capabilities = ["read"]
 }
 
+# Alertmanager SMTP credential (Resend sending-only API key). Replaces the
+# manually-created Gmail app-password Secret (README-alerting §environment
+# state). Staged by 07r-alertmanager-email-resend.sh; rendered by the
+# `alertmanager-smtp-vso` VaultStaticSecret in
+# manifests/observability/16-alertmanager-smtp-vso-binding.yaml into the
+# alertmanager-smtp-resend K8s Secret referenced by AlertmanagerConfig
+# secforge-email.
+path "secret/data/observability/alertmanager-smtp" {
+  capabilities = ["read"]
+}
+path "secret/metadata/observability/alertmanager-smtp" {
+  capabilities = ["read"]
+}
+
 # Control plane API (control ns).
 #   - keycloak/clients/control: OIDC client_secret for the user-login client
 #   - keycloak/clients/control-admin: client_secret for the admin-API

@@ -42,7 +42,11 @@ spec:
     # active stretch while the BFF's own 30-min idle was still sliding,
     # signing an active staff user out. 30 min gives the lazy refresh
     # comfortable headroom; the BFF idle remains the real idle policy.
-    ssoSessionIdleTimeout: 1800
+    # 10800 (3 h): raised from 1800 (2026-07-20, RCA-sso-switcher §6.5) so a
+    # backgrounded phone's silent prompt=none re-auth succeeds instead of
+    # forcing a full interactive login. App-session idle stays 30 min in
+    # ecosystem-auth; this only lengthens the KC SSO cookie's idle window.
+    ssoSessionIdleTimeout: 10800
     ssoSessionMaxLifespan: 28800
     ssoSessionIdleTimeoutRememberMe: 28800
     ssoSessionMaxLifespanRememberMe: 86400

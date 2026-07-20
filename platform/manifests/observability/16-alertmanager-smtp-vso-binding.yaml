@@ -1,0 +1,72 @@
+# VSO binding for the Alertmanager SMTP credential (Resend).
+#
+# Renders OpenBao secret/data/observability/alertmanager-smtp into K8s Secret
+# `alertmanager-smtp-resend` in the observability ns, referenced by the
+# AlertmanagerConfig `secforge-email` (13-alertmanager-email.yaml). Replaces
+# the manually-created `alertmanager-smtp-gmail` Secret (Gmail app password —
+# README-alerting §environment state).
+#
+# The KV value is a Resend API key with SENDING-ONLY scope, dedicated to
+# Alertmanager (never Control's platform key — independently revocable).
+# Resend SMTP: smtp.resend.com:587 STARTTLS, username literally `resend`,
+# password = the API key. Staged by 07r-alertmanager-email-resend.sh.
+#
+# Per ADR-0015, Alertmanager is operator-shaped (kube-prometheus-stack owns
+# the StatefulSet), so it consumes secrets through VSO.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: vso-consumer-binding
+automountServiceAccountToken: true
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: alertmanager-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: alertmanager-vso
+    serviceAccount: alertmanager-vso
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: alertmanager-smtp-vso
+  namespace: observability
+  labels:
+    secforge.platform/component: vault-secrets-operator
+    secforge.platform/role: rendered-secret-source
+spec:
+  vaultAuthRef: alertmanager-vso
+  mount: secret
+  type: kv-v2
+  path: observability/alertmanager-smtp
+  refreshAfter: 1h
+  destination:
+    name: alertmanager-smtp-resend
+    create: true
+    type: Opaque
+    # AlertmanagerConfig references key `password`; map the KV key through.
+    transformation:
+      excludeRaw: true
+      excludes:
+        - .*
+      templates:
+        password:
+          text: '{{ .Secrets.password }}'

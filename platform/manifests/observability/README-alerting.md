@@ -27,27 +27,31 @@ that can't live in git as-is — documented here.
 
 ## Environment state (NOT in git)
 
-### 1. SMTP secret  ← TODO: move to OpenBao/VSO
-A Gmail **app password** lives in Secret `alertmanager-smtp-gmail`
-(key `password`) in `observability`. Created out-of-band:
-```bash
-printf '%s' '<16-char-app-password>' | kubectl create secret generic \
-  alertmanager-smtp-gmail -n observability \
-  --from-file=password=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
-```
-**Hardening follow-up:** store at `secret/observability/alertmanager-smtp` in
-OpenBao and render via a VSO `VaultStaticSecret` (mirror an existing
-`*-vso-binding.yaml`), then drop the manual secret. Rotate the app password
-(it transited a chat transcript on first setup).
+### 1. SMTP secret — migrating Gmail → Resend (codified 2026-07-20)
+The legacy state is a Gmail **app password** in the manual Secret
+`alertmanager-smtp-gmail`. The replacement is fully codified and one-shot:
+a **sending-only Resend API key** in OpenBao at
+`secret/observability/alertmanager-smtp`, rendered by
+`16-alertmanager-smtp-vso-binding.yaml`, consumed by the Resend-switched
+`13-alertmanager-email.yaml` (`smtp.resend.com:587`, from `alerts@` on the
+platform domain — same verified domain as Control's platform sender, but a
+**separate key**, never Control's).
+
+**To execute (next deploy day, needs `openbao-root-token-tmp`):**
+1. Create the key in the Resend dashboard (API Keys → permission
+   "Sending access").
+2. Run `platform/components/07r-alertmanager-email-resend.sh [keyfile]` —
+   it stages the key, applies 16- then 13- (in that order: applying 13-
+   before the Secret renders invalidates the AlertmanagerConfig and drops
+   email routing), verifies with a test alert, and deletes the Gmail Secret.
+3. Revoke the Gmail app password (myaccount.google.com/apppasswords) — it
+   also transited a chat transcript on first setup.
 
 ### 2. UFW host rules (node-exporter / kubelet scrape)
 The host firewall must let the pod CIDR reach the host metrics ports, else the
-node-metrics NetworkPolicy alone isn't enough:
-```bash
-sudo ufw allow from 10.42.0.0/16 to any port 9100 proto tcp comment 'prometheus node-exporter scrape'
-sudo ufw allow from 10.42.0.0/16 to any port 10250 proto tcp comment 'prometheus kubelet scrape'
-```
-(Applied live 2026-05-30. Fold into the host-bootstrap UFW script for durability.)
+node-metrics NetworkPolicy alone isn't enough. Applied live 2026-05-30;
+**codified 2026-07-20** into `platform/components/00-host-bootstrap.sh` (ufw
+section), so a host rebuild recreates them.
 
 ### 3. Verify end-to-end
 ```bash

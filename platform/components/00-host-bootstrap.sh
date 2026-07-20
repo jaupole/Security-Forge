@@ -83,6 +83,14 @@ ufw allow 6443/tcp comment 'k3s API server (external)'
 ufw allow in on cni0 to any port 6443 proto tcp comment 'k3s API from pods'
 ufw allow from 10.42.0.0/16 to any port 6443 proto tcp comment 'k3s API from pod CIDR'
 
+# Prometheus scrapes of host-network metrics endpoints (node-exporter,
+# kubelet). The observability NetworkPolicies allow the flow pod-side, but
+# these ports live on the host so ufw must admit the pod CIDR too. Applied
+# live 2026-05-30 with the alerting rollout (see
+# manifests/observability/README-alerting.md); codified 2026-07-20.
+ufw allow from 10.42.0.0/16 to any port 9100 proto tcp comment 'prometheus node-exporter scrape'
+ufw allow from 10.42.0.0/16 to any port 10250 proto tcp comment 'prometheus kubelet scrape'
+
 # Loopback ALLOW + spoofing DENY (CIS 4.2.4 / Wazuh SCA 35623)
 ufw allow in on lo
 ufw allow out on lo

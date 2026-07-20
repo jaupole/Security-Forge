@@ -305,11 +305,11 @@ TARGET="${1:-all}"
 # Args order matches harden_realm():
 #   realm  flow_alias                rp_name             idle  max    rmOtp    wReg    rec
 harden_platform() {
-  harden_realm "platform"         "browser-webauthn-required" "SecForge Platform" 1800 28800 "true"  "true"  "true"
+  harden_realm "platform"         "browser-webauthn-required" "SecForge Platform" 10800 28800 "true"  "true"  "true"
 }
 
 harden_tenants() {
-  harden_realm "secforge-tenants" "browser-webauthn-optional" "SecForge"          1800 43200 "false" "false" "false"
+  harden_realm "secforge-tenants" "browser-webauthn-optional" "SecForge"          10800 43200 "false" "false" "false"
 }
 
 case "$TARGET" in

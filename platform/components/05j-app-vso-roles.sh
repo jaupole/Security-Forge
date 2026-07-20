@@ -65,6 +65,9 @@ APP_ROLES=(
   # openbao anchor; SA lives in the observability ns next to Loki. Manifests:
   # manifests/observability/21-loki-audit-anchor.yaml (applied by 07f-loki.sh).
   "platform-loki-audit-signer|observability|platform-loki-audit-signer|audit-signer,platform-audit|900|1800"
+  # Alertmanager SMTP credential (Resend key) — rendered via
+  # manifests/observability/16-alertmanager-smtp-vso-binding.yaml.
+  "alertmanager-vso|observability|alertmanager-vso|vso|3600|86400"
   # proposal-forge (proposalapp) — VSO renders OIDC/SpiceDB/session/Gemini/GSA
   # runtime bundle + ghcr-pull + the proposal-forge-files MinIO key. No
   # audit-signer (PF has no OpenBao Transit usage). Policy paths: vso.hcl
