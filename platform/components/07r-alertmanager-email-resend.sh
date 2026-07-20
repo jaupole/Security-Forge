@@ -11,7 +11,17 @@
 #   7. deletes the legacy alertmanager-smtp-gmail Secret
 #
 # Pre-conditions:
-#   - openbao-root-token-tmp Secret in openbao ns (deploy-day ritual)
+#   - a privileged OpenBao token in ONE of (checked in this order):
+#       openbao-operator-token-tmp   — PREFERRED: your own OIDC-admin token.
+#         Log in at https://bao.${DOMAIN} (tailnet) with the jason.upole
+#         account (OIDC role `admin` → admin policy), copy the token from
+#         the UI, then:
+#           kubectl -n openbao create secret generic openbao-operator-token-tmp \
+#             --from-literal=token=<the token>
+#         Attributed to your account in the audit log, TTL-bounded, no
+#         Shamir ceremony. Delete the secret when done.
+#       openbao-root-token-tmp       — fallback: the deploy-day root ritual
+#         (needed only on a fresh DR cluster where OIDC auth isn't up yet).
 #   - a NEW Resend API key with SENDING-ONLY scope, created in the Resend
 #     dashboard (resend.com → API Keys → Create → permission "Sending access").
 #     NEVER reuse Control's platform key — this one must be independently
@@ -35,10 +45,20 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-# Pre-flight
-if ! kubectl -n "$NS_BAO" get secret openbao-root-token-tmp >/dev/null 2>&1; then
-  red "ERROR: openbao-root-token-tmp Secret not found (deploy-day pre-condition)."; exit 1
+# Pre-flight — operator OIDC token preferred, root token as DR fallback.
+TOKEN_SECRET=""
+for cand in openbao-operator-token-tmp openbao-root-token-tmp; do
+  if kubectl -n "$NS_BAO" get secret "$cand" >/dev/null 2>&1; then
+    TOKEN_SECRET="$cand"; break
+  fi
+done
+if [ -z "$TOKEN_SECRET" ]; then
+  red "ERROR: no privileged-token Secret found."
+  red "Preferred: log in at the OpenBao UI (OIDC admin) and stage your token as"
+  red "  kubectl -n $NS_BAO create secret generic openbao-operator-token-tmp --from-literal=token=<token>"
+  exit 1
 fi
+green "==> using token from Secret $TOKEN_SECRET"
 
 # Resend key: file arg or interactive prompt (never an env var — Kyverno-shaped
 # hygiene, and it would land in shell history / process listings).
@@ -53,7 +73,7 @@ case "$RESEND_KEY" in
   *) red "ERROR: that does not look like a Resend API key (expected re_ prefix)"; exit 1 ;;
 esac
 
-ROOT_TOKEN=$(kubectl -n "$NS_BAO" get secret openbao-root-token-tmp -o jsonpath='{.data.token}' | base64 -d)
+ROOT_TOKEN=$(kubectl -n "$NS_BAO" get secret "$TOKEN_SECRET" -o jsonpath='{.data.token}' | base64 -d)
 bao() {
   kubectl exec -i -n "$NS_BAO" "$POD_BAO" -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ROOT_TOKEN" "$@"
 }
