@@ -54,14 +54,19 @@ loki:
     max_query_length: 721h
     split_queries_by_interval: 15m
 
-  # See local-edition note: enabling the compactor's retention requires a
-  # delete_requests.gz object that doesn't exist on a fresh bucket; the
-  # compactor blocks indefinitely. Off → TSDB index expiry handles
-  # baseline cleanup; revisit once the bucket has had at least one delete
-  # request.
+  # Retention ENABLED 2026-07-20 (backlog #98b): without the compactor,
+  # limits_config.retention_period was advisory and loki-chunks grew
+  # unbounded (~4G/month) — and pre-2026-07-05 leaked plugin JWTs (long
+  # expired) stayed queryable forever. 720h (30d) deletion keeps the audit
+  # anchor/verifier sound: their re-verify horizon is 28d (< 30d, hard-wired
+  # in 21-/22-*.yaml — verified before flipping). The old local-edition
+  # fresh-bucket deadlock note no longer applies (bucket is aged; Loki 3.x
+  # initializes the delete store itself).
   compactor:
     working_directory: /var/loki/compactor
-    retention_enabled: false
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: s3
 
   commonConfig:
     replication_factor: 1
