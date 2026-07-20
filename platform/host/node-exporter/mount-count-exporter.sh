@@ -25,4 +25,5 @@ node_mount_count $CURRENT
 node_mount_max_limit $LIMIT
 EOF
 
+chmod 0644 "$TMPFILE"   # world-readable regardless of caller umask (node-exporter runs as nobody)
 mv "$TMPFILE" "$OUTFILE"

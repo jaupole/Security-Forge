@@ -211,6 +211,10 @@ secforge_drift_check_files_total $checked
 # TYPE secforge_drift_check_last_run_timestamp_seconds gauge
 secforge_drift_check_last_run_timestamp_seconds $(date +%s)
 EOF
+# node-exporter runs as nobody: the file must be world-readable no matter the
+# caller's umask (root's hardened 0027 broke scrapes for 13h on 2026-07-19
+# after a manual sudo run; systemd's 022 masked it on scheduled runs).
+chmod 0644 "$TMPFILE"
 mv "$TMPFILE" "$OUTFILE"
 
 echo "done: checked=$checked drifted=$drifted helm_drifted=$helm_drifted helm_manifest_drifted=$helm_manifest_drifted errors=$errored"

@@ -43,4 +43,5 @@ secforge_containerd_images $after_n
 # TYPE secforge_containerd_gc_last_run_timestamp_seconds gauge
 secforge_containerd_gc_last_run_timestamp_seconds $(date +%s)
 METRICS
+chmod 0644 "$OUTFILE.tmp"   # world-readable regardless of caller umask (node-exporter runs as nobody)
 mv "$OUTFILE.tmp" "$OUTFILE"

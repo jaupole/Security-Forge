@@ -252,6 +252,12 @@ prometheus-node-exporter:
     # (systemd timer, every 60s). Exposes node_mount_count + node_mount_max_limit.
     # /host/root is the hostPath mount of / in the node-exporter DaemonSet.
     - --collector.textfile.directory=/host/root/var/lib/node_exporter/textfile_collector
+    # kernel 7.0 (2026-07-19 reboot) changed the /proc/fs/xfs/stat layout; this
+    # node-exporter's procfs parser misaligns and the whole xfs collector fails
+    # every scrape ('parsing "xpc": invalid syntax'). Disabled until a
+    # node-exporter release parses it - re-test on each kps chart bump.
+    # NodeExporterCollectorFailed (09-platform-alerts) now guards this class.
+    - --no-collector.xfs
 
 # ─── apiserver histogram-bucket cardinality (infra-sweep opt-6) ─────────
 # ~95k of ~307k head series were apiserver/etcd(kine) duration + size

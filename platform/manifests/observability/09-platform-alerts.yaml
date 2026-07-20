@@ -652,3 +652,26 @@ spec:
               The drift detector itself is not running (timer disabled, script erroring, or
               node-exporter textfile collector broken). Silence from it is NOT "no drift".
               Check: systemctl status k8s-drift-check.timer && journalctl -u k8s-drift-check.
+        - alert: NodeExporterCollectorFailed
+          # Scoped to collectors that MUST work on this box. A bare ==0 would fire
+          # 11 false positives: collectors for absent subsystems (zfs, nfs, nfsd,
+          # rapl, infiniband, fibrechannel, ipvs, bonding, conntrack, tapestats,
+          # bcachefs) report success=0 permanently ("no data" and "failed" share
+          # the metric). xfs is IN the list on purpose: currently disabled (no
+          # series, silent) but guarded the moment it is re-enabled.
+          expr: node_scrape_collector_success{collector=~"arp|cpu|cpufreq|diskstats|filesystem|hwmon|loadavg|meminfo|netclass|netdev|netstat|nvme|os|pressure|stat|textfile|time|uname|vmstat|xfs"} == 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "node-exporter collector {{ $labels.collector }} failing on {{ $labels.instance }}"
+            description: |
+              A node-exporter collector that works on this box has failed every scrape
+              for 30m, so its whole metric family is silently absent. Nothing else
+              alerts on this class: the xfs collector broke at the 2026-07-19 kernel
+              7.0 boot (new /proc/fs/xfs/stat layout) and only surfaced in a log review
+              a day later. Check kubectl -n observability logs
+              ds/kps-prometheus-node-exporter for the error. If the collector is broken
+              upstream, disable it with --no-collector.<name> in
+              values/kube-prometheus-stack.yaml AND remove it from this alert's
+              collector allowlist until re-enabled.
