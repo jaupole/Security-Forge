@@ -1,0 +1,42 @@
+# Loki ruler alert rules — log-derived alerts that have no metric to key on.
+#
+# Delivery path: Loki ruler → kps Alertmanager (v2 API) → email-ops receiver
+# (13-alertmanager-email.yaml). The loki chart's rules sidecar watches for
+# ConfigMaps labelled `loki_rule` in this namespace and mounts each data key
+# as a rule file under /rules/fake ("fake" = the single-tenant id when
+# auth_enabled=false); ruler storage is configured in values/loki.yaml.
+#
+# Added 2026-07-20 per RCA-sso-switcher §6.1: the 2026-07-15 authz outage
+# (102 AuthzUnavailableError in 3 min) was invisible until a user hit it.
+# With ecosystem-authz 0.1.2's 5s backoff cap, any recurrence of the network
+# trigger shows up as a short burst — this alert is what makes it visible.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-ruler-alerts
+  namespace: observability
+  labels:
+    loki_rule: "true"
+    secforge.platform/component: observability
+data:
+  secforge-log-alerts.yaml: |
+    groups:
+      - name: secforge.logs.authz
+        rules:
+          - alert: AuthzUnavailableBurst
+            # Any occurrence alerts: 21 days of logs showed zero hits outside
+            # the incident window, so >0 is signal, not noise. No `for:` —
+            # post-fix bursts self-heal in seconds and must still notify.
+            expr: |
+              sum by (namespace) (
+                count_over_time(
+                  {namespace=~"control|member-hub|proposal-forge|project-manager|business-manager"}
+                    |= "AuthzUnavailableError" [5m]
+                )
+              ) > 0
+            labels:
+              severity: critical
+              component: authz
+            annotations:
+              summary: "AuthzUnavailableError burst in {{ $labels.namespace }} ({{ $value }} hits / 5m)"
+              description: "SpiceDB was unreachable from {{ $labels.namespace }} — authz is fail-closed, so affected requests 500. Short burst = transient network reset (see RCA-sso-switcher 2026-07-15); sustained = SpiceDB or NetworkPolicy outage. Runbook: alerts.md#authzunavailableburst"

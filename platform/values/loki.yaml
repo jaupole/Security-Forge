@@ -67,11 +67,20 @@ loki:
     replication_factor: 1
     path_prefix: /var/loki
 
+  # Ruler — evaluates LogQL alert rules and fires into the kps Alertmanager
+  # (email-ops receiver, see manifests/observability/13-alertmanager-email.yaml).
+  # Rules arrive via the sidecar from ConfigMaps labelled `loki_rule` (see
+  # 15-loki-ruler-alerts.yaml); the sidecar drops them in /rules/fake — "fake"
+  # is the tenant id Loki uses when auth_enabled=false — and the ruler lists
+  # /rules for per-tenant subdirs. Wired 2026-07-20 (RCA-sso-switcher §6.1).
   rulerConfig:
     storage:
       type: local
       local:
-        directory: /var/loki/rules
+        directory: /rules
+    rule_path: /var/loki/rules-tmp
+    alertmanager_url: http://kps-alertmanager.observability.svc.cluster.local:9093
+    enable_alertmanager_v2: true
 
 singleBinary:
   replicas: 1
@@ -126,6 +135,10 @@ memberlist:
 # repeated OOMKill (observed 2026-05-14: 24× restarts in 108m + 8 "system
 # OOM" Wazuh alerts/hr from cgroup pressure). 256Mi limit comfortable headroom.
 sidecar:
+  rules:
+    # Chart default is /rules, but the ruler's local storage treats its
+    # directory as a root of per-tenant subdirs — single-tenant = "fake".
+    folder: /rules/fake
   resources:
     requests:
       cpu: 20m

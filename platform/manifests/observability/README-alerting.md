@@ -13,6 +13,11 @@ that can't live in git as-is — documented here.
   receiver, Watchdog→blackhole).
 - `14-alerting-egress.yaml` — egress NetworkPolicies: Prometheus→node metrics
   (`:9100`/`:10250`) and Alertmanager→SMTP (`:587`/`:465`).
+- `15-loki-ruler-alerts.yaml` — **log-derived** alerts (no metric exists), fired
+  by the Loki ruler straight into the same Alertmanager (v2 API). Ruler wiring
+  lives in `platform/values/loki.yaml` (`rulerConfig` + `sidecar.rules.folder`);
+  rule ConfigMaps are picked up by the chart's `loki_rule`-labelled sidecar.
+  First rule: `AuthzUnavailableBurst` (RCA-sso-switcher 2026-07-15 §6.1).
 - `../velero/04-servicemonitor.yaml`, `../cert-manager/04-servicemonitor.yaml` —
   make `velero_backup_*` / `certmanager_*` metrics exist.
 - `platform/values/kube-prometheus-stack.yaml` — `alertmanagerSpec.alertmanager

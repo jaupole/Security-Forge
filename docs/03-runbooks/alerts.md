@@ -183,3 +183,31 @@ istioctl analyze --all-namespaces
 ```
 
 **Common causes:** new AuthorizationPolicy missing a needed `from`, mTLS strict-mode rolled out without all peers having SVIDs, NetworkPolicy collision, target workload's pod IP changed without ztunnel refreshing (rare; `kubectl delete pod` the affected target to nudge ztunnel).
+
+---
+
+## AuthzUnavailableBurst
+
+**Trigger:** any `AuthzUnavailableError` log line in an app namespace within a 5m window (Loki ruler rule, `15-loki-ruler-alerts.yaml`). Zero-baseline: 21 days of logs before 2026-07-15 contained none.
+
+**Meaning:** the app's `ecosystem-authz` client could not reach SpiceDB and failed closed — affected requests returned 500. Since ecosystem-authz 0.1.2 (5s reconnect-backoff cap, retries at 500/1500/3000 ms), a transient network reset costs seconds; a burst of a few hits that stops on its own is that self-healing path working. A sustained stream means SpiceDB or the network path is actually down.
+
+**Diagnose:**
+```bash
+# Scope + duration — which namespace, how many, still ongoing?
+# (Grafana → Explore → Loki):
+#   {namespace=~"control|member-hub|proposal-forge|project-manager|business-manager"} |= "AuthzUnavailableError"
+
+# SpiceDB health
+kubectl -n spicedb get pods
+kubectl -n spicedb logs deploy/spicedb --tail=50
+
+# If one namespace only: its NetworkPolicy path to spicedb:50051
+kubectl -n spicedb get netpol | grep allow-
+
+# Root network trigger (RCA-sso-switcher §6.6): capture BEFORE reboot/rotation
+dmesg -T | tail -50
+journalctl -u k3s --since "-30 min" | grep -iE 'conntrack|route|link'
+```
+
+**Remediate:** short self-terminated burst → nothing to fix, but record the timestamp; recurrence pattern is what identifies the underlying network trigger (unprovable in the 2026-07-15 incident because the journal rotated). Sustained → treat as SpiceDB outage: check pod health, CNPG primary, and `allow-<app>-to-spicedb` NetworkPolicies (a new app namespace missing its policy 500s exactly like this).
