@@ -190,8 +190,11 @@ metadata:
     secforge.platform/policy-tier: layer-a
 spec:
   podSelector:
-    matchLabels:
-      cnpg.io/cluster: secforge-keycloak-db
+    # by label KEY, not the pinned cluster name: a restore-drill/DR cluster
+    # carries its own cnpg.io/cluster value and still needs operator status
+    # ingress (ecosystem-db drill gotcha #2, 2026-07-19)
+    matchExpressions:
+      - { key: cnpg.io/cluster, operator: Exists }
   policyTypes: [Ingress]
   ingress:
   - from:

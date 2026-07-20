@@ -26,6 +26,12 @@ Cost: ~5 minutes wall clock, one temporary 20Gi PVC, no impact on prod.
    Exists}` (mirroring the minio-side `allow-cross-ns-minio-clients`
    selector). If a future drill fails with connection errors, check this
    class first — the same wall would block a REAL side-by-side DR restore.
+3. **`serverName` must be copied from the LIVE cluster's
+   `spec.plugins[0].parameters.serverName` — never assumed from the cluster
+   name.** keycloak archives under `secforge-keycloak-db-pg17` (renamed at the
+   PG17 major upgrade); guessing `secforge-keycloak-db` fails the restore with
+   `no target backup found` (bit the first keycloak drill, 2026-07-20). When
+   the parameter is absent (spicedb), the cluster name IS the serverName.
 
 ## Procedure
 
@@ -87,8 +93,26 @@ done
 4. Tear down (deletes the PVC with it):
    `kubectl -n ecosystem-db delete cluster ecosystem-db-drill`
 
+## Variants: keycloak + spicedb (same pattern)
+
+Both proven 2026-07-20. Substitute into the drill manifest:
+
+| | keycloak | spicedb |
+|---|---|---|
+| namespace / cluster | `keycloak` / `secforge-keycloak-db` | `spicedb` / `secforge-spicedb-db` |
+| externalClusters `serverName` | `secforge-keycloak-db-pg17` | `secforge-spicedb-db` (no param on live cluster) |
+| database to validate | `keycloak` | `spicedb` |
+| built-in RPO ruler | `event_entity` (login events, continuous writes) | `relation_tuple_transaction` (MVCC heartbeat, continuous writes) |
+| exact-restore invariants | all other top tables | `relation_tuple`, `namespace_config` (the actual authz data) |
+
+Their namespaces' `allow-cnpg-operator-*` NetworkPolicies were converted to the
+`cnpg.io/cluster Exists` selector on 2026-07-20 (gotcha #2 class); the
+app-to-postgres policies stay pinned to the prod cluster name on purpose.
+
 ## Drill log
 
 | Date | Restore time | Validation | Demonstrated RPO | Notes |
 |------|--------------|------------|------------------|-------|
 | 2026-07-19 | 2m25s to healthy | 14/15 top tables exact | ~3 min (onlyoffice_usage_samples 3 rows behind) | First drill. Exposed the exact-label NetworkPolicy wall (fixed same day); data ~85MB across 6 DBs. |
+| 2026-07-20 | keycloak: 3m19s to healthy | 4/5 top tables exact | minutes (event_entity 6 rows behind) | First keycloak drill. Exposed the serverName gotcha (#3) + the operator-netpol pinned selector (fixed same day). |
+| 2026-07-20 | spicedb: 2m14s to healthy | authz tables exact (relation_tuple 125/125, namespace_config 18/18) | minutes (relation_tuple_transaction 25 rows behind) | First spicedb drill. serverName defaults to cluster name (no plugin param). |

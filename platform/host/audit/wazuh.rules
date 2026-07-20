@@ -17,9 +17,10 @@
 # ─── Reset + buffer + failure mode ────────────────────────────────────
 # Delete all existing rules so we start fresh on (re)load.
 -D
-# Increase backlog buffer (default 8192 is fine; bump to 16384 for safety
-# on a busy K8s host where audit volume can spike).
--b 16384
+# Increase backlog buffer (default 8192). 16384 proved too small: by
+# 2026-07-20 (kernel 7.0, k3s-audit + CIS rules) auditctl -s showed 180k
+# lost events and kauditd retry-queue overflows during kubectl bursts.
+-b 65536
 # Failure mode: 1 = printk to syslog (warn but keep going).
 # 2 = panic; we don't want a kernel panic if auditd is overwhelmed.
 -f 1
