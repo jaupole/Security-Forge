@@ -173,7 +173,7 @@ spec:
             - name: ct-monitor
               # mirror.gcr.io/library/* is on the restrict-image-registries
               # allow-list; pin to a digest at deploy (require-image-digest).
-              image: mirror.gcr.io/library/python:3.13-slim@sha256:b04b5d7233d2ad9c379e22ea8927cd1378cd15c60d4ef876c065b25ea8fb3bf3
+              image: mirror.gcr.io/library/python:3.13-slim@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91
               command: ["python3", "/app/ct_monitor.py"]
               env:
                 - {name: DOMAIN, value: "${DOMAIN}"}
