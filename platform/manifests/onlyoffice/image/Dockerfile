@@ -23,7 +23,7 @@
 # is handled at the platform layer (PSS baseline namespace + documented
 # Kyverno require-run-as-nonroot exemption).
 
-FROM mirror.gcr.io/onlyoffice/documentserver:9.4.0.1@sha256:e3da62a847b9a5d51a11f73cfea1d9c13c3be3809614490d4edddcf01dcf919b
+FROM mirror.gcr.io/onlyoffice/documentserver:9.4.0.1@sha256:3ab6ebc7c605e5a32b7ae3ff19daed4925090245acc8100ce2230bd766c88212
 
 # Patch the Ubuntu base + dependency closure. Entrypoint/cmd/user are
 # inherited from the upstream image.
