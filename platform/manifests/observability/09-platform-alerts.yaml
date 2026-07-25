@@ -711,6 +711,24 @@ spec:
               edits to helm-owned objects. Identify via journalctl -u k8s-drift-check, then
               kubectl patch the live object back to the rendered-manifest value — re-running the
               component script will NOT fix it.
+        # Staging is a deliberate, EXPIRING grace period for manifests codified
+        # ahead of a deploy-day apply (see STAGED in k8s-drift-check.sh). This
+        # rule is what stops it becoming a permanent blind spot: once the window
+        # passes, the file is counted as drift again AND this fires by name.
+        - alert: SecforgeManifestStagingExpired
+          expr: secforge_manifest_staged_expired_files > 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} staged manifest(s) are past their staging window"
+            description: |
+              A manifest was codified ahead of its apply and given an expiry in the STAGED list
+              (platform/host/drift-check/k8s-drift-check.sh); that date has now passed. Either
+              complete the apply, or extend/remove the entry with a reason. Identify via:
+                journalctl -u k8s-drift-check --since "-24h" | grep STAGED-EXPIRED
+              Do NOT extend the window without re-checking why the apply is still blocked.
+
         - alert: SecforgeDriftCheckStale
           expr: time() - secforge_drift_check_last_run_timestamp_seconds > 172800
           labels:

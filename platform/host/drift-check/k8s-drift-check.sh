@@ -62,6 +62,43 @@ ALLOW='${DOMAIN} ${SPIFFE_TRUST_DOMAIN} ${SPIRE_CLUSTER_NAME} ${LE_ISSUER} ${LE_
 #                            operator.yaml PSA-warns on server dry-run)
 EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration-job|bootstrap-job|realm-import|/realms/|spicedb/tests/|keycloak/operator/|13-kyverno-image-verify-note'
 
+# ── Intentionally STAGED manifests (codified ahead of a deploy-day apply) ─────
+# Format: path-substring:YYYY-MM-DD (expiry):reason
+#
+# A staged file's drift is EXPECTED — the repo deliberately leads the cluster
+# because applying needs an out-of-band step (a credential, a maintenance
+# window). It is counted separately so SecforgeManifestDrift stays quiet and
+# keeps its signal value.
+#
+# This is NOT the EXCLUDE list. Staging EXPIRES: past the date the file counts
+# as real drift again AND is reported as expired, so a "temporary" entry cannot
+# rot into a permanent blind spot on a security-relevant manifest. Keep the
+# window short and delete the entry the moment the apply lands.
+#
+# Why this exists: the Gmail→Resend cutover was committed 2026-07-20 (33dcda7)
+# as "fully codified but NOT yet applied" — it needs a sending-only Resend API
+# key in OpenBao at secret/observability/alertmanager-smtp first. For five days
+# that produced a 12-hourly drift email on the ONLY alert channel that reaches
+# a human, which is how a real merge-without-apply would get ignored.
+STAGED=(
+  "observability/13-alertmanager-email.yaml:2026-08-15:Gmail→Resend cutover, backlog #100 — needs Resend key in OpenBao (07r one-shot)"
+  "observability/16-alertmanager-smtp-vso-binding.yaml:2026-08-15:same cutover — VSO binding is inert until the OpenBao path exists"
+)
+
+# Echoes "staged" / "expired" / "" for a repo-relative path.
+staged_state() {
+  local rel="$1" entry path expiry today
+  today=$(date +%F)
+  for entry in "${STAGED[@]}"; do
+    path="${entry%%:*}"
+    expiry="${entry#*:}"; expiry="${expiry%%:*}"
+    [[ "$rel" == *"$path"* ]] || continue
+    if [[ "$today" > "$expiry" ]]; then echo "expired"; else echo "staged"; fi
+    return
+  done
+  echo ""
+}
+
 # Helm releases whose values files are the source of truth:
 #   release:namespace:values-file
 # NOTE: an earlier revision claimed kyverno was "NOT a helm release" — wrong.
@@ -88,7 +125,7 @@ set -a
 source "$PLATFORM_DIR/globals.env"
 set +a
 
-drifted=0 errored=0 checked=0
+drifted=0 errored=0 checked=0 staged_files=0 staged_expired=0
 while IFS= read -r f; do
   rel="${f#"$REPO/"}"
   [[ "$rel" =~ $EXCLUDE ]] && continue
@@ -104,6 +141,17 @@ while IFS= read -r f; do
     if [ "$real" -eq 0 ]; then rc=0; fi
   fi
   if [ $rc -eq 1 ]; then
+    case "$(staged_state "$rel")" in
+      staged)
+        staged_files=$((staged_files + 1))
+        echo "STAGED (expected, not counted as drift): $rel"
+        continue
+        ;;
+      expired)
+        staged_expired=$((staged_expired + 1))
+        echo "STAGED-EXPIRED — staging window passed, counting as drift: $rel"
+        ;;
+    esac
     drifted=$((drifted + 1))
     echo "DRIFT: $rel"
     echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | head -20
@@ -201,6 +249,12 @@ secforge_helm_values_drift_releases $helm_drifted
 # HELP secforge_helm_manifest_drift_releases Helm releases whose live objects differ from the deployed release manifest (failed-upgrade residue or manual edit; helm cannot self-repair this).
 # TYPE secforge_helm_manifest_drift_releases gauge
 secforge_helm_manifest_drift_releases $helm_manifest_drifted
+# HELP secforge_manifest_staged_files Manifests intentionally codified ahead of a deploy-day apply (expected drift, within their staging window).
+# TYPE secforge_manifest_staged_files gauge
+secforge_manifest_staged_files $staged_files
+# HELP secforge_manifest_staged_expired_files Staged manifests whose staging window has passed — these are counted as real drift and must be applied or de-staged.
+# TYPE secforge_manifest_staged_expired_files gauge
+secforge_manifest_staged_expired_files $staged_expired
 # HELP secforge_drift_check_errors Files/releases the drift check could not evaluate.
 # TYPE secforge_drift_check_errors gauge
 secforge_drift_check_errors $errored
@@ -217,4 +271,4 @@ EOF
 chmod 0644 "$TMPFILE"
 mv "$TMPFILE" "$OUTFILE"
 
-echo "done: checked=$checked drifted=$drifted helm_drifted=$helm_drifted helm_manifest_drifted=$helm_manifest_drifted errors=$errored"
+echo "done: checked=$checked drifted=$drifted staged=$staged_files staged_expired=$staged_expired helm_drifted=$helm_drifted helm_manifest_drifted=$helm_manifest_drifted errors=$errored"
