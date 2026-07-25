@@ -1,0 +1,53 @@
+# Strip the port from the Host/:authority header at the public gateway BEFORE
+# the HTTP filter chain runs, so AuthorizationPolicy host matching cannot be
+# bypassed with a port suffix.
+#
+# WHY (2026-07-25 incident):
+#   Envoy's ROUTE matcher normalizes the authority (it strips the port before
+#   matching virtual-host domains), but the RBAC filter compiled from an
+#   AuthorizationPolicy `hosts:` field does a RAW EXACT STRING COMPARE on the
+#   `:authority` header:
+#       "header": {"name": ":authority",
+#                  "string_match": {"exact": "auth.secforge.dev", ...}}
+#   So `Host: auth.secforge.dev:443` routed normally but skipped every
+#   host-scoped DENY. Confirmed bypassed from the public internet:
+#     - auth-admin-tailnet   → Keycloak master admin console served (200)
+#     - portal-deny-internal → /api/v1/admin*, /api/v1/system* reached the app
+#     - billing-allowlist    → Stripe webhook source-IP allowlist bypassed
+#   ANY port works (:443, :8443, :1), so enumerating host variants in each
+#   policy is not a fix — the bypass space is unbounded. Normalizing once, at
+#   the listener, repairs all host-based policies at the same time.
+#
+# SCOPE: public gateway only (istio: ingress) — that is where the internet-
+# facing host-based policies are enforced. The tailnet gateway
+# (istio: ingress-tailnet) is unaffected.
+#
+# NOTE: this changes what downstream filters and the upstream see in Host —
+# the port is removed. Keycloak/Portal/Billing all derive their public URLs
+# from their own configured hostname, not from the request Host, so this is
+# transparent to them.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  labels:
+    secforge.platform/component: istio-gateway
+  name: gateway-strip-host-port
+  namespace: istio-ingress
+spec:
+  configPatches:
+  - applyTo: NETWORK_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: MERGE
+      value:
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          strip_any_host_port: true
+  workloadSelector:
+    labels:
+      istio: ingress
