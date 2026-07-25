@@ -18,12 +18,13 @@
 #      BuildKit layer cache accumulates across image builds; safe to prune as
 #      layers are re-fetchable from GHCR on next build.
 #   5. Deletes stale runner SELF-UPDATE leftovers (bin.<ver>/externals.<ver>
-#      sibling dirs). The live install is the plain bin/ + externals/ pair;
-#      the versioned copies are what previous auto-updates left behind
-#      (~800 MB per runner per update — 5 GB across 7 runners found when
-#      NodeDiskSpaceWarn fired on vg0-runner, 2026-07-07). The sweep is
-#      skipped entirely while any Runner.Worker is active, and any versioned
-#      dir referenced by a live listener/worker cmdline is kept.
+#      sibling dirs). Since runner v2.336.0 the plain bin/ + externals/ are
+#      SYMLINKS to the current versioned dirs — the live target is always
+#      kept; only unreferenced versioned copies from previous auto-updates
+#      are deleted (~800 MB per runner per update — 5 GB across 7 runners
+#      found when NodeDiskSpaceWarn fired on vg0-runner, 2026-07-07). The
+#      sweep is skipped entirely while any Runner.Worker is active, and any
+#      versioned dir referenced by a live listener/worker cmdline is kept.
 #
 # NOT done here:
 #   - containerd image GC: handled by k3s kubelet image-gc-high-threshold=70
@@ -123,6 +124,17 @@ else
   swept=0
   for stale in "${RUNNER_BASE}"/*/bin.* "${RUNNER_BASE}"/*/externals.*; do
     [[ -d "${stale}" ]] || continue
+    # Since runner v2.336.0 the live install IS a versioned dir: bin/ and
+    # externals/ are symlinks into bin.<ver>/externals.<ver> (2026-07-22
+    # update bricked 6/8 runners when this sweep deleted the symlink
+    # targets). Never delete the dir the live symlink resolves to.
+    runner_dir=$(dirname "${stale}")
+    plain=$(basename "${stale}")
+    plain=${plain%%.*}   # bin.2.336.0 -> bin
+    if [[ "$(readlink -f "${runner_dir}/${plain}" 2>/dev/null)" == "$(readlink -f "${stale}")" ]]; then
+      log "KEEP (live symlink target): ${stale}"
+      continue
+    fi
     if [[ -n "${live_cmdlines}" ]] && grep -qF "${stale}" <<<"${live_cmdlines}"; then
       log "KEEP (referenced by running process): ${stale}"
       continue
