@@ -592,6 +592,75 @@ spec:
               degrading until it succeeds. Inspect: kubectl -n observability logs job/<latest job>.
               Common causes: Loki query failure, OpenBao login/sign failure, or GitHub PAT expired
               (secret/platform/audit-anchors-push-token).
+    # ─── GHA self-hosted runners (added 2026-07-25) ───────────────────────
+    # Fed by the gha-runner-exporter host timer (platform/host/node-exporter/,
+    # every 60s) via the node-exporter textfile collector. Closes the blind
+    # spot behind the 2026-07-25 P0: runner-cleanup.sh deleted the live
+    # versioned bin/ dirs after the v2.336.0 self-update switched to a
+    # symlinked layout — 5 runners crash-looped through ~14,000 restarts over
+    # 2.5 days (no deploy path) with zero pages. These runners are host
+    # systemd units, invisible to every kube_pod_* alert above.
+    - name: secforge-gha-runners
+      interval: 60s
+      rules:
+        # is-active != "active" covers both dead units and the
+        # activating/auto-restart crash-loop state the P0 sat in.
+        - alert: SecforgeGhaRunnerDown
+          expr: secforge_gha_runner_unit_active == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GHA runner {{ $labels.runner }} down for >10m — no CI/deploy path for that repo"
+            description: |
+              actions.runner.{{ $labels.runner }}.service is not active (dead or stuck in an
+              auto-restart loop). GHA-hosted spending limit is $0, so that repo's workflows
+              queue forever until the runner returns. Diagnose:
+                journalctl -u actions.runner.{{ $labels.runner }}.service -n 50
+              "Runner.Listener: No such file or directory" = the 2026-07-25 failure class —
+              restore bin.<ver>/externals.<ver> by cp -a from a healthy runner's dirs
+              (binaries are runner-agnostic; config lives in .runner/.credentials).
+
+        # Catches a crash loop early (restart 5, not 14,000) even if the unit
+        # oscillates through "active" fast enough to dodge the Down alert.
+        - alert: SecforgeGhaRunnerRestarting
+          expr: increase(secforge_gha_runner_unit_restarts[30m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GHA runner {{ $labels.runner }} restarted {{ $value | humanize }} times in 30m"
+            description: |
+              The runner unit is restarting repeatedly — crash loop or flapping. Investigate
+              before the queue backs up: journalctl -u actions.runner.{{ $labels.runner }}.service -n 50
+
+        # The time-bomb case: unit "active" but running on deleted inodes
+        # (dangling bin symlink). Dies on next restart; only visible on disk.
+        - alert: SecforgeGhaRunnerBinaryMissing
+          expr: secforge_gha_runner_listener_ok == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GHA runner {{ $labels.runner }} bin/Runner.Listener missing on disk (unit may still be running on deleted inodes)"
+            description: |
+              /opt/github-runner/runners/{{ $labels.runner }}/bin/Runner.Listener does not
+              resolve — the bin symlink is dangling (something deleted the live versioned
+              install; in the 2026-07-25 P0 it was runner-cleanup.sh). The unit dies on its
+              next restart. Restore bin.<ver>/externals.<ver> from a healthy runner, then
+              restart the unit ("session already exists" clears itself in ~2m).
+
+        - alert: SecforgeGhaRunnerExporterStale
+          expr: time() - secforge_gha_runner_exporter_last_run_timestamp_seconds > 1800
+          labels:
+            severity: warning
+          annotations:
+            summary: "gha-runner-exporter has not run in >30m — runner alerts are blind"
+            description: |
+              The runner-health textfile exporter is stale (timer disabled, script erroring,
+              or textfile collector broken). Silence from it is NOT "runners healthy".
+              Check: systemctl status gha-runner-exporter.timer && journalctl -u gha-runner-exporter
+
     - name: secforge-drift
       rules:
         # Fed by the k8s-drift-check host timer (platform/host/drift-check/,

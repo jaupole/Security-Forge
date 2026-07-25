@@ -41,6 +41,9 @@ PAIRS=(
   "node-exporter/mount-count-exporter.sh:/usr/local/sbin/mount-count-exporter.sh"
   "node-exporter/mount-count-exporter.service:/etc/systemd/system/mount-count-exporter.service"
   "node-exporter/mount-count-exporter.timer:/etc/systemd/system/mount-count-exporter.timer"
+  "node-exporter/gha-runner-exporter.sh:/usr/local/sbin/gha-runner-exporter.sh"
+  "node-exporter/gha-runner-exporter.service:/etc/systemd/system/gha-runner-exporter.service"
+  "node-exporter/gha-runner-exporter.timer:/etc/systemd/system/gha-runner-exporter.timer"
 )
 
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }

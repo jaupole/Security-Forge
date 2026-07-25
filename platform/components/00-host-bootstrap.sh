@@ -201,6 +201,20 @@ systemctl daemon-reload
 systemctl enable --now mount-count-exporter.timer
 systemctl start mount-count-exporter.service  # fire once immediately
 
+green "==> gha-runner-exporter (node-exporter textfile metric)"
+install -m 0755 -o root -g root \
+    "$PLATFORM_DIR/host/node-exporter/gha-runner-exporter.sh" \
+    /usr/local/sbin/gha-runner-exporter.sh
+
+for unit in gha-runner-exporter.service gha-runner-exporter.timer; do
+  install -m 0644 -o root -g root \
+      "$PLATFORM_DIR/host/node-exporter/$unit" \
+      "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now gha-runner-exporter.timer
+systemctl start gha-runner-exporter.service  # fire once immediately
+
 mkdir -p /var/lib/node_exporter/textfile_collector
 
 # ─── 6b. Repo-vs-live drift check (merge-without-apply detector) ───────

@@ -1,0 +1,7 @@
+[Unit]
+Description=Export GitHub Actions runner health to node-exporter textfile collector
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gha-runner-exporter.sh
