@@ -34,15 +34,16 @@ spec:
           # sized limit can't oscillate FIRING/RESOLVED. Primary fix is right-sizing;
           # this stops residual boundary flapping without hiding genuine OOM creep.
           # wazuh-indexer is excluded — see WazuhIndexerAnonMemoryHigh below.
+          # node-exporter is excluded — see NodeExporterAnonMemoryHigh below.
           expr: |
             (
-              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer",container!="node-exporter"})
                / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
               > 0.85
             )
             or
             (
-              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
+              (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer",container!="node-exporter"})
                / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
               > 0.80
               and on (namespace, pod, container)
@@ -92,9 +93,44 @@ spec:
               working_set this cannot be cache creep — investigate a JVM heap/off-heap leak,
               or raise limit AND heap deliberately (values/wazuh.yaml, heap stays ~50% of limit).
               Current value: {{ $value | humanizePercentage }}
+
+        # node-exporter is EXCLUDED from ContainerMemoryNearLimit AND ContainerMemoryAtLimit:
+        # its working_set is ~95% reclaimable kernel slab (dentry/inode cache charged to its
+        # cgroup as first toucher of /proc, /sys and /host/root every scrape). It grows
+        # linearly (~31Mi/day, RCA 2026-07-27: 232Mi working_set vs 13Mi RSS) and, unlike
+        # page cache, slab is NOT subtracted from working_set — so it plateaus AT the limit
+        # once the kernel starts reclaiming there, which would latch AtLimit forever with
+        # zero OOM risk. Chasing it cost three limit bumps (64Mi->128Mi->256Mi). Anon RSS
+        # (steady ~13Mi) is the OOM-relevant signal; ContainerOOMKilled still backstops.
+        - alert: NodeExporterAnonMemoryHigh
+          expr: |
+            (
+              (sum by (namespace, pod, container) (container_memory_rss{namespace="observability",container="node-exporter"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="observability",container="node-exporter",resource="memory",unit="byte"}))
+              > 0.85
+            )
+            or
+            (
+              (sum by (namespace, pod, container) (container_memory_rss{namespace="observability",container="node-exporter"})
+               / sum by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="observability",container="node-exporter",resource="memory",unit="byte"}))
+              > 0.80
+              and on (namespace, pod, container)
+              (ALERTS{alertname="NodeExporterAnonMemoryHigh",alertstate="firing"} == 1)
+            )
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "node-exporter anon memory (RSS) >85% of limit ({{ $labels.namespace }}/{{ $labels.pod }})"
+            description: |
+              node-exporter anonymous RSS (kernel slab and page cache excluded) has held >85%
+              of the container memory limit for >30m (clears below 80%). Unlike working_set
+              this cannot be dentry-cache creep — investigate a genuine leak (goroutines,
+              collector failure) before touching the limit (values/kube-prometheus-stack.yaml).
+              Current value: {{ $value | humanizePercentage }}
         - alert: ContainerMemoryAtLimit
           expr: |
-            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer"})
+            (sum by (namespace, pod, container) (container_memory_working_set_bytes{container!="",container!="POD",container!="wazuh-indexer",container!="node-exporter"})
              / sum by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory",unit="byte"}))
             > 0.95
           for: 2m

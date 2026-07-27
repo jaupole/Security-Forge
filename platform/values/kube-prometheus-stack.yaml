@@ -245,7 +245,11 @@ prometheus-node-exporter:
       memory: 32Mi
     limits:
       cpu: 1               # 100m→200m (2026-06-05) still throttled 24/7; give burst headroom
-      memory: 256Mi        # 64Mi tripped 2026-07-10; 128Mi tripped again 2026-07-14/17 (transient spikes, steady ~40Mi)
+      memory: 256Mi        # DO NOT bump again: the 64Mi/128Mi trips (07-10/14/17) were reclaimable kernel
+                           # slab (dentry cache from walking /proc,/sys,/host/root) charged to the cgroup,
+                           # NOT the process — anon RSS is steady ~13Mi and slab is reclaimed at the limit,
+                           # so OOM is impossible. Alerts now use RSS (NodeExporterAnonMemoryHigh,
+                           # 09-platform-alerts, RCA 2026-07-27); working_set alerts exclude node-exporter.
 
   extraArgs:
     # Read host textfile collector written by /usr/local/sbin/mount-count-exporter.sh
