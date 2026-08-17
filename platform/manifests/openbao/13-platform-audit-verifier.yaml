@@ -91,10 +91,16 @@ data:
 
     def raw_get_json(path):
         # Retry on connection-level errors (fresh-pod Cilium cold-start / transient
-        # CDN blip). HTTPError = server responded (e.g. 404) — return, don't retry.
+        # CDN blip) AND on 429/5xx (2026-08-17: the box IP shares
+        # raw.githubusercontent.com's unauthenticated quota with the self-hosted
+        # CI runner — Renovate bursts starved the verifier). Honors Retry-After,
+        # caps each wait at 120s. Design stays zero-credential: backoff, not a
+        # token — a token able to lift the quota would also be a credential in
+        # the one pod that must never hold one. Other HTTPError codes (e.g. 404)
+        # are a real answer — return, don't retry.
         url = "{}/{}".format(RAW, path)
         last = None
-        for attempt in range(6):
+        for attempt in range(8):
             req = urllib.request.Request(url, headers={
                 "User-Agent": "secforge-platform-audit-verifier/1.0",
                 "Cache-Control": "no-cache"})
@@ -102,10 +108,16 @@ data:
                 with urllib.request.urlopen(req, timeout=30) as r:
                     return r.status, r.read()
             except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and attempt < 7:
+                    ra = e.headers.get("Retry-After") or ""
+                    delay = int(ra) if ra.isdigit() else 4 * (2 ** attempt)
+                    time.sleep(min(delay, 120))
+                    last = e
+                    continue
                 return e.code, e.read()
             except urllib.error.URLError as e:
                 last = e
-                if attempt < 5:
+                if attempt < 7:
                     time.sleep(min(2 ** attempt, 10))
         raise last
 
