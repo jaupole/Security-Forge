@@ -240,9 +240,15 @@ spec:
         # Critical at 15% free (85% full) → act now; root/rancher at this level
         # degrades k3s scheduling and Velero backups within minutes.
         - alert: NodeDiskSpaceWarn
+          # 2026-08-17: percent-only threshold misfires on large volumes —
+          # /var/lib/minio (250G) warned with 62G still free. Absolute floor:
+          # only warn when BOTH <25% free AND <50G free. Small filesystems
+          # (root 59G: 25% = 14.7G) are unaffected; NodeDiskSpaceCritical
+          # (<15%) is unchanged (minio: 37.5G, below the 50G warn floor).
           expr: |
             (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
              / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.25
+            and node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} < 50e9
           for: 10m
           labels:
             severity: warning
