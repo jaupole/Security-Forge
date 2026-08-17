@@ -13,7 +13,7 @@
 #   - `mc mirror` is incremental; `--exclude "*.json"` skips the current
 #     day's still-growing uncompressed archive (it ships tomorrow as .gz).
 #   - Prune runs ONLY after a successful mirror: local .gz older than
-#     RETENTION_DAYS are deleted (30d hot on the PV; full history in MinIO).
+#     RETENTION_DAYS are deleted (30d hot on the PV; 90d in MinIO via ILM, 2026-08-17).
 #   - Credentials are file-mounted (backlog #61 pattern), created by
 #     manifests/minio/03-wazuh-archive-credentials-job.yaml with an
 #     APPEND-ONLY MinIO policy (no DeleteObject) — a compromised manager

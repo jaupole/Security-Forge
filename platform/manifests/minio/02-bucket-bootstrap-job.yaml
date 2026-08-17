@@ -7,7 +7,7 @@
 #   - tempo-traces             (no Object Lock; Tempo enforces 7d retention)
 #   - loki-chunks              (no Object Lock; Loki enforces 14d retention)
 #   - backups                  (versioned)
-#   - wazuh-archive            (versioned)
+#   - wazuh-archive            (versioned; 90d ILM expiry, 2026-08-17)
 #   - member-hub-documents     (versioned + SSE-S3; member file attachments)
 #   - ecosystem-graphics       (versioned + SSE-S3; ADR-0001 graphics library)
 #   - ecosystem-brand-kit      (versioned + SSE-S3; ADR-0002 brand-kit fonts)
@@ -97,6 +97,17 @@ spec:
               # wazuh-archive: versioned (Phase 7-rest will populate).
               mc mb --ignore-existing local/wazuh-archive
               mc version enable local/wazuh-archive
+
+              # wazuh-archive lifecycle (2026-08-17 alert RCA): raw event
+              # archive grew 15-18G/month unbounded and tripped
+              # NodeDiskSpaceWarn on /var/lib/minio. Retention decision: 90d
+              # in MinIO (manager keeps 30d hot on the PV; ship-then-prune in
+              # wazuh/03-archive-ship-cronjob.yaml unchanged). Versioned
+              # bucket: expiry writes delete markers; noncurrent-expiry is
+              # what reclaims the bytes.
+              mc ilm rule add --expire-days 90 local/wazuh-archive 2>/dev/null || true
+              mc ilm rule add --noncurrent-expire-days 7 local/wazuh-archive 2>/dev/null || true
+              mc ilm rule add --expire-delete-marker local/wazuh-archive 2>/dev/null || true
 
               # member-hub-documents: versioned + SSE-S3 server-side encryption.
               # Holds member file attachments uploaded via Member Hub's
