@@ -75,7 +75,7 @@ data:
     Exit 0 = all node chains intact. Exit 1 = TAMPER (rewrite/truncation of an
     anchored range). Exit 2-5 = operational/chain-integrity failure. All non-zero
     exits fail the Job -> PlatformAuditVerifierFailing."""
-    import hashlib, json, os, sys, time, urllib.request, urllib.error
+    import hashlib, io, json, os, sys, tarfile, time, urllib.request, urllib.error
 
     REPO = os.environ["ANCHORS_REPO"]
     BRANCH = os.environ.get("ANCHORS_BRANCH", "main")
@@ -121,7 +121,42 @@ data:
                     time.sleep(min(2 ** attempt, 10))
         raise last
 
+    # 2026-08-17: preferred transport. One codeload GET fetches the whole
+    # anchors repo; the per-file walk otherwise costs 90+ raw GETs per run
+    # (chain length x 3 nodes, growing daily) against the per-IP anonymous
+    # raw.githubusercontent.com quota the CI runner also consumes. codeload
+    # is a separate, far more generous limit. Extraction is in-memory only
+    # (no disk writes, no extractall — no path traversal surface) and the
+    # chain is still verified purely by the committed hashes, so transport
+    # integrity adds nothing security-wise. Still zero credentials.
+    SNAPSHOT = {}
+
+    def load_snapshot():
+        url = "https://codeload.github.com/{}/tar.gz/refs/heads/{}".format(REPO, BRANCH)
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "secforge-platform-audit-verifier/1.0"})
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    data = r.read(32 * 1024 * 1024 + 1)
+                if len(data) > 32 * 1024 * 1024:
+                    raise RuntimeError("anchors tarball exceeds 32MB cap")
+                with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+                    for m in tf.getmembers():
+                        if m.isfile() and "/" in m.name:
+                            SNAPSHOT[m.name.split("/", 1)[1]] = tf.extractfile(m).read()
+                print("snapshot: {} files via codeload".format(len(SNAPSHOT)))
+                return
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(15 * (attempt + 1))
+                else:
+                    print("WARN: codeload snapshot failed ({}); falling back to per-file raw GETs".format(e), file=sys.stderr)
+
     def get_json(path):
+        if SNAPSHOT:
+            body = SNAPSHOT.get(path)
+            return None if body is None else json.loads(body)
         status, body = raw_get_json(path)
         if status == 404:
             return None
@@ -208,6 +243,7 @@ data:
             node, len(anchors), checked, expect_offset)
 
     def main():
+        load_snapshot()
         tampers, errors, summaries = [], [], []
         for node in NODES:
             try:
