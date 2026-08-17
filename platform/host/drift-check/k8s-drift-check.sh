@@ -81,8 +81,8 @@ EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration
 # that produced a 12-hourly drift email on the ONLY alert channel that reaches
 # a human, which is how a real merge-without-apply would get ignored.
 STAGED=(
-  "observability/13-alertmanager-email.yaml:2026-08-15:Gmail→Resend cutover, backlog #100 — needs Resend key in OpenBao (07r one-shot)"
-  "observability/16-alertmanager-smtp-vso-binding.yaml:2026-08-15:same cutover — VSO binding is inert until the OpenBao path exists"
+  "observability/13-alertmanager-email.yaml:2026-08-24:Gmail→Resend cutover, backlog #100 — extended 2026-08-17 (alert-RCA session): still blocked on operator minting the Resend key + running 05j with the 1Password root token"
+  "observability/16-alertmanager-smtp-vso-binding.yaml:2026-08-24:same cutover — extended 2026-08-17 with 13-alertmanager-email.yaml"
 )
 
 # Echoes "staged" / "expired" / "" for a repo-relative path.
