@@ -10,6 +10,8 @@
 #   - kube-system / kube-public / kube-node-lease: cluster machinery,
 #     re-creatable by re-running the install steps.
 #   - default: should be empty in production (no app should land there).
+#   - velero: nothing stateful (all codified); fs-backup of its own transient
+#     kopia-maintain job pods races their teardown (weekly 2026-08-16 PartiallyFailed).
 
 ---
 apiVersion: velero.io/v1
@@ -27,6 +29,7 @@ spec:
       - kube-public
       - kube-node-lease
       - default
+      - velero
     includeClusterResources: true
     snapshotVolumes: false       # we use kopia file-system backup, not CSI snapshots
     defaultVolumesToFsBackup: true
@@ -48,6 +51,7 @@ spec:
       - kube-public
       - kube-node-lease
       - default
+      - velero
     includeClusterResources: true
     snapshotVolumes: false
     defaultVolumesToFsBackup: true
