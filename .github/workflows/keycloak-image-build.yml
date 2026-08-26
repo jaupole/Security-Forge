@@ -83,7 +83,7 @@ jobs:
           # GHCR (artifactType lost in the tag-fallback referrers index).
           # v2.6.3 carries the GHSA-whqx-f9j3-ch6m verify-path fix. See
           # operator-backlog #90.
-          cosign-release: 'v2.6.3'
+          cosign-release: 'v3.1.3'
 
       - name: Resolve image metadata (tags, labels)
         id: meta
