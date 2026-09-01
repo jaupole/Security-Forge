@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${KPS_CHART_VER:-84.4.0}"
+CHART_VER="${KPS_CHART_VER:-84.5.0}"
 NS=observability
 NS_BAO=openbao
 NS_KC=keycloak

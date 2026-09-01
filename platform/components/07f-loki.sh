@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${LOKI_CHART_VER:-7.0.0}"
+CHART_VER="${LOKI_CHART_VER:-7.3.0}"
 NS=observability
 NS_BAO=openbao
 NS_MINIO=minio

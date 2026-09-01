@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${OTEL_CHART_VER:-0.158.1}"  # 0.153.0 -> 0.158.1 2026-06-10 (pentest CVE refresh)
+CHART_VER="${OTEL_CHART_VER:-0.172.0}"  # 0.153.0 -> 0.158.1 2026-06-10 (pentest CVE refresh)
 NS=observability
 
 # 1. NetworkPolicy
