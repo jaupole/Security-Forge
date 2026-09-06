@@ -28,7 +28,7 @@ FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}@${KEYCLOAK_BASE_DIGEST}
 # (de facto reference set used by the security community). Pinned to a
 # specific commit SHA so the URL is immutable; bump COMMIT + SHA256 together
 # when refreshing (annually or on demand).
-ARG PWDB_COMMIT=57af8077f81921fe34fefed01177b05bae2fa2f8
+ARG PWDB_COMMIT=689d972e93b071bb77c7a1b681a0081039b0f1fc
 ARG PWDB_URL=https://raw.githubusercontent.com/danielmiessler/SecLists/${PWDB_COMMIT}/Passwords/Common-Credentials/Pwdb_top-100000.txt
 ARG PWDB_SHA256=07f876a616f08fb2cc5c3e0ce04e4a6d1123380580472b0997baebc4e8226977
 
