@@ -38,7 +38,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${CERT_MANAGER_CHART_VER:-v1.20.2}"
+CHART_VER="${CERT_MANAGER_CHART_VER:-v1.21.1}"
 NS=cert-manager
 NS_BAO=openbao
 POD_BAO=openbao-0

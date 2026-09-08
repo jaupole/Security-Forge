@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${VELERO_CHART_VER:-12.0.2}"  # 12.0.1 -> 12.0.2 2026-06-10 (pentest CVE refresh)
+CHART_VER="${VELERO_CHART_VER:-12.1.0}"  # 12.0.1 -> 12.0.2 2026-06-10 (pentest CVE refresh)
 NS=velero
 NS_BAO=openbao
 NS_MINIO=minio
