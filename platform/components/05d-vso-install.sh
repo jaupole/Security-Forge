@@ -26,7 +26,7 @@ NS=vault-secrets-operator
 # operator-backlog #77 (VSO 1.4.0 wedges VaultStaticSecrets after an OpenBao
 # restart/restore; remedy is recreating the VSS CR — restart/watchdog don't
 # help). Bump via the VSO_CHART_VER customManager in renovate.json.
-CHART_VER="${VSO_CHART_VER:-1.4.0}"
+CHART_VER="${VSO_CHART_VER:-1.5.1}"
 
 # 1. Namespace
 echo ">>> Creating $NS namespace"

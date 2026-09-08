@@ -25,7 +25,7 @@ LIB="$PLATFORM_DIR/lib"
 # (pentest base-image CVE refresh: 0.33.1 ships newer trivy-operator + trivy
 # images that clear the fixable criticals in trivy-system). Never DOWNGRADE the
 # live operator on a re-run.
-CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.33.1}"
+CHART_VER="${TRIVY_OPERATOR_CHART_VER:-0.36.0}"
 NS=trivy-system
 
 # 1. Namespace
