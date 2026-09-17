@@ -232,10 +232,13 @@ kube-state-metrics:
   resources:
     requests:
       cpu: 10m
-      memory: 64Mi
+      memory: 96Mi
     limits:
       cpu: 100m
-      memory: 128Mi
+      # 2026-09-17: 128Mi -> 256Mi. Adding the CNPG customResourceState informers
+      # (below) pushed startup RSS past 128Mi and KSM CrashLooped (OOMKilled x5),
+      # silencing every kube_* based alert until the bump.
+      memory: 256Mi
   # ─── CNPG Backup/Cluster CR metrics (2026-09-17) ──────────────────────────
   # The barman-cloud plugin exports no backup metrics and Cluster.status
   # .lastSuccessfulBackup is not updated by plugin backups, so 29 days of
