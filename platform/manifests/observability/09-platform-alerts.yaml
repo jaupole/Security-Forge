@@ -385,6 +385,85 @@ spec:
           annotations:
             summary: "Velero metrics not scraping (ServiceMonitor velero may be broken)"
 
+    # ─── CNPG (Postgres) backups (added 2026-09-17) ─────────────────────────
+    # RCA: 29 days of failed base backups went unnoticed. The barman-cloud plugin
+    # exports no backup metrics and Cluster.status.lastSuccessfulBackup is not
+    # updated by plugin backups, so the Backup CRs are the source of truth. They
+    # are exported by kube-state-metrics customResourceState (values/
+    # kube-prometheus-stack.yaml → cnpg_backup_*, cnpg_cluster_*). Cadence:
+    # ScheduledBackups run daily 02:30–03:15 UTC, so the fail-closed staleness
+    # bound is 27h, matching VeleroBackupTooOld.
+    - name: cnpg-backups
+      interval: 60s
+      rules:
+        - alert: CNPGBackupTooOld
+          expr: |
+            (time() - max by (namespace, cnpg_cluster) (
+               cnpg_backup_stopped_at_seconds
+               and on (namespace, backup) (cnpg_backup_status_phase{phase="completed"} == 1)
+            )) > 97200
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No completed CNPG backup for {{ $labels.namespace }}/{{ $labels.cnpg_cluster }} in >27h"
+            description: |
+              Last completed base backup is {{ $value | humanizeDuration }} old. Check:
+                kubectl -n {{ $labels.namespace }} get backups.postgresql.cnpg.io --sort-by=.metadata.creationTimestamp | tail
+                kubectl -n {{ $labels.namespace }} get cluster {{ $labels.cnpg_cluster }} -o jsonpath='{.status.phase}'
+              If the phase says "error while interacting with plugins" with an x509 error, the
+              barman-cloud TLS copies in postgres-operator are stale:
+                kubectl -n postgres-operator create job --from=cronjob/barman-cloud-tls-sync tls-sync-now
+              (RCA 2026-09-17, manifests/postgres-operator/09-barman-cloud-tls-sync.yaml).
+        - alert: CNPGBackupNeverCompleted
+          # A Cluster with no completed Backup CR at all (ScheduledBackup missing, or a
+          # rebuild that lost the Backup CRs). Same 27h fail-closed bound.
+          expr: |
+            cnpg_cluster_instances
+              unless on (namespace, cnpg_cluster)
+            (cnpg_backup_status_phase{phase="completed"} == 1)
+          for: 27h
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG cluster {{ $labels.namespace }}/{{ $labels.cnpg_cluster }} has never completed a backup"
+        - alert: CNPGBackupFailed
+          # Bounded to Backups created in the last 24h so historical failed CRs (CNPG
+          # never garbage-collects them) do not nag forever.
+          expr: |
+            max by (namespace, cnpg_cluster, backup) (
+              cnpg_backup_status_phase{phase=~"failed|walArchivingFailing"} == 1
+              and on (namespace, backup) ((time() - cnpg_backup_created_seconds) < 86400)
+            )
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG backup {{ $labels.namespace }}/{{ $labels.backup }} failed ({{ $labels.cnpg_cluster }})"
+            description: "kubectl -n {{ $labels.namespace }} get backup {{ $labels.backup }} -o jsonpath='{.status.error}'"
+        - alert: CNPGBackupStuck
+          # A Backup CR older than 3h that is neither completed nor failed (phase pending/
+          # started/running or EMPTY — an empty phase is exactly what the 2026-08-19 backups
+          # showed for 29 days while the operator could not reach the plugin).
+          expr: |
+            ((time() - cnpg_backup_created_seconds) > 10800)
+              unless on (namespace, backup)
+            (cnpg_backup_status_phase{phase=~"completed|failed|walArchivingFailing"} == 1)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG backup {{ $labels.namespace }}/{{ $labels.backup }} stuck for {{ $value | humanizeDuration }}"
+        - alert: CNPGBackupMetricsAbsent
+          # Fail-closed: if the KSM customResourceState config breaks, every rule above
+          # goes silent. cnpg_cluster_instances exists as long as any CNPG Cluster does.
+          expr: absent(cnpg_cluster_instances)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG backup metrics missing (kube-state-metrics customResourceState for postgresql.cnpg.io broken?)"
+
     # ─── Certificates (added 2026-05-30; needs ServiceMonitor cert-manager) ─
     - name: secforge-certs
       interval: 60s

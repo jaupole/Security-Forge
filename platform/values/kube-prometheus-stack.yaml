@@ -236,6 +236,67 @@ kube-state-metrics:
     limits:
       cpu: 100m
       memory: 128Mi
+  # ─── CNPG Backup/Cluster CR metrics (2026-09-17) ──────────────────────────
+  # The barman-cloud plugin exports no backup metrics and Cluster.status
+  # .lastSuccessfulBackup is not updated by plugin backups, so 29 days of
+  # failed base backups went unnoticed (RCA: manifests/postgres-operator/
+  # 09-barman-cloud-tls-sync.yaml). Export the Backup/Cluster CRs instead.
+  # Consumed by the cnpg-backups group in manifests/observability/
+  # 09-platform-alerts.yaml. Metric names: cnpg_backup_status_phase{phase=..}
+  # (StateSet), cnpg_backup_created_seconds, cnpg_backup_stopped_at_seconds,
+  # cnpg_cluster_instances.
+  rbac:
+    extraRules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        resources: ["backups", "clusters"]
+        verbs: ["list", "watch"]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind: {group: postgresql.cnpg.io, version: v1, kind: Backup}
+            metricNamePrefix: cnpg_backup
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              backup: [metadata, name]
+              cnpg_cluster: [spec, cluster, name]
+              method: [spec, method]
+            metrics:
+              - name: status_phase
+                help: "CNPG Backup phase as a StateSet (1 = current phase)"
+                each:
+                  type: StateSet
+                  stateSet:
+                    labelName: phase
+                    path: [status, phase]
+                    list: [pending, started, running, completed, failed, walArchivingFailing]
+              - name: created_seconds
+                help: "CNPG Backup metadata.creationTimestamp (unix seconds)"
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [metadata, creationTimestamp]
+              - name: stopped_at_seconds
+                help: "CNPG Backup status.stoppedAt (unix seconds; 0 until finished)"
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, stoppedAt]
+                    nilIsZero: true
+          - groupVersionKind: {group: postgresql.cnpg.io, version: v1, kind: Cluster}
+            metricNamePrefix: cnpg_cluster
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              cnpg_cluster: [metadata, name]
+            metrics:
+              - name: instances
+                help: "CNPG Cluster spec.instances (presence marker for the backup rules)"
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [spec, instances]
 
 # ─── prometheus-node-exporter ──────────────────────────────────────────
 prometheus-node-exporter:
