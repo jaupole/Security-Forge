@@ -5,8 +5,9 @@
 # explicitly via `volumeName` and storageClassName=minio-local.
 #
 # Pre-conditions:
-#   1. /var/lib/minio is a separate xfs partition (vg0-minio, 250G,
-#      created by 00-host-bootstrap.sh).
+#   1. /var/lib/minio is a separate xfs partition (vg0-minio, 600G: 250G at
+#      install, +350G on 2026-09-17 from the never-used vg0-cnpg LV — see
+#      components/00g-minio-storage-grow.sh).
 #   2. The target dir exists with the correct uid/gid/mode:
 #        /var/lib/minio/data  →  0:1000 (root:ops/minio group)
 #                                mode 2777 (setgid)
@@ -15,7 +16,10 @@
 #   3. The minio-local StorageClass exists (storageclass-minio-local.yaml).
 #
 # Capacity:
-#   200Gi (was 50Gi; bumped because the host partition has 250G to spare
+#   550Gi (2026-09-17, partition grown to 600G; was 200Gi, before that 50Gi).
+#   Informational for a static local PV — MinIO sees the filesystem size —
+#   but kept truthful so `kubectl get pv` matches reality.
+#   Earlier note: 200Gi (was 50Gi; bumped because the host partition had 250G
 #   and MinIO holds Velero kopia backups + Loki chunks + Tempo traces +
 #   Wazuh archives that grow over the 30d / 90d retention windows).
 #
@@ -32,7 +36,7 @@ metadata:
     secforge.platform/minio-volume: data
 spec:
   capacity:
-    storage: 200Gi
+    storage: 550Gi
   accessModes: [ReadWriteOnce]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: minio-local
