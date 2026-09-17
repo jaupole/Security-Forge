@@ -100,7 +100,9 @@ manager:
     backup.velero.io/backup-volumes-excludes: wazuh-manager-data
   resources:
     requests: { cpu: 250m, memory: 768Mi }
-    limits:   { cpu: 1,    memory: 1500Mi }
+    # 2026-09-17: 1500Mi -> 2Gi. Steady state 1300Mi (87%) tripped
+    # ContainerMemoryNearLimit; node has >40Gi headroom.
+    limits:   { cpu: 1,    memory: 2Gi }
   storage:
     storageClass: local-path
     size: 10Gi  # request only; bound PV size is 50Gi (see static-pvs.yaml)

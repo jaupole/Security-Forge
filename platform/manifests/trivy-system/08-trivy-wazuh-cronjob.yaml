@@ -167,7 +167,11 @@ spec:
                   mountPath: /output
               resources:
                 requests: { cpu: 100m, memory: 128Mi }
-                limits:   { cpu: 500m, memory: 256Mi }
+                # 2026-09-17: 256Mi -> 512Mi. kubectl get vulnerabilityreports -A
+                # -o json | jq over 134 reports was memcg-OOM-killed (kubectl
+                # RSS 192Mi + jq 68Mi); the retry succeeded, but the limit had
+                # no headroom for report growth.
+                limits:   { cpu: 500m, memory: 512Mi }
           volumes:
             - name: output
               hostPath:

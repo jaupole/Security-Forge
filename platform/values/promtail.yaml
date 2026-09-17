@@ -53,7 +53,9 @@ resources:
     memory: 64Mi
   limits:
     cpu: 200m
-    memory: 256Mi
+    # 2026-09-17: 256Mi -> 512Mi. Steady state 222Mi (87%) tripped
+    # ContainerMemoryNearLimit.
+    memory: 512Mi
 
 serviceMonitor:
   enabled: true
