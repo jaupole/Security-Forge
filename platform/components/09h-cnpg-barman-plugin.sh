@@ -8,7 +8,9 @@
 #   1. Install the barman-cloud plugin manifest in cnpg-system namespace.
 #   2. Patch the Deployment to add resource limits (upstream manifest has none).
 #   3. Wait for cert-manager to issue the plugin's mTLS TLS Secrets.
-#   4. Copy TLS Secrets to postgres-operator (operator reads them from its own ns).
+#   4. Copy TLS Secrets to postgres-operator (operator reads them from its own ns),
+#      and apply the daily sync CronJob that keeps the copies current across
+#      cert-manager renewals (09-barman-cloud-tls-sync.yaml, RCA 2026-09-17).
 #   5. Apply the ExternalName Service in postgres-operator with cnpg.io/pluginName
 #      label so the operator discovers the plugin.
 #   6. Apply NetworkPolicy allowing CNPG operator egress to cnpg-system:9090.
@@ -87,6 +89,9 @@ for secret in barman-cloud-client-tls barman-cloud-server-tls; do
     | jq ".metadata.namespace = \"$NS_OP\"" \
     | kubectl apply -f - 2>&1 | tail -1
 done
+
+green ">>> Applying barman-cloud TLS sync CronJob (keeps copies current across renewals)"
+kubectl apply -f "$M/postgres-operator/09-barman-cloud-tls-sync.yaml"
 
 # ─── 5. ExternalName Service in postgres-operator ──────────────────────────────
 green ">>> Applying barman-cloud ExternalName Service in $NS_OP"

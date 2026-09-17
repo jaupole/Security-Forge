@@ -1,0 +1,190 @@
+# barman-cloud plugin TLS Secret sync: postgres-operator <- cnpg-system
+#
+# WHY THIS EXISTS (RCA 2026-09-17)
+#   The CNPG operator discovers the barman-cloud plugin through the ExternalName
+#   Service in THIS namespace (08-barman-cloud-plugin-svc.yaml) and reads the
+#   plugin's mTLS material from Secrets in THIS namespace. cert-manager issues
+#   those certs in cnpg-system (90d duration, renewed after 75d). The bootstrap
+#   (components/09h-cnpg-barman-plugin.sh step 4) copied them ONCE, on
+#   2026-06-04. cert-manager renewed the originals on 2026-08-18T22:39Z; the
+#   copies here kept the old cert (expired 2026-09-02) and every operator ->
+#   plugin handshake failed from 2026-08-19:
+#     x509: certificate signed by unknown authority (... candidate authority
+#     certificate "barman-cloud")
+#   Effect: zero CNPG base backups for 29 days on all three clusters. WAL
+#   archiving kept working (instance managers use the cnpg-system Secrets
+#   directly), so PITR from the 2026-08-18 base was still possible.
+#
+# WHAT IT DOES
+#   Daily: compare tls.crt of each Secret in cnpg-system with the copy here.
+#   On difference: re-copy (same jq recipe as 09h) and rollout-restart the
+#   operator so it reloads the material. No-op when in sync.
+#   Least privilege: named Secrets only (resourceNames) -- get in cnpg-system,
+#   get/patch here -- plus patch on the one Deployment. `create` is NOT
+#   granted on purpose: the copies are bootstrapped by 09h; if they vanish this
+#   Job fails loudly (KubeJobFailed) instead of silently minting Secrets.
+#
+# Next cert-manager renewal: 2026-11-01T22:39Z
+#   kubectl -n cnpg-system get certificate barman-cloud-server -o jsonpath='{.status.renewalTime}'
+#
+# Manual run / verification:
+#   kubectl -n postgres-operator create job --from=cronjob/barman-cloud-tls-sync tls-sync-now
+#   kubectl -n postgres-operator logs job/tls-sync-now
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: barman-cloud-tls-sync
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+automountServiceAccountToken: true
+---
+# Read side: the two cert-manager-issued Secrets in cnpg-system, by name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: barman-cloud-tls-sync-reader
+  namespace: cnpg-system
+  labels:
+    secforge.platform/component: postgres-operator
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [barman-cloud-server-tls, barman-cloud-client-tls]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: barman-cloud-tls-sync-reader
+  namespace: cnpg-system
+  labels:
+    secforge.platform/component: postgres-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: barman-cloud-tls-sync-reader
+subjects:
+  - kind: ServiceAccount
+    name: barman-cloud-tls-sync
+    namespace: postgres-operator
+---
+# Write side: the two copies here (get + patch only) and the operator
+# Deployment (patch, for `rollout restart`).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: barman-cloud-tls-sync-writer
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [barman-cloud-server-tls, barman-cloud-client-tls]
+    verbs: [get, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [cnpg-cloudnative-pg]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: barman-cloud-tls-sync-writer
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: barman-cloud-tls-sync-writer
+subjects:
+  - kind: ServiceAccount
+    name: barman-cloud-tls-sync
+    namespace: postgres-operator
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: barman-cloud-tls-sync
+  namespace: postgres-operator
+  labels:
+    secforge.platform/component: postgres-operator
+spec:
+  # 04:23 UTC daily: after the 02:30-03:15 UTC CNPG backup window.
+  schedule: "23 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: barman-cloud-tls-sync
+            secforge.platform/component: postgres-operator
+        spec:
+          serviceAccountName: barman-cloud-tls-sync
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: sync
+              # Same pinned kubectl+jq toolbox as trivy-system/08-trivy-wazuh-cronjob.yaml.
+              image: mirror.gcr.io/alpine/k8s:1.36.1@sha256:692239d739589247c4a791205ed9619c28ae85a21286e19a6211c04a62c56668
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                # kubectl discovery cache goes under $HOME; keep it on the tmpfs.
+                - name: HOME
+                  value: /tmp
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  SRC=cnpg-system
+                  DST=postgres-operator
+                  changed=0
+                  for s in barman-cloud-server-tls barman-cloud-client-tls; do
+                    src=$(kubectl -n "$SRC" get secret "$s" -o jsonpath='{.data.tls\.crt}')
+                    dst=$(kubectl -n "$DST" get secret "$s" -o jsonpath='{.data.tls\.crt}')
+                    if [ "$src" = "$dst" ]; then
+                      echo "$s: in sync"
+                      continue
+                    fi
+                    echo "$s: cnpg-system copy differs (renewed) - syncing"
+                    kubectl -n "$SRC" get secret "$s" -o json \
+                      | jq --arg ns "$DST" 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.ownerReferences,.metadata.managedFields) | .metadata.namespace = $ns' \
+                      | kubectl apply -f -
+                    changed=1
+                  done
+                  if [ "$changed" -eq 1 ]; then
+                    echo "restarting cnpg operator so it reloads the plugin TLS material"
+                    kubectl -n "$DST" rollout restart deploy/cnpg-cloudnative-pg
+                  fi
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 128Mi }
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
