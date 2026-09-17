@@ -30,6 +30,10 @@ spec:
       - kube-node-lease
       - default
       - velero
+      # 2026-09-17: Trivy DB cache (StatefulSet trivy-server, re-downloaded on
+      # start). Its daily churn defeats kopia dedup: 85G of the 215G on
+      # /var/lib/minio was this one namespace (NodeDiskSpaceCritical).
+      - trivy-system
     includeClusterResources: true
     snapshotVolumes: false       # we use kopia file-system backup, not CSI snapshots
     defaultVolumesToFsBackup: true
@@ -52,6 +56,10 @@ spec:
       - kube-node-lease
       - default
       - velero
+      # 2026-09-17: Trivy DB cache (StatefulSet trivy-server, re-downloaded on
+      # start). Its daily churn defeats kopia dedup: 85G of the 215G on
+      # /var/lib/minio was this one namespace (NodeDiskSpaceCritical).
+      - trivy-system
     includeClusterResources: true
     snapshotVolumes: false
     defaultVolumesToFsBackup: true
