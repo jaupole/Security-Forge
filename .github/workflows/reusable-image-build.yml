@@ -120,7 +120,7 @@ jobs:
           # signatures found" (hit 2026-06-11, dependabot PR #30). Revisit
           # when cosign's fallback index propagates artifactType AND the
           # cluster policy migrates to type: SigstoreBundle (backlog #90).
-          cosign-release: 'v2.6.3'
+          cosign-release: 'v3.1.3'
 
       - name: Resolve image metadata
         id: meta
