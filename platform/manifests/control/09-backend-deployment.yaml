@@ -8,7 +8,67 @@
 # control-service ClusterIP (11-services.yaml). Same-origin cookie
 # pattern: portal at /, /api/* → here, so the @fastify/secure-session
 # HttpOnly cookie flows on every request without cross-origin gymnastics.
+#
+# Two documents: the control-app-config ConfigMap (shared pod env, see its
+# header) and the API Deployment that consumes it.
 
+# ─── control-app-config: shared non-secret runtime env ───────────────────
+# Mounted via `envFrom: configMapRef` by this Deployment AND every Control
+# CLI CronJob (12-billing-usage, 15-signup-cleanup, 16-tickets-archive,
+# 17-grant-sweep, 18-orphan-tuple-sweep, 19-membership-drift-sweep,
+# 19-onlyoffice-usage, 20-people-sweep, 21-idempotency-purge). Each pod keeps
+# only its pod-specific keys inline (PORTAL_ORIGIN, PG*, feature URLs); an
+# inline `env` entry wins over an envFrom key, so a pod can still override.
+#
+# Why one map: the CronJobs used to hand-copy this Deployment's env block and
+# one of them (people-sweep) silently lost the two tenant-realm keys — every
+# secforge-tenants member then resolved as "(deleted user)" for 90 nights
+# (incident 2026-10-05). A new CronJob can no longer miss a key.
+#
+# Why it lives in THIS file: deploy-app applies every manifest that pins the
+# control image, document by document, with this file first in glob order —
+# so the map is (re)applied before the Deployment and before every CronJob
+# on every ordinary deploy, including a same-digest "redeploy current state".
+# No separate apply step exists or is needed. lib/deploy-app.sh restarts the
+# Deployment when a deploy changes nothing in its pod template (a map-only
+# change), so new keys reach the API pod too; CronJobs read the map at each run.
+#
+# Secrets are NOT here: they arrive via the VSO-rendered control-app-secrets
+# (and feature-specific) Secrets referenced from each pod's envFrom.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-app-config
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: control
+data:
+  NODE_ENV: production
+  API_PORT: "4000"
+  API_HOST: "0.0.0.0"
+  TRUST_PROXY: "1"
+  # auth.${DOMAIN}'s TLS chain inside the cluster is signed by the internal CA
+  # bundled in the openbao-internal-ca-cert ConfigMap (mounted by every pod at
+  # /etc/secforge). Without this the keycloak-admin-client fails the OAuth
+  # login with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+  NODE_EXTRA_CA_CERTS: /etc/secforge/openbao-ca.crt
+  KEYCLOAK_URL: "https://auth.${DOMAIN}"
+  # Platform realm (staff + legacy pre-Shape-B users) — the admin client for
+  # getKeycloakAdmin(); KEYCLOAK_ADMIN_CLIENT_SECRET comes from control-app-secrets.
+  KEYCLOAK_REALM: platform
+  KEYCLOAK_ADMIN_CLIENT_ID: control-admin
+  # Tenants realm (Shape B — every signup-wizard user since 2026-05-23). When
+  # set, the auth middleware accepts tokens from BOTH realms and the user
+  # resolver (lib/users.ts) falls back to this realm after a platform-realm
+  # miss. REQUIRED by anything that resolves users: /me, members, invitations,
+  # tickets, reports, people-sweep, signup-cleanup.
+  # KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET comes from control-app-secrets.
+  KEYCLOAK_TENANTS_REALM: secforge-tenants
+  KEYCLOAK_TENANTS_ADMIN_CLIENT_ID: control-admin
+  SPICEDB_ENDPOINT: "spicedb.spicedb.svc.cluster.local:50051"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -238,7 +298,7 @@ spec:
             # ecosystem-brand-kit as well. See BRAND_KIT_DEPLOY_HANDOFF.md.
             - { name: MINIO_BRAND_KIT_BUCKET, value: ecosystem-brand-kit }
           envFrom:
-            # Shared non-secret runtime config (07-app-config.yaml).
+            # Shared non-secret runtime config (control-app-config, first document of 09-backend-deployment.yaml).
             - configMapRef:
                 name: control-app-config
             # Adds KEYCLOAK_ADMIN_CLIENT_SECRET, SPICEDB_PRESHARED_KEY,

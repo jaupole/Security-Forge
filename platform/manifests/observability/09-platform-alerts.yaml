@@ -909,6 +909,6 @@ spec:
               `placeholder_names=N` > 0: a member resolved in NEITHER Keycloak realm —
               either an orphaned membership (account deleted; remove the member or
               re-invite) or this pod cannot reach a realm (check KEYCLOAK_TENANTS_*
-              in control/07-app-config.yaml and the keycloak-admin login). `failed=N`
+              in the control-app-config ConfigMap, control/09-backend-deployment.yaml, and the keycloak-admin login). `failed=N`
               > 0: an upsert threw — the log names the org/user. Delete the failed
               job to acknowledge once resolved.

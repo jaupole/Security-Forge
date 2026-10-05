@@ -68,8 +68,27 @@ for f in "${FILES[@]}"; do
   fi
 done
 
-# 2. Everything else (Deployments + CronJobs sharing the image).
+# 2. Everything else (Deployments + CronJobs sharing the image, plus any
+#    ConfigMap co-located in those files, e.g. control-app-config). Remember
+#    each Deployment's generation so step 3 can tell "nothing in the pod
+#    template changed" apart from a real rollout.
+declare -A GEN_BEFORE=()
+for d in $DEPLOYS; do
+  GEN_BEFORE[$d]=$(kubectl get "deploy/$d" -n "$NS" -o jsonpath='{.metadata.generation}' 2>/dev/null || echo 0)
+done
 (( ${#REST[@]} == 0 )) || bash "$APPLY" "${REST[@]}"
+
+# 2b. A same-digest redeploy whose only change is in a ConfigMap the pod
+#     consumes via envFrom leaves the pod template untouched, so Kubernetes
+#     would not roll it and the running pod would keep the old env. Restart
+#     it explicitly in that one case; a digest bump already rolls on its own.
+for d in $DEPLOYS; do
+  GEN_AFTER=$(kubectl get "deploy/$d" -n "$NS" -o jsonpath='{.metadata.generation}' 2>/dev/null || echo 0)
+  if [[ "$GEN_AFTER" == "${GEN_BEFORE[$d]}" ]]; then
+    echo ">>> deploy/$d pod template unchanged — restarting so ConfigMap env is re-read"
+    kubectl rollout restart "deploy/$d" -n "$NS"
+  fi
+done
 
 # 3. Rollout gate — the Deployments' readiness probes are the smoke test.
 #    A Kyverno admission denial (e.g. unsigned image) surfaces here as a

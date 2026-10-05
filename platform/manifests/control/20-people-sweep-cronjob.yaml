@@ -11,7 +11,7 @@
 # NOTE: this pod has no spiffe-helper sidecar, so the CLI stores email_hmac
 # only (EMAIL_HMAC_KEY env) — email_enc enriches later via the API-pod hooks.
 #
-# Same image as the API Deployment; shared env via control-app-config (07-app-config.yaml) — only the CLI entrypoint differs.
+# Same image as the API Deployment; shared env via control-app-config (09-backend-deployment.yaml) — only the CLI entrypoint differs.
 # Bump the digest in lockstep with 09-backend-deployment.yaml.
 ---
 apiVersion: batch/v1
@@ -89,7 +89,7 @@ spec:
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
-                # Shared non-secret runtime config (07-app-config.yaml).
+                # Shared non-secret runtime config (control-app-config, first document of 09-backend-deployment.yaml).
                 - configMapRef:
                     name: control-app-config
                 - secretRef:

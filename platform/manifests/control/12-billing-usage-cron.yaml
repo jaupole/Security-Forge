@@ -143,7 +143,7 @@ spec:
                 - { name: TRANSIT_KEYNAME,       value: pii-encryption }
                 - { name: SPIFFE_JWT_SVID_PATH,  value: "/run/spiffe/jwt-svid.token" }
               envFrom:
-                # Shared non-secret runtime config (07-app-config.yaml).
+                # Shared non-secret runtime config (control-app-config, first document of 09-backend-deployment.yaml).
                 - configMapRef:
                     name: control-app-config
                 - secretRef:

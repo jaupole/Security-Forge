@@ -100,7 +100,7 @@ spec:
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
-                # Shared non-secret runtime config (07-app-config.yaml).
+                # Shared non-secret runtime config (control-app-config, first document of 09-backend-deployment.yaml).
                 - configMapRef:
                     name: control-app-config
                 - secretRef:
