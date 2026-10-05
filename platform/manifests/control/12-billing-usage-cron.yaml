@@ -126,15 +126,7 @@ spec:
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "billing:sync-usage"]
               env:
-                - { name: NODE_ENV,                 value: production }
-                - { name: API_PORT,                 value: "4000" }
-                - { name: API_HOST,                 value: "0.0.0.0" }
-                - { name: TRUST_PROXY,              value: "1" }
                 - { name: PORTAL_ORIGIN,            value: "https://control.${DOMAIN}" }
-                - { name: KEYCLOAK_URL,             value: "https://auth.${DOMAIN}" }
-                - { name: KEYCLOAK_REALM,           value: platform }
-                - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
-                - { name: SPICEDB_ENDPOINT,         value: "spicedb.spicedb.svc.cluster.local:50051" }
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
                 - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
@@ -145,13 +137,15 @@ spec:
                 # explicitly for parity with 09-backend-deployment.yaml. The
                 # OpenBao client verifies TLS against the mounted internal CA;
                 # the JWT-SVID is written by the spiffe-helper sidecar above.
-                - { name: NODE_EXTRA_CA_CERTS,   value: "/etc/secforge/openbao-ca.crt" }
                 - { name: OPENBAO_ADDR,          value: "https://openbao.openbao.svc.cluster.local:8200" }
                 - { name: OPENBAO_CA_CERT_PATH,  value: "/etc/secforge/openbao-ca.crt" }
                 - { name: OPENBAO_JWT_AUTH_ROLE, value: control }
                 - { name: TRANSIT_KEYNAME,       value: pii-encryption }
                 - { name: SPIFFE_JWT_SVID_PATH,  value: "/run/spiffe/jwt-svid.token" }
               envFrom:
+                # Shared non-secret runtime config (07-app-config.yaml).
+                - configMapRef:
+                    name: control-app-config
                 - secretRef:
                     name: control-app-secrets
               securityContext:

@@ -92,16 +92,7 @@ spec:
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "spicedb:sweep-orphan-org-tuples", "--apply"]
               env:
-                - { name: NODE_ENV,                         value: production }
-                - { name: API_PORT,                         value: "4000" }
-                - { name: API_HOST,                         value: "0.0.0.0" }
-                - { name: TRUST_PROXY,                      value: "1" }
                 - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
-                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
-                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
-                - { name: KEYCLOAK_REALM,                   value: platform }
-                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
-                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
                 # Runtime `control` role (control-ecodb) — organizations is not RLS'd.
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
@@ -109,6 +100,9 @@ spec:
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
+                # Shared non-secret runtime config (07-app-config.yaml).
+                - configMapRef:
+                    name: control-app-config
                 - secretRef:
                     name: control-app-secrets
               securityContext:

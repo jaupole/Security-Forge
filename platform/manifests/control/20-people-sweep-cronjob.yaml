@@ -11,7 +11,7 @@
 # NOTE: this pod has no spiffe-helper sidecar, so the CLI stores email_hmac
 # only (EMAIL_HMAC_KEY env) — email_enc enriches later via the API-pod hooks.
 #
-# Same image + env as the grant-sweep cron — only the CLI entrypoint differs.
+# Same image as the API Deployment; shared env via control-app-config (07-app-config.yaml) — only the CLI entrypoint differs.
 # Bump the digest in lockstep with 09-backend-deployment.yaml.
 ---
 apiVersion: batch/v1
@@ -81,26 +81,7 @@ spec:
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "admin:backfill-people"]
               env:
-                - { name: NODE_ENV,                         value: production }
-                - { name: API_PORT,                         value: "4000" }
-                - { name: API_HOST,                         value: "0.0.0.0" }
-                - { name: TRUST_PROXY,                      value: "1" }
                 - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
-                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
-                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
-                - { name: KEYCLOAK_REALM,                   value: platform }
-                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
-                # Tenants realm — REQUIRED: every signup-wizard user since
-                # 2026-05-23 lives in secforge-tenants. Without these two the
-                # sweep's resolveUsers() only queries the platform realm, every
-                # tenant member 404s, and their person row is created as
-                # "(deleted user)" (incident 2026-10-05: AECOM / Cybersecurity
-                # Group members rendered as deleted in Proposal Forge).
-                # KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET arrives via the
-                # VSO-rendered control-app-secrets envFrom below.
-                - { name: KEYCLOAK_TENANTS_REALM,           value: secforge-tenants }
-                - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
-                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
                 # Runtime `control` role (control-ecodb) — per-org under RLS.
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
@@ -108,6 +89,9 @@ spec:
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
+                # Shared non-secret runtime config (07-app-config.yaml).
+                - configMapRef:
+                    name: control-app-config
                 - secretRef:
                     name: control-app-secrets
               securityContext:

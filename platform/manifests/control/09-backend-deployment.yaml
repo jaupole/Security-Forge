@@ -128,11 +128,6 @@ spec:
           ports:
             - { containerPort: 4000, name: http, protocol: TCP }
           env:
-            # Static config
-            - { name: NODE_ENV, value: production }
-            - { name: API_PORT, value: "4000" }
-            - { name: API_HOST, value: "0.0.0.0" }
-            - { name: TRUST_PROXY, value: "1" }
             # ONLYOFFICE usage watch lives in the CronJob (19-*), NOT here: the
             # backend's /admin/onlyoffice/* endpoints read the DB only, so the
             # API pod carries no DS URL or JWT (least privilege; and explicit
@@ -150,26 +145,6 @@ spec:
             # parent domain so portal/admin/members/... all read one account
             # theme before first paint (written by the login BFF + on save).
             - { name: THEME_COOKIE_DOMAIN, value: "${DOMAIN}" }
-            # In-cluster DNS rewrites auth.${DOMAIN} → keycloak ClusterIP,
-            # which presents its INTERNAL cert (signed by secforge-internal-ca,
-            # not Let's Encrypt). Point NODE_EXTRA_CA_CERTS at the
-            # internal CA so jose's createRemoteJWKSet (and any other
-            # global-fetch caller) can verify the chain. Node's built-in
-            # Mozilla CA bundle is still loaded — NODE_EXTRA_CA_CERTS is
-            # additive, not a replacement.
-            - { name: NODE_EXTRA_CA_CERTS, value: "/etc/secforge/openbao-ca.crt" }
-            # Keycloak — config.ts wants KEYCLOAK_URL (the base; it builds
-            # /realms/<realm> internally), KEYCLOAK_REALM, and a SEPARATE
-            # admin-API client (NOT the OIDC user-login client).
-            #
-            # KEYCLOAK_TENANTS_REALM (Shape B) — when set, the auth
-            # middleware accepts tokens from BOTH realms. The same
-            # clientIds are registered in both realms (the realm is
-            # the issuer-layer discriminator). See
-            # docs/01-architecture/01a-realm-to-app-matrix.md.
-            - { name: KEYCLOAK_URL, value: "https://auth.${DOMAIN}" }
-            - { name: KEYCLOAK_REALM, value: platform }
-            - { name: KEYCLOAK_TENANTS_REALM, value: secforge-tenants }
             # CTRL-06 (retire shared-audience trust): app-client callers MUST
             # present an RFC-8693 token exchanged for aud=control. `require`
             # rejects raw app tokens (401 token_exchange_required); the apps
@@ -182,22 +157,6 @@ spec:
             # exchanging build.
             - { name: CONTROL_EXCHANGE_MODE, value: require }
             - { name: CONTROL_EXCHANGE_AUDIENCE, value: control }
-            # Admin-API client (created 2026-05-15). Service-account-only,
-            # confidential, with realm-management roles: manage-users,
-            # view-users, query-users, view-clients, view-realm.
-            # KEYCLOAK_ADMIN_CLIENT_SECRET comes from VSO-rendered
-            # control-app-secrets via envFrom below.
-            - { name: KEYCLOAK_ADMIN_CLIENT_ID, value: control-admin }
-            # Tenants-realm admin-API client (signup wizard). Same
-            # clientId as KEYCLOAK_ADMIN_CLIENT_ID but the service
-            # account is in the secforge-tenants realm and adds
-            # manage-organizations + view-organizations realm-management
-            # roles. KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET comes from
-            # VSO-rendered control-app-secrets (the `tenants_admin_client_secret`
-            # key in OpenBao at secret/apps/control/runtime).
-            - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
-            # SpiceDB — in-cluster Service.
-            - { name: SPICEDB_ENDPOINT, value: "spicedb.spicedb.svc.cluster.local:50051" }
             # CNPG-rendered DB credentials. The control-ecodb Secret has
             # discrete fields per CNPG convention; config.ts wants them
             # as discrete env vars rather than a single URL.
@@ -279,6 +238,9 @@ spec:
             # ecosystem-brand-kit as well. See BRAND_KIT_DEPLOY_HANDOFF.md.
             - { name: MINIO_BRAND_KIT_BUCKET, value: ecosystem-brand-kit }
           envFrom:
+            # Shared non-secret runtime config (07-app-config.yaml).
+            - configMapRef:
+                name: control-app-config
             # Adds KEYCLOAK_ADMIN_CLIENT_SECRET, SPICEDB_PRESHARED_KEY,
             # SESSION_KEY, EMAIL_HMAC_KEY from the VSO-rendered Secret. All
             # come from secret/apps/control/runtime in OpenBao via the

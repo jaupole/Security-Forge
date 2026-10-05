@@ -81,36 +81,16 @@ spec:
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "signup:cleanup-stale"]
               env:
-                - { name: NODE_ENV,                         value: production }
-                - { name: API_PORT,                         value: "4000" }
-                - { name: API_HOST,                         value: "0.0.0.0" }
-                - { name: TRUST_PROXY,                      value: "1" }
                 - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
-                # auth.${DOMAIN}'s TLS chain inside the cluster is signed
-                # by the internal CA bundled in the openbao-internal-ca-cert
-                # ConfigMap (same as the backend Deployment). Without this
-                # NODE_EXTRA_CA_CERTS the keycloak-admin-client fails the
-                # OAuth login with UNABLE_TO_VERIFY_LEAF_SIGNATURE and the
-                # CronJob falls into a retry loop.
-                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
-                - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
-                # Platform realm context for any platform-admin checks the
-                # CLI happens to load on import (the cleanup itself only
-                # touches secforge-tenants).
-                - { name: KEYCLOAK_REALM,                   value: platform }
-                - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
-                # Tenants realm — REQUIRED for this CronJob (the cleanup
-                # operates on tenant users). KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET
-                # arrives via VSO-rendered control-app-secrets.
-                - { name: KEYCLOAK_TENANTS_REALM,           value: secforge-tenants }
-                - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
-                - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
                 - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
                 - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
                 - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
                 - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
               envFrom:
+                # Shared non-secret runtime config (07-app-config.yaml).
+                - configMapRef:
+                    name: control-app-config
                 - secretRef:
                     name: control-app-secrets
               securityContext:

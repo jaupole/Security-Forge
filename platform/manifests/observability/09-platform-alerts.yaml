@@ -883,3 +883,32 @@ spec:
               upstream, disable it with --no-collector.<name> in
               values/kube-prometheus-stack.yaml AND remove it from this alert's
               collector allowlist until re-enabled.
+    # ─── Control canonical people directory ──────────────────────────────
+    # The nightly people-sweep (control/20-people-sweep-cronjob.yaml) exits
+    # non-zero when any upsert failed OR when any active Keycloak-backed person
+    # row still carries a placeholder name ("(deleted user)" / "(unknown
+    # user)" / bare sub) after the pass — the log line reports
+    # `placeholder_names=N`. Every app renders people.display_name via its
+    # core_people projection, so a placeholder here is user-visible fleet-wide
+    # (2026-10-05: 4 members showed as "(deleted user)" in Proposal Forge for
+    # 90 nights with no signal). Current-state expr, same rationale as the
+    # audit-anchoring rules above.
+    - name: control-people
+      interval: 1m
+      rules:
+        - alert: ControlPeopleSweepFailing
+          expr: kube_job_status_failed{namespace="control", job_name=~"control-people-sweep.*"} > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Control people-sweep failed or left placeholder person names"
+            description: |
+              control-people-sweep exited non-zero. Inspect:
+                kubectl -n control logs job/<latest control-people-sweep job>
+              `placeholder_names=N` > 0: a member resolved in NEITHER Keycloak realm —
+              either an orphaned membership (account deleted; remove the member or
+              re-invite) or this pod cannot reach a realm (check KEYCLOAK_TENANTS_*
+              in control/07-app-config.yaml and the keycloak-admin login). `failed=N`
+              > 0: an upsert threw — the log names the org/user. Delete the failed
+              job to acknowledge once resolved.
