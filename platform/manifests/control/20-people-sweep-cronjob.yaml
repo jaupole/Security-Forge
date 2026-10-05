@@ -90,6 +90,16 @@ spec:
                 - { name: KEYCLOAK_URL,                     value: "https://auth.${DOMAIN}" }
                 - { name: KEYCLOAK_REALM,                   value: platform }
                 - { name: KEYCLOAK_ADMIN_CLIENT_ID,         value: control-admin }
+                # Tenants realm — REQUIRED: every signup-wizard user since
+                # 2026-05-23 lives in secforge-tenants. Without these two the
+                # sweep's resolveUsers() only queries the platform realm, every
+                # tenant member 404s, and their person row is created as
+                # "(deleted user)" (incident 2026-10-05: AECOM / Cybersecurity
+                # Group members rendered as deleted in Proposal Forge).
+                # KEYCLOAK_TENANTS_ADMIN_CLIENT_SECRET arrives via the
+                # VSO-rendered control-app-secrets envFrom below.
+                - { name: KEYCLOAK_TENANTS_REALM,           value: secforge-tenants }
+                - { name: KEYCLOAK_TENANTS_ADMIN_CLIENT_ID, value: control-admin }
                 - { name: SPICEDB_ENDPOINT,                 value: "spicedb.spicedb.svc.cluster.local:50051" }
                 # Runtime `control` role (control-ecodb) — per-org under RLS.
                 - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
