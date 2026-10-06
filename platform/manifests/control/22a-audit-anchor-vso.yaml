@@ -1,0 +1,53 @@
+# Control — off-site audit anchor: OpenBao bindings for the signer.
+#
+# Companion to 22-audit-anchor-cronjob.yaml, kept in its own file ON PURPOSE:
+# deploy-app applies every manifest in this directory that pins the Control
+# image, and this one pins none, so it is applied only by hand at activation
+# (docs/03-runbooks/control-audit-anchor.md). Applied before the
+# `control-audit-signer` OpenBao role exists (05j-app-vso-roles.sh), VSO could
+# only fail to sync it.
+---
+# Lets the anchor's service account log in to OpenBao under its own role
+# (policies: audit-signer = transit/sign, platform-audit = read the push
+# token), without the broader control-vso scope.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: control-audit-signer
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+spec:
+  vaultConnectionRef: vault-secrets-operator/openbao
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: control-audit-signer
+    serviceAccount: control-audit-signer
+    audiences:
+      - https://kubernetes.default.svc.cluster.local
+---
+# The SAME push token the platform anchors use (contents:write on
+# jaupole/secforge-audit-anchors only), at secret/platform/audit-anchors-push-token.
+# Rendered into the control ns for the anchor pod to mount as a file.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: audit-anchors-push-token
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+spec:
+  type: kv-v2
+  mount: secret
+  path: platform/audit-anchors-push-token
+  refreshAfter: 1h
+  vaultAuthRef: control-audit-signer
+  destination:
+    create: true
+    name: audit-anchors-push-token
+    type: Opaque

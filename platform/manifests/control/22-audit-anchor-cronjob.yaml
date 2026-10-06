@@ -1,0 +1,274 @@
+# Control — off-site audit anchors: nightly anchor + daily verifier.
+#
+# The fleet audit log (app_audit_events) and Control's own audit_log are
+# hash-chained, and until now their only second copy sat on the same Postgres
+# cluster: someone with full access to the database could rewrite rows and
+# chain together. These two jobs put evidence OFF this machine, with the same
+# mechanism as the platform's other anchors (openbao/12-, observability/21-,
+# member-hub/12-):
+#
+#   control-audit-anchor    `audit:anchor` — reduce the chain heads to one
+#                           value, sign it with OpenBao Transit
+#                           (`audit-signing`, Ed25519), commit it to
+#                           jaupole/secforge-audit-anchors under control/.
+#   control-audit-verifier  `audit:verify-anchors` — re-check the last 30 days
+#                           of anchors against a PINNED public key and the
+#                           database. A mismatch logs AUDIT_CHAIN_BROKEN (the
+#                           AuditChainBroken Loki alert) and fails the Job.
+#
+# The anchors repository is public, so an anchor is opaque: a row id and one
+# hash for the fleet log, a timestamp and a row hash for Control's log. No org
+# ids, no per-org counts (ecosystem-control src/api/lib/audit-anchor.ts).
+#
+# BOTH SHIP SUSPENDED. The anchor needs the `control-audit-signer` OpenBao role
+# (05j-app-vso-roles.sh) and the VSO objects in 22a-audit-anchor-vso.yaml, which
+# is deliberately NOT applied by deploy-app (it pins no image). Activate with
+# docs/03-runbooks/control-audit-anchor.md — by changing `suspend` HERE and
+# committing, not with `kubectl patch`: every Control deploy re-applies this
+# file.
+#
+# Same image as the API Deployment; shared env via control-app-config
+# (09-backend-deployment.yaml) — only the CLI entrypoint differs. deploy-app
+# bumps the digest in lockstep.
+---
+# The anchor's own identity. Only this service account can log in to the
+# `control-audit-signer` OpenBao role, so only the anchor pod can ask Transit
+# to sign or read the push token — the API pods cannot publish an anchor.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-audit-signer
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-audit-anchor
+  namespace: control
+  annotations:
+    # Authenticates to OpenBao Transit with the pod SA token (Kubernetes auth)
+    # to sign audit roots — the token is required; CKV_K8S_38 N/A.
+    checkov.io/skip1: "CKV_K8S_38=authenticates to OpenBao Transit via the pod ServiceAccount token; required"
+  labels:
+    app.kubernetes.io/name: control
+    app.kubernetes.io/component: audit-signer
+    secforge.platform/component: audit-anchors
+    secforge.platform/role: audit-anchor
+spec:
+  suspend: true
+  # Daily 00:53 UTC — after the openbao (00:23) and member-hub (00:17) anchors.
+  schedule: "53 0 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            # name=control carries the namespace's egress allowances this pod
+            # needs: ecosystem-db, openbao:8200, public :443 (api.github.com).
+            app.kubernetes.io/name: control
+            app.kubernetes.io/component: audit-signer
+            secforge.platform/component: audit-anchors
+            secforge.platform/role: audit-anchor
+        spec:
+          restartPolicy: Never
+          serviceAccountName: control-audit-signer
+          automountServiceAccountToken: true
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: anchor
+              image: ghcr.io/jaupole/control@sha256:7829959ae70b2b6e49c9b29e035a64f4b932bdbb4c4274a4e423a1ed926d4d65
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "audit:anchor"]
+              env:
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
+                # Node reads this at start, before any TLS: trust the OpenBao
+                # internal CA for the login + Transit calls.
+                - { name: NODE_EXTRA_CA_CERTS,              value: /etc/secforge/openbao-ca.crt }
+                - { name: AUDIT_SIGNER_ROLE,                value: control-audit-signer }
+                - { name: AUDIT_ANCHORS_REPO,               value: jaupole/secforge-audit-anchors }
+                - { name: AUDIT_ANCHORS_BRANCH,             value: main }
+              envFrom:
+                - configMapRef:
+                    name: control-app-config
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+                # The push token is a file, never an env var (Kyverno
+                # outbound-secrets policy).
+                - name: gh-creds
+                  mountPath: /run/secrets/gh
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
+            - name: gh-creds
+              secret:
+                secretName: audit-anchors-push-token
+                items:
+                  - { key: token, path: token }
+                defaultMode: 0400
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-audit-verifier
+  namespace: control
+  labels:
+    app.kubernetes.io/name: control
+    secforge.platform/component: audit-anchors
+    secforge.platform/role: audit-verifier
+spec:
+  suspend: true
+  # Daily 05:11 UTC — clear of the other control crons, hours after the anchor.
+  schedule: "11 5 * * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            # name=control carries the egress this pod needs: ecosystem-db and
+            # public :443 (raw.githubusercontent.com, read unauthenticated).
+            app.kubernetes.io/name: control
+            secforge.platform/component: audit-anchors
+            secforge.platform/role: audit-verifier
+        spec:
+          restartPolicy: Never
+          # Holds no signing credential and no push token: the plain app
+          # identity, with no service account token mounted.
+          serviceAccountName: control
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: wait-for-db
+              image: ghcr.io/cloudnative-pg/postgresql:17.6-bookworm@sha256:f785551be35036d65a0f1ebe71995022d261a829391fc2f14222ca19795d7c20
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  until pg_isready -h ecosystem-db-rw.ecosystem-db.svc.cluster.local -p 5432 -U control -d control -t 3; do
+                    echo "waiting for control-db..."
+                    sleep 2
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 128Mi }
+          containers:
+            - name: verify
+              image: ghcr.io/jaupole/control@sha256:7829959ae70b2b6e49c9b29e035a64f4b932bdbb4c4274a4e423a1ed926d4d65
+              imagePullPolicy: IfNotPresent
+              command: ["/nodejs/bin/node", "dist/cli/index.js", "audit:verify-anchors"]
+              env:
+                - { name: PORTAL_ORIGIN,                    value: "https://control.${DOMAIN}" }
+                - { name: PGHOST,     valueFrom: { secretKeyRef: { name: control-ecodb, key: host } } }
+                - { name: PGPORT,     valueFrom: { secretKeyRef: { name: control-ecodb, key: port } } }
+                - { name: PGUSER,     valueFrom: { secretKeyRef: { name: control-ecodb, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: control-ecodb, key: password } } }
+                - { name: PGDATABASE, valueFrom: { secretKeyRef: { name: control-ecodb, key: dbname } } }
+                - { name: AUDIT_ANCHORS_REPO,               value: jaupole/secforge-audit-anchors }
+                - { name: AUDIT_ANCHORS_BRANCH,             value: main }
+                # The PUBLIC half of transit/keys/audit-signing, version 1 —
+                # the same key every platform anchor is signed with. Pinned
+                # here so the verifier never trusts the key an anchor file
+                # names for itself. Comma-separated when more than one is
+                # valid; on key rotation ADD the new key
+                # (docs/03-runbooks/control-audit-anchor.md).
+                - { name: AUDIT_ANCHOR_PUBKEY_B64,          value: "BIMi2T/5x5IoGpLyQqx96+3wGz5AbjySTtm6QZu3o9w=" }
+              envFrom:
+                - configMapRef:
+                    name: control-app-config
+                - secretRef:
+                    name: control-app-secrets
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 500m, memory: 256Mi }
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /etc/secforge
+                  readOnly: true
+          volumes:
+            - name: openbao-ca
+              configMap:
+                name: openbao-internal-ca-cert
+                items:
+                  - { key: ca.crt, path: openbao-ca.crt }
