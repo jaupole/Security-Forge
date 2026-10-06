@@ -86,6 +86,39 @@ spec:
           port: 8200
 
 # ──────────────────────────────────────────────────────────────────────
+# Ingress: control ns audit-anchor CronJob pod → openbao API. It logs in
+# under its own `control-audit-signer` role (Kubernetes auth with its own
+# service account) and calls Transit-sign for the off-site audit anchor
+# (manifests/control/22-audit-anchor-cronjob.yaml). The rule above is
+# scoped to component=api on purpose, so the anchor pod
+# (component=audit-signer) needs its own. Found 2026-10-06 at first run:
+# ECONNRESET on the TLS read.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-control-audit-signer-to-openbao
+  namespace: openbao
+  labels:
+    secforge.platform/component: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: openbao
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: control
+              app.kubernetes.io/component: audit-signer
+      ports:
+        - protocol: TCP
+          port: 8200
+# ──────────────────────────────────────────────────────────────────────
 # Ingress: member-hub ns → openbao API. Member Hub backend pods use
 # OpenBao for Transit field-level PII encryption (lib/openbao* +
 # spiffe-helper); the audit-anchor CronJob uses Transit-sign for
