@@ -65,6 +65,13 @@ APP_ROLES=(
   # openbao anchor; SA lives in the observability ns next to Loki. Manifests:
   # manifests/observability/21-loki-audit-anchor.yaml (applied by 07f-loki.sh).
   "platform-loki-audit-signer|observability|platform-loki-audit-signer|audit-signer,platform-audit|900|1800"
+  # control audit anchor — signs the daily anchor of the fleet audit log
+  # (app_audit_events) + Control's own audit_log AND reads the (shared) GitHub
+  # PAT. Same two policies as the platform anchors; the SA is the anchor
+  # CronJob's OWN identity in the control ns, so the API pods cannot sign.
+  # Manifests: manifests/control/22-audit-anchor-cronjob.yaml + 22a-audit-anchor-vso.yaml.
+  # Runbook: docs/03-runbooks/control-audit-anchor.md.
+  "control-audit-signer|control|control-audit-signer|audit-signer,platform-audit|900|1800"
   # Alertmanager SMTP credential (Resend key) — rendered via
   # manifests/observability/16-alertmanager-smtp-vso-binding.yaml.
   "alertmanager-vso|observability|alertmanager-vso|vso|3600|86400"
