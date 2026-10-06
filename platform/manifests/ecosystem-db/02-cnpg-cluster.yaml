@@ -16,6 +16,11 @@
 #        member-hub: member_hub(BYPASSRLS), member_hub_app(NOLOGIN), audit_verifier    — BYPASSRLS owner is REQUIRED (SECURITY DEFINER posture); do not "fix"
 #        proposal-forge / business-manager: single login role, NOBYPASSRLS (FORCE RLS binds it)
 #        project-manager: project_manager(BYPASSRLS), project_manager_app(NOLOGIN)
+#      Since 2026-10 each of proposal-forge / business-manager / project-manager also has a
+#      `<db>_audit_owner` role (NOLOGIN, no members) that owns the app's audit table, its
+#      functions and their schema, so the app's own credentials cannot switch the audit
+#      protections off. NOT in a pre-2026-10 dump: after a logical restore or rebuild, re-run
+#      components/09j-audit-owner-separation.sh (docs/03-runbooks/audit-owner-separation.md).
 #   2. `pg_dump -Fc <app-db>` → `pg_restore` into the matching database here.
 # initdb below creates only a neutral management database so the cluster reaches
 # Ready; nothing app-facing depends on it.
