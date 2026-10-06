@@ -97,8 +97,12 @@ info() { echo "  · $1"; }
 mkey()   { jq -r --arg k "$1" '(.[$k] // []) | if type=="object" then keys[] else .[] end' "$MANIFEST" 2>/dev/null; }
 in_list() { # $1=schema $2=table $3=manifest-key  → 0 if listed (bare or qualified)
   local q="$1.$2" b="$2"
-  mkey "$3" | grep -qxF "$q" && return 0
-  [ "$1" = public ] && mkey "$3" | grep -qxF "$b" && return 0
+  # NOT `grep -q`: it exits at the first match, and under `set -o pipefail` jq
+  # can then die of SIGPIPE mid-write and fail the pipeline — so a table that
+  # IS listed, most often the FIRST entry of a list, was reported unclassified.
+  # Reading to the end of the list keeps the pipeline's status grep's own.
+  mkey "$3" | grep -xF "$q" >/dev/null && return 0
+  [ "$1" = public ] && mkey "$3" | grep -xF "$b" >/dev/null && return 0
   return 1
 }
 classify() { # echoes the single category, or "UNCLASSIFIED"
