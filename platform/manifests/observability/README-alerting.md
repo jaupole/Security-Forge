@@ -18,6 +18,8 @@ that can't live in git as-is — documented here.
   lives in `platform/values/loki.yaml` (`rulerConfig` + `sidecar.rules.folder`);
   rule ConfigMaps are picked up by the chart's `loki_rule`-labelled sidecar.
   First rule: `AuthzUnavailableBurst` (RCA-sso-switcher 2026-07-15 §6.1).
+  `AuditChainBroken` (2026-10-06) fires when an app's daily check finds a
+  tamper-evident audit log hash chain that does not verify.
 - `../velero/04-servicemonitor.yaml`, `../cert-manager/04-servicemonitor.yaml` —
   make `velero_backup_*` / `certmanager_*` metrics exist.
 - `platform/values/kube-prometheus-stack.yaml` — `alertmanagerSpec.alertmanager

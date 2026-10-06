@@ -211,3 +211,33 @@ journalctl -u k3s --since "-30 min" | grep -iE 'conntrack|route|link'
 ```
 
 **Remediate:** short self-terminated burst → nothing to fix, but record the timestamp; recurrence pattern is what identifies the underlying network trigger (unprovable in the 2026-07-15 incident because the journal rotated). Sustained → treat as SpiceDB outage: check pod health, CNPG primary, and `allow-<app>-to-spicedb` NetworkPolicies (a new app namespace missing its policy 500s exactly like this).
+
+---
+
+## AuditChainBroken
+
+**Trigger:** any `AUDIT_CHAIN_BROKEN` log line in `control`, `proposal-forge`, `business-manager` or `project-manager` within a 15m window (Loki ruler rule, `15-loki-ruler-alerts.yaml`). Each app verifies its audit log's hash chains a few minutes after boot and every 24 hours, and logs the marker only when a chain does not verify, so the alert re-fires daily until the cause is dealt with.
+
+**Meaning:** an audit row was changed or removed by something other than the retention purge. The audit tables are append-only for the app roles (triggers refuse UPDATE, TRUNCATE, and DELETE outside the purge), so a break means someone acted with owner or superuser access, or a migration or restore touched the table. Nothing is repaired or blocked automatically. Treat it as a possible tampering incident until explained.
+
+**Diagnose:**
+```bash
+# Which chain, and the first row that fails (the log line carries the same):
+#   {namespace=~"control|proposal-forge|project-manager|business-manager"} |= "AUDIT_CHAIN_BROKEN"
+
+PSQL="kubectl exec -n ecosystem-db ecosystem-db-1 -c postgres -- psql -U postgres"
+
+# Re-run the check by hand (empty result / NULL = intact)
+$PSQL -d proposal_forge   -c "SELECT * FROM audit_log_broken_chains();"
+$PSQL -d business_manager -c "SELECT * FROM business_manager.audit_logs_broken_chains();"
+$PSQL -d project_manager  -c "SELECT audit.first_broken_row();"   # must run with the app's TimeZone
+$PSQL -d control          -c "SELECT * FROM app_audit_events_broken_chains();"
+
+# Compare the app's rows with the copy Control holds (the app's sealed hash as
+# it was when forwarded). Example for Proposal Forge, from the broken seq on:
+$PSQL -d proposal_forge -c "SELECT seq, encode(row_hash,'hex') FROM audit_log WHERE org_id = '<org>' AND seq >= <seq> ORDER BY seq LIMIT 20;"
+$PSQL -d control        -c "SELECT source_seq, encode(source_row_hash,'hex') FROM app_audit_events WHERE source_app = 'proposalapp' AND org_id = '<org>' AND source_seq >= <seq> ORDER BY source_seq LIMIT 20;"
+```
+A hash that differs between the two means the app's row was rewritten after it was forwarded. A seq present in Control and missing in the app means the row was deleted. A break at the very start of a chain right after a purge is expected to verify cleanly; if it does not, check the purge ran inside its own rules (`purge` rows in the log).
+
+**Remediate:** do not "fix" the chain. Record the broken row ids, who had database access in the window (CNPG and Wazuh logs), and whether a migration, restore, or manual session touched the table. If it was an operator action, document it and re-anchor deliberately. If it cannot be explained, handle as a security incident. Project Manager has an `audit.tamper_flag` that stops all audited writes when set; setting it is an operator decision and takes most of that app down.

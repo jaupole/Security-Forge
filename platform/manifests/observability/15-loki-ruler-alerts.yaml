@@ -40,3 +40,23 @@ data:
             annotations:
               summary: "AuthzUnavailableError burst in {{ $labels.namespace }} ({{ $value }} hits / 5m)"
               description: "SpiceDB was unreachable from {{ $labels.namespace }} — authz is fail-closed, so affected requests 500. Short burst = transient network reset (see RCA-sso-switcher 2026-07-15); sustained = SpiceDB or NetworkPolicy outage. Runbook: alerts.md#authzunavailableburst"
+      - name: secforge.logs.audit
+        rules:
+          - alert: AuditChainBroken
+            # Each app verifies its tamper-evident audit log once a day and
+            # logs this marker only when a hash chain does not verify. Any
+            # occurrence alerts; the app repeats it daily until a person has
+            # looked, so the alert re-fires daily rather than staying open.
+            expr: |
+              sum by (namespace) (
+                count_over_time(
+                  {namespace=~"control|proposal-forge|project-manager|business-manager"}
+                    |= "AUDIT_CHAIN_BROKEN" [15m]
+                )
+              ) > 0
+            labels:
+              severity: critical
+              component: audit
+            annotations:
+              summary: "Audit log hash chain does not verify in {{ $labels.namespace }}"
+              description: "An audit row in {{ $labels.namespace }} was changed or removed outside the retention purge. Nothing is repaired or blocked automatically. Treat as a possible tampering incident until explained. Runbook: alerts.md#auditchainbroken"
