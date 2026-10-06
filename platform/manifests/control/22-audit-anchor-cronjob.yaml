@@ -20,7 +20,9 @@
 # hash for the fleet log, a timestamp and a row hash for Control's log. No org
 # ids, no per-org counts (ecosystem-control src/api/lib/audit-anchor.ts).
 #
-# BOTH SHIP SUSPENDED. The anchor needs the `control-audit-signer` OpenBao role
+# Activated 2026-10-06 (suspend: false is the operational state; keep it so
+# HERE, every Control deploy re-applies this file). The anchor needs the
+# `control-audit-signer` OpenBao role
 # (05j-app-vso-roles.sh) and the VSO objects in 22a-audit-anchor-vso.yaml, which
 # is deliberately NOT applied by deploy-app (it pins no image). Activate with
 # docs/03-runbooks/control-audit-anchor.md — by changing `suspend` HERE and
@@ -60,7 +62,7 @@ metadata:
     secforge.platform/component: audit-anchors
     secforge.platform/role: audit-anchor
 spec:
-  suspend: true
+  suspend: false
   # Daily 00:53 UTC — after the openbao (00:23) and member-hub (00:17) anchors.
   schedule: "53 0 * * *"
   timeZone: UTC
@@ -175,7 +177,7 @@ metadata:
     secforge.platform/component: audit-anchors
     secforge.platform/role: audit-verifier
 spec:
-  suspend: true
+  suspend: false
   # Daily 05:11 UTC — clear of the other control crons, hours after the anchor.
   schedule: "11 5 * * *"
   timeZone: UTC
