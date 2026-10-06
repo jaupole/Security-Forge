@@ -78,7 +78,7 @@ spec:
             - name: purge
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:9fdafc3241a5616f92db7e25943e34a5d7ba8e71459108a16d23b088db8bb093
+              image: ghcr.io/jaupole/control@sha256:c5ca059c4f89a661a072484f9fff0b268f6d3977cd0a3bb56bf9ed29d4b773d8
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "idempotency:purge"]
               env:
