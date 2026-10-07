@@ -64,11 +64,32 @@
         background: var(--pf-card); min-height: 80px;
       }
       .pf-state { color: var(--pf-muted); font-size: 12px; }
+      .pf-section-label { margin: 0 0 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pf-muted); }
+      .pf-draft-row { display: flex; gap: 6px; margin-bottom: 4px; }
+      .pf-select {
+        flex: 1 1 auto; min-width: 0; padding: 6px 8px;
+        border: 1px solid var(--pf-hair); border-radius: 8px;
+        background: var(--pf-card); color: var(--pf-ink); font: inherit; font-size: 12px;
+      }
+      .pf-draft-state { min-height: 16px; margin: 0 0 10px; font-size: 11px; color: var(--pf-muted); }
+      .pf-divider { height: 1px; margin: 4px 0 10px; background: var(--pf-hair); }
       .pf-error { color: #b91c1c; }
     </style>
   </head>
   <body>
     <div id="pf-root">
+      <p class="pf-section-label">Draft A Section</p>
+      <div class="pf-draft-row">
+        <select id="pf-section" class="pf-select" disabled>
+          <option value="">Loading sections…</option>
+        </select>
+        <button id="pf-draft" class="pf-btn pf-btn-primary" type="button" disabled>Draft At Cursor</button>
+      </div>
+      <p id="pf-draft-state" class="pf-draft-state">
+        Writes the section from its brief on the Sections step and inserts it here.
+      </p>
+      <div class="pf-divider"></div>
+      <p class="pf-section-label">Ask The Assistant</p>
       <p class="pf-intro">
         Describe what you want written or rewritten, then insert the result at
         your cursor. Generated text is a draft — review it before you use it.

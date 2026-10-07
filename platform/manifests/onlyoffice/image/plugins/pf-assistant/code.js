@@ -26,6 +26,9 @@
   var DEFAULT_MODEL = 'pf-assistant'
 
   var promptEl = null
+  var sectionSel = null
+  var draftBtn = null
+  var draftStateEl = null
   var outputEl = null
   var generateBtn = null
   var insertBtn = null
@@ -93,6 +96,7 @@
 
   function setBusy(next) {
     busy = next
+    if (draftBtn) draftBtn.disabled = next || !(sectionSel && sectionSel.value)
     if (generateBtn) generateBtn.disabled = next
     if (insertBtn) insertBtn.disabled = next || resultText.length === 0
     if (generateBtn) generateBtn.textContent = next ? 'Generating…' : 'Generate'
@@ -194,8 +198,129 @@
     }
   }
 
+  // ── Draft A Section ──────────────────────────────────────────────────────
+  // The document is the only place the proposal's text lives, so AI drafting of
+  // a section happens here: pick one of the proposal's AI sections, and the
+  // draft — built from the same brief as the first assembly (guidance,
+  // references, assets, RFP, pricing) — streams back and is pasted at the
+  // cursor as formatted HTML. Nothing is written to the section itself.
+  function setDraftState(message, isError) {
+    if (!draftStateEl) return
+    draftStateEl.textContent = message || ''
+    draftStateEl.className = 'pf-draft-state' + (isError ? ' pf-error' : '')
+  }
+
+  async function loadSections() {
+    if (!ctx || !sectionSel) return
+    try {
+      var res = await fetch(ctx.base + '/sections', {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: { Authorization: 'Bearer ' + ctx.token },
+      })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      var body = await res.json()
+      var items = (body && body.data) || []
+      sectionSel.textContent = ''
+      var placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.textContent = items.length ? 'Choose a section…' : 'No AI sections in this proposal'
+      sectionSel.appendChild(placeholder)
+      for (var i = 0; i < items.length; i++) {
+        var opt = document.createElement('option')
+        opt.value = items[i].id
+        opt.textContent = items[i].title
+        sectionSel.appendChild(opt)
+      }
+      sectionSel.disabled = items.length === 0
+      if (draftBtn) draftBtn.disabled = true
+    } catch (err) {
+      setDraftState('Could not load the sections (' + (err && err.message ? err.message : 'error') + ').', true)
+    }
+  }
+
+  async function draftSection() {
+    if (busy || !ctx || !sectionSel || !sectionSel.value) return
+    var sectionId = sectionSel.value
+    var title = sectionSel.options[sectionSel.selectedIndex].textContent
+    var html = ''
+    var chars = 0
+    setBusy(true)
+    setDraftState('Drafting “' + title + '”…', false)
+    try {
+      var res = await fetch(ctx.base + '/draft-section', {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + ctx.token,
+        },
+        body: JSON.stringify({ sectionId: sectionId }),
+      })
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status)
+      var reader = res.body.getReader()
+      var decoder = new TextDecoder()
+      var buffer = ''
+      var done = false
+      var failed = null
+      while (!done) {
+        var step = await reader.read()
+        done = step.done
+        if (step.value) buffer += decoder.decode(step.value, { stream: true })
+        var events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+        for (var i = 0; i < events.length; i++) {
+          var lines = events[i].split('\n')
+          for (var j = 0; j < lines.length; j++) {
+            var line = lines[j]
+            if (line.indexOf('data:') !== 0) continue
+            var data = line.slice(5).trim()
+            if (data === '[DONE]') {
+              done = true
+              break
+            }
+            var ev = null
+            try {
+              ev = JSON.parse(data)
+            } catch (e) {
+              ev = null
+            }
+            if (!ev) continue
+            if (ev.type === 'chunk' && typeof ev.content === 'string') {
+              chars += ev.content.length
+              setDraftState('Drafting “' + title + '”… ' + chars + ' characters', false)
+            } else if (ev.type === 'done' && typeof ev.content === 'string') {
+              html = ev.content
+            } else if (ev.type === 'error') {
+              failed = ev.error || 'Generation failed'
+            }
+          }
+        }
+      }
+      if (failed && !html) throw new Error(failed)
+      if (!html) throw new Error('No text was generated')
+      window.Asc.plugin.executeMethod('PasteHtml', [html])
+      setDraftState('Inserted “' + title + '” at the cursor.' + (failed ? ' (partial: ' + failed + ')' : ''), false)
+    } catch (err) {
+      setDraftState('Could not draft the section (' + (err && err.message ? err.message : 'error') + ').', true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function boot() {
     promptEl = document.getElementById('pf-prompt')
+    sectionSel = document.getElementById('pf-section')
+    draftBtn = document.getElementById('pf-draft')
+    draftStateEl = document.getElementById('pf-draft-state')
+    if (sectionSel) {
+      sectionSel.addEventListener('change', function () {
+        if (draftBtn) draftBtn.disabled = busy || !sectionSel.value
+      })
+    }
+    if (draftBtn) draftBtn.addEventListener('click', draftSection)
     outputEl = document.getElementById('pf-output')
     generateBtn = document.getElementById('pf-generate')
     insertBtn = document.getElementById('pf-insert')
@@ -205,6 +330,7 @@
 
     // Options first (the built-in channel); query string only as a fallback.
     ctx = ctxFromOptions() || ctxFromQuery()
+    if (ctx) loadSections()
     if (!ctx) {
       // No launch context (e.g. a read-only/viewer session that carries no
       // plugin options): sit idle rather than erroring.
