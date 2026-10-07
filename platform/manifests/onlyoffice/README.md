@@ -104,6 +104,31 @@ not stop it; a hard block would need a CSP on `docs.${DOMAIN}`
 `plugins-services.onlyoffice.com`, but a too-strict CSP breaks the editor — treat
 that as a tested follow-up, not a prerequisite.
 
+### Plugin icons
+
+Each plugin ships line-art icons under `resources/{light,dark}/` at the five
+editor scales (`icon.png`, `icon@1.25x.png`, `icon@1.5x.png`, `icon@1.75x.png`,
+`icon@2x.png`; 28/35/42/49/56 px — the sizes ONLYOFFICE's own panel plugins
+use; the right-toolbar button shows them at 20 CSS px, the Plugins ribbon at
+28). `config.json` references them with the template string
+`resources/%theme-type%(light|dark)/icon%scale%(default).%extension%(png)`.
+The SVG source sits next to the PNGs; regenerate from it in the PF repo
+(headless Chrome render — see the PF plugin folders), then sync here.
+
+### All three panels on the right toolbar (image patch)
+
+Upstream starts `autostart` plugins one at a time and only moves on when the
+running plugin closes, so only the first autostarted panel ever got a
+right-toolbar button. `image/Dockerfile` patches ONE word in
+`web-apps/apps/common/main/lib/controller/Plugins.js` (`if` → `while` in
+`runAutoStartPlugins`) so every autostarted panel opens and gets its own
+button. The step asserts the upstream text before and after, so a base-image
+bump that changes that code fails the build instead of silently losing the
+patch; re-check `runAutoStartPlugins` upstream and adjust. Debt-free
+alternative if upstream ever breaks it: one host plugin opening the other two as
+`panelRight` windows via `Asc.PluginWindow` (the official AI plugin's pattern),
+which routes their editor calls through the host.
+
 ### Changing the plugins = image rebuild
 
 The plugins live in the image, so a plugin change is an **image rebuild**: sync

@@ -57,3 +57,27 @@ RUN apt-get update \
 COPY plugins/pf-fields/    /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-fields/
 COPY plugins/pf-library/   /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-library/
 COPY plugins/pf-assistant/ /var/www/onlyoffice/documentserver/sdkjs-plugins/pf-assistant/
+
+# ── Autostart EVERY configured panel plugin ──────────────────────────────────
+# Upstream web-apps starts `editorConfig.plugins.autostart` GUIDs ONE AT A TIME
+# and only advances to the next when the running plugin CLOSES
+# (common/main/lib/controller/Plugins.js: runAutoStartPlugins() shifts one GUID;
+# onPluginClose() calls it again). A right-panel plugin never closes by itself,
+# so of PF's three autostarted panels only the FIRST ever got its button on the
+# right toolbar. This DS autostarts only PF's three panelRight plugins (no modal
+# or window plugins), so starting them all is safe: each panel gets its own
+# right-toolbar button (toggle group), which is exactly the multi-panel
+# behaviour the ONLYOFFICE docs describe for plugins started by hand.
+#
+# The controller ships as readable source and is loaded by RequireJS at runtime
+# (it is NOT inside main/code.js), so the patch is a one-word edit guarded both
+# ways: the build FAILS if upstream's text changes, so a base-image bump
+# re-surfaces this instead of silently dropping it. nginx serves the
+# precompressed sibling (gzip_static on), so it is regenerated.
+RUN set -eu; \
+    f=/var/www/onlyoffice/documentserver/web-apps/apps/common/main/lib/controller/Plugins.js; \
+    test "$(grep -c "if (this.autostart && this.autostart.length > 0) {" "$f")" = 1; \
+    test "$(grep -c "this.api.asc_pluginRun(this.autostart.shift(), 0, '');" "$f")" = 1; \
+    sed -i "s|if (this.autostart \&\& this.autostart.length > 0) {|while (this.autostart \&\& this.autostart.length > 0) {|" "$f"; \
+    test "$(grep -c "while (this.autostart && this.autostart.length > 0) {" "$f")" = 1; \
+    gzip -9 -k -f "$f"
