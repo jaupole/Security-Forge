@@ -129,6 +129,20 @@ alternative if upstream ever breaks it: one host plugin opening the other two as
 `panelRight` windows via `Asc.PluginWindow` (the official AI plugin's pattern),
 which routes their editor calls through the host.
 
+### Autosave reaches the app every minute (image patch)
+
+The editor autosaves into the DS's own cache; the file only reaches the app's
+save callback on a manual save, when the last editor closes, or on the DS's
+auto-assembly timer, which upstream ships disabled (5 m). `image/Dockerfile`
+sets `services.CoAuthoring.autoAssembly = { enable: true, interval: "1m" }`
+in `default.json` (always loaded; the run script only rewrites `local.json`)
+with a guarded python3 edit, so an open document is force-saved to PF once a
+minute (callback status 6, `forcesavetype: 2`). PF additionally requests an
+explicit `forcesave` through the Command Service before every Word/PDF
+download, so exports match the editor; the timer is the floor for crashes
+and logouts. Verify after a rollout: `kubectl -n onlyoffice logs deploy/onlyoffice | grep forcesavetype`
+shows `"forcesavetype":2` callbacks while a document is open and being edited.
+
 ### Changing the plugins = image rebuild
 
 The plugins live in the image, so a plugin change is an **image rebuild**: sync

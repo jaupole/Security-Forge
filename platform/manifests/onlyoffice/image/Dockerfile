@@ -81,3 +81,33 @@ RUN set -eu; \
     sed -i "s|if (this.autostart \&\& this.autostart.length > 0) {|while (this.autostart \&\& this.autostart.length > 0) {|" "$f"; \
     test "$(grep -c "while (this.autostart && this.autostart.length > 0) {" "$f")" = 1; \
     gzip -9 -k -f "$f"
+
+# ── Periodic flush of open editing sessions to the app (auto-assembly) ───────
+# The editor autosaves into the DS's OWN cache; the file only reaches the app's
+# save callback on a manual save, when the last editor closes, or on this
+# timer (upstream default: disabled, 5m). With the document as the single
+# source of proposal text, a browser crash or logout must not cost more than a
+# minute of work, so the DS force-saves every open document once a minute
+# (callback status 6, forcesavetype 2). Exports additionally request an
+# explicit forcesave before reading the file (PF flushEditorToStorage), so
+# this is the floor, not the only guarantee. Set in default.json (always
+# loaded; the run script only rewrites local.json) via python3 (in the image;
+# jq is not), guarded: the build FAILS if the key is not where upstream puts it.
+RUN <<'EOF'
+set -eu
+c=/etc/onlyoffice/documentserver/default.json
+python3 - "$c" <<'PY'
+import json, sys
+p = sys.argv[1]
+with open(p) as f:
+    cfg = json.load(f)
+aa = cfg["services"]["CoAuthoring"]["autoAssembly"]
+assert aa["enable"] is False and "interval" in aa, aa
+aa["enable"] = True
+aa["interval"] = "1m"
+with open(p, "w") as f:
+    json.dump(cfg, f, indent=2)
+print("autoAssembly:", cfg["services"]["CoAuthoring"]["autoAssembly"])
+PY
+grep -q '"interval": "1m"' "$c"
+EOF
