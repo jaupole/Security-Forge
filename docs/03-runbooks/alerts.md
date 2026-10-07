@@ -241,3 +241,34 @@ $PSQL -d control        -c "SELECT source_seq, encode(source_row_hash,'hex') FRO
 A hash that differs between the two means the app's row was rewritten after it was forwarded. A seq present in Control and missing in the app means the row was deleted. A break at the very start of a chain right after a purge is expected to verify cleanly; if it does not, check the purge ran inside its own rules (`purge` rows in the log).
 
 **Remediate:** do not "fix" the chain. Record the broken row ids, who had database access in the window (CNPG and Wazuh logs), and whether a migration, restore, or manual session touched the table. If it was an operator action, document it and re-anchor deliberately. If it cannot be explained, handle as a security incident. Project Manager has an `audit.tamper_flag` that stops all audited writes when set; setting it is an operator decision and takes most of that app down.
+
+---
+
+## ProposalDocumentSaveFailing
+
+**Trigger:** any `DOCUMENT_SAVE_FAILED` log line in `proposal-forge` within a 10m window (Loki ruler rule, `15-loki-ruler-alerts.yaml`). Zero-baseline: Proposal Forge logs the marker only when an editor save fails to land. It covers every failure path of `POST /api/v1/onlyoffice/callback/:projectId`: the Document Server reporting a save error (callback status 3/7), a callback whose JWT Proposal Forge rejects (403), and a Proposal Forge-side failure to download or store the saved bytes (SSRF host-lock, DS pull, docx sniff, MinIO).
+
+**Meaning:** the proposal's document is the only place its text lives (one-place model, 2026-10-07). A save that does not reach Proposal Forge is lost work: the editor keeps its own copy only until the session ends, and the once-a-minute auto-assembly re-tries the same failing path. The affected proposal shows a save-error banner on the Document step. One hit can be a transient (a MinIO blip); a steady stream, one per minute per open document, means every save is failing — that was the shape of the 2026-07..10 callback bug (public-origin callback URL rejected 400 by the SSRF lock), which this alert exists to catch.
+
+**Diagnose:**
+```bash
+# Which failure path, how many proposals, still ongoing? (Grafana → Explore → Loki)
+#   {namespace="proposal-forge"} |= "DOCUMENT_SAVE_FAILED"
+# The marker is followed by the path: "onlyoffice reported a save error" (DS-side),
+# "callback with missing/invalid JWT rejected" (secret drift), or
+# "storing the saved document failed" (PF-side; the err field says why).
+
+# PF-side: is the DS reachable in-cluster and is MinIO healthy?
+kubectl -n proposal-forge logs deploy/proposal-forge --tail=200 | grep -E 'DOCUMENT_SAVE_FAILED|DS file download|Unhandled'
+kubectl -n onlyoffice get pods
+kubectl -n minio get pods
+
+# Secret drift (403 path): both sides must hold the same JWT secret
+kubectl -n proposal-forge get secret onlyoffice-jwt -o jsonpath='{.data}' | jq 'keys'   # names only — never print values
+kubectl -n onlyoffice logs deploy/onlyoffice --tail=100 | grep -iE 'jwt|token'
+
+# DS-side (status 3/7): the DS's own save log
+kubectl -n onlyoffice logs deploy/onlyoffice --tail=300 | grep -iE 'error|forcesave'
+```
+
+**Remediate:** fix the path, then confirm with a manual save in the editor and watch the log for `onlyoffice save callback processed`. Text typed while saves were failing is still in the open editor session: do NOT restart the Document Server or close the editor until a save succeeds. If the editor was already closed, the DS keeps the last unsaved copy in its cache and offers it on the next open ("opened from a server backup"); archived versions are in the Document step's History.

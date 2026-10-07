@@ -20,6 +20,9 @@ that can't live in git as-is — documented here.
   First rule: `AuthzUnavailableBurst` (RCA-sso-switcher 2026-07-15 §6.1).
   `AuditChainBroken` (2026-10-06) fires when an app's daily check finds a
   tamper-evident audit log hash chain that does not verify.
+  `ProposalDocumentSaveFailing` (2026-10-07) fires on any editor save that
+  fails to land in Proposal Forge (`DOCUMENT_SAVE_FAILED` marker) — the
+  document is the only place a proposal's text lives.
 - `../velero/04-servicemonitor.yaml`, `../cert-manager/04-servicemonitor.yaml` —
   make `velero_backup_*` / `certmanager_*` metrics exist.
 - `platform/values/kube-prometheus-stack.yaml` — `alertmanagerSpec.alertmanager

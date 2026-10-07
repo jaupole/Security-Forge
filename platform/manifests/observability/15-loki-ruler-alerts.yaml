@@ -60,3 +60,27 @@ data:
             annotations:
               summary: "Audit log hash chain does not verify in {{ $labels.namespace }}"
               description: "An audit row in {{ $labels.namespace }} was changed or removed outside the retention purge. Nothing is repaired or blocked automatically. Treat as a possible tampering incident until explained. Runbook: alerts.md#auditchainbroken"
+      - name: secforge.logs.documents
+        rules:
+          - alert: ProposalDocumentSaveFailing
+            # Proposal Forge's document is the ONLY place a proposal's text
+            # lives (one-place model, 2026-10-07), so a save that does not
+            # land in the app is lost text. The app logs this marker on every
+            # failure path: the Document Server reporting a save error, a
+            # callback whose signature PF rejects (shared-secret drift), and a
+            # PF-side download/store failure (SSRF lock, MinIO). Zero-baseline
+            # by design; any occurrence alerts. The 2026-07..10 callback bug
+            # (every editor save rejected 400) would have fired this within a
+            # minute instead of going unnoticed for three months.
+            expr: |
+              sum by (namespace) (
+                count_over_time(
+                  {namespace="proposal-forge"} |= "DOCUMENT_SAVE_FAILED" [10m]
+                )
+              ) > 0
+            labels:
+              severity: critical
+              component: document-engine
+            annotations:
+              summary: "Proposal Forge document saves are failing ({{ $value }} in 10m)"
+              description: "An editor save did not land in Proposal Forge — with the document as the single source of the proposal's text, each one is lost work until fixed. The Document step shows the affected proposal a save-error banner; the editor keeps its own copy until the next successful save. Runbook: alerts.md#proposaldocumentsavefailing"
