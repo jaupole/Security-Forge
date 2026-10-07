@@ -73,6 +73,19 @@
       }
       .pf-draft-state { min-height: 16px; margin: 0 0 10px; font-size: 11px; color: var(--pf-muted); }
       .pf-divider { height: 1px; margin: 4px 0 10px; background: var(--pf-hair); }
+      .pf-brief { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
+      .pf-brief[hidden] { display: none; }
+      .pf-brief-label { margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pf-muted); }
+      .pf-guidance { min-height: 110px; font-size: 12px; }
+      .pf-guidance[readonly] { opacity: 0.8; }
+      .pf-brief-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px; color: var(--pf-ink); }
+      .pf-brief-inline { display: inline-flex; align-items: center; gap: 4px; }
+      .pf-num {
+        width: 44px; padding: 4px 6px; border: 1px solid var(--pf-hair); border-radius: 6px;
+        background: var(--pf-card); color: var(--pf-ink); font: inherit; font-size: 12px;
+      }
+      .pf-btn-small { flex: 0 0 auto; padding: 5px 10px; margin-left: auto; font-size: 12px; }
+      .pf-brief-state { margin: 0; }
       .pf-error { color: #b91c1c; }
     </style>
   </head>
@@ -86,8 +99,30 @@
         <button id="pf-draft" class="pf-btn pf-btn-primary" type="button" disabled>Draft At Cursor</button>
       </div>
       <p id="pf-draft-state" class="pf-draft-state">
-        Writes the section from its brief on the Sections step and inserts it here.
+        Writes the section from its brief below and inserts it at the cursor.
       </p>
+      <div id="pf-brief" class="pf-brief" hidden>
+        <label class="pf-brief-label" for="pf-guidance">AI Guidance</label>
+        <textarea
+          id="pf-guidance"
+          class="pf-prompt pf-guidance"
+          placeholder="Voice, structure, must-include points, vocabulary to prefer or avoid…"
+          autocomplete="off"
+        ></textarea>
+        <div class="pf-brief-row">
+          <label class="pf-brief-inline" for="pf-pages">
+            Target
+            <input id="pf-pages" class="pf-num" type="number" min="1" max="40" step="1" />
+            pages
+          </label>
+          <label class="pf-brief-inline">
+            <input id="pf-rfp" type="checkbox" />
+            Include RFP text
+          </label>
+          <button id="pf-brief-save" class="pf-btn pf-btn-small" type="button" disabled>Save Brief</button>
+        </div>
+        <p id="pf-brief-state" class="pf-draft-state pf-brief-state"></p>
+      </div>
       <div class="pf-divider"></div>
       <p class="pf-section-label">Ask The Assistant</p>
       <p class="pf-intro">

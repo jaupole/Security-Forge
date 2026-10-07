@@ -35,6 +35,16 @@
   var ctx = null
   var resultText = ''
   var busy = false
+  // Section briefs (the Sections step was folded into the Document step; the
+  // brief is edited here, beside the drafting action). Keyed by section id.
+  var briefsById = {}
+  var briefEl = null
+  var guidanceEl = null
+  var pagesEl = null
+  var rfpEl = null
+  var briefSaveBtn = null
+  var briefStateEl = null
+  var briefDirty = false
 
   function trimSlashes(s) {
     return String(s || '').replace(/\/+$/, '')
@@ -47,7 +57,7 @@
       var base = trimSlashes(q.get('base'))
       var token = q.get('token')
       if (!base || !token) return null
-      return { base: base, token: token, model: q.get('model') || DEFAULT_MODEL }
+      return { base: base, token: token, model: q.get('model') || DEFAULT_MODEL, canEditBrief: false }
     } catch (e) {
       return null
     }
@@ -72,6 +82,8 @@
           base: trimSlashes(scoped.base),
           token: String(scoped.token),
           model: scoped.model ? String(scoped.model) : DEFAULT_MODEL,
+          // UI hint only: the server enforces the token's own claim.
+          canEditBrief: scoped.canEditBrief === true,
         }
       }
     } catch (e) {
@@ -223,6 +235,7 @@
       var body = await res.json()
       var items = (body && body.data) || []
       sectionSel.textContent = ''
+      briefsById = {}
       var placeholder = document.createElement('option')
       placeholder.value = ''
       placeholder.textContent = items.length ? 'Choose a section…' : 'No AI sections in this proposal'
@@ -232,16 +245,97 @@
         opt.value = items[i].id
         opt.textContent = items[i].title
         sectionSel.appendChild(opt)
+        briefsById[items[i].id] = items[i]
       }
       sectionSel.disabled = items.length === 0
       if (draftBtn) draftBtn.disabled = true
+      showBrief('')
     } catch (err) {
       setDraftState('Could not load the sections (' + (err && err.message ? err.message : 'error') + ').', true)
     }
   }
 
+  // ── The brief ────────────────────────────────────────────────────────────
+  // Guidance, target length and the RFP toggle for the chosen section — what
+  // Draft At Cursor (and Draft With AI) write from. Saved through the same
+  // token: the server accepts the write only for an EDIT session, so a review
+  // session sees the brief read-only. References, assets and section templates
+  // stay on the Document step's Section Briefs dialog.
+  function setBriefState(message, isError) {
+    if (!briefStateEl) return
+    briefStateEl.textContent = message || ''
+    briefStateEl.className = 'pf-draft-state pf-brief-state' + (isError ? ' pf-error' : '')
+  }
+
+  function showBrief(sectionId) {
+    if (!briefEl) return
+    var brief = sectionId ? briefsById[sectionId] : null
+    briefDirty = false
+    if (!brief) {
+      briefEl.hidden = true
+      return
+    }
+    var editable = !!(ctx && ctx.canEditBrief)
+    guidanceEl.value = brief.userGuidance || ''
+    pagesEl.value = String(brief.targetPages || 2)
+    rfpEl.checked = brief.includeRfp === true
+    guidanceEl.readOnly = !editable
+    pagesEl.disabled = !editable
+    rfpEl.disabled = !editable
+    briefSaveBtn.hidden = !editable
+    briefSaveBtn.disabled = true
+    setBriefState(editable ? '' : 'Read-only in a review session.', false)
+    briefEl.hidden = false
+  }
+
+  function markBriefDirty() {
+    if (!ctx || !ctx.canEditBrief) return
+    briefDirty = true
+    if (briefSaveBtn) briefSaveBtn.disabled = busy
+    setBriefState('Unsaved changes.', false)
+  }
+
+  /** PUT the brief; resolves true when saved (or nothing to save). */
+  async function saveBrief() {
+    if (!ctx || !ctx.canEditBrief || !sectionSel || !sectionSel.value || !briefDirty) return true
+    var sectionId = sectionSel.value
+    var pages = parseInt(pagesEl.value, 10)
+    if (!(pages >= 1 && pages <= 40)) {
+      setBriefState('Target length must be between 1 and 40 pages.', true)
+      return false
+    }
+    var payload = {
+      userGuidance: guidanceEl.value.trim() ? guidanceEl.value : null,
+      targetPages: pages,
+      includeRfp: rfpEl.checked,
+    }
+    briefSaveBtn.disabled = true
+    setBriefState('Saving…', false)
+    try {
+      var res = await fetch(ctx.base + '/sections/' + encodeURIComponent(sectionId), {
+        method: 'PUT',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ctx.token },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      var body = await res.json()
+      if (body && body.data) briefsById[sectionId] = body.data
+      briefDirty = false
+      setBriefState('Brief saved.', false)
+      return true
+    } catch (err) {
+      briefSaveBtn.disabled = false
+      setBriefState('Could not save the brief (' + (err && err.message ? err.message : 'error') + ').', true)
+      return false
+    }
+  }
+
   async function draftSection() {
     if (busy || !ctx || !sectionSel || !sectionSel.value) return
+    // An unsaved brief is what the user means to draft from — save it first.
+    if (briefDirty && !(await saveBrief())) return
     var sectionId = sectionSel.value
     var title = sectionSel.options[sectionSel.selectedIndex].textContent
     var html = ''
@@ -315,12 +409,23 @@
     sectionSel = document.getElementById('pf-section')
     draftBtn = document.getElementById('pf-draft')
     draftStateEl = document.getElementById('pf-draft-state')
+    briefEl = document.getElementById('pf-brief')
+    guidanceEl = document.getElementById('pf-guidance')
+    pagesEl = document.getElementById('pf-pages')
+    rfpEl = document.getElementById('pf-rfp')
+    briefSaveBtn = document.getElementById('pf-brief-save')
+    briefStateEl = document.getElementById('pf-brief-state')
     if (sectionSel) {
       sectionSel.addEventListener('change', function () {
         if (draftBtn) draftBtn.disabled = busy || !sectionSel.value
+        showBrief(sectionSel.value)
       })
     }
     if (draftBtn) draftBtn.addEventListener('click', draftSection)
+    if (guidanceEl) guidanceEl.addEventListener('input', markBriefDirty)
+    if (pagesEl) pagesEl.addEventListener('input', markBriefDirty)
+    if (rfpEl) rfpEl.addEventListener('change', markBriefDirty)
+    if (briefSaveBtn) briefSaveBtn.addEventListener('click', function () { void saveBrief() })
     outputEl = document.getElementById('pf-output')
     generateBtn = document.getElementById('pf-generate')
     insertBtn = document.getElementById('pf-insert')
