@@ -46,8 +46,21 @@
         border: 1px solid var(--pf-hair); border-radius: 8px;
         background: var(--pf-card); color: var(--pf-ink); font-size: 12px;
       }
+      .pf-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+      .pf-chip {
+        border: 1px solid var(--pf-hair); border-radius: 999px; padding: 2px 9px;
+        background: transparent; color: var(--pf-muted); font: inherit; font-size: 11px; cursor: pointer;
+      }
+      .pf-chip:hover { background: var(--pf-hover); color: var(--pf-ink); }
+      .pf-chip-on { border-color: var(--pf-accent); color: var(--pf-accent); background: var(--pf-chip); }
       .pf-list { flex: 1 1 auto; overflow-y: auto; }
-      .pf-group { border: 1px solid var(--pf-hair); border-radius: 10px; overflow: hidden; }
+      .pf-heading {
+        margin: 6px 2px 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+        text-transform: uppercase; color: var(--pf-muted);
+      }
+      .pf-group { border: 1px solid var(--pf-hair); border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
+      .pf-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+      .pf-tag { border-radius: 999px; padding: 0 6px; background: var(--pf-chip); color: var(--pf-muted); font-size: 10px; }
       .pf-item {
         display: block; width: 100%; padding: 8px 10px; border: 0;
         border-bottom: 1px solid var(--pf-hair);
@@ -67,12 +80,13 @@
   <body>
     <div id="pf-root">
       <p class="pf-intro">
-        Click a boilerplate block to insert it at the cursor. Blocks are your
-        organization's reusable content, shared across proposals.
+        Click a block to insert it at the cursor. Blocks are your organization's
+        Boilerplate and Past Performance Library items, shared across proposals.
       </p>
-      <input id="pf-search" class="pf-search" type="text" placeholder="Filter boilerplate…" autocomplete="off" />
+      <input id="pf-search" class="pf-search" type="text" placeholder="Search blocks…" autocomplete="off" />
+      <div id="pf-chips" class="pf-chips" style="display: none"></div>
       <div id="pf-list" class="pf-list">
-        <div class="pf-state">Loading boilerplate…</div>
+        <div class="pf-state">Loading the Library…</div>
       </div>
     </div>
     <script src="code.js"></script>

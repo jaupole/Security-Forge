@@ -1,9 +1,11 @@
 /*
  * Proposal Forge — "Boilerplate Library" plugin (right panel).
  *
- * Lists the organization's reusable BOILERPLATE assets (title + a short text
- * preview). Clicking a block inserts its content at the cursor via the plugin
- * API. Boilerplate content may be rich HTML or plain text:
+ * Lists the organization's reusable text blocks — Boilerplate and Past
+ * Performance Library items that have content — grouped by type, filterable
+ * by tag chip and by text search (title, tags, preview). Clicking a block
+ * inserts its content at the cursor via the plugin API. Content may be rich
+ * HTML or plain text:
  *   - rich HTML  → executeMethod("PasteHtml", [html]) — pastes formatted content
  *                  at the cursor / over the selection.
  *   - plain text → executeMethod("PasteText", [text]) — pastes literal text,
@@ -32,8 +34,12 @@
 
   var listEl = null
   var searchEl = null
+  var chipsEl = null
   var allItems = []
+  var activeTag = null
   var ctx = null
+
+  var TYPE_LABELS = { BOILERPLATE: 'Boilerplate', PAST_PERFORMANCE: 'Past Performance' }
 
   function trimSlashes(s) {
     return String(s || '').replace(/\/+$/, '')
@@ -136,10 +142,78 @@
       btn.appendChild(preview)
     }
 
+    if (item.tags && item.tags.length) {
+      var tagRow = document.createElement('span')
+      tagRow.className = 'pf-tags'
+      for (var t = 0; t < item.tags.length; t++) {
+        var chip = document.createElement('span')
+        chip.className = 'pf-tag'
+        chip.textContent = item.tags[t]
+        tagRow.appendChild(chip)
+      }
+      btn.appendChild(tagRow)
+    }
+
     btn.addEventListener('click', function () {
       insertItem(item.content)
     })
     return btn
+  }
+
+  function makeChip(label, value) {
+    var chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'pf-chip' + (activeTag === value ? ' pf-chip-on' : '')
+    chip.textContent = label
+    chip.addEventListener('click', function () {
+      activeTag = value
+      renderChips()
+      render(searchEl ? searchEl.value : '')
+    })
+    return chip
+  }
+
+  /** One chip per distinct tag across all blocks, plus All. Hidden when untagged. */
+  function renderChips() {
+    if (!chipsEl) return
+    chipsEl.textContent = ''
+    var seen = {}
+    var tags = []
+    for (var i = 0; i < allItems.length; i++) {
+      var its = allItems[i].tags || []
+      for (var j = 0; j < its.length; j++) {
+        if (!seen[its[j]]) {
+          seen[its[j]] = true
+          tags.push(its[j])
+        }
+      }
+    }
+    if (tags.length === 0) {
+      chipsEl.style.display = 'none'
+      return
+    }
+    tags.sort(function (a, b) {
+      return a.localeCompare(b)
+    })
+    chipsEl.style.display = ''
+    chipsEl.appendChild(makeChip('All', null))
+    for (var k = 0; k < tags.length; k++) chipsEl.appendChild(makeChip(tags[k], tags[k]))
+  }
+
+  function matchesTag(it) {
+    if (activeTag === null) return true
+    var its = it.tags || []
+    for (var i = 0; i < its.length; i++) if (its[i] === activeTag) return true
+    return false
+  }
+
+  function matchesText(it, needle) {
+    if (!needle) return true
+    if ((it.title || '').toLowerCase().indexOf(needle) !== -1) return true
+    if ((it._preview || '').toLowerCase().indexOf(needle) !== -1) return true
+    var its = it.tags || []
+    for (var i = 0; i < its.length; i++) if (its[i].toLowerCase().indexOf(needle) !== -1) return true
+    return false
   }
 
   function render(filterText) {
@@ -148,25 +222,37 @@
     listEl.textContent = ''
 
     var items = allItems.filter(function (it) {
-      if (!needle) return true
-      return (
-        (it.title || '').toLowerCase().indexOf(needle) !== -1 ||
-        (it._preview || '').toLowerCase().indexOf(needle) !== -1
-      )
+      return matchesTag(it) && matchesText(it, needle)
     })
 
     if (items.length === 0) {
       setState(
-        needle ? 'No boilerplate matches “' + filterText + '”.' : 'No boilerplate available.',
+        allItems.length === 0
+          ? 'No blocks yet. Add Boilerplate or Past Performance items with text under Libraries → Documents.'
+          : 'No blocks match.',
         false,
       )
       return
     }
 
-    var box = document.createElement('div')
-    box.className = 'pf-group'
-    for (var i = 0; i < items.length; i++) box.appendChild(makeItem(items[i]))
-    listEl.appendChild(box)
+    // Grouped by type, in a fixed order; items within a group keep the
+    // server's title order.
+    var order = ['BOILERPLATE', 'PAST_PERFORMANCE']
+    for (var g = 0; g < order.length; g++) {
+      var type = order[g]
+      var inGroup = items.filter(function (it) {
+        return it.assetType === type
+      })
+      if (inGroup.length === 0) continue
+      var heading = document.createElement('div')
+      heading.className = 'pf-heading'
+      heading.textContent = TYPE_LABELS[type] || type
+      listEl.appendChild(heading)
+      var box = document.createElement('div')
+      box.className = 'pf-group'
+      for (var i = 0; i < inGroup.length; i++) box.appendChild(makeItem(inGroup[i]))
+      listEl.appendChild(box)
+    }
   }
 
   function loadItems() {
@@ -188,18 +274,28 @@
       .then(function (body) {
         var data = (body && body.data) || []
         allItems = data.map(function (it) {
-          return { id: it.id, title: it.title, content: it.content, _preview: previewText(it.content) }
+          return {
+            id: it.id,
+            title: it.title,
+            // Older PF builds send no type/tags: treat as untagged boilerplate.
+            assetType: it.assetType || 'BOILERPLATE',
+            tags: Array.isArray(it.tags) ? it.tags : [],
+            content: it.content,
+            _preview: previewText(it.content),
+          }
         })
+        renderChips()
         render(searchEl ? searchEl.value : '')
       })
       .catch(function (err) {
-        setState('Could not load boilerplate (' + (err && err.message ? err.message : 'error') + ').', true)
+        setState('Could not load the Library (' + (err && err.message ? err.message : 'error') + ').', true)
       })
   }
 
   function boot() {
     listEl = document.getElementById('pf-list')
     searchEl = document.getElementById('pf-search')
+    chipsEl = document.getElementById('pf-chips')
     if (searchEl) {
       searchEl.addEventListener('input', function () {
         render(searchEl.value)
@@ -212,7 +308,7 @@
       // No launch context (e.g. a read-only/viewer session that carries no
       // plugin options): sit idle rather than erroring — there is simply
       // nothing to insert here.
-      setState('Open a proposal to load boilerplate.', false)
+      setState('Open a proposal to load the Library.', false)
       return
     }
     loadItems()
