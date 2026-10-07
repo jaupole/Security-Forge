@@ -38,6 +38,15 @@
   var allItems = []
   var activeTag = null
   var ctx = null
+  // New Boilerplate form (shown only when the launch context says the session
+  // may create; the server enforces the token's own claim).
+  var newToggleEl = null
+  var newEl = null
+  var newTitleEl = null
+  var newContentEl = null
+  var newStateEl = null
+  var newSaveBtn = null
+  var saving = false
 
   var TYPE_LABELS = { BOILERPLATE: 'Boilerplate', PAST_PERFORMANCE: 'Past Performance' }
 
@@ -52,7 +61,7 @@
       var token = q.get('ctx')
       if (!token) return null
       var api = q.get('api')
-      return { token: token, api: trimSlashes(api) || window.location.origin }
+      return { token: token, api: trimSlashes(api) || window.location.origin, canCreate: false }
     } catch (e) {
       return null
     }
@@ -74,7 +83,12 @@
         (opts.all && typeof opts.all === 'object' && opts.all) ||
         opts
       if (scoped && scoped.ctx) {
-        return { token: String(scoped.ctx), api: trimSlashes(scoped.api) || window.location.origin }
+        return {
+          token: String(scoped.ctx),
+          api: trimSlashes(scoped.api) || window.location.origin,
+          // UI hint only: the server enforces the token's own claim.
+          canCreate: scoped.canCreate === true,
+        }
       }
     } catch (e) {
       /* ignore */
@@ -292,8 +306,123 @@
       })
   }
 
+  // ── New Boilerplate ──────────────────────────────────────────────────────
+  // Save reusable text to the org Library without leaving the editor: a title
+  // plus content, which can be the document's current selection. POSTs with
+  // the same bearer token; the server accepts it only for a token minted for
+  // an edit session by a user who may create assets (DRAFTER+).
+  function setNewState(message, isError) {
+    if (!newStateEl) return
+    newStateEl.textContent = message || ''
+    newStateEl.className = 'pf-new-state' + (isError ? ' pf-error' : '')
+  }
+
+  function showNewForm(show) {
+    if (!newEl) return
+    newEl.hidden = !show
+    if (newToggleEl) newToggleEl.hidden = show || !(ctx && ctx.canCreate)
+    if (show) {
+      setNewState('', false)
+      if (newTitleEl) newTitleEl.focus()
+    }
+  }
+
+  /** Pull the editor's current selection into the content field (plain text;
+   *  the block is pasted back as text, so nothing is lost on the way). */
+  function useSelection() {
+    try {
+      window.Asc.plugin.executeMethod(
+        'GetSelectedText',
+        [{ Numbering: true, Math: false, TableCellSeparator: '\t', TableRowSeparator: '\n' }],
+        function (text) {
+          var t = String(text || '').trim()
+          if (!t) {
+            setNewState('Nothing is selected in the document.', true)
+            return
+          }
+          if (newContentEl) newContentEl.value = t
+          setNewState('', false)
+        },
+      )
+    } catch (e) {
+      setNewState('Could not read the selection.', true)
+    }
+  }
+
+  function saveNew() {
+    if (saving || !ctx || !ctx.canCreate) return
+    var title = newTitleEl ? newTitleEl.value.trim() : ''
+    var content = newContentEl ? newContentEl.value.trim() : ''
+    if (!title || !content) {
+      setNewState('A title and some text are required.', true)
+      return
+    }
+    saving = true
+    if (newSaveBtn) newSaveBtn.disabled = true
+    setNewState('Saving…', false)
+    fetch(ctx.api + '/api/v1/onlyoffice/library', {
+      method: 'POST',
+      credentials: 'omit',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ctx.token },
+      body: JSON.stringify({ title: title, content: content }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        return res.json()
+      })
+      .then(function (body) {
+        var it = body && body.data
+        if (it && it.id) {
+          allItems.push({
+            id: it.id,
+            title: it.title,
+            assetType: it.assetType || 'BOILERPLATE',
+            tags: Array.isArray(it.tags) ? it.tags : [],
+            content: it.content,
+            _preview: previewText(it.content),
+          })
+          allItems.sort(function (a, b) {
+            return a.title.localeCompare(b.title)
+          })
+          renderChips()
+          render(searchEl ? searchEl.value : '')
+        }
+        if (newTitleEl) newTitleEl.value = ''
+        if (newContentEl) newContentEl.value = ''
+        showNewForm(false)
+      })
+      .catch(function (err) {
+        setNewState('Could not save (' + (err && err.message ? err.message : 'error') + ').', true)
+      })
+      .then(function () {
+        saving = false
+        if (newSaveBtn) newSaveBtn.disabled = false
+      })
+  }
+
   function boot() {
     listEl = document.getElementById('pf-list')
+    newToggleEl = document.getElementById('pf-new-toggle')
+    newEl = document.getElementById('pf-new')
+    newTitleEl = document.getElementById('pf-new-title')
+    newContentEl = document.getElementById('pf-new-content')
+    newStateEl = document.getElementById('pf-new-state')
+    newSaveBtn = document.getElementById('pf-new-save')
+    var selBtn = document.getElementById('pf-new-selection')
+    var cancelBtn = document.getElementById('pf-new-cancel')
+    if (newToggleEl) {
+      newToggleEl.addEventListener('click', function () {
+        showNewForm(true)
+      })
+    }
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        showNewForm(false)
+      })
+    }
+    if (selBtn) selBtn.addEventListener('click', useSelection)
+    if (newSaveBtn) newSaveBtn.addEventListener('click', saveNew)
     searchEl = document.getElementById('pf-search')
     chipsEl = document.getElementById('pf-chips')
     if (searchEl) {
@@ -311,6 +440,7 @@
       setState('Open a proposal to load the Library.', false)
       return
     }
+    if (newToggleEl) newToggleEl.hidden = !ctx.canCreate
     loadItems()
   }
 
