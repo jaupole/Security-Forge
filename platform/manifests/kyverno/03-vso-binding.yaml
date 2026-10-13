@@ -2,7 +2,7 @@
 #
 # Renders ONE K8s Secret:
 #   - ghcr-pull-secret → read-only GHCR credential. Consumed by the
-#     `verify-image-signature` ClusterPolicy's verify-secforge rule
+#     `verify-image-signature-secforge` ImageValidatingPolicy
 #     (imageRegistryCredentials) so the Kyverno admission controller can
 #     pull cosign signatures for the PRIVATE ghcr.io/jaupole/* (and
 #     secforge/*) packages. Without it, Kyverno verifies anonymously and

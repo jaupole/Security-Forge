@@ -18,7 +18,7 @@ Two layers, both gated on the operator's Tailscale identity:
    surfaces go through the separate public `secforge-gateway`.
 
 The split is enforced in admission control by the Kyverno **`admin-ingress-must-be-tailnet-only`**
-ClusterPolicy: a `VirtualService` that binds an admin host to the public gateway is rejected.
+Kyverno policy: a `VirtualService` that binds an admin host to the public gateway is rejected.
 
 ## Surface map
 

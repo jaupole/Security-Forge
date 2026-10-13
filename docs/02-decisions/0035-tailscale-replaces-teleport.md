@@ -32,7 +32,7 @@ Stop running Teleport. Operator access is the **Tailscale tailnet**:
 2. **Admin web surfaces** — operator/admin UIs (`control`, `admin`, `kc`, `bao`, `grafana`,
    `wazuh`, `pf`) are published only through the `secforge-gateway-tailnet` Istio gateway and
    resolve only from the tailnet. The split is enforced by the Kyverno
-   `admin-ingress-must-be-tailnet-only` ClusterPolicy.
+   `admin-ingress-must-be-tailnet-only` ValidatingPolicy.
 
 ## Rationale
 

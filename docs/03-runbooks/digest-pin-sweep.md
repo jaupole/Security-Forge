@@ -6,8 +6,8 @@
 > per-component** — do NOT flip to Enforce until every managed workload is pinned,
 > or admission will block.
 >
-> Policy file: `platform/manifests/kyverno/policies/09-require-image-digest.yaml`
-> (currently `validationFailureAction: Audit`; excludes `kube-system`, `kube-public`,
+> Policy file: `platform/manifests/kyverno/policies-cel/09-require-image-digest.yaml`
+> (ValidatingPolicy, currently `validationActions: [Audit]`; excludes `kube-system`, `kube-public`,
 > `kube-node-lease`, `kyverno`, `topolvm-system`, `trivy-system`).
 >
 > Signature status per image is in the companion doc's survey. Images marked
@@ -123,10 +123,10 @@ Pin `spec.imageName` in **every** `Cluster` CR to the digest:
    '
    ```
 2. When that prints `UNPINNED REMAINING: 0`, edit
-   `platform/manifests/kyverno/policies/09-require-image-digest.yaml`:
-   `validationFailureAction: Audit` → `Enforce`. Keep the current namespace exclusions
+   `platform/manifests/kyverno/policies-cel/09-require-image-digest.yaml`:
+   `validationActions: [Audit]` → `[Deny]`. Keep the current namespace exclusions
    (k3s-bundled `kube-system`, self-managed `kyverno`/`topolvm-system`/`trivy-system`).
-   Consider `webhookConfiguration.failurePolicy: Fail` to match the signature policies
+   Consider `failurePolicy: Fail` to match the signature policies
    (same HA/exclusion safety basis).
 3. Validate then apply:
    ```bash

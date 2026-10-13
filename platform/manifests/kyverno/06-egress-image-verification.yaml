@@ -1,7 +1,7 @@
 # Layer A egress allow: kyverno admission controller → public HTTPS, for
 # supply-chain image signature verification.
 #
-# The `verify-image-signature` ClusterPolicy verifies cosign keyless
+# The `verify-image-signature-*` ImageValidatingPolicies verify cosign keyless
 # signatures at admission. That requires the admission controller to reach
 # THREE external endpoints, all HTTPS/443:
 #   - the OCI registry (ghcr.io)  — pull the cosign signature artifact
@@ -21,7 +21,7 @@
 # keep the bare DNS + K8s-API egress baseline.
 #
 # Without this, verify-image-signature fails open: every verification
-# errors on a blocked dial and — validationFailureAction: Audit — only
+# errors on a blocked dial and — validationActions: [Audit] — only
 # warns, so no image is ever actually verified.
 #
 # Applied 2026-05-21.

@@ -11,7 +11,7 @@ metadata:
     # scope who reaches :8443. Before this, ambient app namespaces bypassed the
     # kube-router allow-list in 05-network-policies.yaml entirely (ztunnel
     # egress capture + un-meshed destination). Also asserted by the Kyverno
-    # ClusterPolicy istio-ambient-gateway-backends against label wipes.
+    # MutatingPolicy istio-ambient-gateway-backends against label wipes.
     istio.io/dataplane-mode: ambient
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted

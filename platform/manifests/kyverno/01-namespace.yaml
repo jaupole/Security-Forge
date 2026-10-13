@@ -10,7 +10,7 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
     pod-security.kubernetes.io/warn: privileged
-    # Exempt from Kyverno's own image-signature ClusterPolicy when we
+    # Exempt from Kyverno's own image-signature ImageValidatingPolicy when we
     # add it (chicken-and-egg: Kyverno can't run if it has to verify its
     # own image signature via Kyverno).
     secforge.platform/policy-exempt: "true"

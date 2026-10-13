@@ -2,7 +2,7 @@
 # 12c — Kyverno image-verification registry credential.
 #
 # Gives the Kyverno admission controller a read-only GHCR credential so the
-# verify-image-signature ClusterPolicy can pull cosign signatures for the
+# verify-image-signature-* ImageValidatingPolicies can pull cosign signatures for the
 # PRIVATE ghcr.io/jaupole/* (+ secforge/*) packages. Without it, Kyverno
 # verifies those images anonymously, ghcr.io answers 401, and the
 # verify-secforge rule never actually verifies anything.

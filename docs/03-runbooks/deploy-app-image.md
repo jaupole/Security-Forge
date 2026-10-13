@@ -63,7 +63,7 @@ wraps. Never `kubectl set image` without the matching manifest bump.
 
 ## Why by digest
 
-`verify-image-signature-secforge` (ClusterPolicy, **Enforce**, cluster-wide)
+`verify-image-signature-secforge` (ImageValidatingPolicy, **Deny**, cluster-wide)
 verifies a cosign **keyless** signature for every `ghcr.io/{secforge,jaupole}/*`
 image (`mutateDigest:false`, `verifyDigest:false`). CI signs **by digest**
 (`cosign sign …@${DIGEST}`), so the signature artifact is keyed on the content

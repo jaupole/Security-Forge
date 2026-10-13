@@ -19,21 +19,15 @@ green "==> wait for kyverno admission controller webhook ready"
 kubectl -n kyverno wait --for=condition=available deployment/kyverno-admission-controller --timeout=120s 2>&1 | tail -1
 sleep 5
 
-# policies-cel/ holds the policies.kyverno.io (CEL) policies — the current
-# set. policies/ holds the legacy kyverno.io/v1 ClusterPolicies, kept only
-# while the CEL set soaks in Audit alongside them (migration 2026-10-13;
-# kyverno.io/v1 is removed in Kyverno 1.20). Delete policies/ once the CEL
-# set is enforcing.
+# policies-cel/ holds the policies.kyverno.io (CEL) policies: ValidatingPolicy,
+# MutatingPolicy, ImageValidatingPolicy and the PolicyException (which must
+# live in the kyverno namespace — Kyverno honours exceptions only in
+# --exceptionNamespace). The kyverno.io/v1 ClusterPolicies were retired on
+# 2026-10-13 (kyverno.io/v1 is removed in Kyverno 1.20).
 green "==> apply policies.kyverno.io (CEL) policies"
 for f in "$PLATFORM_DIR/manifests/kyverno/policies-cel/"*.yaml; do
   "$LIB/apply-manifest.sh" "$f"
 done
-if compgen -G "$PLATFORM_DIR/manifests/kyverno/policies/*.yaml" >/dev/null; then
-  green "==> apply legacy kyverno.io/v1 ClusterPolicies (soak period only)"
-  for f in "$PLATFORM_DIR/manifests/kyverno/policies/"*.yaml; do
-    "$LIB/apply-manifest.sh" "$f"
-  done
-fi
 
 # Weekly guardrail self-test CronJob (operator-backlog #54) — proves the
 # no-secret-shaped-env-vars policy still rejects a secret-shaped Pod.

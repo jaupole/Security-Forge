@@ -1,6 +1,6 @@
 # Runbook: Kyverno image-signature verification (fail-closed)
 
-Covers the `verify-image-signature-secforge` ClusterPolicy after it goes
+Covers the `verify-image-signature-secforge` ImageValidatingPolicy after it goes
 **fail-closed** (`webhookConfiguration.failurePolicy: Fail`) — backlog #97.
 
 ## What "fail-closed" means here
@@ -24,11 +24,11 @@ proceed **now**:
 
 ```bash
 ssh secforge
-sudo -n kubectl patch clusterpolicy verify-image-signature-secforge --type=merge \
-  -p '{"spec":{"webhookConfiguration":{"failurePolicy":"Ignore"}}}'
+sudo -n kubectl patch imagevalidatingpolicies.policies.kyverno.io verify-image-signature-secforge --type=merge \
+  -p '{"spec":{"failurePolicy":"Ignore"}}'
 # verify:
-sudo -n kubectl get clusterpolicy verify-image-signature-secforge \
-  -o jsonpath='{.spec.webhookConfiguration.failurePolicy}'; echo
+sudo -n kubectl get imagevalidatingpolicies.policies.kyverno.io verify-image-signature-secforge \
+  -o jsonpath='{.spec.failurePolicy}'; echo
 ```
 
 `Ignore` = a verify error/timeout admits the pod (fail-open). Signed-image

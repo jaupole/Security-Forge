@@ -52,7 +52,7 @@ Pre-conditions, in order:
 2. PolicyReports show **zero** open violations across all namespaces for 7 consecutive days.
 3. The human (J. Aupole) explicitly approves the flip in conversation. Claude Code asks; doesn't decide.
 
-Then: edit the policy's `validationFailureAction` from `Audit` to `Enforce`, apply, monitor for 24h.
+Then: edit the policy's `validationActions` from `[Audit]` to `[Deny]` (policies.kyverno.io types; the former kyverno.io/v1 field was `validationFailureAction: Enforce`), apply, monitor for 24h.
 
 ## Consequences
 

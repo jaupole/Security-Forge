@@ -78,7 +78,7 @@ Policy without enforcement is decoration. Outbound-credential leak prevention is
 | 1 — Pre-commit | gitleaks + custom `block-env-files` + `block-secret-shaped-vars` hooks | Developer machine, advisory (can be `--no-verify`-bypassed) |
 | 2 — CI | Same checks mirrored in GitHub Actions; cannot be bypassed without admin merge | Auditable (every PR) |
 | 3 — Build-time | Trivy `--scanners secret` configured to **fail** (not warn); hadolint rejects `COPY .env*` patterns | Image manifests |
-| 4 — Admission | Kyverno `no-secret-shaped-env-vars` ClusterPolicy in **Enforce** mode; matches env names containing `*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, `*CREDENTIAL*` in the `app` namespace | Cluster, every Pod admission |
+| 4 — Admission | Kyverno `no-secret-shaped-env-vars` ValidatingPolicy in **Deny** mode; matches env names containing `*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, `*CREDENTIAL*` in the `app` namespace | Cluster, every Pod admission |
 | 5 — Runtime | `apps/lib/secrets/` `Hardened` mode + `Secret` type with `String()`/`MarshalJSON()` redaction + `Use()` accessor pattern | Application memory |
 | 6 — Error reporting | `apps/lib/errreport/` scrubber (Section 6 of the prompt) wired into a no-op `Reporter` sink in 6b-2; Phase 7 swaps the sink to Sentry/Rollbar without touching the scrubber | Outbound error payloads |
 
@@ -112,7 +112,7 @@ metadata:
     secforge.local/legacy-secret-env-expires: "2026-07-30"  # required: ISO date, max 90d out
 ```
 
-A second Kyverno ClusterPolicy (`legacy-secret-env-expiry`) enforces:
+A second pair of Kyverno ValidatingPolicies (`legacy-secret-env-requires-expiry`, `legacy-secret-env-expiry-window`) enforces:
 
 1. If `legacy-secret-env` is present, `legacy-secret-env-expires` MUST also be present.
 2. `expires` MUST parse as an ISO date.

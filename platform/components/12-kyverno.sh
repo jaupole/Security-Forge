@@ -2,7 +2,8 @@
 # 12 — Kyverno admission policy engine.
 #
 # Installs Kyverno controllers in the `kyverno` namespace. Policies
-# (ClusterPolicy + Policy CRDs) are applied separately by 12b-kyverno-policies.sh.
+# (policies.kyverno.io ValidatingPolicy / MutatingPolicy / ImageValidatingPolicy)
+# are applied separately by 12b-kyverno-policies.sh.
 #
 # Idempotent.
 
