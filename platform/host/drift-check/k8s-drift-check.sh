@@ -136,7 +136,10 @@ while IFS= read -r f; do
     # dry-run predict a generation bump on some objects with zero real field
     # changes (observed on system-netpol/kube-system-allows) — permanent
     # phantom otherwise.
-    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cv 'generation:')
+    # Same class (2026-10-13, Kyverno 3.9): the dry-run admission mutation adds
+    # a kyverno.io/verify-images[-scoped] annotation that live objects admitted
+    # under an older Kyverno don't carry yet — phantom, never a repo change.
+    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cvE 'generation:|kyverno\.io/verify-images')
     if [ "$real" -eq 0 ]; then rc=0; fi
   fi
   if [ $rc -eq 1 ]; then
@@ -223,7 +226,7 @@ print(yaml.safe_dump_all(docs, default_flow_style=False))')
     # Generation phantom filter (as the manifest loop above) plus live-only
     # operational annotations a re-apply would strip: rollout revision,
     # rollout-restart timestamps, helm adoption markers.
-    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cvE 'generation:|deployment\.kubernetes\.io/revision|kubectl\.kubernetes\.io/restartedAt|meta\.helm\.sh/release-')
+    real=$(echo "$out" | grep -E '^[+-]' | grep -vE '^[+-]{3}' | grep -cvE 'generation:|kyverno\.io/verify-images|deployment\.kubernetes\.io/revision|kubectl\.kubernetes\.io/restartedAt|meta\.helm\.sh/release-')
     if [ "$real" -eq 0 ]; then rc=0; fi
   fi
   if [ $rc -eq 1 ]; then
