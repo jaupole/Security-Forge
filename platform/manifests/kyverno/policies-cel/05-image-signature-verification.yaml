@@ -1,0 +1,432 @@
+# Image signature verification — ImageValidatingPolicy ports of the two
+# kyverno.io/v1 verifyImages ClusterPolicies (verify-image-signature-secforge,
+# verify-image-signature-vendors). One policy per former rule.
+#
+# Shared notes:
+#   - matchImageReferences globs are the former imageReferences.
+#   - validationConfigurations: required=true (unmatched signature = reject),
+#     mutateDigest=false, verifyDigest=false — unchanged from the v1 rules.
+#   - Registry egress + credentials are wired by 12c-kyverno-image-verify-creds.sh;
+#     the pull Secret must live in the kyverno namespace (it does).
+#   - Vendor policies stay Audit + failurePolicy Ignore until keyless
+#     verification is reliable for every vendor (operator-backlog #41).
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-secforge
+  annotations:
+    policies.kyverno.io/title: "Verify SecForge image signatures"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]            # our CI signs every image — block unsigned
+  failurePolicy: Fail                  # FAIL-CLOSED (backlog #97)
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false                   # admission-time only; Rekor lookups
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "ghcr.io/secforge/*"
+    - glob: "ghcr.io/jaupole/*"
+  credentials:
+    allowInsecureRegistry: false
+    secrets: [ghcr-pull-secret]
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: secforge
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/(secforge|jaupole)/"
+          roots: |-
+            -----BEGIN CERTIFICATE-----
+            MIIB9zCCAXygAwIBAgIUALZNAPFdxHPwjeDloDwyYChAO/4wCgYIKoZIzj0EAwMw
+            KjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0y
+            MTEwMDcxMzU2NTlaFw0zMTEwMDUxMzU2NThaMCoxFTATBgNVBAoTDHNpZ3N0b3Jl
+            LmRldjERMA8GA1UEAxMIc2lnc3RvcmUwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAT7
+            XeFT4rb3PQGwS4IajtLk3/OlnpgangaBclYpsYBr5i+4ynB07ceb3LP0OIOZdxex
+            X69c5iVuyJRQ+Hz05yi+UF3uBWAlHpiS5sh0+H2GHE7SXrk1EC5m1Tr19L9gg92j
+            YzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRY
+            wB5fkUWlZql6zJChkyLQKsXF+jAfBgNVHSMEGDAWgBRYwB5fkUWlZql6zJChkyLQ
+            KsXF+jAKBggqhkjOPQQDAwNpADBmAjEAj1nHeXZp+13NWBNa+EDsDP8G1WWg1tCM
+            WP/WHPqpaVo0jhsweNFZgSs0eE7wYI4qAjEA2WB9ot98sIkoF3vZYdd3/VtWB5b9
+            TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
+            -----END CERTIFICATE-----
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+          rekorPubKey: |-
+            -----BEGIN PUBLIC KEY-----
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwr
+            kBbmLSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==
+            -----END PUBLIC KEY-----
+          ctLogPubKey: |-
+            -----BEGIN PUBLIC KEY-----
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEiPSlFi0CmFTfEjCUqF9HuCEcYXNK
+            AaYalIJmBZ8yyezPjTqhxrKBpMnaocVtLJBI1eM3uXnQzQGAJdJ4gs9Fyw==
+            -----END PUBLIC KEY-----
+  validations:
+    - message: "SecForge image signature verification failed (keyless, GitHub Actions OIDC)."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]) + images.?ephemeralContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.secforge])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-spiffe
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: SPIFFE/SPIRE"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "ghcr.io/spiffe/spire-server*"
+    - glob: "ghcr.io/spiffe/spire-agent*"
+    - glob: "ghcr.io/spiffe/oidc-discovery-provider*"
+    - glob: "ghcr.io/spiffe/spiffe-csi-driver*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: spiffe
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/spiffe/(spire|spiffe-csi)/"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "SPIFFE image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.spiffe])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-otel-collector
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: OpenTelemetry Collector"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "otel/opentelemetry-collector-contrib*"
+    - glob: "docker.io/otel/opentelemetry-collector-contrib*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: otel
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/open-telemetry/opentelemetry-collector-releases/"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "OpenTelemetry Collector image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.otel])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-trivy-operator
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: Aqua Trivy Operator"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "mirror.gcr.io/aquasec/trivy-operator*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: aqua
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/aquasecurity/trivy-operator/"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "Trivy Operator image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.aqua])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-chainguard
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: Chainguard"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "cgr.dev/chainguard/*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: chainguard
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/chainguard-images/images/"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "Chainguard image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.chainguard])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-cert-manager-core
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: cert-manager (key)"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "quay.io/jetstack/cert-manager-controller*"
+    - glob: "quay.io/jetstack/cert-manager-webhook*"
+    - glob: "quay.io/jetstack/cert-manager-cainjector*"
+    - glob: "quay.io/jetstack/cert-manager-acmesolver*"
+    - glob: "quay.io/jetstack/cert-manager-ctl*"
+    - glob: "quay.io/jetstack/cert-manager-startupapicheck*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: certmanager
+      cosign:
+        key:
+          hashAlgorithm: sha512
+          data: |-
+            -----BEGIN PUBLIC KEY-----
+            MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsZZKaaIRjOpzbiWYIDKO
+            yry9XGBqAfve1iOGmt5VO1jpjNoEseT6zewozHfWTM7osxayy2WjN8G+QV39MlT3
+            Vxo91/31g+Zcq8KcvxG+iB8GRaD9pNgLmghorv+eYDiPYMO/+fhsLImyG5WEoPct
+            MeCBD7umZ/A2t96U9DQxVDqQbTHlsNludno1p1wsgRnfUM3QHexNljDvJg5FcDMo
+            dCpVLpRNvbw0lbJVfybJ4siJ5o/MmXzy0QCJpw+yMIqvqMc8qgKJ1yooJtuTVF4t
+            4/luP+EG/oVIiSWCFeRMqYdbJ3R+CJi+4LN7vFNYQM1Q/NwOB52RteaR7wnqmcBz
+            qSYK32MM8xdPCQ5tioWwnPTRbPZuzsZsRmJsKBO9JUrBYdDntZX1xY5g4QNSufxi
+            QgJgJSU7E4VGMvagEzB1JzvOr6A/qNFCO1Z6JsA3jw3cJLV1rSHfxqfSXBACTLDf
+            6bOPWRILRKydTJA6uLKNKmo1/nFm3jvd5tHKOjy4VAQLJ/Vx9wBsAAiLa+06veun
+            Oz3AJ9sNh3wLp21RL11u9TuOKRBipE/TYsBYp8jpIyWPXDSV+JcD/TZqoT8y0Z6S
+            0damfUmspuK9DTQFL2crpeaqJSG9RA+OuPZLxGD1IMURTsPJB7kXhPtmceeirBnw
+            sVcRHHDitVt8oO/x4Wus1c0CAwEAAQ==
+            -----END PUBLIC KEY-----
+        ctlog:
+          insecureIgnoreTlog: true     # cert-manager key signatures are not Rekor-logged
+  validations:
+    - message: "cert-manager image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.certmanager])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-cert-manager-trust
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: trust-manager"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "quay.io/jetstack/trust-manager*"
+    - glob: "quay.io/jetstack/trust-pkg-*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: trustmanager
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://token.actions.githubusercontent.com"
+              subjectRegExp: "^https://github\\.com/cert-manager/trust-manager/"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "trust-manager image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.trustmanager])).all(e, e > 0)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature-registry-k8s
+  annotations:
+    policies.kyverno.io/title: "Verify vendor image signatures: registry.k8s.io"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchImageReferences:
+    - glob: "registry.k8s.io/*"
+  validationConfigurations:
+    required: true
+    mutateDigest: false
+    verifyDigest: false
+  attestors:
+    - name: krel
+      cosign:
+        keyless:
+          identities:
+            - issuer: "https://accounts.google.com"
+              subject: "krel-trust@k8s-releng-prod.iam.gserviceaccount.com"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - message: "registry.k8s.io image signature verification failed."
+      expression: >-
+        (images.containers + images.?initContainers.orValue([]))
+          .map(image, verifyImageSignatures(image, [attestors.krel])).all(e, e > 0)

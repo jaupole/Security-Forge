@@ -1,0 +1,218 @@
+# Default Resource Requests/Limits — MutatingPolicy port of the kyverno.io/v1
+# mutate-default-resources ClusterPolicy (`+()` add-if-absent anchors).
+#
+# Server-side-apply merge: every container gets cpu/memory requests and limits,
+# keeping any value already set; other resource keys are untouched.
+#
+# Why four policies instead of autogen: typed `Object.spec.containers{}`
+# constructors do not survive the pod-controller autogen path rewrite in
+# Kyverno 1.19 (verified 2026-10-13 with the CLI and an in-cluster probe), so
+# each workload kind gets its own policy typed against its own root. The
+# controller-level injection is load-bearing: Helm-managed workloads
+# (trust-manager, Grafana sidecars, Istio tailnet gateway, Prometheus
+# init-config-reloader, TopoLVM) ship without resources and rely on it to pass
+# require-resource-limits.
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: mutate-default-resources
+  annotations:
+    policies.kyverno.io/title: 'Default Resource Requests/Limits (Pods)'
+    policies.kyverno.io/category: 'Best Practices'
+    policies.kyverno.io/severity: low
+spec:
+  evaluation:
+    admission:
+      enabled: true                    # mutate fires at admission only
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: "!(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease', 'default'])"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          has(object.spec.initContainers) ?
+          Object{spec: Object.spec{
+            containers: object.spec.containers.map(c, Object.spec.containers{
+              name: c.name,
+              resources: Object.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}}),
+            initContainers: object.spec.initContainers.map(c, Object.spec.initContainers{
+              name: c.name,
+              resources: Object.spec.initContainers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}
+          :
+          Object{spec: Object.spec{
+            containers: object.spec.containers.map(c, Object.spec.containers{
+              name: c.name,
+              resources: Object.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: mutate-default-resources-workloads
+  annotations:
+    policies.kyverno.io/title: 'Default Resource Requests/Limits (Deployments, StatefulSets, DaemonSets)'
+    policies.kyverno.io/category: 'Best Practices'
+    policies.kyverno.io/severity: low
+spec:
+  evaluation:
+    admission:
+      enabled: true                    # mutate fires at admission only
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: "!(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease', 'default'])"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          has(object.spec.template.spec.initContainers) ?
+          Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{
+            containers: object.spec.template.spec.containers.map(c, Object.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}}),
+            initContainers: object.spec.template.spec.initContainers.map(c, Object.spec.template.spec.initContainers{
+              name: c.name,
+              resources: Object.spec.template.spec.initContainers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}
+          :
+          Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{
+            containers: object.spec.template.spec.containers.map(c, Object.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: mutate-default-resources-jobs
+  annotations:
+    policies.kyverno.io/title: 'Default Resource Requests/Limits (Jobs)'
+    policies.kyverno.io/category: 'Best Practices'
+    policies.kyverno.io/severity: low
+spec:
+  evaluation:
+    admission:
+      enabled: true                    # mutate fires at admission only
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: "!(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease', 'default'])"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          has(object.spec.template.spec.initContainers) ?
+          Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{
+            containers: object.spec.template.spec.containers.map(c, Object.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}}),
+            initContainers: object.spec.template.spec.initContainers.map(c, Object.spec.template.spec.initContainers{
+              name: c.name,
+              resources: Object.spec.template.spec.initContainers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}
+          :
+          Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{
+            containers: object.spec.template.spec.containers.map(c, Object.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}
+---
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: mutate-default-resources-cronjobs
+  annotations:
+    policies.kyverno.io/title: 'Default Resource Requests/Limits (CronJobs)'
+    policies.kyverno.io/category: 'Best Practices'
+    policies.kyverno.io/severity: low
+spec:
+  evaluation:
+    admission:
+      enabled: true                    # mutate fires at admission only
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [cronjobs]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: "!(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease', 'default'])"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          has(object.spec.jobTemplate.spec.template.spec.initContainers) ?
+          Object{spec: Object.spec{jobTemplate: Object.spec.jobTemplate{spec: Object.spec.jobTemplate.spec{template: Object.spec.jobTemplate.spec.template{spec: Object.spec.jobTemplate.spec.template.spec{
+            containers: object.spec.jobTemplate.spec.template.spec.containers.map(c, Object.spec.jobTemplate.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.jobTemplate.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}}),
+            initContainers: object.spec.jobTemplate.spec.template.spec.initContainers.map(c, Object.spec.jobTemplate.spec.template.spec.initContainers{
+              name: c.name,
+              resources: Object.spec.jobTemplate.spec.template.spec.initContainers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}}}
+          :
+          Object{spec: Object.spec{jobTemplate: Object.spec.jobTemplate{spec: Object.spec.jobTemplate.spec{template: Object.spec.jobTemplate.spec.template{spec: Object.spec.jobTemplate.spec.template.spec{
+            containers: object.spec.jobTemplate.spec.template.spec.containers.map(c, Object.spec.jobTemplate.spec.template.spec.containers{
+              name: c.name,
+              resources: Object.spec.jobTemplate.spec.template.spec.containers.resources{
+                requests: {"cpu": c.?resources.?requests[?"cpu"].orValue("10m"),
+                           "memory": c.?resources.?requests[?"memory"].orValue("32Mi")},
+                limits:   {"cpu": c.?resources.?limits[?"cpu"].orValue("500m"),
+                           "memory": c.?resources.?limits[?"memory"].orValue("512Mi")}}})}}}}}}

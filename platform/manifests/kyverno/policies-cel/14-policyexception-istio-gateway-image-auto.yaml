@@ -1,0 +1,23 @@
+# Istio's gateway injection template ships the placeholder image "auto" on the
+# gateway Deployment/ReplicaSet; the real image is injected on the Pod. Exempt
+# those two workload kinds (never the Pod) from the image-shape policies.
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: istio-gateway-image-auto
+  labels:
+    secforge.platform/component: kyverno-policies
+spec:
+  policyRefs:
+    - name: restrict-image-registries
+      kind: ValidatingPolicy
+    - name: require-image-digest
+      kind: ValidatingPolicy
+    - name: disallow-latest-tag
+      kind: ValidatingPolicy
+  matchConditions:
+    - name: istio-gateway-workloads
+      expression: >-
+        object.metadata.namespace == 'istio-ingress' &&
+        object.metadata.name.startsWith('istio-ingress') &&
+        (object.kind == 'Deployment' || object.kind == 'ReplicaSet')

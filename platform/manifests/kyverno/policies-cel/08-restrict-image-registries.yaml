@@ -1,0 +1,61 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: "Restrict image registries to approved list"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: "!(object.metadata.namespace in ['kyverno'])"
+  variables:
+    # Approved registry+org prefixes, matched against the raw image string with
+    # no normalisation — the same semantics as the former glob pattern. To
+    # approve a new registry, add a prefix here.
+    - name: allowedPrefixes
+      expression: >-
+        ['ghcr.io/authzed/', 'ghcr.io/cloudnative-pg/', 'ghcr.io/spiffe/', 'ghcr.io/secforge/',
+         'ghcr.io/jaupole/', 'ghcr.io/jkroepke/', 'ghcr.io/topolvm/',
+         'quay.io/brancz/', 'quay.io/jetstack/', 'quay.io/keycloak/', 'quay.io/kiwigrid/',
+         'quay.io/minio/', 'quay.io/prometheus/', 'quay.io/prometheus-operator/',
+         'reg.kyverno.io/', 'registry.k8s.io/', 'mirror.gcr.io/aquasec/',
+         'rancher/', 'velero/', 'docker.io/velero/', 'wazuh/', 'otel/', 'hashicorp/',
+         'public.ecr.aws/docker/library/busybox:', 'public.ecr.aws/docker/library/alpine:',
+         'public.ecr.aws/bitnami/kubectl:', 'public.ecr.aws/curl/curl:',
+         'localhost/secforge/', 'registry.istio.io/release/',
+         'docker.io/grafana/', 'docker.io/openbao/', 'docker.io/kiwigrid/', 'cgr.dev/chainguard/']
+    # Docker-Hub-mirror library images: allowed only when digest-pinned.
+    - name: digestPinnedPrefixes
+      expression: >-
+        ['mirror.gcr.io/library/python:', 'mirror.gcr.io/library/busybox:', 'mirror.gcr.io/alpine/k8s:']
+  validations:
+    - message: >-
+        Image registry not on the SecForge approved list. Allowed registry+org prefixes:
+        ghcr.io/{authzed,cloudnative-pg,spiffe,secforge,jaupole,jkroepke,topolvm},
+        quay.io/{brancz,jetstack,keycloak,kiwigrid,minio,prometheus,prometheus-operator},
+        reg.kyverno.io/*, registry.k8s.io/*, rancher/*, velero/*, wazuh/*, otel/*, hashicorp/*,
+        localhost/secforge/*, registry.istio.io/release/*, docker.io/{grafana,openbao,kiwigrid,velero},
+        cgr.dev/chainguard/*; mirror.gcr.io only for digest-pinned library/python, library/busybox and
+        alpine/k8s plus aquasec/*; public.ecr.aws only for the wazuh vendor-chart utility repos.
+        To approve a new registry, edit platform/manifests/kyverno/policies-cel/08-restrict-image-registries.yaml.
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([])).all(c,
+          variables.allowedPrefixes.exists(p, c.image.startsWith(p)) ||
+          (variables.digestPinnedPrefixes.exists(p, c.image.startsWith(p)) && c.image.contains('@sha256:')))

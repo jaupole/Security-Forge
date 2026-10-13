@@ -1,0 +1,33 @@
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: velero-exclude-spiffe-jwt-fsbackup
+  annotations:
+    policies.kyverno.io/title: "Velero: exclude the spiffe-jwt projected volume from fs-backup"
+    policies.kyverno.io/category: "Backup"
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+spec:
+  evaluation:
+    admission:
+      enabled: true
+  # Pod-level only (no pod-controller autogen): Velero's fs-backup reads the
+  # annotation from the Pod, so mutating the Pod at admission is sufficient
+  # and keeps controller templates untouched.
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: has-spiffe-jwt-volume
+      expression: "object.spec.?volumes.orValue([]).exists(v, v.name == 'spiffe-jwt')"
+  mutations:
+    # Add-if-absent (the former `+()` anchor): an operator-set value wins.
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          'backup.velero.io/backup-volumes-excludes' in object.metadata.?annotations.orValue({}) ?
+            Object{} :
+            Object{metadata: Object.metadata{annotations: {"backup.velero.io/backup-volumes-excludes": "spiffe-jwt"}}}

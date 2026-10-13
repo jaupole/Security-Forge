@@ -1,0 +1,24 @@
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: default-sa-no-automount
+  annotations:
+    policies.kyverno.io/title: "Disable token automount on default ServiceAccounts"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/category: "Security"
+    policies.kyverno.io/subject: ServiceAccount
+spec:
+  evaluation:
+    admission:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [serviceaccounts]
+        resourceNames: [default]
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: "Object{automountServiceAccountToken: false}"

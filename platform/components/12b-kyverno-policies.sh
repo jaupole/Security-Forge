@@ -19,10 +19,21 @@ green "==> wait for kyverno admission controller webhook ready"
 kubectl -n kyverno wait --for=condition=available deployment/kyverno-admission-controller --timeout=120s 2>&1 | tail -1
 sleep 5
 
-green "==> apply ClusterPolicies (all in Audit mode initially)"
-for f in "$PLATFORM_DIR/manifests/kyverno/policies/"*.yaml; do
+# policies-cel/ holds the policies.kyverno.io (CEL) policies — the current
+# set. policies/ holds the legacy kyverno.io/v1 ClusterPolicies, kept only
+# while the CEL set soaks in Audit alongside them (migration 2026-10-13;
+# kyverno.io/v1 is removed in Kyverno 1.20). Delete policies/ once the CEL
+# set is enforcing.
+green "==> apply policies.kyverno.io (CEL) policies"
+for f in "$PLATFORM_DIR/manifests/kyverno/policies-cel/"*.yaml; do
   "$LIB/apply-manifest.sh" "$f"
 done
+if compgen -G "$PLATFORM_DIR/manifests/kyverno/policies/*.yaml" >/dev/null; then
+  green "==> apply legacy kyverno.io/v1 ClusterPolicies (soak period only)"
+  for f in "$PLATFORM_DIR/manifests/kyverno/policies/"*.yaml; do
+    "$LIB/apply-manifest.sh" "$f"
+  done
+fi
 
 # Weekly guardrail self-test CronJob (operator-backlog #54) — proves the
 # no-secret-shaped-env-vars policy still rejects a secret-shaped Pod.
@@ -30,15 +41,14 @@ green "==> apply guardrail self-test CronJob"
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/kyverno/07-guardrail-selftest.yaml"
 
 echo
-green "✓ Kyverno policies applied (Audit mode)."
+green "✓ Kyverno policies applied."
 echo
 echo "Inspect:"
-echo "  kubectl get clusterpolicy"
+echo "  kubectl get validatingpolicies,mutatingpolicies,imagevalidatingpolicies,policyexceptions.policies.kyverno.io"
 echo "  kubectl get policyreport -A | head    # per-namespace audit reports"
 echo "  kubectl get clusterpolicyreport       # cluster-scope audit reports"
 echo
-echo "Soak for ~1 week. Then flip one policy at a time:"
-echo "  kubectl patch clusterpolicy <name> --type=merge -p '{\"spec\":{\"validationFailureAction\":\"Enforce\"}}'"
+echo "New validating policies ship with validationActions: [Deny]; to soak one, set [Audit] in its manifest."
 echo
 echo "Image-signature verification (05-image-signature-verification.yaml):"
 echo "  verify-image-signature-secforge  Enforce  SecForge images (keyless)"

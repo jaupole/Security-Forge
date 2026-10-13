@@ -1,0 +1,108 @@
+# Pod Security Standards — Baseline (CEL ValidatingPolicy port of the
+# kyverno.io/v1 pss-baseline ClusterPolicy; one policy per former rule).
+# Exclusion lists are carried over verbatim per rule.
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: pss-baseline-host-namespaces
+  annotations:
+    policies.kyverno.io/title: "Pod Security Standards — Baseline: host namespaces"
+    policies.kyverno.io/category: "Pod Security"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: "Pod"
+spec:
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: >-
+        !(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease',
+          'spire', 'observability', 'wazuh-agent', 'velero', 'ingress-nginx', 'cert-manager',
+          'image-builds', 'topolvm-system'])
+  validations:
+    - message: "Pods must not use host namespaces (hostNetwork, hostPID, hostIPC)."
+      expression: >-
+        !object.spec.?hostNetwork.orValue(false) &&
+        !object.spec.?hostPID.orValue(false) &&
+        !object.spec.?hostIPC.orValue(false)
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: pss-baseline-host-ports
+  annotations:
+    policies.kyverno.io/title: "Pod Security Standards — Baseline: hostPort"
+    policies.kyverno.io/category: "Pod Security"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: "Pod"
+spec:
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: >-
+        !(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease',
+          'spire', 'observability', 'wazuh-agent', 'velero', 'ingress-nginx', 'istio-ingress',
+          'cert-manager', 'image-builds', 'topolvm-system'])
+  validations:
+    - message: "Pods must not use hostPort."
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([])).all(c,
+          c.?ports.orValue([]).all(p, !has(p.hostPort) || p.hostPort == 0))
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: pss-baseline-privileged
+  annotations:
+    policies.kyverno.io/title: "Pod Security Standards — Baseline: privileged"
+    policies.kyverno.io/category: "Pod Security"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: "Pod"
+spec:
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: >-
+        !(object.metadata.namespace in ['kyverno', 'kube-system', 'kube-public', 'kube-node-lease',
+          'spire', 'observability', 'wazuh-agent', 'velero', 'image-builds', 'topolvm-system'])
+  validations:
+    - message: "Pods must not run privileged containers."
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([])).all(c,
+          !c.?securityContext.?privileged.orValue(false))

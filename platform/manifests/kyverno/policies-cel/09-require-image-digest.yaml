@@ -1,0 +1,33 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-image-digest
+  annotations:
+    policies.kyverno.io/title: "Require images pinned by digest (audit H-4.8)"
+    policies.kyverno.io/category: "Supply Chain"
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+spec:
+  validationActions: [Audit]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: exclude-namespaces
+      expression: >-
+        !(object.metadata.namespace in ['kube-system', 'kube-public', 'kube-node-lease', 'kyverno',
+          'topolvm-system', 'trivy-system'])
+  validations:
+    - message: "Container images must be pinned by @sha256 digest (audit H-4.8), not a mutable tag."
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]) +
+         object.spec.?ephemeralContainers.orValue([])).all(c, c.image.contains('@sha256:'))
