@@ -20,3 +20,7 @@ vendor/
 # pod-security on those workloads is enforced at admission by Kyverno
 # (require-run-as-nonroot, pss-baseline) regardless of the manifest text.
 platform/manifests/keycloak/operator/
+# Vendored ONLYOFFICE plugin SDK (upstream plugins.js; postMessage("*") between
+# the plugin frame and the editor frame is upstream design, both same-origin).
+# Our own plugin code (code.js, index.html) stays in scope.
+platform/manifests/onlyoffice/image/plugins/*/plugins.js

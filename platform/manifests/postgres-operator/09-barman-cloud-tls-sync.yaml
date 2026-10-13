@@ -61,6 +61,8 @@ metadata:
   namespace: cnpg-system
   labels:
     secforge.platform/component: postgres-operator
+  annotations:
+    checkov.io/skip1: "CKV2_K8S_5=the bound Role is resourceNames-scoped to the two barman TLS Secrets (get only); checkov's graph check ignores resourceNames"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -112,6 +114,9 @@ metadata:
   namespace: postgres-operator
   labels:
     secforge.platform/component: postgres-operator
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=false positive in checkov 3.2.105: the CronJob branch of the seccomp check never reads spec.securityContext when the pod template has metadata (it does: labels); the profile IS RuntimeDefault at pod level"
+    checkov.io/skip2: "CKV_K8S_38=the job runs kubectl get/patch against the named TLS Secrets and the operator Deployment; its SA token is required (Role is resourceNames-scoped)"
 spec:
   # 04:23 UTC daily: after the 02:30-03:15 UTC CNPG backup window.
   schedule: "23 4 * * *"

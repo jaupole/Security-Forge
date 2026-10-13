@@ -13,6 +13,11 @@ Routing decisions:
   - auto-patch   : known recipe, safe to attempt
   - human-review : known category but consequential
   - unclassified : no category match (surfaced to user)
+  - accepted     : fingerprint listed in the reviewed-findings file
+                   (.claude/findings-accepted.json, or $DIAGNOSE_ACCEPTED_FILE)
+                   with an owner, a reason and an unexpired expiry. Accepted
+                   findings never count as outstanding; expired acceptances
+                   are reported under summary.accepted_expired and DO count.
 
 Versioning (v2 §1.1): the module's version is recorded in every output and
 embedded in stamp predicates. Bump MODULE_VERSION whenever you change the
@@ -33,7 +38,7 @@ from typing import Callable, Optional
 
 # Bump on every catalog change. Stamp predicates pin this so an approval
 # always says exactly which version of the rules judged it.
-MODULE_VERSION = "2.1.0"
+MODULE_VERSION = "2.2.0"
 
 # ---------- matcher framework ----------
 
@@ -50,6 +55,12 @@ class Matcher:
             return self.test(finding)
         except Exception:
             return False
+
+
+def _or(*tests: Callable[[dict], bool]) -> Callable[[dict], bool]:
+    def _t(f: dict) -> bool:
+        return any(t(f) for t in tests)
+    return _t
 
 
 def _id_contains(*needles: str) -> Callable[[dict], bool]:
@@ -173,6 +184,17 @@ CATALOG: list[Matcher] = [
             _and(_scanner_is("semgrep"), _id_contains("prisma-raw-user-input", "prisma-tainted-raw"))),
     Matcher("prisma-dynamic-column", "human-review",
             _and(_scanner_is("semgrep"), _id_contains("prisma-dynamic-column", "dynamic-table-name"))),
+    # ---- IaC: Kubernetes manifest hardening (checkov CKV_K8S_*) ----
+    Matcher("iac-missing-resources", "auto-patch", _id_regex(r"CKV_K8S_(10|11|12|13)\b")),
+    Matcher("iac-missing-seccomp", "auto-patch", _id_regex(r"CKV_K8S_31\b")),
+    Matcher("iac-pod-hardening", "human-review",
+            _or(_id_regex(r"CKV_K8S_(8|9|14|20|22|23|25|26|28|29|37|38|43)\b"),
+                _and(_scanner_is("semgrep"), _id_contains("allow-privilege-escalation", "kubernetes.security")))),
+    Matcher("iac-rbac-wide", "human-review", _id_regex(r"(CKV_K8S_(49|155|156|157|158)|CKV2_K8S_5)\b")),
+    Matcher("iac-container-root", "auto-patch", _id_regex(r"CKV_DOCKER_3\b")),
+    Matcher("gha-workflow-hygiene", "human-review", _id_regex(r"CKV_GHA_\d+\b")),
+    Matcher("postmessage-wildcard-origin", "human-review",
+            _and(_scanner_is("semgrep"), _id_contains("wildcard-postmessage"))),
     # ---- deps ----
     Matcher("dep-cve", "auto-patch", _scanner_is("trivy")),  # routing refined later by version-bump kind
     # ---- supply chain ----
@@ -220,6 +242,59 @@ ALWAYS_HUMAN_REVIEW = {
     "prisma-raw-user-input",
     "prisma-dynamic-column",
 }
+
+
+
+# ---------- reviewed / accepted findings ----------
+#
+# A finding that was looked at by a human and deliberately left in place is
+# recorded in .claude/findings-accepted.json:
+#   {"version": 1, "accepted": [
+#     {"fingerprint": "<rule>:<file>:<line>", "reason": "...", "owner": "...",
+#      "accepted_on": "YYYY-MM-DD", "expires_on": "YYYY-MM-DD", "ticket": "optional"}]}
+# Every acceptance expires (max 12 months); the stamp predicate records the
+# file hash and the accepted fingerprints, so an approval always says exactly
+# what was waived and by whom.
+ACCEPTED_FILE_DEFAULT = ".claude/findings-accepted.json"
+ACCEPTANCE_MAX_DAYS = 366
+_REQUIRED_KEYS = ("fingerprint", "reason", "owner", "accepted_on", "expires_on")
+
+
+def load_accepted(path: Optional[str] = None) -> tuple[dict[str, dict], list[dict], list[str]]:
+    """Return (active_by_fingerprint, expired_entries, problems)."""
+    import datetime as _dt
+    import os
+    path = path or os.environ.get("DIAGNOSE_ACCEPTED_FILE") or ACCEPTED_FILE_DEFAULT
+    if not os.path.isfile(path):
+        return {}, [], []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, json.JSONDecodeError) as e:
+        return {}, [], [f"{path}: unreadable ({e})"]
+    today = _dt.date.today()
+    active: dict[str, dict] = {}
+    expired: list[dict] = []
+    problems: list[str] = []
+    for i, e in enumerate(doc.get("accepted", []) or []):
+        missing = [k for k in _REQUIRED_KEYS if not e.get(k)]
+        if missing:
+            problems.append(f"entry {i}: missing {missing}")
+            continue
+        try:
+            start = _dt.date.fromisoformat(e["accepted_on"])
+            end = _dt.date.fromisoformat(e["expires_on"])
+        except ValueError:
+            problems.append(f"entry {i} ({e['fingerprint']}): dates must be YYYY-MM-DD")
+            continue
+        if (end - start).days > ACCEPTANCE_MAX_DAYS or end <= start:
+            problems.append(f"entry {i} ({e['fingerprint']}): expiry must be within {ACCEPTANCE_MAX_DAYS} days of accepted_on")
+            continue
+        if end < today:
+            expired.append(e)
+            continue
+        active[e["fingerprint"]] = e
+    return active, expired, problems
 
 
 # ---------- main pipeline ----------
@@ -280,13 +355,29 @@ def main() -> int:
         return 2
 
     findings = normalize(doc.get("gate_results", []))
+    accepted_active, accepted_expired, acceptance_problems = load_accepted()
     categorized: list[dict] = []
     summary_by_cat: dict[str, int] = {}
-    summary_by_route: dict[str, int] = {"auto-patch": 0, "human-review": 0, "unclassified": 0}
+    summary_by_route: dict[str, int] = {"auto-patch": 0, "human-review": 0, "unclassified": 0, "accepted": 0}
     unclassified_samples: list[dict] = []
+    accepted_used: list[str] = []
 
     for f in findings:
         cat, route, conf = classify(f)
+        acc = accepted_active.get(f.get("fingerprint") or "")
+        if acc is not None:
+            entry = {
+                "fingerprint": f.get("fingerprint"),
+                "original": {k: v for k, v in f.items() if not k.startswith("_")},
+                "category": cat or "unclassified",
+                "routing": "accepted",
+                "confidence": conf if cat else "n/a",
+                "acceptance": {k: acc.get(k) for k in ("reason", "owner", "accepted_on", "expires_on", "ticket")},
+            }
+            summary_by_route["accepted"] += 1
+            accepted_used.append(entry["fingerprint"])
+            categorized.append(entry)
+            continue
         if cat is None:
             entry = {
                 "fingerprint": f.get("fingerprint"),
@@ -319,6 +410,9 @@ def main() -> int:
     total = len(categorized)
     unclassified_count = summary_by_route.get("unclassified", 0)
     unclassified_rate = (unclassified_count / total) if total > 0 else 0.0
+    # Acceptances whose fingerprint no longer appears are stale: the finding was
+    # fixed or the file moved. Surface them so the file does not rot.
+    accepted_stale = sorted(set(accepted_active) - set(accepted_used))
 
     output = {
         "diagnose_module_version": MODULE_VERSION,
@@ -331,6 +425,10 @@ def main() -> int:
             "unclassified_rate": round(unclassified_rate, 4),
             "unclassified_threshold": 0.05,
             "unclassified_examples": unclassified_samples,
+            "accepted": len(accepted_used),
+            "accepted_expired": [e.get("fingerprint") for e in accepted_expired],
+            "accepted_stale": accepted_stale,
+            "acceptance_problems": acceptance_problems,
             "drift_warning": (
                 "unclassified_rate exceeds 0.05 — catalog drift; add categories or fix matchers"
                 if unclassified_rate > 0.05

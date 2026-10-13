@@ -26,6 +26,8 @@ metadata:
     app.kubernetes.io/name: control
     secforge.platform/component: control
     secforge.platform/role: grant-sweep
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=false positive in checkov 3.2.105: the CronJob branch of the seccomp check never reads spec.securityContext when the pod template has metadata (it does: labels); the profile IS RuntimeDefault at pod level"
 spec:
   # Hourly at :29 — off the round-hour and clear of signup-cleanup (:17) and
   # the daily tickets-archive (03:41) so the three never overlap on the node.

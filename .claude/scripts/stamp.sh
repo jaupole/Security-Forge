@@ -39,6 +39,7 @@ fi
 
 SUBJECT=""
 GATE_RUN_FILE=""
+DIAGNOSE_FILE=""
 PATCHES_FILE=""
 PREDICATE_FILE=""
 MODE="auto"
@@ -47,6 +48,7 @@ KEY_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --from-gate-run) GATE_RUN_FILE="$2"; shift 2 ;;
+    --from-diagnose) DIAGNOSE_FILE="$2"; shift 2 ;;
     --patches)       PATCHES_FILE="$2"; shift 2 ;;
     --predicate)     PREDICATE_FILE="$2"; shift 2 ;;
     --mode)          MODE="$2"; shift 2 ;;
@@ -195,6 +197,18 @@ if [[ -z "$PREDICATE_FILE" ]]; then
       | head -1 | sed -E 's/.*"(.+)".*/\1/' || echo "unknown")
   fi
 
+  # Reviewed-and-accepted findings (diagnose routing "accepted"): the stamp
+  # says exactly what was waived - count, fingerprints and the hash of the
+  # acceptance file - so an approval is never silently wider than it looks.
+  ACCEPTED_JSON='{"count":0,"fingerprints":[],"file_sha256":"sha256:absent"}'
+  if [[ -n "$DIAGNOSE_FILE" && -f "$DIAGNOSE_FILE" ]]; then
+    ACCEPTED_JSON=$(jq -c --arg h "$(hash_file "${CLAUDE_DIR:-.claude}/findings-accepted.json")" '{
+      count: ([.categorized[]? | select(.routing=="accepted")] | length),
+      fingerprints: [.categorized[]? | select(.routing=="accepted") | .fingerprint],
+      file_sha256: $h
+    }' "$DIAGNOSE_FILE")
+  fi
+
   jq -n \
     --arg approved_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     --arg git_sha "$(git rev-parse HEAD 2>/dev/null || echo 'no-git')" \
@@ -203,6 +217,7 @@ if [[ -z "$PREDICATE_FILE" ]]; then
     --arg advisor_run_id "$ADVISOR_RUN_ID" \
     --argjson gates_passed "$GATES_JSON" \
     --argjson patches_applied "$PATCHES_JSON" \
+    --argjson accepted_findings "$ACCEPTED_JSON" \
     --arg diag_version "$DIAG_VERSION" \
     --arg rules_hash "$RULES_HASH" \
     --arg bundle_hash "$BUNDLE_HASH" \
@@ -219,6 +234,7 @@ if [[ -z "$PREDICATE_FILE" ]]; then
       policy_bundle_hash:$bundle_hash,
       patch_governance_version:"2.0.0",
       patches_applied:$patches_applied,
+      accepted_findings:$accepted_findings,
       signer:{ mode:$signing_mode, host: (env.HOSTNAME // "unknown") }
     }' >"$PREDICATE_FILE"
 

@@ -55,11 +55,31 @@ jobs:
           if-no-files-found: ignore
 
       - name: Refuse to stamp if anything outstanding
+        # Outstanding = anything not fixed and not deliberately accepted:
+        # auto-patch, human-review AND unclassified (an unclassified finding is
+        # still a finding), plus expired acceptances and a malformed acceptance
+        # file. Reviewed findings live in .claude/findings-accepted.json.
         run: |
           auto=$(jq -r '.summary.by_routing["auto-patch"] // 0' diagnose.json)
           human=$(jq -r '.summary.by_routing["human-review"] // 0' diagnose.json)
-          if [[ "$auto" -gt 0 || "$human" -gt 0 ]]; then
+          uncl=$(jq -r '.summary.by_routing["unclassified"] // 0' diagnose.json)
+          expired=$(jq -r '.summary.accepted_expired // [] | length' diagnose.json)
+          problems=$(jq -r '.summary.acceptance_problems // [] | length' diagnose.json)
+          accepted=$(jq -r '.summary.accepted // 0' diagnose.json)
+          stale=$(jq -r '.summary.accepted_stale // [] | length' diagnose.json)
+          echo "outstanding: auto-patch=$auto human-review=$human unclassified=$uncl expired-acceptances=$expired acceptance-file-problems=$problems | accepted=$accepted stale-acceptances=$stale"
+          if [[ "$stale" -gt 0 ]]; then
+            echo "::warning::$stale acceptance(s) no longer match a finding — prune .claude/findings-accepted.json"
+            jq -r '.summary.accepted_stale[]' diagnose.json | sed 's/^/  stale: /'
+          fi
+          if [[ "$auto" -gt 0 || "$human" -gt 0 || "$uncl" -gt 0 || "$expired" -gt 0 || "$problems" -gt 0 ]]; then
             echo "::error::merge tier has unresolved findings — refusing to stamp"
+            echo "--- outstanding findings (count routing | rule | file:line)"
+            jq -r '.categorized[] | select(.routing != "accepted")
+                   | "\(.routing) | \(.original.id // .original.rule_id // "?") | \(.original.file // "?"):\(.original.line_start // "?")"' diagnose.json \
+              | sort | uniq -c | sort -rn | head -80
+            jq -r '.summary.accepted_expired[]? | "expired acceptance: \(.)"' diagnose.json
+            jq -r '.summary.acceptance_problems[]? | "acceptance file problem: \(.)"' diagnose.json
             exit 1
           fi
 
@@ -78,6 +98,7 @@ jobs:
         run: |
           ./.claude/scripts/stamp.sh "${{ steps.bundle.outputs.bundle }}" \
             --from-gate-run gate-run.json \
+            --from-diagnose diagnose.json \
             --mode keyless
 
       - name: Upload artifacts + attestation

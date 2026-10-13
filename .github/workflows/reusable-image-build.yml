@@ -238,16 +238,17 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          APP: ${{ inputs.image }}
         run: |
           {
             echo "## Built + signed"
             echo ""
-            echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}\`"
+            echo "**Image:** \`${REGISTRY}/${IMAGE_NAME}@${DIGEST}\`"
             echo ""
             echo "## Deploy"
             echo ""
             echo '```sh'
             echo "gh workflow run deploy-app.yml -R jaupole/Security-Forge \\"
-            echo "  -f app=${{ inputs.image }} -f digest=${DIGEST}"
+            echo "  -f app=${APP} -f digest=${DIGEST}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

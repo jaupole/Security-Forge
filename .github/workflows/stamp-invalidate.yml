@@ -33,6 +33,8 @@ jobs:
 
       - name: Detect rewrite
         id: detect
+        env:
+          FORCED: ${{ github.event.forced }}
         run: |
           # If the push event is a force-push, GitHub marks it. Otherwise we
           # compare the digest of the current tree against the most recent
@@ -43,8 +45,8 @@ jobs:
           # force-push there invalidates nothing. Posting stamp/invalid=red on those was
           # a false positive that silently blocked the entire CVE digest-patch
           # auto-merge stream (pentest 2026-06-10). Only the default branch is stamped.
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            forced="${{ github.event.forced || 'false' }}"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            forced="${FORCED:-false}"
           else
             forced="false"
           fi

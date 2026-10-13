@@ -29,6 +29,14 @@ kind: Deployment
 metadata:
   name: istio-ingress
   namespace: istio-ingress
+  annotations:
+    checkov.io/skip1: "CKV_K8S_38=gateway needs its SA token for istiod SDS/xDS auth"
+    checkov.io/skip2: "CKV_K8S_25=NET_BIND_SERVICE is required to bind 80/443 as uid 1337; ALL others dropped"
+    checkov.io/skip3: "CKV_K8S_26=hostPort is the design: the gateway binds the node IP directly (no cloud LB)"
+    checkov.io/skip4: "CKV_K8S_43=image auto is the Istio gateway-injection placeholder; the real proxy image is pinned via sidecar.istio.io/proxyImage"
+    checkov.io/skip5: "CKV_K8S_14=image auto is the Istio gateway-injection placeholder (see CKV_K8S_43)"
+    checkov.io/skip6: "CKV_K8S_8=liveness/readiness probes are injected by the Istio gateway template"
+    checkov.io/skip7: "CKV_K8S_9=liveness/readiness probes are injected by the Istio gateway template"
   labels: { app: istio-ingress, istio: ingress }
 spec:
   replicas: 1
@@ -73,6 +81,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1337
         runAsGroup: 1337
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: istio-proxy
           image: auto                       # replaced by the gateway injector

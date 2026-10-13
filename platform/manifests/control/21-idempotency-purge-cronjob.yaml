@@ -23,6 +23,8 @@ metadata:
     app.kubernetes.io/name: control
     secforge.platform/component: control
     secforge.platform/role: idempotency-purge
+  annotations:
+    checkov.io/skip1: "CKV_K8S_31=false positive in checkov 3.2.105: the CronJob branch of the seccomp check never reads spec.securityContext when the pod template has metadata (it does: labels); the profile IS RuntimeDefault at pod level"
 spec:
   # Daily at 03:37 UTC. Off the round-hour to avoid the :00 noise band; a
   # quiet hour since the 48h retention window makes exact timing immaterial.

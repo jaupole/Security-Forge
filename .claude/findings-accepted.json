@@ -1,0 +1,134 @@
+{
+  "_doc": "Reviewed findings deliberately left in place. Each entry needs fingerprint (<rule>:<file>:<line> as reported by diagnose.py), reason, owner, accepted_on and expires_on (YYYY-MM-DD, at most 12 months later), optional ticket. Expired or malformed entries count as outstanding and block the stamp; entries that no longer match a finding are reported as stale.",
+  "version": 1,
+  "accepted": [
+    {
+      "fingerprint": "CKV_K8S_20:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_22:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_23:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_28:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_29:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_31:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_37:/platform/manifests/onlyoffice/09-deployment.yaml:33",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation:platform/manifests/onlyoffice/09-deployment.yaml:112",
+      "reason": "ONLYOFFICE DocumentServer vendor image runs supervisord/nginx/postgres as root and needs CHOWN/SETUID; cannot be hardened without a vendor rebuild. Mitigations: dedicated namespace, default-deny NetworkPolicy, Istio AuthorizationPolicy, no host namespaces/privileged (pss-baseline). Tracked for the vendor-image rebuild.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_DOCKER_3:/platform/manifests/onlyoffice/image/Dockerfile:1",
+      "reason": "Derived from the ONLYOFFICE DocumentServer vendor image which requires root at entrypoint (see 09-deployment acceptance).",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_22:/platform/manifests/document-render/09-deployment.yaml:35",
+      "reason": "Gotenberg writes conversion scratch files under /tmp; read-only root needs explicit emptyDir mounts for every Chromium/LibreOffice scratch path — scheduled with the vendor-image hardening pass.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-04-13",
+      "ticket": "operator-backlog #103"
+    },
+    {
+      "fingerprint": "CKV_K8S_155:/platform/manifests/velero/07-rbac-leastprivilege.yaml:29",
+      "reason": "Velero backs up and restores every API resource, so the server role needs cluster-wide get/list/watch and create/update/patch/delete on */*, plus bind/escalate to restore RBAC objects. This IS the least-privilege replacement for the chart's cluster-admin binding (audit H-4.12); residual risk documented on the ClusterRole annotation.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "audit H-4.12"
+    },
+    {
+      "fingerprint": "CKV_K8S_156:/platform/manifests/velero/07-rbac-leastprivilege.yaml:29",
+      "reason": "Velero backs up and restores every API resource, so the server role needs cluster-wide get/list/watch and create/update/patch/delete on */*, plus bind/escalate to restore RBAC objects. This IS the least-privilege replacement for the chart's cluster-admin binding (audit H-4.12); residual risk documented on the ClusterRole annotation.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "audit H-4.12"
+    },
+    {
+      "fingerprint": "CKV_K8S_157:/platform/manifests/velero/07-rbac-leastprivilege.yaml:29",
+      "reason": "Velero backs up and restores every API resource, so the server role needs cluster-wide get/list/watch and create/update/patch/delete on */*, plus bind/escalate to restore RBAC objects. This IS the least-privilege replacement for the chart's cluster-admin binding (audit H-4.12); residual risk documented on the ClusterRole annotation.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "audit H-4.12"
+    },
+    {
+      "fingerprint": "CKV_K8S_158:/platform/manifests/velero/07-rbac-leastprivilege.yaml:29",
+      "reason": "Velero backs up and restores every API resource, so the server role needs cluster-wide get/list/watch and create/update/patch/delete on */*, plus bind/escalate to restore RBAC objects. This IS the least-privilege replacement for the chart's cluster-admin binding (audit H-4.12); residual risk documented on the ClusterRole annotation.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "audit H-4.12"
+    },
+    {
+      "fingerprint": "CKV_K8S_49:/platform/manifests/velero/07-rbac-leastprivilege.yaml:29",
+      "reason": "Velero backs up and restores every API resource, so the server role needs cluster-wide get/list/watch and create/update/patch/delete on */*, plus bind/escalate to restore RBAC objects. This IS the least-privilege replacement for the chart's cluster-admin binding (audit H-4.12); residual risk documented on the ClusterRole annotation.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "audit H-4.12"
+    },
+    {
+      "fingerprint": "CKV_GHA_7:/.github/workflows/deploy-app.yml:29",
+      "reason": "workflow_dispatch inputs (app, digest) ARE the deployment parameters by design; the digest is verified against the cosign attestation (verify-stamp) and by Kyverno at admission before anything runs.",
+      "owner": "jaupole",
+      "accepted_on": "2026-10-13",
+      "expires_on": "2027-10-13",
+      "ticket": "ADR-0021"
+    }
+  ]
+}
