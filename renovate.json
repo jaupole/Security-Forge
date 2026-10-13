@@ -108,16 +108,16 @@
     },
     {
       "description": "Keycloak base image — operator review before merge. Both version and digest updates surface on the dependency dashboard and merge only on operator approval; merging runs the keycloak-image-build pipeline, then the CR digest is cut over by hand (operator-backlog #48).",
-      "matchManagers": ["regex"],
+      "matchManagers": ["custom.regex"],
       "matchPackageNames": ["quay.io/keycloak/keycloak"],
       "dependencyDashboardApproval": true,
       "labels": ["keycloak", "manual-review"]
     },
     {
-      "description": "SecLists HIBP password blacklist: yearly cadence is fine",
-      "matchManagers": ["regex"],
-      "matchPackageNames": ["danielmiessler/SecLists"],
-      "schedule": ["every 6 months"],
+      "description": "SecLists HIBP password blacklist: twice-yearly cadence (cron: 1 Jan + 1 Jul, 00:00-05:59 ET). matchManagers MUST be custom.regex — the old plain 'regex' value silently matched nothing in current Renovate, so this pin churned daily (PR #91, 2026-06..10) and the keycloak rule above was inert too. depName match is case-insensitive: the git-refs datasource lowercases it.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["/^danielmiessler\/seclists$/i"],
+      "schedule": ["* 0-5 1 1,7 *"],
       "labels": ["password-blacklist", "manual-review"]
     },
     {
