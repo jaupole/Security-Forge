@@ -81,8 +81,7 @@ EXCLUDE='vendor-chart/|_egress-baseline/|/image-build/|credentials-job|migration
 # that produced a 12-hourly drift email on the ONLY alert channel that reaches
 # a human, which is how a real merge-without-apply would get ignored.
 STAGED=(
-  "observability/13-alertmanager-email.yaml:2026-10-13:Gmail→Resend cutover, backlog #100 — extended 2026-09-29 (drift-noise triage; re-checked: no alertmanager-smtp-resend Secret, no alertmanager-vso VaultAuth) — still blocked on operator minting the Resend key + staging the operator token, then running 07r"
-  "observability/16-alertmanager-smtp-vso-binding.yaml:2026-10-13:same cutover — extended 2026-09-29 with 13-alertmanager-email.yaml"
+  # (empty since 2026-10-13: the Gmail→Resend cutover was applied via 07r — backlog #100 closed)
 )
 
 # Echoes "staged" / "expired" / "" for a repo-relative path.
