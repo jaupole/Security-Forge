@@ -9,7 +9,7 @@
 # inside the tailnet — public-internet requests get a 403 at the ingress
 # layer before the upstream pod is contacted.
 #
-# Also applies a Kyverno ClusterPolicy that REQUIRES the annotation on any
+# Also applies a Kyverno ValidatingPolicy that REQUIRES the annotation on any
 # Ingress with an admin-shaped hostname. Catches "I forgot the annotation"
 # at admission time so accidental public exposure is impossible.
 #
@@ -144,7 +144,7 @@ apply_kyverno_policy() {
     local policy_file="$M/admin-allowlist-policy.yaml"
     [[ -f "$policy_file" ]] || { echo "ERROR: policy file missing: $policy_file" >&2; exit 1; }
 
-    echo ">>> Applying Kyverno ClusterPolicy: admin-ingress-must-be-tailnet-only"
+    echo ">>> Applying Kyverno ValidatingPolicy: admin-ingress-must-be-tailnet-only"
     kubectl apply -f "$policy_file"
 
     # Wait for the policy to be Ready (Kyverno reports policy-load status).
@@ -152,9 +152,9 @@ apply_kyverno_policy() {
     local elapsed=0
     while (( elapsed < 30 )); do
         local ready
-        ready=$(kubectl get clusterpolicy admin-ingress-must-be-tailnet-only \
-            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-        if [[ "$ready" == "True" ]]; then
+        ready=$(kubectl get validatingpolicies.policies.kyverno.io admin-ingress-must-be-tailnet-only \
+            -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null || true)
+        if [[ "$ready" == "true" ]]; then
             echo "    Ready."
             return 0
         fi
@@ -162,19 +162,19 @@ apply_kyverno_policy() {
         elapsed=$(( elapsed + 2 ))
     done
     echo "WARNING: policy did not reach Ready=True within 30s." >&2
-    echo "  Inspect: kubectl describe clusterpolicy admin-ingress-must-be-tailnet-only" >&2
+    echo "  Inspect: kubectl describe validatingpolicies.policies.kyverno.io admin-ingress-must-be-tailnet-only" >&2
 }
 
 # ── Verification ──────────────────────────────────────────────────────────
 
 verify_policy_in_force() {
     echo ""
-    echo ">>> Verifying policy is in Enforce mode (will REJECT non-compliant Ingress creates):"
+    echo ">>> Verifying policy is in Deny mode (will REJECT non-compliant Ingress creates):"
     local mode
-    mode=$(kubectl get clusterpolicy admin-ingress-must-be-tailnet-only \
-        -o jsonpath='{.spec.validationFailureAction}' 2>/dev/null || true)
-    echo "    validationFailureAction = $mode"
-    if [[ "$mode" != "Enforce" ]]; then
+    mode=$(kubectl get validatingpolicies.policies.kyverno.io admin-ingress-must-be-tailnet-only \
+        -o jsonpath='{.spec.validationActions[0]}' 2>/dev/null || true)
+    echo "    validationActions[0] = $mode"
+    if [[ "$mode" != "Deny" ]]; then
         echo "    WARNING: policy is in Audit mode — non-compliant Ingresses will be allowed but flagged. Switch to Enforce when comfortable." >&2
     fi
 }
@@ -194,7 +194,7 @@ main() {
 
   Allowlist:    $ALLOWLIST_VALUE  (Tailscale CGNAT range)
   Annotation:   $ANNOTATION_KEY
-  Policy:       ClusterPolicy/admin-ingress-must-be-tailnet-only (Enforce)
+  Policy:       ValidatingPolicy/admin-ingress-must-be-tailnet-only (Deny)
 
 What changed:
   - Existing admin Ingresses (wazuh.*, grafana.*, openbao-admin.*,

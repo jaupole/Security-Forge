@@ -11,9 +11,15 @@ spec:
   evaluation:
     admission:
       enabled: true
-  # Pod-level only (no pod-controller autogen): Velero's fs-backup reads the
-  # annotation from the Pod, so mutating the Pod at admission is sufficient
-  # and keeps controller templates untouched.
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports
+  # Pod-level only: Velero's fs-backup reads the annotation from the Pod, so
+  # mutating the Pod at admission is sufficient and keeps controller templates
+  # untouched. The empty list is REQUIRED — Kyverno 1.19 defaults
+  # pod-controller autogen ON for a pods-only policy when it is omitted.
+  autogen:
+    podControllers:
+      controllers: []
   matchConstraints:
     resourceRules:
       - apiGroups: [""]

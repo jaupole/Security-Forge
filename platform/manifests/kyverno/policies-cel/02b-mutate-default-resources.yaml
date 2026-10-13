@@ -24,7 +24,16 @@ metadata:
 spec:
   evaluation:
     admission:
-      enabled: true                    # mutate fires at admission only
+      enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports                    # mutate fires at admission only
+  # Kyverno 1.19 defaults pod-controller autogen ON for a pods-only policy;
+  # with typed Object constructors that autogen'd form fails to evaluate and
+  # (failurePolicy Fail) REJECTS Jobs/ReplicaSets — seen live 2026-10-13.
+  # The controller kinds are covered by the explicit policies below.
+  autogen:
+    podControllers:
+      controllers: []
   matchConstraints:
     resourceRules:
       - apiGroups: [""]
@@ -75,7 +84,9 @@ metadata:
 spec:
   evaluation:
     admission:
-      enabled: true                    # mutate fires at admission only
+      enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports                    # mutate fires at admission only
   matchConstraints:
     resourceRules:
       - apiGroups: [apps]
@@ -126,7 +137,9 @@ metadata:
 spec:
   evaluation:
     admission:
-      enabled: true                    # mutate fires at admission only
+      enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports                    # mutate fires at admission only
   matchConstraints:
     resourceRules:
       - apiGroups: [batch]
@@ -177,7 +190,9 @@ metadata:
 spec:
   evaluation:
     admission:
-      enabled: true                    # mutate fires at admission only
+      enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports                    # mutate fires at admission only
   matchConstraints:
     resourceRules:
       - apiGroups: [batch]

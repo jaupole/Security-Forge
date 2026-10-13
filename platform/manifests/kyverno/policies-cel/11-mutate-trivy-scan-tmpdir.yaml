@@ -10,7 +10,12 @@ metadata:
 spec:
   evaluation:
     admission:
-      enabled: true                    # admission-time only; scan pods are short-lived
+      enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports                    # admission-time only; scan pods are short-lived
+  autogen:
+    podControllers:
+      controllers: []                  # explicit: pods only (see 02b/12 for why)
   matchConstraints:
     resourceRules:
       - apiGroups: [""]

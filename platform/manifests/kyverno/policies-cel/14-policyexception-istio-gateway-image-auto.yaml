@@ -5,6 +5,7 @@ apiVersion: policies.kyverno.io/v1
 kind: PolicyException
 metadata:
   name: istio-gateway-image-auto
+  namespace: kyverno                   # exceptions are honoured only in Kyverno's exception namespace
   labels:
     secforge.platform/component: kyverno-policies
 spec:

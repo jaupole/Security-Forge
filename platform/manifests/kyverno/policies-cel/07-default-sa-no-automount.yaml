@@ -11,6 +11,8 @@ spec:
   evaluation:
     admission:
       enabled: true
+    background:
+      enabled: false                   # admission-time only (v1 background: false); no mutate-existing reports
   matchConstraints:
     resourceRules:
       - apiGroups: [""]
