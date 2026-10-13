@@ -86,7 +86,15 @@ config:
       logs:
         level: info
       metrics:
-        address: 0.0.0.0:8888
+        # Collector >= 0.159 removed `address:` from service.telemetry.metrics
+        # (chart 0.175.1 / collector 0.161.0 crash-looped on it, 2026-10-13).
+        # Same listener, OTel-SDK "readers" form.
+        readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: 0.0.0.0
+                  port: 8888
 
 ports:
   otlp:
