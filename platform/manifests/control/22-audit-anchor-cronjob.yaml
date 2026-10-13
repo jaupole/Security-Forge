@@ -118,7 +118,7 @@ spec:
                 limits:   { cpu: 100m, memory: 128Mi }
           containers:
             - name: anchor
-              image: ghcr.io/jaupole/control@sha256:6e7367080bfe55b6f14bee28883c7b42500cb45bc9044a7da862e05335b644d1
+              image: ghcr.io/jaupole/control@sha256:079bf034a2ee0f3586fd1e4a926f89051f56edca155869772a45d8f973765e4e
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "audit:anchor"]
               env:
@@ -236,7 +236,7 @@ spec:
                 limits:   { cpu: 100m, memory: 128Mi }
           containers:
             - name: verify
-              image: ghcr.io/jaupole/control@sha256:6e7367080bfe55b6f14bee28883c7b42500cb45bc9044a7da862e05335b644d1
+              image: ghcr.io/jaupole/control@sha256:079bf034a2ee0f3586fd1e4a926f89051f56edca155869772a45d8f973765e4e
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "audit:verify-anchors"]
               env:
