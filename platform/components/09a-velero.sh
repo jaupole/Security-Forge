@@ -236,7 +236,7 @@ green "✓ Velero deployed."
 echo
 echo "Sanity:"
 echo "  kubectl -n $NS get pods,backupstoragelocation,schedule"
-echo "  kubectl -n $NS get backup $INITIAL_BACKUP -w   # tail until Phase=Completed"
+echo "  kubectl -n $NS get backup ${INITIAL_BACKUP:-<name>} -w   # tail until Phase=Completed"
 echo
 echo "Inspect backup contents in MinIO:"
 echo "  kubectl -n minio port-forward svc/minio-console 9001:9001 &"
