@@ -9,11 +9,6 @@
     ":timezone(America/New_York)",
     "group:allNonMajor"
   ],
-  "schedule": [
-    "after 9pm every weekday",
-    "before 5am every weekday",
-    "every weekend"
-  ],
   "prHourlyLimit": 4,
   "prConcurrentLimit": 8,
   "labels": ["dependencies", "renovate"],
@@ -26,6 +21,10 @@
     "ghcr.io/jaupole/keycloak",
     "ghcr.io/jaupole/member-hub",
     "ghcr.io/jaupole/proposal-forge",
+    "ghcr.io/jaupole/business-manager",
+    "ghcr.io/jaupole/project-manager",
+    "ghcr.io/jaupole/gotenberg",
+    "ghcr.io/jaupole/onlyoffice-documentserver",
     "public.ecr.aws/curl/curl",
     "ghcr.io/authzed/spicedb-operator"
   ],
