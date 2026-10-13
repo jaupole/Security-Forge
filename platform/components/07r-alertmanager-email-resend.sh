@@ -7,7 +7,7 @@
 #   3. stages the Resend sending-only API key in OpenBao
 #   4. applies the VSO binding (16-) and waits for the rendered Secret
 #   5. applies the switched AlertmanagerConfig (13-) — Resend smarthost
-#   6. sends a test alert and checks for Notify success
+#   6. waits for the config reload, sends a test alert, verifies via counters
 #   7. deletes the legacy alertmanager-smtp-gmail Secret
 #
 # Pre-conditions:
@@ -116,23 +116,63 @@ done
 # 5. Switched AlertmanagerConfig (safe now the Secret exists)
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/13-alertmanager-email.yaml"
 
-# 6. End-to-end: test alert → Notify success in the Alertmanager log
+# 6. End-to-end: wait for the config reload, fire a test alert, judge by counters.
+#    NOT by grepping "Notify success" — that line is debug-level (invisible at
+#    the default info log level), and the operator's config reload lands ~1min
+#    after step 5, so a fixed sleep fires the test alert into the OLD config.
+#    Both made the 2026-10-13 run report failure on a working Resend path.
+AM_POD=alertmanager-kps-alertmanager-0
+am_exec() { kubectl -n "$NS" exec "$AM_POD" -c alertmanager -- "$@"; }
+am_metric() {   # sum of one counter family over the email integration
+  am_exec wget -qO- http://localhost:9093/metrics 2>/dev/null | awk -v m="$1" '
+    index($1, m "{integration=\"email\"") == 1 { s += $2 } END { printf "%d", s }'
+}
+am_reload_ts() {
+  am_exec wget -qO- http://localhost:9093/metrics 2>/dev/null | awk '
+    $1 == "alertmanager_config_last_reload_success_timestamp_seconds" { printf "%d", $2 }'
+}
+
+applied_at=$(date +%s)
+green "==> waiting for Alertmanager to reload the switched config (up to 3m)"
+for i in $(seq 1 36); do
+  ts=$(am_reload_ts); ts=${ts:-0}
+  if [ "$ts" -ge "$applied_at" ]; then green "    reloaded after $((i*5))s"; break; fi
+  if [ "$i" -eq 36 ]; then
+    red "ERROR: Alertmanager has not reloaded the config in 3m."
+    red "Old Gmail Secret NOT deleted — inspect the operator / config-reloader:"
+    red "  kubectl -n $NS logs $AM_POD -c config-reloader --tail=50"
+    exit 1
+  fi
+  sleep 5
+done
+
+sent_before=$(am_metric alertmanager_notifications_total)
+failed_before=$(am_metric alertmanager_notifications_failed_total)
 green "==> sending test alert (expect one email from alerts@\${DOMAIN})"
-sleep 15   # let the operator reload the Alertmanager config
-kubectl -n "$NS" exec alertmanager-kps-alertmanager-0 -c alertmanager -- \
-  amtool --alertmanager.url=http://localhost:9093 alert add \
-  alertname=ResendMigrationTest severity=info \
-  --annotation=summary='Alertmanager → Resend migration test — safe to ignore'
-sleep 45
-if kubectl -n "$NS" logs alertmanager-kps-alertmanager-0 -c alertmanager --since=2m \
-     | grep -q 'Notify success'; then
-  green "    Notify success — Resend path live"
-else
-  red "WARNING: no 'Notify success' in the last 2m of Alertmanager logs."
-  red "Old Gmail Secret NOT deleted — inspect before finishing:"
-  red "  kubectl -n $NS logs alertmanager-kps-alertmanager-0 -c alertmanager | grep -iE 'notify|smtp' | tail"
-  exit 1
-fi
+am_exec amtool --alertmanager.url=http://localhost:9093 alert add   alertname=ResendMigrationTest severity=info   --annotation=summary='Alertmanager → Resend migration test — safe to ignore'   2>&1 | grep -v 'moving to a new parser' || true
+
+green "==> waiting for the email notification (group_wait + send, up to 2m)"
+for i in $(seq 1 24); do
+  sleep 5
+  sent_after=$(am_metric alertmanager_notifications_total)
+  failed_after=$(am_metric alertmanager_notifications_failed_total)
+  if [ "$failed_after" -gt "$failed_before" ]; then
+    red "ERROR: email notification FAILED (failed_total ${failed_before}→${failed_after})."
+    red "Old Gmail Secret NOT deleted — inspect before finishing:"
+    red "  kubectl -n $NS logs $AM_POD -c alertmanager | grep -iE 'notify|smtp' | tail"
+    exit 1
+  fi
+  if [ "$sent_after" -gt "$sent_before" ]; then
+    green "    email notification sent (notifications_total ${sent_before}→${sent_after}, failed unchanged) — Resend path live"
+    break
+  fi
+  if [ "$i" -eq 24 ]; then
+    red "WARNING: no email notification counted in 2m (${sent_before}→${sent_after})."
+    red "Old Gmail Secret NOT deleted — check the receiver routing before finishing:"
+    red "  kubectl -n $NS exec $AM_POD -c alertmanager -- amtool --alertmanager.url=http://localhost:9093 config routes"
+    exit 1
+  fi
+done
 
 # 7. Retire the legacy Gmail secret
 green "==> deleting legacy alertmanager-smtp-gmail Secret"
