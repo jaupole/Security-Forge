@@ -98,6 +98,19 @@ spec:
         # at secret/apps/business-manager/runtime (OpenBao UI).
         BM_SYSTEM_CLIENT_SECRET:
           text: '{{ if .Secrets.system_client_secret }}{{ .Secrets.system_client_secret }}{{ end }}'
+        # Resend inbound email (Oracle timecards forwarded to each org's
+        # inbound address, admin → Platform Settings → Burn Tracking). The
+        # webhook is signature-verified with the signing secret from Resend's
+        # Webhooks page; the message body is fetched with an API key that has
+        # receiving access (a sending-only key cannot read received mail).
+        # Optional: absent → the webhook answers 503 and the manual pull
+        # refuses, nothing is accepted unsigned. Operator sets
+        # `resend_receiving_key` + `resend_webhook_secret` at
+        # secret/apps/business-manager/runtime (OpenBao UI), then restarts BM.
+        BL_RESEND_API_KEY:
+          text: '{{ if .Secrets.resend_receiving_key }}{{ .Secrets.resend_receiving_key }}{{ end }}'
+        BL_RESEND_WEBHOOK_SECRET:
+          text: '{{ if .Secrets.resend_webhook_secret }}{{ .Secrets.resend_webhook_secret }}{{ end }}'
         # ecosystem-sync-system client-credentials secret — lets BM pull per-org
         # projects from Project Manager's read-only feed (P3 cross-app sync).
         # Optional: absent → the "Sync from PM" action returns a clean

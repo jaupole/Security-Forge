@@ -112,6 +112,11 @@ spec:
             # business-manager-system service account: create the Keycloak
             # client-credentials client + add BM_SYSTEM_CLIENT_SECRET via VSO
             # (envFrom business-manager-app-secrets) to activate it.
+            # Timecards arrive through Resend inbound email: POST
+            # /api/business-manager/bl-tracking/inbound/resend is the only
+            # unauthenticated API route (Svix-signature verified; see
+            # docs/operations/timecard-inbound-resend.md in the BM repo).
+            # BL_RESEND_API_KEY + BL_RESEND_WEBHOOK_SECRET arrive via VSO.
             # Writable HOME under readOnlyRootFilesystem (lib caches).
             - { name: HOME, value: "/tmp" }
             # Keycloak presents its internal cert in-cluster (auth.${DOMAIN} →
