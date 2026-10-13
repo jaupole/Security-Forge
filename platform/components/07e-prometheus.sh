@@ -11,11 +11,12 @@
 #   5. Create OpenBao K8s auth role grafana-vso.
 #   6. Wait for VSO to render grafana-oidc-client-secret K8s Secret.
 #   7. Helm install kube-prometheus-stack.
-#   8. Apply Grafana Ingress + Certificate + NetworkPolicy.
+#   8. (Grafana host served by the Istio gateway — see 06a.)
 #
 # Pre-conditions:
 #   - 07d-keycloak-grafana-client.sh has run (Secret keycloak/keycloak-grafana-client-secret).
-#   - openbao-root-token-tmp Secret in openbao ns.
+#   - a privileged OpenBao token Secret (openbao-operator-token-tmp preferred)
+#     ONLY for first-time staging; skipped when grafana-oidc-client-secret exists.
 
 set -euo pipefail
 
@@ -33,24 +34,22 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-# Pre-flight
-if ! kubectl -n "$NS_BAO" get secret openbao-root-token-tmp >/dev/null 2>&1; then
-  red "ERROR: openbao-root-token-tmp Secret not found in $NS_BAO."
-  red "       Re-create with the OpenBao initial root token from 1Password."
-  exit 1
-fi
+# Pre-flight — the OpenBao token is only needed for the one-time staging in
+# steps 1-6. On a plain chart roll, with grafana-oidc-client-secret already
+# rendered by VSO, staging is skipped (operator token preferred when it is
+# needed; see lib/openbao-token.sh).
+# shellcheck disable=SC1091
+source "$LIB/openbao-token.sh"
+resolve_bao_token
+bao_token_required "$NS" grafana-oidc-client-secret
+
+if [ -z "$SKIP_STAGING" ]; then
 if ! kubectl -n "$NS_KC" get secret keycloak-grafana-client-secret >/dev/null 2>&1; then
   red "ERROR: Secret keycloak-grafana-client-secret missing in $NS_KC."
   red "       Run 07d-keycloak-grafana-client.sh first."
   exit 1
 fi
-
-ROOT_TOKEN=$(kubectl -n "$NS_BAO" get secret openbao-root-token-tmp -o jsonpath='{.data.token}' | base64 -d)
 GRAFANA_OIDC_SECRET=$(kubectl -n "$NS_KC" get secret keycloak-grafana-client-secret -o jsonpath='{.data.client_secret}' | base64 -d)
-
-bao() {
-  kubectl exec -n "$NS_BAO" "$POD_BAO" -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ROOT_TOKEN" "$@"
-}
 
 # 1+2. Stage at OpenBao
 green "==> stage Grafana OIDC client_secret at secret/grafana/oidc"
@@ -96,6 +95,11 @@ for i in $(seq 1 12); do
   sleep 5
 done
 
+else
+  # Keep the VSO binding reconciled even when staging is skipped (idempotent).
+  "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/05-grafana-vso-binding.yaml"
+fi
+
 # 7. Helm install
 "$LIB/install-helm.sh" \
   --release kps --namespace "$NS" \
@@ -103,8 +107,10 @@ done
   --chart prometheus-community/kube-prometheus-stack --version "$CHART_VER" \
   --values "$PLATFORM_DIR/values/kube-prometheus-stack.yaml"
 
-# 8. Ingress + Certificate + NetworkPolicy
-"$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/06-grafana-ingress.yaml"
+# 8. Grafana's public host is served by the Istio ingress gateway
+#    (istio-ingress/20-virtualservices.yaml, applied by 06a). The former
+#    observability/06-grafana-ingress.yaml was retired with the move off
+#    ingress-nginx; nothing to apply here.
 
 # 9. PrometheusRules + the CT-log monitor (detective controls). 09-platform-alerts
 #    was previously applied ad-hoc; wired here so a rebuild restores the alerts +

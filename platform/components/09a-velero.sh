@@ -17,7 +17,8 @@
 #
 # Pre-conditions:
 #   - 07a-minio.sh complete (MinIO + `backups` bucket).
-#   - openbao-root-token-tmp Secret in openbao ns.
+#   - a privileged OpenBao token Secret (openbao-operator-token-tmp preferred)
+#     ONLY for first-time staging; skipped when velero-minio-credentials exists.
 
 set -euo pipefail
 
@@ -35,22 +36,21 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-# Pre-flight
-if ! kubectl -n "$NS_BAO" get secret openbao-root-token-tmp >/dev/null 2>&1; then
-  red "ERROR: openbao-root-token-tmp Secret not found."; exit 1
-fi
-if ! kubectl -n "$NS_MINIO" get secret minio-root-credentials >/dev/null 2>&1; then
-  red "ERROR: minio-root-credentials not found. Run 07a-minio.sh first."; exit 1
-fi
-
-ROOT_TOKEN=$(kubectl -n "$NS_BAO" get secret openbao-root-token-tmp -o jsonpath='{.data.token}' | base64 -d)
-bao() {
-  kubectl exec -n "$NS_BAO" "$POD_BAO" -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ROOT_TOKEN" "$@"
-}
+# Pre-flight — the OpenBao token is only needed for the one-time staging in
+# steps 2-7. On a plain chart roll, with velero-minio-credentials already
+# rendered by VSO, staging is skipped (see lib/openbao-token.sh).
+# shellcheck disable=SC1091
+source "$LIB/openbao-token.sh"
+resolve_bao_token
+bao_token_required "$NS" velero-minio-credentials
 
 # 1. Namespace
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/velero/01-namespace.yaml"
 
+if [ -z "$SKIP_STAGING" ]; then
+if ! kubectl -n "$NS_MINIO" get secret minio-root-credentials >/dev/null 2>&1; then
+  red "ERROR: minio-root-credentials not found. Run 07a-minio.sh first."; exit 1
+fi
 # 2. Provision (or reuse) Velero MinIO user
 green "==> provision MinIO user velero-user (scoped to backups/velero/*)"
 
@@ -162,6 +162,11 @@ for i in $(seq 1 12); do
   sleep 5
 done
 
+else
+  # Keep the VSO binding reconciled even when staging is skipped (idempotent).
+  "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/velero/02-vso-binding.yaml"
+fi
+
 # 8. Helm install
 # Chart 12+ renders the velero-repo-maintenance ConfigMap from
 # `configuration.repositoryMaintenanceJob.repositoryConfigData` in values.yaml
@@ -188,6 +193,11 @@ done
 "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/velero/03-schedules.yaml"
 
 # 10. Trigger an immediate on-demand backup so we can verify the pipeline.
+#     Skipped on re-runs that only roll the chart: VELERO_SKIP_INITIAL_BACKUP=1
+#     (the scheduled backups keep running regardless).
+if [ -n "${VELERO_SKIP_INITIAL_BACKUP:-}" ]; then
+  yellow "==> VELERO_SKIP_INITIAL_BACKUP set — not triggering a bootstrap backup"
+else
 green "==> triggering initial on-demand backup (will block until BSL is Available)"
 for i in $(seq 1 12); do
   STATUS=$(kubectl -n "$NS" get backupstoragelocation default -o jsonpath='{.status.phase}' 2>/dev/null || true)
@@ -219,6 +229,7 @@ spec:
   defaultVolumesToFsBackup: true
   ttl: 168h0m0s
 EOF
+fi
 
 echo
 green "✓ Velero deployed."

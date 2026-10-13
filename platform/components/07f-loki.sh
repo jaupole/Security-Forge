@@ -5,7 +5,8 @@
 #
 # Pre-conditions:
 #   - 07a (MinIO + buckets), 07e (kube-prometheus-stack with ServiceMonitor CRDs)
-#   - openbao-root-token-tmp Secret in openbao ns
+#   - a privileged OpenBao token Secret (openbao-operator-token-tmp preferred)
+#     ONLY for first-time staging; skipped when loki-minio-credentials exists
 
 set -euo pipefail
 
@@ -23,18 +24,18 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-# Pre-flight
-if ! kubectl -n "$NS_BAO" get secret openbao-root-token-tmp >/dev/null 2>&1; then
-  red "ERROR: openbao-root-token-tmp Secret not found."; exit 1
-fi
+# Pre-flight — the OpenBao token is only needed for the one-time staging in
+# steps 1-6. On a plain chart roll, with loki-minio-credentials already
+# rendered by VSO, staging is skipped (see lib/openbao-token.sh).
+# shellcheck disable=SC1091
+source "$LIB/openbao-token.sh"
+resolve_bao_token
+bao_token_required "$NS" loki-minio-credentials
+
+if [ -z "$SKIP_STAGING" ]; then
 if ! kubectl -n "$NS_MINIO" get secret minio-root-credentials >/dev/null 2>&1; then
   red "ERROR: minio-root-credentials not found. Run 07a-minio.sh first."; exit 1
 fi
-
-ROOT_TOKEN=$(kubectl -n "$NS_BAO" get secret openbao-root-token-tmp -o jsonpath='{.data.token}' | base64 -d)
-bao() {
-  kubectl exec -n "$NS_BAO" "$POD_BAO" -c openbao -- env BAO_SKIP_VERIFY=1 BAO_TOKEN="$ROOT_TOKEN" "$@"
-}
 
 # 1. Provision (or reuse) Loki MinIO user
 green "==> provision MinIO user loki-user (scoped to loki-chunks)"
@@ -136,6 +137,11 @@ for i in $(seq 1 12); do
   fi
   sleep 5
 done
+
+else
+  # Keep the VSO binding reconciled even when staging is skipped (idempotent).
+  "$LIB/apply-manifest.sh" "$PLATFORM_DIR/manifests/observability/07-loki-vso-binding.yaml"
+fi
 
 # 7. Helm install
 "$LIB/install-helm.sh" \
