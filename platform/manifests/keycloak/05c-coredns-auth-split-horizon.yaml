@@ -1,0 +1,34 @@
+# CoreDNS split-horizon for the OIDC back-channel (pairs with 05b-internal-port443-service).
+#
+# WHY THIS EXISTS / INCIDENT 2026-07-06:
+# In-cluster OIDC back-channel calls (every app BFF's code->token exchange, plus
+# Wazuh/Grafana) dial https://auth.secforge.dev (:443). auth.secforge.dev
+# resolves publicly to the node IP (65.21.25.40). An AMBIENT-meshed pod CANNOT
+# hairpin to the node's own public IP -> the ingress gateway (ztunnel's egress
+# source isn't in the CNI hairpin-SNAT range, so the gateway's reply races back
+# and the pod RSTs: "connection refused"). External browsers are unaffected
+# (they resolve via public DNS and arrive as normal ingress).
+#
+# This ConfigMap is imported by the cluster CoreDNS (`import
+# /etc/coredns/custom/*.override` inside the .:53 block) and rewrites
+# auth.secforge.dev to the in-cluster keycloak-auth-internal Service
+# (443 -> KC 8443), whose TLS cert carries a SAN for auth.secforge.dev. So the
+# back-channel stays fully in-cluster (pod -> Service -> KC pod), TLS validates,
+# and the Host header remains auth.secforge.dev.
+#
+# This was previously applied LIVE-ONLY and was lost (the coredns-custom CM went
+# missing), which took down OIDC login fleet-wide until restored. It is codified
+# here so a re-apply / drift-check keeps it in place.
+#
+# APPLY NOTE: after applying, restart CoreDNS so the imported override loads:
+#   kubectl -n kube-system rollout restart deploy/coredns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  labels:
+    secforge.platform/component: coredns
+data:
+  auth-secforge.override: |
+    rewrite name exact auth.secforge.dev keycloak-auth-internal.keycloak.svc.cluster.local
