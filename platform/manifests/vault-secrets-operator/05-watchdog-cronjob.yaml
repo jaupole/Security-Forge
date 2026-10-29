@@ -104,7 +104,7 @@ spec:
               # shell, so the distroless non-dev variant won't work. Digest-
               # pinned for reproducibility; cgr.dev/chainguard/* is on the
               # Kyverno restrict-image-registries allow-list.
-              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:0ab609444568f660f4bfd920175c10dfe0bc941a295d6c8ef91f7837ca712a2c
+              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:478fa9f4a91b3af70907774e7b9d912ce2171cb9fba391120fcc93119d5ca1a0
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
