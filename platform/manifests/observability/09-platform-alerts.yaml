@@ -212,6 +212,26 @@ spec:
               Limit: {{ with printf "node_mount_max_limit{instance='%s'}" $labels.instance | query }}{{ . | first | value | humanize }}{{ end }}.
               Check for leaked tmpfs mounts: wc -l /proc/mounts | sort -rn | head -20
 
+        # Absolute mount-count guard (added 2026-10-30). The ratio rule above
+        # keys off fs.mount-max (1M), so the 2026-10-30 CSI mount storm sat at
+        # 148k mounts (15%) with the node compute-starved and nothing firing.
+        # A healthy node here is ~500 mounts. Fix: platform/scripts/csi-mount-unwind.sh
+        - alert: NodeMountCountHigh
+          expr: |
+            node_mount_count > 20000
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kernel mount table at {{ $value | humanize }} entries (healthy ≈ 500)"
+            description: |
+              {{ $value | humanize }} mounts on {{ $labels.instance }}. Almost certainly stacked
+              spiffe-workload-api CSI bind mounts (16384-per-path kernel cap × stuck pods).
+              Every /proc/mounts read is now a full scan, so kubelet/containerd/sshd crawl —
+              SSH may hang at auth while `tailscale ping` still answers. Confirm:
+                awk '{print $3}' /proc/mounts | sort | uniq -c | sort -rn | head -3
+              Fix: sudo platform/scripts/csi-mount-unwind.sh (umount2 MNT_DETACH, no reboot).
+
         - alert: NodeMountTableCritical
           expr: |
             node_mount_count / node_mount_max_limit > 0.85
