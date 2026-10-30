@@ -1,0 +1,44 @@
+# ⚠️ SOURCE OF TRUTH for /etc/systemd/system/k3s.service (codified 2026-10-30).
+# The k3s installer wrote this unit with `--write-kubeconfig-mode 644` on
+# ExecStart, which silently overrode the `write-kubeconfig-mode: "0600"` in
+# config.yaml (CLI flags win) and left the cluster-admin kubeconfig
+# world-readable. The flag is removed here; the mode now comes from
+# config.yaml. Re-running the k3s installer regenerates this file — diff it
+# against this copy afterwards (host-config-drift-check.sh).
+
+[Unit]
+Description=Lightweight Kubernetes
+Documentation=https://k3s.io
+Wants=network-online.target
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=notify
+EnvironmentFile=-/etc/default/%N
+EnvironmentFile=-/etc/sysconfig/%N
+EnvironmentFile=-/etc/systemd/system/k3s.service.env
+KillMode=process
+Delegate=yes
+User=root
+# Having non-zero Limit*s causes performance problems due to accounting overhead
+# in the kernel. We recommend using cgroups to do container-local accounting.
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+ExecStartPre=-/sbin/modprobe br_netfilter
+ExecStartPre=-/sbin/modprobe overlay
+ExecStart=/usr/local/bin/k3s \
+    server \
+	'--disable' \
+	'traefik' \
+	'--disable' \
+	'servicelb' \
+	'--node-name' \
+	'secforge-prod' \

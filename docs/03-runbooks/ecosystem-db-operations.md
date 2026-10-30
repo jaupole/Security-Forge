@@ -163,7 +163,8 @@ For `<app>` / `<ns>` / `<db>` / `<owner>` (e.g. member-hub / member-hub / member
    ```
    (`-Fc` custom format; grants/ownership ride along because the roles pre-exist.)
 3. **Apply the app-SIDE egress netpol** (additive; permits <ns> → ecosystem-db).
-   Save as `platform/manifests/<app>/05x-allow-egress-to-ecosystem-db.yaml` and apply:
+   It is codified at the END of `platform/manifests/<app>/05-network-policies.yaml`
+   (since 2026-10-30) — apply that file; never apply from this snippet alone:
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: NetworkPolicy

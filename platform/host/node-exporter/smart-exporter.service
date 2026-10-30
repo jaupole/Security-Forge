@@ -1,0 +1,7 @@
+[Unit]
+Description=Export NVMe SMART health to node-exporter textfile collector
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-exporter.sh

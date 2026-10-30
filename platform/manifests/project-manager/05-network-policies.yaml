@@ -419,3 +419,26 @@ spec:
       ports:
         - { protocol: TCP, port: 3003 }
         - { protocol: TCP, port: 15008 }   # ztunnel HBONE (ambient mesh)
+
+---
+# App-side egress to the unified ecosystem-db (DB-unification P5 cutover).
+# Lived ONLY in the cluster from the project-manager cutover until 2026-10-30 — the
+# runbook said "apply at cutover" but never "commit"; a rebuild-from-git would
+# have left this app unable to reach its database. Mirror ingress rule lives
+# in ecosystem-db/05-network-policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-ecosystem-db
+  namespace: project-manager
+  labels: { secforge.platform/component: project-manager, secforge.platform/policy-tier: layer-a }
+spec:
+  podSelector: {}          # app pods + migration Job both need it
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ecosystem-db }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 15008 }   # HBONE — ambient mesh

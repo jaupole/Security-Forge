@@ -276,6 +276,82 @@ spec:
                 bash ~/secforge/platform/scripts/runner-cleanup.sh
               Then investigate root cause (see NodeDiskSpaceWarn description).
 
+        # ─── NVMe SMART health (added 2026-10-30) ──────────────────────────
+        # Fed by the smart-exporter host timer (platform/host/node-exporter/,
+        # every 5 min) via the node-exporter textfile collector. Before this,
+        # smartd only ran /usr/local/bin/smart-alert.sh → /var/log/smart-alerts.log
+        # — both PM9A1 drives sat past 100% rated wear with SMART FAILED
+        # (Critical Warning 0x04) from July to October with nothing paging.
+        # RAID1 with identical write history: expect near-simultaneous failure,
+        # and every backup copy (CNPG, Velero, k3s datastore) is on this mirror.
+        - alert: NvmeSmartDegraded
+          expr: |
+            (secforge_nvme_smart_passed == 0) or (secforge_nvme_critical_warning > 0)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "NVMe {{ $labels.device }} SMART degraded (serial {{ $labels.serial }})"
+            description: |
+              smartctl reports {{ $labels.device }} ({{ $labels.model }} {{ $labels.serial }}) as
+              degraded: Critical Warning bitfield = {{ with printf "secforge_nvme_critical_warning{device='%s'}" $labels.device | query }}{{ . | first | value }}{{ end }}
+              (0x04 = reliability degraded), Percentage Used =
+              {{ with printf "secforge_nvme_percentage_used{device='%s'}" $labels.device | query }}{{ . | first | value }}{{ end }}%.
+              Known since 2026-07: both drives need a Hetzner Robot swap, one at a time,
+              AFTER an off-box copy of the MinIO backups bucket exists.
+              Trend: /var/log/smart-trend/*.jsonl (hourly). Live: smartctl -H -A /dev/nvme0n1
+
+        - alert: NvmeSpareLow
+          expr: |
+            secforge_nvme_available_spare <= secforge_nvme_available_spare_threshold + 10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NVMe {{ $labels.device }} spare blocks nearly exhausted ({{ $value }}%)"
+            description: |
+              Available Spare on {{ $labels.device }} ({{ $labels.serial }}) is {{ $value }}%, within
+              10 points of the vendor threshold. The drive will go read-only when it crosses it.
+              Fail it out of md0/md1 and swap NOW — do not wait for the scheduled one-at-a-time plan.
+
+        - alert: NvmeMediaErrors
+          expr: |
+            delta(secforge_nvme_media_errors[1h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NVMe {{ $labels.device }} logged new media/data-integrity errors"
+            description: |
+              Media and Data Integrity Errors on {{ $labels.device }} ({{ $labels.serial }}) increased by
+              {{ $value }} in the last hour. Uncorrectable reads are happening. Check `cat /proc/mdstat`
+              for a degraded mirror and `dmesg -T | grep -i nvme`; prioritise the swap of this drive.
+
+        - alert: NvmeTemperatureHigh
+          expr: |
+            secforge_nvme_temperature_celsius >= 70
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "NVMe {{ $labels.device }} at {{ $value }}°C"
+            description: |
+              {{ $labels.device }} composite temperature is {{ $value }}°C for 10m (smartd critical is 70°C).
+              Thermal throttling and accelerated wear follow. Check chassis airflow with Hetzner.
+
+        - alert: NvmeSmartExporterStale
+          expr: |
+            absent(secforge_smart_exporter_last_run_timestamp_seconds)
+            or (time() - secforge_smart_exporter_last_run_timestamp_seconds > 900)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "smart-exporter has not written smart.prom for >15m"
+            description: |
+              The NVMe SMART rules above are blind. Check: systemctl status smart-exporter.timer
+              smart-exporter.service; journalctl -t smart-exporter --since -1h.
+
     - name: platform-services
       interval: 60s
       rules:

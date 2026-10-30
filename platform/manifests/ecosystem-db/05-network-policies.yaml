@@ -2,9 +2,9 @@
 #
 # Default-deny both directions + minimal allows, matching the fleet pattern.
 # This file holds the ecosystem-db-SIDE rules. The APP-side egress rule
-# (each app ns → ecosystem-db:5432/15008) is applied per-app AT CUTOVER (it is
-# additive + inert until the app's DATABASE_URL is repointed) — the exact YAML is
-# in docs/03-runbooks/ecosystem-db-operations.md §Cutover, one app at a time.
+# (each app ns → ecosystem-db:5432/15008) is `allow-egress-to-ecosystem-db` at the
+# END of each app ns's 05-network-policies.yaml (codified 2026-10-30 — until then
+# it lived only in the cluster, applied by hand at cutover).
 #
 # AMBIENT / HBONE: all 5 app namespaces AND this one are ambient, so cross-ns
 # app→db traffic is tunnelled ztunnel→ztunnel over HBONE (15008), delivered to
