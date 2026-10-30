@@ -686,7 +686,10 @@ spec:
         # matches its signed off-node anchor (rewrite in MinIO), OR an operational
         # failure. High-signal — classify via the job log (TAMPER: vs other).
         - alert: PlatformLokiVerifierFailing
-          expr: kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-verifier.*"} > 0
+          expr: |
+            kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-verifier.*"} > 0
+            unless on (namespace, job_name)
+            kube_job_complete{namespace="observability", job_name=~"platform-loki-audit-verifier.*", condition="true"} == 1
           for: 5m
           labels:
             severity: critical
@@ -701,7 +704,10 @@ spec:
                 kubectl -n observability logs job/<latest platform-loki-audit-verifier job>
               On confirmed tamper, treat as an active node compromise (threat-model X-R1/P1).
         - alert: PlatformLokiAnchorFailing
-          expr: kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-anchor.*"} > 0
+          expr: |
+            kube_job_status_failed{namespace="observability", job_name=~"platform-loki-audit-anchor.*"} > 0
+            unless on (namespace, job_name)
+            kube_job_complete{namespace="observability", job_name=~"platform-loki-audit-anchor.*", condition="true"} == 1
           for: 10m
           labels:
             severity: warning
