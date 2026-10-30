@@ -79,7 +79,7 @@ spec:
             - name: people-sweep
               # Digest-pinned. Same image as the backend Deployment.
               # Bump in lockstep with 09-backend-deployment.yaml.
-              image: ghcr.io/jaupole/control@sha256:812e19fa6ee34901bc25a8da16ab2577955daf48922c60f5f8ce8a852c284a03
+              image: ghcr.io/jaupole/control@sha256:bd0b619de8218b59e4fe66b9832aea1664e1432cc9588eaef4c1287600bb4ac0
               imagePullPolicy: IfNotPresent
               command: ["/nodejs/bin/node", "dist/cli/index.js", "admin:backfill-people"]
               env:
