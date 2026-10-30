@@ -7,6 +7,10 @@
 # A `kubectl rollout restart` clears the pool and VSO resumes — confirmed
 # 2× on 2026-05-19 (openbao Velero recovery + post-reboot).
 #
+# Still needed at VSO 1.6.2 (checked 2026-10-30): the upstream CHANGELOG through
+# 1.6.2 has no fix touching the client cache / connection pool / address
+# re-resolution. Re-check on each VSO bump; retire when a fix lands.
+#
 # This CronJob watches VSO logs for the dial-failure signature and bounces
 # the deployment when it appears. Self-healing within ~5 min.
 #
