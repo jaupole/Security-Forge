@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PLATFORM_DIR="$(dirname "$SCRIPT_DIR")"
 LIB="$PLATFORM_DIR/lib"
 
-CHART_VER="${KYVERNO_CHART_VER:-3.9.1}"
+CHART_VER="${KYVERNO_CHART_VER:-3.9.2}"
 NS=kyverno
 
 # 1. Namespace
