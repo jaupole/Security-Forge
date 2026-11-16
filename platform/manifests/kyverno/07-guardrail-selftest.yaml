@@ -109,7 +109,7 @@ spec:
               # ships /bin/sh + busybox alongside kubectl. Digest-pinned;
               # cgr.dev/chainguard/* is on the restrict-image-registries
               # allow-list.
-              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:8195d86d68cc241008cc022f66196227f9d1ab4ed5aad432273d537389a2df57
+              image: cgr.dev/chainguard/kubectl:latest-dev@sha256:f4717e9571749640ecd8dd6f109149e58da60c971b00afdf55245dc1a8d34c02
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -150,7 +150,7 @@ spec:
                       seccompProfile: { type: RuntimeDefault }
                     containers:
                       - name: probe
-                        image: cgr.dev/chainguard/kubectl:latest-dev@sha256:8195d86d68cc241008cc022f66196227f9d1ab4ed5aad432273d537389a2df57
+                        image: cgr.dev/chainguard/kubectl:latest-dev@sha256:f4717e9571749640ecd8dd6f109149e58da60c971b00afdf55245dc1a8d34c02
                         command: ["true"]
                         env:
                           - { name: TEST_SECRET, value: guardrail-selftest-dummy }
