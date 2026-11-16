@@ -4,7 +4,7 @@
 #
 # Outputs to /var/lib/node_exporter/textfile_collector/smart.prom
 # Metrics consumed by the PrometheusRule node-resource-health group
-# (NvmeSmartDegraded / NvmeSpareLow / NvmeMediaErrors / NvmeTemperatureHigh /
+# (NvmeFailing / NvmeSpareLow / NvmeMediaErrors / NvmeTemperatureHigh /
 # NvmeSmartExporterStale). Until 2026-10-30 smartd only wrote to
 # /var/log/smart-alerts.log — both drives sat past 100% rated wear with
 # SMART FAILED for months and nothing paged.

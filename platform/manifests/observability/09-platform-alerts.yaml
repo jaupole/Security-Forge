@@ -304,22 +304,33 @@ spec:
         # (Critical Warning 0x04) from July to October with nothing paging.
         # RAID1 with identical write history: expect near-simultaneous failure,
         # and every backup copy (CNPG, Velero, k3s datastore) is on this mirror.
-        - alert: NvmeSmartDegraded
+        #
+        # 2026-11-16: NvmeSmartDegraded (smart_passed == 0 or critical_warning > 0)
+        # was replaced by NvmeFailing. Both drives sit permanently at Critical
+        # Warning 0x04 (reliability degraded, past rated wear) until the Hetzner
+        # swap, so the old rule re-mailed every 12h with nothing actionable. The
+        # known 0x04-only state is now silent; only a drive that is actually
+        # failing pages: any OTHER Critical Warning bit (0x01 spare below
+        # threshold, 0x02 temperature, 0x08 read-only, 0x10 volatile backup
+        # failed) here, plus NvmeSpareLow / NvmeMediaErrors below and the
+        # kube-prometheus-stack NodeRAIDDegraded / NodeRAIDDiskFailure rules.
+        - alert: NvmeFailing
           expr: |
-            (secforge_nvme_smart_passed == 0) or (secforge_nvme_critical_warning > 0)
-          for: 30m
+            (secforge_nvme_critical_warning > 0) and (secforge_nvme_critical_warning != 4)
+          for: 10m
           labels:
-            severity: warning
+            severity: critical
           annotations:
-            summary: "NVMe {{ $labels.device }} SMART degraded (serial {{ $labels.serial }})"
+            summary: "NVMe {{ $labels.device }} is failing (serial {{ $labels.serial }})"
             description: |
-              smartctl reports {{ $labels.device }} ({{ $labels.model }} {{ $labels.serial }}) as
-              degraded: Critical Warning bitfield = {{ with printf "secforge_nvme_critical_warning{device='%s'}" $labels.device | query }}{{ . | first | value }}{{ end }}
-              (0x04 = reliability degraded), Percentage Used =
+              smartctl reports {{ $labels.device }} ({{ $labels.model }} {{ $labels.serial }}) with
+              Critical Warning bitfield = {{ $value }}, beyond the known 0x04 wear state
+              (0x01 spare below threshold, 0x02 temperature, 0x08 media read-only,
+              0x10 volatile memory backup failed). Percentage Used =
               {{ with printf "secforge_nvme_percentage_used{device='%s'}" $labels.device | query }}{{ . | first | value }}{{ end }}%.
-              Known since 2026-07: both drives need a Hetzner Robot swap, one at a time,
-              AFTER an off-box copy of the MinIO backups bucket exists.
-              Trend: /var/log/smart-trend/*.jsonl (hourly). Live: smartctl -H -A /dev/nvme0n1
+              Check `cat /proc/mdstat` and `smartctl -H -A {{ $labels.device }}`; fail the drive
+              out of the mirror and open the Hetzner Robot swap for this serial NOW.
+              Trend: /var/log/smart-trend/*.jsonl (hourly).
 
         - alert: NvmeSpareLow
           expr: |
