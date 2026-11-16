@@ -83,19 +83,22 @@ data:
         pass
 
     def http_get(url, headers=None, retries=6):
-        last = None
         for attempt in range(retries):
             req = urllib.request.Request(url, headers=headers or {})
             try:
                 with urllib.request.urlopen(req, timeout=60) as r:
                     return r.status, r.read()
             except urllib.error.HTTPError as e:
-                return e.code, e.read()
-            except urllib.error.URLError as e:
-                last = e
-                if attempt < retries - 1:
-                    time.sleep(min(2 ** attempt, 10))
-        raise last
+                # 5xx/429 are transient upstream faults (a raw.githubusercontent
+                # 503 failed the whole run on 2026-11-13): retry, and only hand
+                # the status back once the retries are spent.
+                transient = e.code >= 500 or e.code == 429
+                if not transient or attempt == retries - 1:
+                    return e.code, e.read()
+            except urllib.error.URLError:
+                if attempt == retries - 1:
+                    raise
+            time.sleep(min(2 ** attempt, 10))
 
     def raw_get_json(path):
         status, body = http_get("{}/{}".format(RAW, path),
